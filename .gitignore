@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.runtime/
+backend/pb_data/
+backend/pb_hooks/types.d.ts
+*.log
