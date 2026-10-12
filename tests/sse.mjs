@@ -1,4 +1,4 @@
-export async function connect(url, token) {
+export async function connect(url, token, topic = 'members/*') {
   const abort = new AbortController();
   const res = await fetch(url + '/api/realtime', { signal: abort.signal });
   const decoder = new TextDecoder();
@@ -29,7 +29,7 @@ export async function connect(url, token) {
   };
   const hello = await next();
   if (hello?.name !== 'PB_CONNECT') throw new Error('SSE handshake failed.');
-  const subscription = await fetch(url + '/api/realtime', { method: 'POST', headers: { Authorization: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: hello.data.clientId, subscriptions: ['members/*'] }) });
-  if (!subscription.ok) throw new Error('SSE subscription rejected.');
+  const subscription = await fetch(url + '/api/realtime', { method: 'POST', headers: { Authorization: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId: hello.data.clientId, subscriptions: [topic] }) });
+  if (!subscription.ok) { abort.abort(); await reading; throw new Error('SSE subscription rejected.'); }
   return { next, close: async () => { abort.abort(); await reading; } };
 }

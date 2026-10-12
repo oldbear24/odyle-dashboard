@@ -1,23 +1,25 @@
-routerAdd('POST', '/api/odyle/create', (e) => require(__hooks + '/lib/service.cjs').create(e), $apis.bodyLimit(4096));
-routerAdd('POST', '/api/odyle/join', (e) => require(__hooks + '/lib/service.cjs').join(e), $apis.bodyLimit(4096));
-for (const action of ['report', 'heartbeat', 'sharing', 'session', 'invalidate', 'leave', 'settings', 'invites', 'revoke']) {
-  // PocketBase serializes handlers: route path is read inside the isolated callback.
-  routerAdd('POST', '/api/odyle/' + action, (e) => {
-    const action = e.request.url.path.split('/').pop();
-    return require(__hooks + '/lib/service.cjs')[action](e);
-  }, $apis.requireAuth('members'), $apis.bodyLimit(4096));
+for (const action of ['create', 'join', 'report', 'heartbeat', 'sharing', 'session', 'invalidate', 'leave', 'close', 'settings', 'invites', 'revoke', 'desktop-code']) {
+  routerAdd('POST', '/api/odyle/' + action, e => {
+    const name = e.request.url.path.split('/').pop();
+    return require(__hooks + '/lib/accounts.cjs')[name === 'desktop-code' ? 'desktopCode' : name](e);
+  }, $apis.requireAuth('users'), $apis.bodyLimit(4096));
 }
-cronAdd('odyle-expiry', '*/5 * * * *', () => require(__hooks + '/lib/service.cjs').cleanup());
-// SSE clients cache auth records. Recheck membership before each delivery so
-// an already-connected client cannot keep reading after its credential is revoked.
-onRealtimeMessageSend((e) => {
-  const auth = e.client.get('auth');
-  if (auth && auth.collection().name === 'members' && e.message.name !== 'PB_CONNECT') {
-    try {
-      const current = e.app.findRecordById('members', auth.id);
-      const room = e.app.findRecordById('rooms', current.getString('room'));
-      if (Date.parse(room.getString('expiresAt')) <= Date.now()) return;
-    } catch { return; }
+routerAdd('POST', '/api/odyle/pair', e => require(__hooks + '/lib/accounts.cjs').pair(e), $apis.bodyLimit(4096));
+routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs').rooms(e), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));
+onRealtimeSubscribeRequest(e => {
+  for (const topic of e.subscriptions) if (topic.startsWith('odyle.room.')) {
+    if (!e.auth || e.auth.collection().name !== 'users') throw new ForbiddenError();
+    require(__hooks + '/lib/accounts.cjs').membership(e.app, e.auth.id, topic.slice(11));
   }
   return e.next();
 });
+onRealtimeMessageSend(e => {
+  if (e.message.name.startsWith('odyle.room.')) {
+    const auth = e.client.get('auth'); if (!auth || auth.collection().name !== 'users') return;
+    try { require(__hooks + '/lib/accounts.cjs').membership(e.app, auth.id, e.message.name.slice(11)); } catch { return; }
+  }
+  return e.next();
+});
+onBootstrap(e => { e.next(); require(__hooks + '/lib/accounts.cjs').configureDiscord(e.app); });
+cronAdd('odyle-expiry', '*/5 * * * *', () => require(__hooks + '/lib/accounts.cjs').cleanup());

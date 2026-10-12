@@ -4,5 +4,6 @@ node_modules
 dist
 backend/pb_data
 .env
+.env.backend
 docs
 tests
