@@ -60,6 +60,7 @@ async function send(action, body = {}) {
 }
 async function refreshRoom() {
   const snapshot = await pb.send('/api/odyle/snapshot/' + room.id); room = snapshot.room; members = snapshot.members; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  characters = me()?.characters || characters;
   if (!document.querySelector('#modal')?.open) dashboard();
 }
 async function library() {
@@ -76,7 +77,13 @@ async function openRoom(id) {
   });
 }
 async function newPublisher(replace = false) {
-  const data = await send('session', replace && sessionId ? { previousSessionId: sessionId } : {}); sessionId = data.sessionId; sequence = 0;
+  let data;
+  try { data = await send('session', replace && sessionId ? { previousSessionId: sessionId } : {}); }
+  catch (error) {
+    if (!replace || ![403, 404].includes(error.status)) throw error;
+    data = await send('session');
+  }
+  sessionId = data.sessionId; sequence = 0;
 }
 async function authenticated() {
   await pb.collection('users').authRefresh(); await library();
@@ -87,19 +94,28 @@ async function authenticated() {
       if (Date.now() - lastPulse >= 20000) {
         if (sessionId && (!online || Date.now() - lastPulse > 45000)) await newPublisher(true);
         await send('heartbeat', { sessionId, characterId: activeCharacterId }); lastPulse = Date.now(); online = true;
+        if (!room) characters = await pb.collection('characters').getFullList({ sort: 'created' });
       }
       if (room) await refreshRoom();
       else if (!document.querySelector('#modal')?.open) {
         const grid = document.querySelector('.personal-characters .member-grid');
-        if (grid && characters.length) grid.innerHTML = characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
+        if (grid && characters.length) {
+          grid.innerHTML = characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
+          document.querySelector('.personal-characters h2 span').textContent = characters.length;
+        }
       }
     } catch { online = false; }
   }, 5000);
 }
 async function discordLogin() {
-  const methods = await pb.collection('users').listAuthMethods();
-  if (!methods.oauth2?.providers?.some(p => p.name === 'discord')) return toast('Discord sign-in needs backend configuration. See docs/discord-setup.md.');
-  const auth = await pb.collection('users').authWithOAuth2({ provider: 'discord', createData: { displayName: 'Adventurer' } });
+  let auth;
+  // The SDK opens its popup immediately; keep this call within the click gesture.
+  try { auth = await pb.collection('users').authWithOAuth2({ provider: 'discord', createData: { displayName: 'Adventurer' } }); }
+  catch (error) {
+    const methods = await pb.collection('users').listAuthMethods();
+    if (!methods.oauth2?.providers?.some(p => p.name === 'discord')) return toast('Discord sign-in needs backend configuration. See docs/discord-setup.md.');
+    throw error;
+  }
   if (auth.record.displayName === 'Adventurer' && auth.meta?.name) await pb.collection('users').update(auth.record.id, { displayName: String(auth.meta.name).slice(0, 40) });
   await authenticated();
 }
