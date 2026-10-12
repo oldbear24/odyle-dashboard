@@ -7,7 +7,7 @@ A polished AION 2 party dashboard with **Discord sign-in**, persistent character
 ## Account and room flow
 
 1. Sign in with Discord. First sign-in creates your account.
-2. Save your characters with their own region, server and confirmed Odyle total.
+2. Pair the Windows packet reader. Characters retain their own region, server and last verified Odyle total.
 3. Create a private room, or join one using an invitation from its owner.
 4. Choose whether to share your saved characters in each room. Other members see the last saved value and timestamp of every shared character.
 5. Pair your own Windows app using a one-time code from your dashboard account.
@@ -16,7 +16,7 @@ Accounts, rooms, memberships and character values persist across sign-outs and s
 
 Room invite codes expire after 30 minutes. Membership remains until the user leaves or the room owner removes them. Desktop pairing codes expire after five minutes and can be used once. Viewer invitations give read-only room access; viewers cannot share characters in that room or manage it.
 
-**Manual confirmation is available. Automatic game reading is unavailable pending Global protocol validation.** No game account, game memory, raw packets or gameplay automation is involved.
+**Manual Odyle entry is disabled. Global packet validation is pending.** The Windows app contains an experimental passive Npcap reader with local unverified candidates. It cannot publish them. The production adapter registry is empty, so new totals cannot yet be saved. Existing totals remain as historical values, excluded from current readiness. Raw game traffic is never uploaded to PocketBase. See [packet reader limitations](https://github.com/oldbear24/odyle-windows/blob/main/docs/packet-reader.md).
 
 ## Run locally
 
@@ -55,7 +55,7 @@ npm run test:integration
 npm run build
 ```
 
-Integration tests use synthetic accounts in a temporary PocketBase instance on port 18090. They verify provider configuration, closed password registration, multiple saved characters, account isolation, one-use pairing, realtime access, sequence rejection, and persistence across a real backend restart. Test-only auth hooks are generated in the temporary directory and are **not included in production**. Live Discord login requires your own provider credentials.
+Integration tests use synthetic accounts in a temporary PocketBase instance on port 18090. They verify provider configuration, closed password registration, multiple saved characters, account isolation, one-use pairing, realtime access, sequence rejection, and persistence across a real backend restart. A synthetic packet adapter is approved only in the disposable test backend; these tests do not validate the Global protocol. Test-only auth hooks are generated in the temporary directory and are **not included in production**. Live Discord login requires your own provider credentials.
 
 GitHub Actions runs the checks and uploads the static build. [Deployment](docs/deployment.md), [API contract](docs/api.md), [privacy](docs/privacy.md).
 

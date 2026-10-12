@@ -80,14 +80,14 @@ function session(e) { return mutate(e, (app, user, body, affected) => {
 }); }
 function report(e) { return mutate(e, (app, user, body, affected) => {
   const session = ownSession(app, user.id, String(body.sessionId));
-  const data = validate.reading(body, { sessionId: session.id, sequence: session.getInt('sequence') }); let character;
+  const data = validate.reading(body, { sessionId: session.id, sequence: session.getInt('sequence') }, require(__hooks + '/lib/protocols.cjs').verifiedAdapters); let character;
   if (body.characterId) character = ownCharacter(app, user.id, String(body.characterId));
   else {
     const existing = list(app, 'characters', 'user = {:user} && region = {:region} && server = {:server} && characterName = {:name}', { user: user.id, region: data.region, server: data.server, name: data.characterName });
     character = existing[0] || new Record(app.findCollectionByNameOrId('characters')); character.set('user', user.id);
   }
   for (const key of ['value', 'characterName', 'server', 'region']) character.set(key, data[key]);
-  character.set('confirmed', true); character.set('valid', true); character.set('source', 'manual'); character.set('lastReadingAt', now()); character.set('lastSeenAt', now()); character.set('readingSession', session.id); app.save(character);
+  character.set('confirmed', true); character.set('valid', true); character.set('source', data.source); character.set('parserVersion', data.parserVersion); character.set('lastReadingAt', now()); character.set('lastSeenAt', now()); character.set('readingSession', session.id); app.save(character);
   session.set('sequence', data.sequence); session.set('expiresAt', expiry(86400)); app.save(session); affected.push(...roomsFor(app, user.id)); return { character, serverNow: now() };
 }); }
 function sharing(e) { return mutate(e, (app, user, body, affected) => {

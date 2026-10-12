@@ -6,15 +6,17 @@ function integer(value, name, min, max) {
   if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(name + ' must be an integer between ' + min + ' and ' + max + '.');
   return value;
 }
-function reading(body, current) {
+function reading(body, current, verifiedAdapters = []) {
   if (body.sessionId !== current.sessionId) throw new Error('Publisher session changed. Reconnect your client.');
   integer(body.sequence, 'Sequence', 1, Number.MAX_SAFE_INTEGER);
   if (body.sequence <= current.sequence) throw new Error('Outdated reading.');
-  if (body.source !== 'manual') throw new Error('Packet reading is unavailable until Global validation is complete.');
-  if (body.confirmed !== true) throw new Error('Confirm this value against the in-game Odyle total.');
+  if (body.source !== 'packet') throw new Error('Odyle must come from game packets. Manual readings are disabled.');
+  const parserVersion = text(body.parserVersion, 'Packet adapter', 80);
+  if (!verifiedAdapters.includes(parserVersion)) throw new Error('This packet adapter has not been validated for Global. No reading was saved.');
+  if (body.confirmed !== true) throw new Error('A verified packet observation is required.');
   const regions = ['GLOBAL_EU', 'GLOBAL_NA', 'GLOBAL_SA', 'GLOBAL_ASIA'];
   if (!regions.includes(body.region)) throw new Error('Select a Global region.');
-  return { value: integer(body.value, 'Odyle', 0, 1000000), characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region, sequence: body.sequence };
+  return { value: integer(body.value, 'Odyle', 0, 1000000), characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region, sequence: body.sequence, source: 'packet', parserVersion };
 }
 function status(member, now) {
   if (!member.sharing || !member.lastSeenAt || now - Date.parse(member.lastSeenAt) >= 90000) return 'offline';
