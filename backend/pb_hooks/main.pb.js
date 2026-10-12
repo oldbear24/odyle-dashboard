@@ -1,4 +1,4 @@
-for (const action of ['create', 'join', 'report', 'heartbeat', 'sharing', 'session', 'invalidate', 'leave', 'close', 'settings', 'invites', 'revoke', 'desktop-code']) {
+for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'session', 'invalidate', 'leave', 'close', 'settings', 'invites', 'revoke', 'desktop-code']) {
   routerAdd('POST', '/api/odyle/' + action, e => {
     const name = e.request.url.path.split('/').pop();
     return require(__hooks + '/lib/accounts.cjs')[name === 'desktop-code' ? 'desktopCode' : name](e);

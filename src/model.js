@@ -1,7 +1,8 @@
 const timestamp = date => Date.parse(String(date).replace(' ', 'T'));
 export function status(member, now = Date.now()) {
-  if (!member.sharing || !member.lastSeenAt || now - timestamp(member.lastSeenAt) >= 90000) return 'offline';
+  if (!member.sharing) return 'offline';
   if (!member.confirmed || !member.lastReadingAt) return 'unknown';
+  if (!member.lastSeenAt || now - timestamp(member.lastSeenAt) >= 90000) return 'offline';
   if (member.valid === false || member.source === 'manual') return 'stale';
   if (now - timestamp(member.lastReadingAt) >= 45000 || now - timestamp(member.lastSeenAt) >= 45000) return 'stale';
   return 'live';

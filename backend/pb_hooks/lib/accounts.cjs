@@ -78,6 +78,18 @@ function session(e) { return mutate(e, (app, user, body, affected) => {
   const record = new Record(app.findCollectionByNameOrId('publisher_sessions'));
   record.set('user', user.id); record.set('expiresAt', expiry(86400)); app.save(record); return { sessionId: record.id, sequence: 0 };
 }); }
+function character(e) { return mutate(e, (app, user, body, affected) => {
+  // Identity can be saved before the first game reading. This endpoint cannot
+  // supply energy, confidence, ownership, timestamps or a publisher session.
+  for (const key of Object.keys(body)) if (!['characterName', 'server', 'region'].includes(key)) throw new BadRequestError('Only character name, server and region may be saved here.');
+  const data = validate.characterIdentity(body);
+  const existing = list(app, 'characters', 'user = {:user} && region = {:region} && server = {:server} && characterName = {:name}', { user: user.id, region: data.region, server: data.server, name: data.characterName });
+  if (existing.length) return { character: existing[0] };
+  const record = new Record(app.findCollectionByNameOrId('characters')); record.set('user', user.id);
+  for (const key of ['characterName', 'server', 'region']) record.set(key, data[key]);
+  record.set('confirmed', false); record.set('valid', false); app.save(record);
+  affected.push(...roomsFor(app, user.id)); return { character: record };
+}); }
 function report(e) { return mutate(e, (app, user, body, affected) => {
   const session = ownSession(app, user.id, String(body.sessionId));
   const data = validate.reading(body, { sessionId: session.id, sequence: session.getInt('sequence') }, require(__hooks + '/lib/protocols.cjs').verifiedAdapters); let character;
@@ -149,4 +161,4 @@ function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
   if (clientId && clientSecret) { const users = app.findCollectionByNameOrId('users'); users.oauth2 = { enabled: true, providers: [{ name: 'discord', clientId, clientSecret }] }; app.save(users); }
 }
-module.exports = { create, join, rooms, snapshot, report, heartbeat, sharing, session, invalidate, leave, close, settings, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, character, report, heartbeat, sharing, session, invalidate, leave, close, settings, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };

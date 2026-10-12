@@ -7,7 +7,7 @@ A polished AION 2 party dashboard with **Discord sign-in**, persistent character
 ## Account and room flow
 
 1. Sign in with Discord. First sign-in creates your account.
-2. Pair the Windows packet reader. Characters retain their own region, server and last verified Odyle total.
+2. Pair the Windows packet reader and start it before logging the character into the game. It can detect and save the character name, server and region automatically. **+ Add → Save character** is the manual identity fallback. Saving a character never requires entering Odyle; its value stays unknown until a verified game reading arrives.
 3. Create a private room, or join one using an invitation from its owner.
 4. Choose whether to share your saved characters in each room. Other members see the last saved value and timestamp of every shared character.
 5. Pair your own Windows app using a one-time code from your dashboard account.
@@ -55,7 +55,7 @@ npm run test:integration
 npm run build
 ```
 
-Integration tests use synthetic accounts in a temporary PocketBase instance on port 18090. They verify provider configuration, closed password registration, multiple saved characters, account isolation, one-use pairing, realtime access, sequence rejection, and persistence across a real backend restart. A synthetic packet adapter is approved only in the disposable test backend; these tests do not validate the Global protocol. Test-only auth hooks are generated in the temporary directory and are **not included in production**. Live Discord login requires your own provider credentials.
+Integration tests use synthetic accounts in a temporary PocketBase instance on port 18090. They verify provider configuration, closed password registration, character creation before a reading, duplicate avoidance, multiple saved characters, account isolation, one-use pairing, realtime access, sequence rejection, and persistence across a real backend restart. Set `ODYLE_WINDOWS_CHECKS` and `ODYLE_WINDOWS_UI_CHECKS` to the Windows repository's corresponding test project paths to exercise both the compiled API client and the actual native Add/Save/Cancel flow. A synthetic packet adapter is approved only in the disposable test backend; these tests do not validate the Global protocol. Test-only auth hooks are generated in the temporary directory and are **not included in production**. Live Discord login requires your own provider credentials.
 
 GitHub Actions runs the checks and uploads the static build. [Deployment](docs/deployment.md), [API contract](docs/api.md), [privacy](docs/privacy.md).
 

@@ -91,6 +91,33 @@ test('first Discord OAuth sign-in creates an account; repeat sign-in retains its
   const invalid = await request('/api/collections/users/auth-with-oauth2', { ...credentials, code: 'invalid-code' });
   assert.equal(invalid.status, 400);
 });
+test('character identity can be saved before any game reading without accepting manual energy', async () => {
+  const user = (await request('/__test__/account', { name: 'Character metadata' })).data;
+  const identity = { characterName: ' NewMain ', server: ' Lumiel ', region: 'GLOBAL_EU' };
+  assert.equal((await action('character', identity)).status, 401);
+  const saves = await Promise.all(Array.from({ length: 3 }, () => action('character', identity, user)));
+  for (const save of saves) assert.equal(save.status, 200, JSON.stringify(save.data));
+  const c = saves[0].data.character;
+  assert.equal(new Set(saves.map(s => s.data.character.id)).size, 1);
+  assert.equal(c.user, user.record.id); assert.equal(c.characterName, 'NewMain'); assert.equal(c.server, 'Lumiel');
+  assert.equal(c.confirmed, false); assert.equal(c.valid, false); assert.equal(c.lastReadingAt, ''); assert.equal(c.lastSeenAt, ''); assert.equal(c.source, '');
+  for (const extra of [{ value: 390 }, { user: owner.record.id }, { confirmed: true }, { source: 'packet' }, { characterId: legacyId }]) assert.equal((await action('character', { ...identity, ...extra }, user)).status, 400);
+  for (const bad of [{ characterName: '' }, { server: '' }, { region: 'KR' }]) assert.equal((await action('character', { ...identity, ...bad }, user)).status, 400);
+  assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, outsider, 'GET')).status, 404);
+  const session = (await action('session', {}, user)).data;
+  const reported = await action('report', { ...identity, characterId: c.id, sessionId: session.sessionId, sequence: 1, value: 265, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, user);
+  assert.equal(reported.status, 200);
+  const again = (await action('character', identity, user)).data.character;
+  assert.equal(again.id, c.id); assert.equal(again.value, 265); assert.equal(again.confirmed, true); assert.equal(again.lastReadingAt, reported.data.character.lastReadingAt);
+  await stop(); await start();
+  assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, user, 'GET')).data.value, 265);
+});
+test('Windows UI can save a first character and an alt', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
+  const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
+  const pair = (await action('desktop-code', {}, user)).data;
+  const output = execFileSync('dotnet', ['run', '--project', process.env.ODYLE_WINDOWS_UI_CHECKS, '-c', 'Release', '--', url, pair.code], { encoding: 'utf8', timeout: 60000 });
+  assert.match(output, /UI character creation, alt, cancel, validation and persistence passed/);
+});
 test('Discord accounts, persistent characters, private rooms and desktop pairing', async t => {
   await t.test('Discord is the only enabled sign-in provider; public password registration is closed', async () => {
     const methods = await request('/api/collections/users/auth-methods', undefined, null, 'GET');
