@@ -19,7 +19,7 @@ The default Discord provider requests identity/email to establish the PocketBase
 
 ## Pair the Windows app
 
-Sign in on the dashboard, open **My rooms & characters**, and choose **Pair Windows app**. Paste the generated 16-character code into your own Windows companion. The code expires after five minutes, is stored only as a digest, and can be consumed once. Generating a new code revokes your previous unused code.
+Sign in on the dashboard, open **My rooms & characters**, and choose **Pair Windows app**, then **Copy connection link**. Click **Paste link & connect** in your own Windows companion; the link includes the backend address, so you do not have to type it. The 16-character code is carried in the URL fragment, expires after five minutes, is stored only as a digest, and can be consumed once. Generating a new link revokes your previous unused code. **Using an older app? Show code** provides the original code-only workflow.
 
 The Windows app receives a PocketBase token for that same account and stores it using DPAPI. It can select existing characters or save more characters, and join existing rooms or enter another room invite. Room invitation codes and desktop pairing codes serve different purposes.
 

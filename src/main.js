@@ -1,5 +1,6 @@
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc } from './model';
+import { connectionLink } from './connection';
 import './style.css';
 import './accounts.css';
 
@@ -169,7 +170,11 @@ app.addEventListener('click', async e => {
       case 'toggle-sharing': await send('sharing', { roomId: room.id, enabled: !me().sharing }); await refreshRoom(); break;
       case 'generate-invites': invites = (await send('invites', { roomId: room.id })).invites; inviteDialog(); break;
       case 'custom-cost': modal('Reward cube cost', `<form id="cost-form"><label>Odyle per cube<input name="cost" type="number" min="1" max="1000" value="${room.cost}" required></label><button class="button primary" type="submit">Save cost</button></form>`); break;
-      case 'desktop': { const pair = await send('desktop-code'); modal('Pair your Windows companion', `<p>Paste this one-time code in the Windows app for this server. It expires in five minutes. Share it only with your own app.</p><div class="invite-row"><div><span>ONE-TIME ACCOUNT PAIRING</span><strong>${esc(pair.code.match(/.{1,4}/g).join(' '))}</strong></div><button class="icon-button" data-copy="${esc(pair.code)}" aria-label="Copy pairing code">${icon('copy')}</button></div>`); break; }
+      case 'desktop': {
+        const pair = await send('desktop-code'), link = connectionLink(backend, pair.code);
+        modal('Connect your Windows app', `<p>Copy your connection link, then click <strong>Paste link & connect</strong> in Odyle. The server address is included.</p><button class="button primary" data-copy="${esc(link)}">${icon('copy')} Copy connection link</button><p>Expires in five minutes and works once. Use it only in your own Windows app.</p><details><summary>Using an older app? Show code</summary><div class="invite-row"><div><span>WINDOWS PAIRING CODE</span><strong>${esc(pair.code.match(/.{1,4}/g).join(' '))}</strong></div><button class="icon-button" data-copy="${esc(pair.code)}" aria-label="Copy pairing code">${icon('copy')}</button></div></details>`);
+        break;
+      }
       case 'help': modal('Saved characters, fresh readings', '<p>Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.</p><p>Each room has its own sharing choice. Friends only see character values you opted to share there. A viewer invite grants read-only room access.</p><p>The Windows app pairs with a one-time code. It sends your confirmed manual reading, never Discord credentials or raw game traffic.</p><p>After 45 seconds a reading becomes stale. A heartbeat updates presence, not the stored reading timestamp. Automatic game reading is unavailable until Global validation.</p>'); break;
       case 'account': if (!pb.authStore.isValid || demo) { demo = false; room = null; welcome(); } else modal('Your Discord account', `<p>${esc(pb.authStore.record.displayName)} · Rooms and characters remain saved after sign-out.</p><button class="button secondary" data-action="library">My rooms & characters</button><button class="button secondary" data-action="desktop">Pair Windows app</button>${room ? `<button class="button danger" data-action="leave-room">${owner() ? 'Close this room' : 'Leave this room'}</button>` : ''}<button class="text-button" data-action="logout">Sign out of this browser</button>`); break;
       case 'leave-room': await send(owner() ? 'close' : 'leave', { roomId: room.id }); await library(); toast('Your saved characters are retained.'); break;
