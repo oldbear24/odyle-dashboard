@@ -25,8 +25,12 @@ The Windows app receives a PocketBase token for that same account and stores it 
 
 ## Verification limits
 
-Automated tests use synthetic accounts in an isolated temporary PocketBase instance; there is no test sign-in endpoint in production. They verify Discord is the only enabled provider, public password registration is closed, pairing is one-use, account authorization is enforced, and saved values survive a real server restart.
+Automated tests use synthetic accounts in an isolated temporary PocketBase instance; there is no test sign-in endpoint in production. A local mock supplies Discord token/user responses while PocketBase performs the real OAuth code exchange, first account creation, identity linking and repeat login. Tests also verify Discord is the only enabled provider, direct public registration is closed, pairing is one-use, account authorization is enforced, and saved values survive a real server restart.
 
 A complete live Discord sign-in requires your own Discord application's credentials and registered callback. This external round trip has not been exercised without those credentials.
+
+## First-login permission error
+
+If first sign-in reports **Only superusers can perform this action**, update to the latest repository version and restart PocketBase so migration `1791763202_discord_registration.js` is applied. The `users` create rule must be `@request.context = "oauth2"`: PocketBase checks it while creating a new OAuth account. A locked (`null`) rule also blocks Discord signup. The context is assigned by PocketBase; direct account creation remains denied and password sign-in stays disabled. The migration preserves existing users, rooms, characters and provider configuration.
 
 Reference: [PocketBase OAuth2 setup and callback](https://pocketbase.io/docs/authentication/#oauth2-integration), [Discord OAuth2 documentation](https://discord.com/developers/docs/topics/oauth2).
