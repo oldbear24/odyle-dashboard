@@ -23,3 +23,4 @@ onRealtimeMessageSend(e => {
 });
 onBootstrap(e => { e.next(); require(__hooks + '/lib/accounts.cjs').configureDiscord(e.app); });
 cronAdd('odyle-expiry', '*/5 * * * *', () => require(__hooks + '/lib/accounts.cjs').cleanup());
+cronAdd('odyle-portraits', '* * * * *', () => require(__hooks + '/lib/accounts.cjs').refreshPortraits());

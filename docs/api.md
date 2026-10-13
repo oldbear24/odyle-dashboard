@@ -34,6 +34,12 @@ Room codes are valid for 30 minutes; memberships and rooms have no automatic ina
 
 Own characters can be read with the normal PocketBase `characters` collection API. Others' records and all direct character writes are locked. Shared readings are read via authorized room snapshots; the Windows app reads `GET /api/odyle/snapshot/{id}` for each room to list the party.
 
+### Character pictures
+
+Each character record carries `portrait`, a file name or empty. Clients load the image from `/api/files/characters/{id}/{portrait}` (the SDK's `pb.files.getURL(record, record.portrait)`); room snapshots include both fields for shared characters only, so other members never receive the link of a private character.
+
+`portrait` is always the character's **official AION 2 portrait**; players cannot set, upload or replace it, and no route writes it. A backend cron job looks up new characters within a minute through PLAYNC's public Global character search (`api-search.plaync.com/aion2global/search/v2/character`, by name, server id and region) and downloads the `profileImageUrl` it lists from `profileimg.plaync.com`. It retries characters without a portrait hourly and refreshes the others daily, rewriting the file only when the image changed. The search server id is rebuilt from the saved server name and region (the game protocol's race × 1000 + region × 100 + server number); NA East and West are both tried. Characters the search does not list, such as ones on servers the reader cannot name, keep their initials; a failed lookup keeps the last downloaded portrait.
+
 `POST /api/odyle/character` accepts only `{ characterName, server, region }` and returns `{ character }` for the signed-in account. It saves identity before any reading, with unknown Odyle (`confirmed: false`, `valid: false`, no reading timestamp or source). Repeating the same identity returns the existing record without changing its last value or confidence. Ownership always comes from authentication; extra fields such as `value`, `user`, `source`, `confirmed` and `characterId` are rejected. The Windows app uses this endpoint for automatic game identification and the explicit **Save character** fallback.
 
 `POST /api/odyle/session` with `{}` returns `{ sessionId, sequence: 0 }`. Optional `{ previousSessionId }` rotates that device's session and invalidates its last readings without clearing stored values or other devices' sessions.

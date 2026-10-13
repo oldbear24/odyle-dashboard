@@ -25,6 +25,7 @@ If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker bui
 - Bootstrap the first PocketBase operator account locally. Restrict the management path `/_/` at your proxy to operator access.
 - Application clients use the Discord-enabled `users` auth collection, never superusers. Configure the provider using [Discord setup](discord-setup.md).
 - Back up the data volume before upgrading PocketBase or migrations. Keep the pinned binary and SDK versions together and run integration checks on upgrades.
+- Character pictures need outbound HTTPS from the backend to `api-search.plaync.com`, `profileimg.plaync.com` and `fizz-download.playnccdn.com` (the portrait host redirects there). Without it characters keep their initials. `PLAYNC_SEARCH_URL` and `PLAYNC_IMAGE_URL` override both hosts for tests.
 - Request/IP logs are disabled by the migration. Configure proxy logs consistently with your privacy preference.
 - Rate limits are enabled for room creation, invite joins and application routes. Configure trusted proxy IP headers only for your own proxy; do not trust arbitrary forwarded client IP headers.
 - Rooms and account-owned character values persist in the data volume. Freshness uses server timestamps; client clocks affect only display, corrected using heartbeat responses.

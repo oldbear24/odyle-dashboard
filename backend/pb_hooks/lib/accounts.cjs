@@ -1,4 +1,5 @@
 const validate = require(__hooks + '/lib/validation.cjs');
+const portraits = require(__hooks + '/lib/portraits.cjs');
 const now = () => new Date().toISOString();
 const expiry = seconds => new Date(Date.now() + seconds * 1000).toISOString();
 // Date fields are stored as '2026-10-13 21:40:00.000Z' and filters compare them as
@@ -125,6 +126,29 @@ function sharing(e) { return mutate(e, (app, user, body, affected) => {
   m.set('sharedCharacters', next); app.save(m); affected.push(m.getString('room'));
   return { sharedCharacters: next };
 }); }
+// Loads the official portrait into the character; the file is only rewritten when
+// the image changed. Download errors are thrown after the attempt is recorded.
+// Never call inside a transaction: it waits on PLAYNC. Portraits come only from
+// the game; no route lets players set or replace them.
+function gamePortrait(app, id) {
+  const before = app.findRecordById('characters', id); let found = null, failure = null;
+  try { found = portraits.fetchPortrait(before.getString('characterName'), before.getString('server'), before.getString('region')); } catch (error) { failure = error; }
+  // Reload: a reading may have been saved while PLAYNC answered.
+  const c = app.findRecordById('characters', id);
+  const changed = Boolean(found) && (found.hash !== c.getString('portraitHash') || !c.getString('portrait'));
+  if (changed) { c.set('portrait', found.file); c.set('portraitHash', found.hash); }
+  c.set('portraitCheckedAt', now()); app.save(c);
+  if (changed) notify(app, roomsFor(app, c.getString('user')));
+  if (failure) throw failure;
+}
+// Cron: new characters get their official portrait within a minute, missing ones
+// are retried hourly and the rest refresh daily. A few characters per run keeps
+// traffic to PLAYNC low.
+function refreshPortraits() {
+  const ago = ms => stamp(new Date(Date.now() - ms));
+  const due = $app.findRecordsByFilter('characters', "portraitCheckedAt = '' || (portrait = '' && portraitCheckedAt < {:hour}) || portraitCheckedAt < {:day}", 'portraitCheckedAt', 5, 0, { hour: ago(3600000), day: ago(86400000) });
+  for (const c of due) { try { gamePortrait($app, c.id); } catch (error) { console.log('Odyle portrait refresh failed for character ' + c.id + ': ' + error.message); } }
+}
 function heartbeat(e) { return mutate(e, (app, user, body, affected) => {
   if (body.sessionId) {
     const session = ownSession(app, user.id, String(body.sessionId)); session.set('expiresAt', expiry(86400)); app.save(session);
@@ -176,4 +200,4 @@ function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
   if (clientId && clientSecret) { const users = app.findCollectionByNameOrId('users'); users.oauth2 = { enabled: true, providers: [{ name: 'discord', clientId, clientSecret }] }; app.save(users); }
 }
-module.exports = { create, join, rooms, snapshot, character, report, heartbeat, sharing, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };

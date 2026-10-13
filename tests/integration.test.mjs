@@ -9,7 +9,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { connect } from './sse.mjs';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18090';
-let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, legacyId, legacyRoomId;
+let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId;
+// Synthetic official portraits served by the PLAYNC stand-in; bump the version to change one.
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+let portraitVersion = 1;
 const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js'];
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
@@ -19,7 +22,7 @@ const action = (name, body, auth) => request('/api/odyle/' + name, body, auth);
 const snapshot = auth => request('/api/odyle/snapshot/' + room.id, undefined, auth, 'GET');
 async function stop() { if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('exit', resolve)); child.kill(); await closed; } }
 async function start() {
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret' } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl } });
   let log = ''; child.stdout.on('data', v => log += v); child.stderr.on('data', v => log += v);
   for (let i = 0; i < 50; i++) {
     try {
@@ -48,6 +51,21 @@ before(async () => {
   });
   await new Promise(resolve => oauthServer.listen(0, '127.0.0.1', resolve));
   oauthUrl = 'http://127.0.0.1:' + oauthServer.address().port;
+  // Stands in for PLAYNC's public character search and portrait host. Lumiel EU is
+  // server 2304; Nezekan on NA West is 1202 (NA East 1102 is searched first).
+  playncServer = createServer((req, res) => {
+    const query = new URL(req.url, 'http://x').searchParams, listed = { 'Pictured|2304|eu': '/images?charKey=1', 'Western|1202|naw': '/images?charKey=2' };
+    if (req.url.startsWith('/search')) {
+      if (query.get('keyword') === 'Broken') { res.writeHead(503); return res.end('{}'); }
+      const hit = listed[[query.get('keyword'), query.get('serverId'), query.get('region')].join('|')];
+      res.setHeader('Content-Type', 'application/json');
+      return res.end(JSON.stringify({ list: hit ? [{ name: '<strong>' + query.get('keyword') + '</strong>', serverId: Number(query.get('serverId')), profileImageUrl: hit }] : [] }));
+    }
+    if (req.url.startsWith('/images')) { res.setHeader('Content-Type', 'image/png'); return res.end(Buffer.concat([png, Buffer.from([portraitVersion])])); }
+    res.writeHead(404); res.end();
+  });
+  await new Promise(resolve => playncServer.listen(0, '127.0.0.1', resolve));
+  playncUrl = 'http://127.0.0.1:' + playncServer.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-account-test-'));
   await cp(resolve('backend/pb_hooks'), join(directory, 'hooks'), { recursive: true });
   await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true, filter: path => !upgrades.some(name => path.endsWith(name)) });
@@ -57,6 +75,8 @@ before(async () => {
   // is no password login, test auth route or Discord bypass in production.
   await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; let user; try{user=e.app.findFirstRecordByData('users','displayName',name);}catch{user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);}return e.json(200,{token:user.newAuthToken(),record:user});});`);
   await writeFile(join(directory, 'hooks', 'oauth-fixture.pb.js'), `routerAdd('POST','/__test__/oauth-provider',e => { const users=e.app.findCollectionByNameOrId('users'); users.oauth2={enabled:true,providers:[{name:'discord',clientId:'test-application',clientSecret:'test-only-secret',tokenURL:'${oauthUrl}/token',userInfoURL:'${oauthUrl}/user'}]};e.app.save(users); return e.json(200,{success:true}); });`);
+  // Runs the portrait cron job now; age-portrait makes a character's daily refresh due.
+  await writeFile(join(directory, 'hooks', 'portraits-fixture.pb.js'), `routerAdd('POST','/__test__/refresh-portraits', e => { require(__hooks + '/lib/accounts.cjs').refreshPortraits(); return e.json(200, {}); }); routerAdd('POST','/__test__/age-portrait', e => { const c=e.app.findRecordById('characters', e.requestInfo().body.id); c.set('portraitCheckedAt', new Date(Date.now() - 2 * 86400000).toISOString()); e.app.save(c); return e.json(200, {}); });`);
   // Runs the odyle-expiry cron job on demand and reports which of the given invite codes it kept.
   await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
   // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
@@ -72,7 +92,7 @@ before(async () => {
   for (const name of upgrades) await cp(resolve('backend/pb_migrations', name), join(directory, 'migrations', name));
   await start();
 });
-after(async () => { await stop(); if (oauthServer) await new Promise(resolve => oauthServer.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
+after(async () => { await stop(); for (const server of [oauthServer, playncServer]) if (server) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
 test('packet-only upgrade preserves legacy totals and removes current confidence', async () => {
   const legacy = await request('/api/collections/characters/records/' + legacyId, undefined, outsider, 'GET');
   assert.equal(legacy.status, 200); assert.equal(legacy.data.value, 123); assert.equal(legacy.data.confirmed, true); assert.equal(legacy.data.valid, false);
@@ -123,6 +143,49 @@ test('character identity can be saved before any game reading without accepting 
   assert.equal(again.id, c.id); assert.equal(again.value, 265); assert.equal(again.confirmed, true); assert.equal(again.lastReadingAt, reported.data.character.lastReadingAt);
   await stop(); await start();
   assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, user, 'GET')).data.value, 265);
+});
+test('characters get their official portrait from the game; players cannot change it', async () => {
+  const [author, mate] = await Promise.all(['Portrait owner', 'Portrait mate'].map(async name => (await request('/__test__/account', { name })).data));
+  const save = async (characterName, server, region = 'GLOBAL_EU') => (await action('character', { characterName, server, region }, author)).data.character;
+  // NA East and West share server names; Western is only listed on NA West.
+  const c = await save('Pictured', 'Lumiel'), western = await save('Western', 'Nezekan', 'GLOBAL_NA');
+  // Not listed by the search, an unknown server name and a search outage.
+  const missing = [await save('Unlisted', 'Lumiel'), await save('Pictured', 'Atreia'), await save('Broken', 'Lumiel')];
+  const made = (await action('create', { name: 'Portrait room' }, author)).data;
+  assert.equal((await action('join', { code: made.invites.find(i => i.role === 'reporter').code }, mate)).status, 200);
+  const own = async (id = c.id) => (await request('/api/collections/characters/records/' + id, undefined, author, 'GET')).data;
+  const file = async name => fetch(url + '/api/files/characters/' + c.id + '/' + name);
+  const seen = async auth => (await request('/api/odyle/snapshot/' + made.room.id, undefined, auth, 'GET')).data.members.flatMap(m => m.characters).find(x => x.id === c.id);
+  // Each cron run handles five characters; other tests leave a few unchecked ones too.
+  const refresh = async () => { for (let i = 0; i < 3; i++) assert.equal((await request('/__test__/refresh-portraits', {})).status, 200); };
+  const dayLater = async () => assert.equal((await request('/__test__/age-portrait', { id: c.id })).status, 200);
+
+  await refresh();
+  const game = await own(); assert.match(game.portrait, /\.png$/);
+  assert.equal('portraitHash' in game || 'portraitCheckedAt' in game, false);
+  assert.equal(game.confirmed, false); assert.equal(game.lastReadingAt, '');
+  const served = await file(game.portrait); assert.equal(served.status, 200); assert.equal(served.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await served.arrayBuffer()), Buffer.concat([png, Buffer.from([1])]));
+  assert.match((await own(western.id)).portrait, /\.png$/);
+  for (const m of missing) assert.equal((await own(m.id)).portrait, '', m.characterName + ' on ' + m.server);
+
+  // Rechecked daily; the file is only rewritten when the official image changed.
+  await refresh(); assert.equal((await own()).portrait, game.portrait);
+  await dayLater(); await refresh(); assert.equal((await own()).portrait, game.portrait);
+  portraitVersion = 2; await dayLater(); await refresh();
+  const updated = await own(); assert.notEqual(updated.portrait, game.portrait); assert.equal((await file(game.portrait)).status, 404);
+
+  // Rooms see the picture only for characters shared with them.
+  assert.equal((await seen(author)).portrait, updated.portrait); assert.equal(await seen(mate), undefined);
+  assert.equal((await action('sharing', { roomId: made.room.id, characterId: c.id, enabled: true }, author)).status, 200);
+  assert.equal((await seen(mate)).portrait, updated.portrait);
+
+  // Players have no way to set or replace a picture.
+  const form = () => { const f = new FormData(); f.append('characterId', c.id); f.append('portrait', new Blob([png], { type: 'image/png' }), 'mine.png'); return f; };
+  assert.equal((await fetch(url + '/api/odyle/portrait', { method: 'POST', headers: { Authorization: author.token }, body: form() })).status, 404);
+  assert.equal((await action('portrait', { characterId: c.id, source: 'game' }, author)).status, 404);
+  assert.equal((await fetch(url + '/api/collections/characters/records/' + c.id, { method: 'PATCH', headers: { Authorization: author.token }, body: form() })).status, 403);
+  assert.equal((await own()).portrait, updated.portrait);
 });
 test('expiry cron removes expired invites but keeps fresh invites and pairing codes', async () => {
   // Stored dates read '2026-10-13 21:40:00.000Z'; comparing them with an ISO 'T' timestamp
