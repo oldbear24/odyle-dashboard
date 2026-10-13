@@ -116,7 +116,7 @@ test('Windows UI can save a first character and an alt', { skip: !process.env.OD
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
   const pair = (await action('desktop-code', {}, user)).data;
   const output = execFileSync('dotnet', ['run', '--project', process.env.ODYLE_WINDOWS_UI_CHECKS, '-c', 'Release', '--', url, pair.code], { encoding: 'utf8', timeout: 60000 });
-  assert.match(output, /UI character creation, alt, cancel, validation and persistence passed/);
+  assert.match(output, /UI character creation, alt, cancel, validation, publishing and persistence passed/);
 });
 test('Discord accounts, persistent characters, private rooms and desktop pairing', async t => {
   await t.test('Discord is the only enabled sign-in provider; public password registration is closed', async () => {

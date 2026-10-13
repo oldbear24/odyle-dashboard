@@ -16,7 +16,7 @@ Accounts, rooms, memberships and character values persist across sign-outs and s
 
 Room invite codes expire after 30 minutes. Membership remains until the user leaves or the room owner removes them. Desktop pairing codes expire after five minutes and can be used once. Viewer invitations give read-only room access; viewers cannot share characters in that room or manage it.
 
-**Manual Odyle entry is disabled. Global packet validation is pending.** The Windows app contains an experimental passive Npcap reader with local unverified candidates. It cannot publish them. The production adapter registry is empty, so new totals cannot yet be saved. Existing totals remain as historical values, excluded from current readiness. Raw game traffic is never uploaded to PocketBase. See [packet reader limitations](https://github.com/oldbear24/odyle-windows/blob/main/docs/packet-reader.md).
+**Manual Odyle entry is disabled; values come from the Windows packet reader.** The app decodes the Odyle snapshot and live updates from the game's own packets and publishes them under the adapter name `global-reference-v1`, which `backend/pb_hooks/lib/protocols.cjs` lists as accepted. A reading stays live while the app keeps confirming it and turns stale 45 seconds after confirmations stop; the last value is always kept. Raw game traffic is never uploaded to PocketBase. **When you deploy, copy the current `backend/pb_hooks` to the server as well**: a backend with an empty registry rejects every reading and the app shows *Not saved*. See [packet reader details](https://github.com/oldbear24/odyle-windows/blob/main/docs/packet-reader.md).
 
 ## Run locally
 

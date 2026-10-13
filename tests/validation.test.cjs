@@ -29,8 +29,10 @@ test('reject stale sequence, wrong session, manual data, unknown adapters, fract
   for (const change of [{ sequence: 5 }, { sessionId: 'old' }, { source: 'manual' }, { parserVersion: 'unverified' }, { value: -1 }, { value: 1.5 }, { value: null }, { confirmed: false }, { characterName: '' }, { region: 'KR' }]) assert.throws(() => reading({ ...input, ...change }, current, ['test-fixture-v1']));
 });
 
-test('production has no approved Global adapter yet', () => {
+test('production approves only the reference Global adapter', () => {
   const protocols = require('../backend/pb_hooks/lib/protocols.cjs');
-  assert.deepEqual(protocols.verifiedAdapters, []);
+  assert.deepEqual(protocols.verifiedAdapters, ['global-reference-v1']);
+  assert.equal(reading({ ...input, parserVersion: 'global-reference-v1' }, current, protocols.verifiedAdapters).parserVersion, 'global-reference-v1');
   assert.throws(() => reading(input, current, protocols.verifiedAdapters), /not been validated/);
+  assert.throws(() => reading({ ...input, parserVersion: 'reference-odyle-v1-unverified' }, current, protocols.verifiedAdapters), /not been validated/);
 });
