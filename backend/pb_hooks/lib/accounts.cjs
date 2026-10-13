@@ -32,7 +32,7 @@ function notify(app, roomIds) {
 // Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
 // Rooms keep their legacy cost field, but every response reports the setting.
 function odylePerCube(app) { try { return app.findFirstRecordByFilter('odyle_settings', 'id != ""').getInt('odylePerCube') || 40; } catch { return 40; } }
-const roomJson = (app, room) => ({ ...room.publicExport(), cost: odylePerCube(app) });
+const roomJson = (room, cost) => ({ ...room.publicExport(), cost });
 const shared = m => Array.from(m.getStringSlice('sharedCharacters'));
 const roomsFor = (app, userId) => list(app, 'room_members', 'user = {:user}', { user: userId }).map(m => m.getString('room'));
 function run(e, action) {
@@ -58,35 +58,48 @@ function addMember(app, roomId, userId, role) {
 }
 function create(e) { return mutate(e, (app, user, body) => {
   const room = new Record(app.findCollectionByNameOrId('party_rooms'));
-  room.set('name', validate.text(body.name, 'Room name', 60)); room.set('owner', user.id); room.set('cost', odylePerCube(app)); app.save(room);
-  return { room: roomJson(app, room), membership: addMember(app, room.id, user.id, 'owner'), invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
+  const cost = odylePerCube(app); room.set('name', validate.text(body.name, 'Room name', 60)); room.set('owner', user.id); room.set('cost', cost); app.save(room);
+  return { room: roomJson(room, cost), membership: addMember(app, room.id, user.id, 'owner'), invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
 }); }
 function join(e) { return mutate(e, (app, user, body, affected) => {
   const code = validate.text(body.code, 'Invite code', 20).replace(/[\s-]/g, '').toUpperCase(); let invitation;
   try { invitation = app.findFirstRecordByData('room_invites', 'digest', $security.sha256(code)); } catch { throw new BadRequestError('Invite is invalid or expired.'); }
   if (Date.parse(invitation.getString('expiresAt')) <= Date.now()) throw new BadRequestError('Invite is invalid or expired.');
-  const room = app.findRecordById('party_rooms', invitation.getString('room'));
+  const room = app.findRecordById('party_rooms', invitation.getString('room')), cost = odylePerCube(app);
   const existing = list(app, 'room_members', 'room = {:room} && user = {:user}', { room: room.id, user: user.id });
-  if (existing.length) return { room: roomJson(app, room), membership: existing[0] };
+  if (existing.length) return { room: roomJson(room, cost), membership: existing[0] };
   if (app.countRecords('room_members', $dbx.hashExp({ room: room.id })) >= 50) throw new BadRequestError('Room is full.');
-  const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room: roomJson(app, room), membership: member };
+  const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room: roomJson(room, cost), membership: member };
 }); }
-function rooms(e) { return run(e, () => e.json(200, { odylePerCube: odylePerCube(e.app), rooms: list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }).map(m => ({ ...roomJson(e.app, e.app.findRecordById('party_rooms', m.getString('room'))), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) })); }
+// One query for the memberships, one for their rooms and one for the cost; serverNow
+// lets the dashboard correct its clock without a heartbeat round trip.
+function rooms(e) { return run(e, () => {
+  const cost = odylePerCube(e.app), memberships = list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }), byId = {};
+  for (const r of memberships.length ? e.app.findRecordsByIds('party_rooms', memberships.map(m => m.getString('room'))) : []) byId[r.id] = r;
+  return e.json(200, { odylePerCube: cost, serverNow: now(), rooms: memberships.filter(m => byId[m.getString('room')]).map(m => ({ ...roomJson(byId[m.getString('room')], cost), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) });
+}); }
 function snapshot(e) { return run(e, () => {
   const id = e.request.pathValue('id'); membership(e.app, e.auth.id, id);
+  // Three queries for the whole room: members, their accounts and all their
+  // characters, instead of two lookups per member.
+  const room = e.app.findRecordById('party_rooms', id), members = list(e.app, 'room_members', 'room = {:room}', { room: id });
+  const userIds = members.map(m => m.getString('user')), names = {}, characters = {};
+  for (const u of userIds.length ? e.app.findRecordsByIds('users', userIds) : []) names[u.id] = u.getString('displayName');
+  for (const c of userIds.length ? e.app.findAllRecords('characters', $dbx.in('user', ...userIds)) : []) (characters[c.getString('user')] ||= []).push(c);
+  for (const owned of Object.values(characters)) owned.sort((a, b) => (a.getString('created') < b.getString('created') ? -1 : a.getString('created') > b.getString('created') ? 1 : 0));
   // Others see only the characters a member linked to this room; members always
   // see all of their own, each flagged with whether it is shared here.
-  return e.json(200, { room: roomJson(e.app, e.app.findRecordById('party_rooms', id)), serverNow: now(), members: list(e.app, 'room_members', 'room = {:room}', { room: id }).map(m => {
+  return e.json(200, { room: roomJson(room, odylePerCube(e.app)), serverNow: now(), members: members.map(m => {
     const linked = shared(m), mine = m.getString('user') === e.auth.id;
-    return { ...m.publicExport(), sharing: linked.length > 0, displayName: e.app.findRecordById('users', m.getString('user')).getString('displayName'),
-      characters: list(e.app, 'characters', 'user = {:user}', { user: m.getString('user') }).filter(c => mine || linked.includes(c.id)).map(c => ({ ...c.publicExport(), shared: linked.includes(c.id) })) };
-  }), wishlist: wishlistOf(e.app, id) });
+    return { ...m.publicExport(), sharing: linked.length > 0, displayName: names[m.getString('user')] || '',
+      characters: (characters[m.getString('user')] || []).filter(c => mine || linked.includes(c.id)).map(c => ({ ...c.publicExport(), shared: linked.includes(c.id) })) };
+  }), wishlist: wishlistOf(e.app, id, members) });
 }); }
 // The room's dungeon wishlist grouped by dungeon, most wanted first, then oldest.
 // `users` are the accounts that still need it; clients name them from `members`.
-function wishlistOf(app, roomId) {
+function wishlistOf(app, roomId, members = list(app, 'room_members', 'room = {:room}', { room: roomId })) {
   const users = {}, entries = {};
-  for (const m of list(app, 'room_members', 'room = {:room}', { room: roomId })) users[m.id] = m.getString('user');
+  for (const m of members) users[m.id] = m.getString('user');
   for (const w of app.findRecordsByFilter('room_wishes', 'room = {:room}', 'created', 0, 0, { room: roomId })) {
     const key = w.getString('key'), entry = entries[key] || (entries[key] = { key, dungeon: w.getString('dungeon'), since: w.getString('created'), users: [] });
     entry.users.push(users[w.getString('member')]);
@@ -142,8 +155,13 @@ function report(e) { return mutate(e, (app, user, body, affected) => {
     const existing = list(app, 'characters', 'user = {:user} && region = {:region} && server = {:server} && characterName = {:name}', { user: user.id, region: data.region, server: data.server, name: data.characterName });
     character = existing[0] || new Record(app.findCollectionByNameOrId('characters')); character.set('user', user.id);
   }
-  for (const key of ['value', 'characterName', 'server', 'region']) character.set(key, data[key]);
-  character.set('confirmed', true); character.set('valid', true); character.set('source', data.source); character.set('parserVersion', data.parserVersion); character.set('lastReadingAt', now()); character.set('lastSeenAt', now()); character.set('readingSession', session.id); app.save(character);
+  // An existing character keeps the identity the game gave it; only a lookup without
+  // characterId may name a new one. lastReadingAt marks the last change, so a value
+  // re-sent unchanged (the reader resumed after a pause) keeps its timestamp.
+  if (!body.characterId) for (const key of ['characterName', 'server', 'region']) character.set(key, data[key]);
+  if (!character.getBool('confirmed') || character.getInt('value') !== data.value) character.set('lastReadingAt', now());
+  character.set('value', data.value);
+  character.set('confirmed', true); character.set('valid', true); character.set('source', data.source); character.set('parserVersion', data.parserVersion); character.set('lastSeenAt', now()); character.set('readingSession', session.id); app.save(character);
   session.set('sequence', data.sequence); session.set('expiresAt', expiry(86400)); app.save(session); affected.push(...roomsFor(app, user.id)); return { character, serverNow: now() };
 }); }
 function sharing(e) { return mutate(e, (app, user, body, affected) => {
@@ -180,10 +198,13 @@ function refreshPortraits() {
   const due = $app.findRecordsByFilter('characters', "portraitCheckedAt = '' || (portrait = '' && portraitCheckedAt < {:hour}) || portraitCheckedAt < {:day}", 'portraitCheckedAt', 5, 0, { hour: ago(3600000), day: ago(86400000) });
   for (const c of due) { try { gamePortrait($app, c.id); } catch (error) { console.log('Odyle portrait refresh failed for character ' + c.id + ': ' + error.message); } }
 }
-function heartbeat(e) { return mutate(e, (app, user, body, affected) => {
+// Presence only. No realtime refresh is sent: clients derive live/stale from
+// lastSeenAt on their own schedule, and a broadcast every 20 seconds per reader
+// made every member refetch the whole snapshot for nothing.
+function heartbeat(e) { return mutate(e, (app, user, body) => {
   if (body.sessionId) {
     const session = ownSession(app, user.id, String(body.sessionId)); session.set('expiresAt', expiry(86400)); app.save(session);
-    if (body.characterId) { const c = ownCharacter(app, user.id, String(body.characterId)); if (c.getString('readingSession') === session.id) { c.set('lastSeenAt', now()); app.save(c); affected.push(...roomsFor(app, user.id)); } }
+    if (body.characterId) { const c = ownCharacter(app, user.id, String(body.characterId)); if (c.getString('readingSession') === session.id) { c.set('lastSeenAt', now()); app.save(c); } }
   }
   return { serverNow: now() };
 }); }

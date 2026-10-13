@@ -125,7 +125,7 @@ function inviteDialog() {
 async function desktopDialog() {
   if (!pb.authStore.isValid || demo) return toast('Sign in with Discord to connect your reader.');
   const pair = await send('desktop-code'), link = connectionLink(backend, pair.code);
-  modal('Connect your packet reader', `<p>Copy this link, then click <strong>Paste link & connect</strong> in the Windows app. Choose your character and start the packet reader.</p><button class="button primary" data-copy="${esc(link)}">${icon('copy')} Copy connection link</button><p>Expires in five minutes and works once. The app requires Npcap.</p><div class="info-panel"><h3>How it works</h3><p>Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.</p></div>`);
+  modal('Connect your packet reader', `<p>Copy this link, then click <strong>Paste link & connect</strong> in the Windows app. The reader starts by itself and follows the character you log in with.</p><button class="button primary" data-copy="${esc(link)}">${icon('copy')} Copy connection link</button><p>Expires in five minutes and works once. The app requires Npcap.</p><div class="info-panel"><h3>How it works</h3><p>Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.</p></div>`);
 }
 async function send(action, body = {}) {
   const data = await pb.send('/api/odyle/' + action, { method: 'POST', body });
@@ -144,7 +144,7 @@ async function library(ticket) {
   room = null; members = []; wishlist = []; demo = false; invites = [];
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
   if (ticket !== navigation) return;
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; online = true; libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -192,21 +192,25 @@ async function authenticated() {
   // A visit without a page in its URL resumes the last page of this browser.
   if (!/^#\//.test(location.hash)) history.replaceState(null, '', '#' + (remembered().path || '/'));
   clearInterval(timer); lastPulse = Date.now();
+  // Realtime pushes real changes. This fallback refetch every 15 seconds keeps
+  // presence current (readers report every 20 seconds, a reading turns stale after
+  // 45), and the 5-second tick only redraws ages and live/stale transitions locally.
   timer = setInterval(async () => {
     if (busy || demo) return;
     try {
-      if (Date.now() - lastPulse >= 20000) {
-        await send('heartbeat'); lastPulse = Date.now(); online = true;
-        if (!room) {
+      if (Date.now() - lastPulse >= 15000) {
+        lastPulse = Date.now();
+        if (room) await refreshRoom();
+        else {
           const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-          if (!room) { rooms = list.rooms; characters = mine; }
+          if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); }
         }
+        online = true;
       }
-      if (room) await refreshRoom();
-      else if (!document.querySelector('#modal')?.open) {
-        if (document.querySelector('.personal-characters .member-grid') && characters.length && librarySignature() !== renderedLibrary) renderCharacters();
-        else updateAges();
-      }
+      if (document.querySelector('#modal')?.open) return;
+      if (room) renderDashboard();
+      else if (document.querySelector('.personal-characters .member-grid') && characters.length && librarySignature() !== renderedLibrary) renderCharacters();
+      else updateAges();
     } catch { online = false; }
   }, 5000);
   await show(true).catch(error => toast(error.message));

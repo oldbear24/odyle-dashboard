@@ -29,13 +29,4 @@ function reading(body, current, verifiedAdapters = []) {
   if (!regions.includes(body.region)) throw new Error('Select a Global region.');
   return { value: integer(body.value, 'Odyle', 0, 1000000), characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region, sequence: body.sequence, source: 'packet', parserVersion };
 }
-function status(member, now) {
-  if (!member.sharing) return 'offline';
-  if (!member.confirmed || !member.lastReadingAt) return 'unknown';
-  if (!member.lastSeenAt || now - Date.parse(member.lastSeenAt) >= 90000) return 'offline';
-  // Readings are sent only when the value changes; the reader's heartbeat keeps
-  // an unchanged value live, so freshness follows presence, not reading age.
-  if (member.valid === false || now - Date.parse(member.lastSeenAt) >= 45000) return 'stale';
-  return 'live';
-}
-module.exports = { text, integer, characterIdentity, dungeon, reading, status };
+module.exports = { text, integer, characterIdentity, dungeon, reading };

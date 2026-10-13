@@ -1,16 +1,20 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { reading, status } = require('../backend/pb_hooks/lib/validation.cjs');
+const { reading } = require('../backend/pb_hooks/lib/validation.cjs');
+// Readiness is computed by the clients; the browser model is the reference implementation.
+const model = () => import('../src/model.js');
 const current = { sessionId: 'session', sequence: 5 };
 const input = { sessionId: 'session', sequence: 6, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, region: 'GLOBAL_EU', server: 'EU', characterName: 'Tester', value: 0 };
-test('zero is confirmed while unknown stays unknown', () => {
+test('zero is confirmed while unknown stays unknown', async () => {
+  const { status } = await model();
   assert.equal(reading(input, current, ['test-fixture-v1']).value, 0);
   const now = Date.now(), stamp = new Date(now).toISOString();
   assert.equal(status({ sharing: true, confirmed: true, value: 0, lastSeenAt: stamp, lastReadingAt: stamp }, now), 'live');
   assert.equal(status({ sharing: true, confirmed: false, value: 0, lastSeenAt: stamp }, now), 'unknown');
   assert.equal(status({ sharing: true, confirmed: false, value: 0, lastSeenAt: '', lastReadingAt: '' }, now), 'unknown');
 });
-test('an unchanged value stays live on presence; invalidated or silent readings do not', () => {
+test('an unchanged value stays live on presence; invalidated or silent readings do not', async () => {
+  const { status } = await model();
   const now = Date.now(), iso = ms => new Date(now - ms).toISOString();
   assert.equal(status({ sharing: true, confirmed: true, valid: true, lastSeenAt: iso(0), lastReadingAt: iso(3600000) }, now), 'live');
   assert.equal(status({ sharing: true, confirmed: true, valid: false, lastSeenAt: iso(0), lastReadingAt: iso(0) }, now), 'stale');
