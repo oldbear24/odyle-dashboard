@@ -81,6 +81,8 @@ before(async () => {
   await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
   // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
   await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); });`);
+  // Joins are rate limited to 10 a minute and other tests use that budget; this adds a membership directly.
+  await writeFile(join(directory, 'hooks', 'member-fixture.pb.js'), `routerAdd('POST','/__test__/member', e => { const b=e.requestInfo().body, m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',b.room); m.set('user',b.user); m.set('role',b.role); m.set('sharedCharacters',[]); e.app.save(m); return e.json(200,m); });`);
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
   await start();
   const users = await Promise.all(['Owner', 'Player', 'Viewer', 'Outsider'].map(name => request('/__test__/account', { name })));
@@ -200,6 +202,45 @@ test('expiry cron removes expired invites but keeps fresh invites and pairing co
   const joined = await action('join', { code: fresh }, guest); assert.equal(joined.status, 200, JSON.stringify(joined.data));
   assert.equal((await action('join', { code: stale }, guest)).status, 400);
   const paired = await action('pair', { code: pairing.code }); assert.equal(paired.status, 200, JSON.stringify(paired.data));
+});
+test('room members keep a shared dungeon wishlist', async () => {
+  const [author, mate, watcher, stranger] = await Promise.all(['Wish owner', 'Wish mate', 'Wish viewer', 'Wish stranger'].map(async name => (await request('/__test__/account', { name })).data));
+  const made = (await action('create', { name: 'Wishlist room' }, author)).data, roomId = made.room.id;
+  for (const [auth, role] of [[mate, 'reporter'], [watcher, 'viewer']]) assert.equal((await request('/__test__/member', { room: roomId, user: auth.record.id, role })).status, 200);
+  const wish = (auth, dungeon, wanted = true, extra = {}) => action('wishlist', { roomId, dungeon, wanted, ...extra }, auth);
+  const listed = async auth => (await request('/api/odyle/snapshot/' + roomId, undefined, auth, 'GET')).data.wishlist.map(w => [w.dungeon, w.users]);
+
+  // Free-text names: differently typed names join one entry, which keeps its first
+  // spelling; the most wanted dungeon comes first and every member sees the list.
+  assert.equal((await wish(author, 'Draupnir Cave')).status, 200);
+  const added = await wish(mate, '  Fire   Temple '); assert.equal(added.status, 200, JSON.stringify(added.data));
+  assert.deepEqual(added.data.wishlist.map(w => w.dungeon), ['Draupnir Cave', 'Fire Temple']);
+  for (let i = 0; i < 2; i++) assert.equal((await wish(author, 'FIRE temple')).status, 200);
+  const both = [['Fire Temple', [mate.record.id, author.record.id]], ['Draupnir Cave', [author.record.id]]];
+  assert.deepEqual(await listed(watcher), both); assert.deepEqual(await listed(mate), both);
+
+  // Viewers only read it, outsiders get nothing and the collection is closed to direct access.
+  const stream = await connect(url, watcher.token, 'odyle.room.' + roomId);
+  try {
+    assert.equal((await wish(watcher, 'Udas Temple')).status, 403);
+    assert.equal((await wish(stranger, 'Udas Temple')).status, 403);
+    assert.equal(await stream.next(250), null);
+    assert.equal((await wish(mate, 'Udas Temple')).status, 200); assert.equal((await stream.next())?.data.refresh, true);
+  } finally { await stream.close(); }
+  assert.equal((await request('/api/odyle/snapshot/' + roomId, undefined, stranger, 'GET')).status, 403);
+  assert.equal((await request('/api/collections/room_wishes/records', undefined, author, 'GET')).status, 403);
+  for (const bad of [{ dungeon: '' }, { dungeon: 'x'.repeat(61) }, { wanted: 'yes' }]) assert.equal((await action('wishlist', { roomId, dungeon: 'Fire Temple', wanted: true, ...bad }, mate)).status, 400);
+
+  // Members take only themselves off; only the owner clears an entry for everyone.
+  assert.equal((await wish(mate, 'fire temple', false)).status, 200);
+  assert.equal((await wish(mate, 'Draupnir Cave', false, { everyone: true })).status, 403);
+  assert.equal((await wish(author, 'Draupnir Cave', true, { everyone: true })).status, 400);
+  assert.deepEqual(await listed(author), [['Draupnir Cave', [author.record.id]], ['Fire Temple', [author.record.id]], ['Udas Temple', [mate.record.id]]]);
+  assert.equal((await wish(author, 'draupnir cave', false, { everyone: true })).status, 200);
+
+  // A member who leaves takes their entries along.
+  assert.equal((await action('leave', { roomId }, mate)).status, 200);
+  assert.deepEqual(await listed(author), [['Fire Temple', [author.record.id]]]);
 });
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;

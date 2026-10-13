@@ -80,7 +80,38 @@ function snapshot(e) { return run(e, () => {
     const linked = shared(m), mine = m.getString('user') === e.auth.id;
     return { ...m.publicExport(), sharing: linked.length > 0, displayName: e.app.findRecordById('users', m.getString('user')).getString('displayName'),
       characters: list(e.app, 'characters', 'user = {:user}', { user: m.getString('user') }).filter(c => mine || linked.includes(c.id)).map(c => ({ ...c.publicExport(), shared: linked.includes(c.id) })) };
-  }) });
+  }), wishlist: wishlistOf(e.app, id) });
+}); }
+// The room's dungeon wishlist grouped by dungeon, most wanted first, then oldest.
+// `users` are the accounts that still need it; clients name them from `members`.
+function wishlistOf(app, roomId) {
+  const users = {}, entries = {};
+  for (const m of list(app, 'room_members', 'room = {:room}', { room: roomId })) users[m.id] = m.getString('user');
+  for (const w of app.findRecordsByFilter('room_wishes', 'room = {:room}', 'created', 0, 0, { room: roomId })) {
+    const key = w.getString('key'), entry = entries[key] || (entries[key] = { key, dungeon: w.getString('dungeon'), since: w.getString('created'), users: [] });
+    entry.users.push(users[w.getString('member')]);
+  }
+  return Object.values(entries).sort((a, b) => b.users.length - a.users.length || (a.since < b.since ? -1 : a.since > b.since ? 1 : 0));
+}
+// Reporters and owners add dungeons they need, anyone removes their own entry, and
+// the owner can clear a dungeon for everyone, for example after the party ran it.
+function wishlist(e) { return mutate(e, (app, user, body, affected) => {
+  const m = membership(app, user.id, String(body.roomId)), roomId = m.getString('room'), wish = validate.dungeon(body.dungeon);
+  if (typeof body.wanted !== 'boolean') throw new BadRequestError('Wanted must be true or false.');
+  const entry = list(app, 'room_wishes', 'room = {:room} && key = {:key}', { room: roomId, key: wish.key }), mine = entry.filter(w => w.getString('member') === m.id);
+  if (body.everyone === true) {
+    if (body.wanted) throw new BadRequestError('A dungeon can only be cleared for everyone, not added for them.');
+    owner(app, user.id, roomId); for (const w of entry) app.delete(w);
+  } else if (!body.wanted) for (const w of mine) app.delete(w);
+  else if (!mine.length) {
+    if (m.getString('role') === 'viewer') throw new ForbiddenError('Viewers cannot add dungeons to this room\'s wishlist.');
+    if (app.countRecords('room_wishes', $dbx.hashExp({ member: m.id })) >= 20) throw new BadRequestError('You can have up to 20 dungeons on a room\'s wishlist.');
+    if (!entry.length && wishlistOf(app, roomId).length >= 50) throw new BadRequestError('This room\'s wishlist is full (50 dungeons).');
+    const record = new Record(app.findCollectionByNameOrId('room_wishes'));
+    // Joining an entry keeps its first spelling, whatever case this member typed.
+    record.set('room', roomId); record.set('member', m.id); record.set('dungeon', entry.length ? entry[0].getString('dungeon') : wish.dungeon); record.set('key', wish.key); app.save(record);
+  }
+  affected.push(roomId); return { wishlist: wishlistOf(app, roomId) };
 }); }
 function session(e) { return mutate(e, (app, user, body, affected) => {
   if (body.previousSessionId) {
@@ -200,4 +231,4 @@ function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
   if (clientId && clientSecret) { const users = app.findCollectionByNameOrId('users'); users.oauth2 = { enabled: true, providers: [{ name: 'discord', clientId, clientSecret }] }; app.save(users); }
 }
-module.exports = { create, join, rooms, snapshot, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, wishlist, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };

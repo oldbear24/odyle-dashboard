@@ -11,6 +11,12 @@ function characterIdentity(body) {
   if (!regions.includes(body.region)) throw new Error('Select a Global region.');
   return { characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region };
 }
+// A wishlist dungeon is free text. Inner whitespace collapses for display and the
+// lowercase form is the key, so differently typed names land in one entry.
+function dungeon(value) {
+  const name = text(value, 'Dungeon', 60).replace(/\s+/g, ' ');
+  return { dungeon: name, key: name.toLowerCase() };
+}
 function reading(body, current, verifiedAdapters = []) {
   if (body.sessionId !== current.sessionId) throw new Error('Publisher session changed. Reconnect your client.');
   integer(body.sequence, 'Sequence', 1, Number.MAX_SAFE_INTEGER);
@@ -32,4 +38,4 @@ function status(member, now) {
   if (member.valid === false || now - Date.parse(member.lastSeenAt) >= 45000) return 'stale';
   return 'live';
 }
-module.exports = { text, integer, characterIdentity, reading, status };
+module.exports = { text, integer, characterIdentity, dungeon, reading, status };

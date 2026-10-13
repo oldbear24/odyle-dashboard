@@ -9,7 +9,7 @@ const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'h
 const pb = new PocketBase(backend, new LocalAuthStore('odyle.account'));
 pb.autoCancellation(false);
 const app = document.querySelector('#app');
-let room = null, members = [], rooms = [], characters = [], demo = false, online = false, invites = [];
+let room = null, members = [], wishlist = [], rooms = [], characters = [], demo = false, online = false, invites = [];
 let serverOffset = 0, lastPulse = 0, busy = false, subscription = null, perCube = 40;
 let timer;
 const iconPaths = {
@@ -69,7 +69,7 @@ let rendered = '', renderedLibrary = '';
 const stable = list => list.map(({ lastSeenAt, updated, characters, ...rest }) => ({ ...rest, characters: characters?.map(({ lastSeenAt: _seen, updated: _updated, ...c }) => c) }));
 // Hook responses list record fields in a different order each time; sort keys so identical data compares equal.
 const canonical = value => JSON.stringify(value, (key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
-function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), flattened().map(c => status(c, now))]); }
+function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), wishlist, flattened().map(c => status(c, now))]); }
 function updateAges() { const now = Date.now() + serverOffset; document.querySelectorAll('[data-age]').forEach(el => { el.textContent = age(el.dataset.age, now); }); }
 function renderDashboard() { if (signature() === rendered) updateAges(); else dashboard(); }
 function librarySignature() { const now = Date.now() + serverOffset; return canonical([stable([{ characters }]), characters.map(c => status({ ...c, sharing: true }, now)), rooms.map(r => [r.id, r.sharedCharacters])]); }
@@ -80,15 +80,35 @@ function renderCharacters() {
   renderedLibrary = librarySignature(); grid.innerHTML = ownCards();
   document.querySelector('.personal-characters h2 span').textContent = characters.length; renderSharing();
 }
+// What members still need to run, most wanted first. A dot marks members with a
+// live character in this room, so the party sees what it could run right now.
+function wishlistSection(now) {
+  const myId = pb.authStore.record?.id, viewer = me()?.role === 'viewer';
+  const name = id => id === myId ? 'You' : members.find(m => m.user === id)?.displayName || 'Member';
+  const live = new Set(flattened().filter(c => c.characterName && status(c, now) === 'live').map(c => c.user));
+  const form = viewer ? '<p class="wish-note">Viewers can see the wishlist but cannot add dungeons.</p>' : `<form id="wish-form" class="wish-form"><input name="dungeon" maxlength="60" list="wish-suggestions" autocomplete="off" placeholder="Add a dungeon you still need to run" aria-label="Dungeon" required><datalist id="wish-suggestions">${wishlist.filter(w => !w.users.includes(myId)).map(w => `<option value="${esc(w.dungeon)}">`).join('')}</datalist><button class="button primary" type="submit">${icon('plus')} Add</button></form>`;
+  const rows = wishlist.map(w => {
+    const mine = w.users.includes(myId), count = w.users.length;
+    const people = w.users.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ' title="Live in this room now"' : ''}><i></i>${esc(name(u))}</span>`).join('');
+    const actions = demo ? '' : (mine ? `<button data-wish="${esc(w.dungeon)}" data-wanted="false" title="Take yourself off ${esc(w.dungeon)}">Remove me</button>` : viewer ? '' : `<button data-wish="${esc(w.dungeon)}" data-wanted="true">${icon('plus')} Need it too</button>`)
+      + (owner() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="Clear ${esc(w.dungeon)} for everyone">Clear</button>` : '');
+    return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${count} ${count === 1 ? 'member needs' : 'members need'} it</small></div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
+  }).join('');
+  return `<section class="party-section wishlist"><div class="section-heading"><h2>Dungeon wishlist <span>${wishlist.length}</span></h2><span class="refresh-label">Most wanted first</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : '<p class="wish-empty">Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.</p>'}</div></section>`;
+}
 function dashboard() {
   rendered = signature();
+  // Room changes redraw the whole page; keep a half-typed wishlist entry and its focus.
+  const draft = document.querySelector('#wish-form input'), typing = draft && { value: draft.value, focused: document.activeElement === draft, start: draft.selectionStart, end: draft.selectionEnd };
   const now = Date.now() + serverOffset, party = flattened(), actual = party.filter(c => c.characterName);
   const live = actual.filter(c => status(c, now) === 'live'), ready = live.filter(c => c.value >= room.cost);
   // Odyle cannot be pooled. Each player brings one character (their best fresh one),
   // and the party can only do as many cubes as its lowest player allows.
   const players = Object.values(live.reduce((best, c) => (!best[c.user] || c.value > best[c.user].value ? { ...best, [c.user]: c } : best), {}));
   const lowest = players.reduce((low, c) => !low || c.value < low.value ? c : low, null), cubes = lowest ? Math.floor(lowest.value / room.cost) : 0;
-  shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> YOUR NEXT ADVENTURE</div><h1>Party overview<span class="mint">.</span></h1><p>${members.length} members · ${actual.length} characters in this room · Every last confirmed value stays saved.</p></div><div class="heading-actions">${demo ? '<span class="demo-tag">Sample data</span>' : ''}<button class="button primary" data-action="invite">${icon('plus')} Invite a friend</button></div></section><section class="stats"><article><div class="stat-caption">CHARACTER READINESS ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">Fresh characters with enough for a cube</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">LOWEST PLAYER ODYLE ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString() : '—'}<span class="unit">energy</span></div><div class="stat-detail">${lowest ? `${esc(lowest.displayName)}${lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`} · best character of each of ${players.length} ${players.length === 1 ? 'player' : 'players'}` : 'No current readings; old values stay on their cards'}</div></article><article><div class="stat-caption">PARTY CUBES ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${cubes === 1 ? 'cube' : 'cubes'}</span></div><div class="stat-detail">Lowest count in the room · ${room.cost} Odyle per cube</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>Party characters <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? 'Illustrative readings' : 'Live room updates'}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>A spot for your next ally</strong><span>Invite another Discord account</span></button></div></section><section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>Your data. Your call.</h3><p>Account-owned characters. Room-scoped sharing.</p></div></div><p>All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.</p><button class="text-button" data-action="library">My rooms & characters ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">BEFORE YOU HEAD OUT</div><h3>Check the character you’re taking.</h3><p>${ready.length} ${ready.length === 1 ? 'character' : 'characters'} can currently claim a cube at ${room.cost} Odyle. A stale value remains stored but does not count as ready.</p><button class="button secondary" data-action="${demo ? 'help' : 'reading'}">${demo ? 'How readings work' : 'Connect packet reader'} ${icon('arrow')}</button></article></section></main>`);
+  shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> YOUR NEXT ADVENTURE</div><h1>Party overview<span class="mint">.</span></h1><p>${members.length} members · ${actual.length} characters in this room · Every last confirmed value stays saved.</p></div><div class="heading-actions">${demo ? '<span class="demo-tag">Sample data</span>' : ''}<button class="button primary" data-action="invite">${icon('plus')} Invite a friend</button></div></section><section class="stats"><article><div class="stat-caption">CHARACTER READINESS ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">Fresh characters with enough for a cube</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">LOWEST PLAYER ODYLE ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString() : '—'}<span class="unit">energy</span></div><div class="stat-detail">${lowest ? `${esc(lowest.displayName)}${lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`} · best character of each of ${players.length} ${players.length === 1 ? 'player' : 'players'}` : 'No current readings; old values stay on their cards'}</div></article><article><div class="stat-caption">PARTY CUBES ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${cubes === 1 ? 'cube' : 'cubes'}</span></div><div class="stat-detail">Lowest count in the room · ${room.cost} Odyle per cube</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>Party characters <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? 'Illustrative readings' : 'Live room updates'}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>A spot for your next ally</strong><span>Invite another Discord account</span></button></div></section>${wishlistSection(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>Your data. Your call.</h3><p>Account-owned characters. Room-scoped sharing.</p></div></div><p>All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.</p><button class="text-button" data-action="library">My rooms & characters ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">BEFORE YOU HEAD OUT</div><h3>Check the character you’re taking.</h3><p>${ready.length} ${ready.length === 1 ? 'character' : 'characters'} can currently claim a cube at ${room.cost} Odyle. A stale value remains stored but does not count as ready.</p><button class="button secondary" data-action="${demo ? 'help' : 'reading'}">${demo ? 'How readings work' : 'Connect packet reader'} ${icon('arrow')}</button></article></section></main>`);
+  const input = typing && document.querySelector('#wish-form input');
+  if (input) { input.value = typing.value; if (typing.focused) { input.focus(); input.setSelectionRange(typing.start, typing.end); } }
 }
 function card(c, index) {
   const now = Date.now() + serverOffset, state = status(c, now), fresh = state === 'live', known = c.confirmed && c.lastReadingAt, cost = room?.cost || perCube, cubes = known ? Math.floor(c.value / cost) : 0, ready = fresh && c.value >= cost;
@@ -114,21 +134,21 @@ async function send(action, body = {}) {
 async function refreshRoom() {
   const id = room.id, snapshot = await pb.send('/api/odyle/snapshot/' + id);
   if (room?.id !== id) return; // navigated elsewhere while loading
-  room = snapshot.room; perCube = room.cost; members = snapshot.members; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters;
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
 async function leaveRoomTopic() { if (subscription) { const stop = subscription; subscription = null; await stop(); } }
 async function library(ticket) {
   await leaveRoomTopic();
-  room = null; members = []; demo = false; invites = [];
+  room = null; members = []; wishlist = []; demo = false; invites = [];
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
   if (ticket !== navigation) return;
   rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; online = true; libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
-  room = { id }; members = []; demo = false; invites = []; rendered = ''; await refreshRoom();
+  room = { id }; members = []; wishlist = []; demo = false; invites = []; rendered = ''; await refreshRoom();
   if (ticket !== navigation) return;
   const stop = await pb.realtime.subscribe('odyle.room.' + id, async () => {
     try { await refreshRoom(); } catch (error) { if ([403, 404].includes(error.status)) { forget(id); await go('/', true); toast('Your access to this room ended. Your characters are still saved.'); } else online = false; }
@@ -204,7 +224,7 @@ async function discordLogin() {
   await authenticated();
 }
 async function logout() {
-  await leaveRoomTopic(); clearInterval(timer); pb.authStore.clear(); forget(); room = null; members = []; rooms = []; characters = []; online = false; demo = false;
+  await leaveRoomTopic(); clearInterval(timer); pb.authStore.clear(); forget(); room = null; members = []; wishlist = []; rooms = []; characters = []; online = false; demo = false;
   await go('/', true);
 }
 function demoSession() {
@@ -214,7 +234,8 @@ function demoSession() {
     { id: 'c2', characterName: 'DaveAlt', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 80, confirmed: true, valid: false, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 120000).toISOString() },
   ] }, { id: 'd2', user: 'lumina', displayName: 'Lumina', role: 'reporter', sharing: true, characters: [{ id: 'c3', characterName: 'Lumina', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 180, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 9000).toISOString() }] },
   { id: 'd3', user: 'kaelen', displayName: 'Kaelen', role: 'reporter', sharing: true, characters: [{ id: 'c4', characterName: 'Kaelen', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 35, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 12000).toISOString() }] },
-  { id: 'd4', user: 'nyx', displayName: 'Nyx', role: 'reporter', sharing: false, characters: [] }]; dashboard();
+  { id: 'd4', user: 'nyx', displayName: 'Nyx', role: 'reporter', sharing: false, characters: [] }];
+  wishlist = [{ key: 'fire temple', dungeon: 'Fire Temple', users: ['dave', 'lumina', 'kaelen'] }, { key: 'draupnir cave', dungeon: 'Draupnir Cave', users: ['lumina', 'nyx'] }, { key: 'udas temple (hard)', dungeon: 'Udas Temple (Hard)', users: ['kaelen'] }]; dashboard();
 }
 app.addEventListener('submit', async e => {
   e.preventDefault(); if (busy) return; busy = true;
@@ -222,6 +243,10 @@ app.addEventListener('submit', async e => {
   try {
     if (form.id === 'create-form') { const result = await send('create', { name: data.name }); await go('/room/' + result.room.id); invites = result.invites; inviteDialog(); }
     else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); await go('/room/' + result.room.id); }
+    else if (form.id === 'wish-form') {
+      if (demo) return modal('Plan your next run', '<p>This workspace uses sample data. Sign in with Discord to keep a dungeon wishlist in your own room.</p><button class="button discord-button" data-action="exit-demo">Sign in with Discord</button>');
+      await send('wishlist', { roomId: room.id, dungeon: data.dungeon, wanted: true }); form.reset(); await refreshRoom();
+    }
   } catch (error) { toast(error.message); }
   finally { busy = false; if (button.isConnected) button.disabled = false; }
 });
@@ -240,6 +265,12 @@ app.addEventListener('click', async e => {
       rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: result.sharedCharacters.length > 0 } : r);
       return renderSharing();
     }
+    if (el.dataset.wish) {
+      el.disabled = true; try { await send('wishlist', { roomId: room.id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
+      return await refreshRoom();
+    }
+    if (el.dataset.clearWish) return modal('Clear from the wishlist?', `<p>This takes <strong>${esc(el.dataset.clearWish)}</strong> off the wishlist for every member, for example after the party ran it. Anyone can add it again.</p><button class="button danger" data-confirm-clear="${esc(el.dataset.clearWish)}">Clear for everyone</button>`);
+    if (el.dataset.confirmClear) { await send('wishlist', { roomId: room.id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); document.querySelector('#modal').close(); return await refreshRoom(); }
     if (el.dataset.confirmRemove) { await send('revoke', { roomId: room.id, memberId: el.dataset.confirmRemove }); document.querySelector('#modal').close(); return await refreshRoom(); }
     switch (el.dataset.action) {
       case 'discord': await discordLogin(); break;
@@ -253,7 +284,7 @@ app.addEventListener('click', async e => {
       case 'add-all': await send('sharing', { roomId: room.id, enabled: true }); await refreshRoom(); break;
       case 'generate-invites': invites = (await send('invites', { roomId: room.id })).invites; inviteDialog(); break;
       case 'desktop': await desktopDialog(); break;
-      case 'help': modal('Saved characters, fresh readings', '<p>Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.</p><p>Each character is shared per room: choose them under My rooms & characters → Room sharing, or inside the room: add one from the bar above the party and take it out with Remove from room on its card. Friends only see the characters you linked to that room. A viewer invite grants read-only room access.</p><p>The Windows app pairs with a one-time code. It reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.</p><p>The Windows app sends Odyle when it first reads it and whenever it changes. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved as history. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.</p>'); break;
+      case 'help': modal('Saved characters, fresh readings', '<p>Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.</p><p>Each character is shared per room: choose them under My rooms & characters → Room sharing, or inside the room: add one from the bar above the party and take it out with Remove from room on its card. Friends only see the characters you linked to that room. A viewer invite grants read-only room access.</p><p>Each room keeps a dungeon wishlist: add the dungeons you still need to run, join an entry with Need it too and take yourself off when you are done. The room owner can clear an entry for everyone.</p><p>The Windows app pairs with a one-time code. It reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.</p><p>The Windows app sends Odyle when it first reads it and whenever it changes. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved as history. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.</p>'); break;
       case 'account': if (!pb.authStore.isValid || demo) await go('/'); else modal('Your Discord account', `<p>${esc(pb.authStore.record.displayName)} · Rooms and characters remain saved after sign-out.</p><button class="button secondary" data-action="library">My rooms & characters</button><button class="button secondary" data-action="desktop">Pair Windows app</button>${room ? `<button class="button danger" data-action="leave-room">${owner() ? 'Close this room' : 'Leave this room'}</button>` : ''}<button class="text-button" data-action="logout">Sign out of this browser</button>`); break;
       case 'leave-room': await send(owner() ? 'close' : 'leave', { roomId: room.id }); forget(room.id); await go('/'); toast('Your saved characters are retained.'); break;
       case 'logout': await logout(); break;

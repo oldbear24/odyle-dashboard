@@ -31,6 +31,12 @@ test('browser model handles PocketBase timestamps and escapes player-controlled 
   assert.equal(browser.age('2026-10-12 09:00:00.000Z', now), '3h ago');
   assert.equal(browser.escape('<img onerror="oops">'), '&lt;img onerror=&quot;oops&quot;&gt;');
 });
+test('wishlist dungeons are free text keyed regardless of case and spacing', () => {
+  const { dungeon } = require('../backend/pb_hooks/lib/validation.cjs');
+  assert.deepEqual(dungeon('  Fire   Temple '), { dungeon: 'Fire Temple', key: 'fire temple' });
+  assert.equal(dungeon('FIRE\tTEMPLE').key, dungeon('fire temple').key);
+  for (const bad of ['', '   ', 'x'.repeat(61), null, 42]) assert.throws(() => dungeon(bad));
+});
 test('reject stale sequence, wrong session, manual data, unknown adapters, fractional and unconfirmed values', () => {
   for (const change of [{ sequence: 5 }, { sessionId: 'old' }, { source: 'manual' }, { parserVersion: 'unverified' }, { value: -1 }, { value: 1.5 }, { value: null }, { confirmed: false }, { characterName: '' }, { region: 'KR' }]) assert.throws(() => reading({ ...input, ...change }, current, ['test-fixture-v1']));
 });

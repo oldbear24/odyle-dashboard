@@ -21,14 +21,27 @@ The dashboard presents a connection link such as `https://your-backend.example/#
 | POST `/api/odyle/create` | `{ name }` | Signed-in user creates owned room; returns `{ room, membership, invites }` |
 | POST `/api/odyle/join` | `{ code }` | Join as reporter/viewer; returns `{ room, membership }`; repeat join is idempotent |
 | GET `/api/odyle/rooms` | — | `{ rooms, odylePerCube }`: all rooms of the current account |
-| GET `/api/odyle/snapshot/{id}` | — | Member-only `{ room, members, serverNow }`; each member has `displayName` and `characters` |
+| GET `/api/odyle/snapshot/{id}` | — | Member-only `{ room, members, wishlist, serverNow }`; each member has `displayName` and `characters` |
 | POST `/api/odyle/sharing` | `{ roomId, characterId, enabled }` | Reporter/owner shares or hides one of their own characters in this room; returns `{ sharedCharacters }`. Without `characterId` (older clients) the choice applies to every character saved at that moment |
+| POST `/api/odyle/wishlist` | `{ roomId, dungeon, wanted, everyone? }` | Adds (`wanted: true`, reporter/owner) or removes (`false`, any member) the caller's own entry for a dungeon; `everyone: true` with `wanted: false` lets the owner clear that dungeon for all members. Returns `{ wishlist }` |
 | POST `/api/odyle/invites` | `{ roomId }` | Owner revokes old codes and receives reporter/viewer invites |
 | POST `/api/odyle/revoke` | `{ roomId, memberId }` | Owner removes another membership |
 | POST `/api/odyle/leave` | `{ roomId }` | Non-owner removes their membership; character data remains |
 | POST `/api/odyle/close` | `{ roomId }` | Owner deletes room and memberships; character data remains |
 
 Room codes are valid for 30 minutes; memberships and rooms have no automatic inactivity expiry. Sharing is per character: each membership lists the characters its owner linked to that room (`sharedCharacters` in `GET /api/odyle/rooms`). New characters start private everywhere. Room snapshots include only linked characters of other members; members always see all of their own characters, each with `shared: true|false`. Upgrading a backend keeps every character of a membership that shared everything shared. Viewer accounts can maintain private characters, but cannot share them in a viewer-only room. Display-name collisions are resolved by user/member IDs.
+
+### Dungeon wishlist
+
+Each room keeps a list of dungeons its members still need to run. Names are free text (1–60 characters); whitespace is collapsed and names are matched without regard to case, so `fire  temple` joins an existing `Fire Temple` entry, which keeps its first spelling. Repeating an add or removing an entry you are not on changes nothing. A member can be on up to 20 dungeons per room and a room lists up to 50. Entries belong to the membership: leaving, being removed or closing the room deletes them. Viewers see the list but cannot add to it.
+
+The snapshot's `wishlist` is grouped by dungeon, most wanted first, then oldest:
+
+```json
+[{ "key": "fire temple", "dungeon": "Fire Temple", "since": "2026-10-13 18:00:00.000Z", "users": ["user-id-1", "user-id-2"] }]
+```
+
+`users` are account ids in the order they added the dungeon; clients take display names from `members`. Every change sends the room's realtime refresh. The `room_wishes` collection has no API rules; use the routes above.
 
 ## Persistent characters and publisher sessions
 
