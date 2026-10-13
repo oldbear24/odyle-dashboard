@@ -18,12 +18,11 @@ The dashboard presents a connection link such as `https://your-backend.example/#
 
 | Method / route | Body | Result and authorization |
 | --- | --- | --- |
-| POST `/api/odyle/create` | `{ name, cost: 40 }` | Signed-in user creates owned room; returns `{ room, membership, invites }` |
+| POST `/api/odyle/create` | `{ name }` | Signed-in user creates owned room; returns `{ room, membership, invites }` |
 | POST `/api/odyle/join` | `{ code }` | Join as reporter/viewer; returns `{ room, membership }`; repeat join is idempotent |
-| GET `/api/odyle/rooms` | — | All rooms of the current account |
+| GET `/api/odyle/rooms` | — | `{ rooms, odylePerCube }`: all rooms of the current account |
 | GET `/api/odyle/snapshot/{id}` | — | Member-only `{ room, members, serverNow }`; each member has `displayName` and `characters` |
 | POST `/api/odyle/sharing` | `{ roomId, characterId, enabled }` | Reporter/owner shares or hides one of their own characters in this room; returns `{ sharedCharacters }`. Without `characterId` (older clients) the choice applies to every character saved at that moment |
-| POST `/api/odyle/settings` | `{ roomId, cost }` | Owner changes cube cost, integer 1–1000 |
 | POST `/api/odyle/invites` | `{ roomId }` | Owner revokes old codes and receives reporter/viewer invites |
 | POST `/api/odyle/revoke` | `{ roomId, memberId }` | Owner removes another membership |
 | POST `/api/odyle/leave` | `{ roomId }` | Non-owner removes their membership; character data remains |

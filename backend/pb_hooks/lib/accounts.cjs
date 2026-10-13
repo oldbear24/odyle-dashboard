@@ -25,6 +25,10 @@ function notify(app, roomIds) {
     for (const key in clients) if (clients[key].hasSubscription(topic)) clients[key].send(new SubscriptionMessage({ name: topic, data: JSON.stringify({ refresh: true }) }));
   }
 }
+// Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
+// Rooms keep their legacy cost field, but every response reports the setting.
+function odylePerCube(app) { try { return app.findFirstRecordByFilter('odyle_settings', 'id != ""').getInt('odylePerCube') || 40; } catch { return 40; } }
+const roomJson = (app, room) => ({ ...room.publicExport(), cost: odylePerCube(app) });
 const shared = m => Array.from(m.getStringSlice('sharedCharacters'));
 const roomsFor = (app, userId) => list(app, 'room_members', 'user = {:user}', { user: userId }).map(m => m.getString('room'));
 function run(e, action) {
@@ -50,8 +54,8 @@ function addMember(app, roomId, userId, role) {
 }
 function create(e) { return mutate(e, (app, user, body) => {
   const room = new Record(app.findCollectionByNameOrId('party_rooms'));
-  room.set('name', validate.text(body.name, 'Room name', 60)); room.set('owner', user.id); room.set('cost', validate.integer(body.cost ?? 40, 'Cube cost', 1, 1000)); app.save(room);
-  return { room, membership: addMember(app, room.id, user.id, 'owner'), invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
+  room.set('name', validate.text(body.name, 'Room name', 60)); room.set('owner', user.id); room.set('cost', odylePerCube(app)); app.save(room);
+  return { room: roomJson(app, room), membership: addMember(app, room.id, user.id, 'owner'), invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
 }); }
 function join(e) { return mutate(e, (app, user, body, affected) => {
   const code = validate.text(body.code, 'Invite code', 20).replace(/[\s-]/g, '').toUpperCase(); let invitation;
@@ -59,16 +63,16 @@ function join(e) { return mutate(e, (app, user, body, affected) => {
   if (Date.parse(invitation.getString('expiresAt')) <= Date.now()) throw new BadRequestError('Invite is invalid or expired.');
   const room = app.findRecordById('party_rooms', invitation.getString('room'));
   const existing = list(app, 'room_members', 'room = {:room} && user = {:user}', { room: room.id, user: user.id });
-  if (existing.length) return { room, membership: existing[0] };
+  if (existing.length) return { room: roomJson(app, room), membership: existing[0] };
   if (app.countRecords('room_members', $dbx.hashExp({ room: room.id })) >= 50) throw new BadRequestError('Room is full.');
-  const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room, membership: member };
+  const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room: roomJson(app, room), membership: member };
 }); }
-function rooms(e) { return run(e, () => e.json(200, { rooms: list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }).map(m => ({ ...e.app.findRecordById('party_rooms', m.getString('room')).publicExport(), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) })); }
+function rooms(e) { return run(e, () => e.json(200, { odylePerCube: odylePerCube(e.app), rooms: list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }).map(m => ({ ...roomJson(e.app, e.app.findRecordById('party_rooms', m.getString('room'))), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) })); }
 function snapshot(e) { return run(e, () => {
   const id = e.request.pathValue('id'); membership(e.app, e.auth.id, id);
   // Others see only the characters a member linked to this room; members always
   // see all of their own, each flagged with whether it is shared here.
-  return e.json(200, { room: e.app.findRecordById('party_rooms', id), serverNow: now(), members: list(e.app, 'room_members', 'room = {:room}', { room: id }).map(m => {
+  return e.json(200, { room: roomJson(e.app, e.app.findRecordById('party_rooms', id)), serverNow: now(), members: list(e.app, 'room_members', 'room = {:room}', { room: id }).map(m => {
     const linked = shared(m), mine = m.getString('user') === e.auth.id;
     return { ...m.publicExport(), sharing: linked.length > 0, displayName: e.app.findRecordById('users', m.getString('user')).getString('displayName'),
       characters: list(e.app, 'characters', 'user = {:user}', { user: m.getString('user') }).filter(c => mine || linked.includes(c.id)).map(c => ({ ...c.publicExport(), shared: linked.includes(c.id) })) };
@@ -135,9 +139,6 @@ function leave(e) { return mutate(e, (app, user, body, affected) => {
   affected.push(m.getString('room')); app.delete(m);
 }); }
 function close(e) { return mutate(e, (app, user, body, affected) => { const room = owner(app, user.id, String(body.roomId)); affected.push(room.id); app.delete(room); }); }
-function settings(e) { return mutate(e, (app, user, body, affected) => {
-  const room = owner(app, user.id, String(body.roomId)); room.set('cost', validate.integer(body.cost, 'Cube cost', 1, 1000)); app.save(room); affected.push(room.id); return { room };
-}); }
 function invites(e) { return mutate(e, (app, user, body) => {
   const room = owner(app, user.id, String(body.roomId)); for (const old of list(app, 'room_invites', 'room = {:room}', { room: room.id })) app.delete(old);
   return { invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
@@ -171,4 +172,4 @@ function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
   if (clientId && clientSecret) { const users = app.findCollectionByNameOrId('users'); users.oauth2 = { enabled: true, providers: [{ name: 'discord', clientId, clientSecret }] }; app.save(users); }
 }
-module.exports = { create, join, rooms, snapshot, character, report, heartbeat, sharing, session, invalidate, leave, close, settings, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, character, report, heartbeat, sharing, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };

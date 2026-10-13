@@ -57,6 +57,8 @@ before(async () => {
   // is no password login, test auth route or Discord bypass in production.
   await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; let user; try{user=e.app.findFirstRecordByData('users','displayName',name);}catch{user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);}return e.json(200,{token:user.newAuthToken(),record:user});});`);
   await writeFile(join(directory, 'hooks', 'oauth-fixture.pb.js'), `routerAdd('POST','/__test__/oauth-provider',e => { const users=e.app.findCollectionByNameOrId('users'); users.oauth2={enabled:true,providers:[{name:'discord',clientId:'test-application',clientSecret:'test-only-secret',tokenURL:'${oauthUrl}/token',userInfoURL:'${oauthUrl}/user'}]};e.app.save(users); return e.json(200,{success:true}); });`);
+  // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
+  await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); });`);
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
   await start();
   const users = await Promise.all(['Owner', 'Player', 'Viewer', 'Outsider'].map(name => request('/__test__/account', { name })));
@@ -142,6 +144,18 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
   const created = await action('create', { name: 'Persistent expedition', cost: 40 }, owner);
   assert.equal(created.status, 200, JSON.stringify(created.data)); room = created.data.room;
   code = created.data.invites.find(i => i.role === 'reporter').code; viewerCode = created.data.invites.find(i => i.role === 'viewer').code;
+  await t.test('Odyle per cube is one server setting, not chosen per room', async () => {
+    assert.equal(room.cost, 40);
+    assert.equal((await action('settings', { roomId: room.id, cost: 20 }, owner)).status, 404);
+    assert.equal((await request('/api/collections/odyle_settings/records', undefined, owner, 'GET')).status, 403);
+    assert.equal((await request('/__test__/odyle-per-cube', { value: 30 })).status, 200);
+    try {
+      assert.equal((await snapshot(owner)).data.room.cost, 30);
+      const listed = (await request('/api/odyle/rooms', undefined, owner, 'GET')).data;
+      assert.equal(listed.odylePerCube, 30); assert.equal(listed.rooms.find(r => r.id === room.id).cost, 30);
+    } finally { await request('/__test__/odyle-per-cube', { value: 40 }); }
+    assert.equal((await snapshot(owner)).data.room.cost, 40);
+  });
   await t.test('membership is attached to accounts and repeat join creates no duplicate', async () => {
     assert.equal((await action('join', { code }, player)).status, 200);
     assert.equal((await action('join', { code: viewerCode }, viewer)).status, 200);
@@ -180,7 +194,7 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     chars = await shared(); assert.deepEqual(chars.map(c => c.id), [first.id]);
     assert.equal(JSON.stringify(chars).includes('readingSession'), false);
     assert.equal((await action('sharing', { roomId: room.id, enabled: true }, viewer)).status, 403);
-    assert.equal((await action('settings', { roomId: room.id, cost: 20 }, viewer)).status, 403);
+    assert.equal((await action('invites', { roomId: room.id }, viewer)).status, 403);
     assert.equal((await action('report', { ...input, sequence: 3, characterId: first.id }, outsider)).status, 403);
     const outSession = (await action('session', {}, outsider)).data;
     assert.equal((await action('report', { ...input, sessionId: outSession.sessionId, characterId: first.id }, outsider)).status, 403);
@@ -214,10 +228,10 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
   await t.test('live room subscription requires membership; revoked listeners lose access', async () => {
     const stream = await connect(url, viewer.token, 'odyle.room.' + room.id);
     try {
-      await action('settings', { roomId: room.id, cost: 30 }, owner); assert.equal((await stream.next())?.data.refresh, true);
+      await action('sharing', { roomId: room.id, enabled: true }, owner); assert.equal((await stream.next())?.data.refresh, true);
       const memberId = (await snapshot(owner)).data.members.find(m => m.user === viewer.record.id).id;
       await action('revoke', { roomId: room.id, memberId }, owner);
-      await action('settings', { roomId: room.id, cost: 40 }, owner);
+      await action('sharing', { roomId: room.id, enabled: false }, owner);
       assert.equal(await stream.next(250), null); assert.equal((await snapshot(viewer)).status, 403);
     } finally { await stream.close(); }
     await assert.rejects(() => connect(url, outsider.token, 'odyle.room.' + room.id));
