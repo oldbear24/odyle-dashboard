@@ -9,14 +9,14 @@ A polished AION 2 party dashboard with **Discord sign-in**, persistent character
 1. Sign in with Discord. First sign-in creates your account.
 2. Pair the Windows packet reader and start it before logging the character into the game. It can detect and save the character name, server and region automatically. **+ Add → Save character** is the manual identity fallback. Saving a character never requires entering Odyle; its value stays unknown until a verified game reading arrives.
 3. Create a private room, or join one using an invitation from its owner.
-4. Choose whether to share your saved characters in each room. Other members see the last saved value and timestamp of every shared character.
+4. Choose which of your characters each room sees (per character, on its card in the room or in the Windows app's settings). Other members see the last saved value and timestamp of every shared character.
 5. Pair your own Windows app using a one-time code from your dashboard account.
 
 Accounts, rooms, memberships and character values persist across sign-outs and server restarts. Leaving or closing a room **does not delete character history**. Stale values remain saved and visible; only fresh readings count toward readiness. Confirmed zero stays zero.
 
 Room invite codes expire after 30 minutes. Membership remains until the user leaves or the room owner removes them. Desktop pairing codes expire after five minutes and can be used once. Viewer invitations give read-only room access; viewers cannot share characters in that room or manage it.
 
-**Manual Odyle entry is disabled; values come from the Windows packet reader.** The app decodes the Odyle snapshot and live updates from the game's own packets and publishes them under the adapter name `global-reference-v1`, which `backend/pb_hooks/lib/protocols.cjs` lists as accepted. A reading stays live while the app keeps confirming it and turns stale 45 seconds after confirmations stop; the last value is always kept. Raw game traffic is never uploaded to PocketBase. **When you deploy, copy the current `backend/pb_hooks` to the server as well**: a backend with an empty registry rejects every reading and the app shows *Not saved*. See [packet reader details](https://github.com/oldbear24/odyle-windows/blob/main/docs/packet-reader.md).
+**Manual Odyle entry is disabled; values come from the Windows packet reader.** The app decodes the Odyle snapshot and live updates from the game's own packets and publishes them under the adapter name `global-reference-v1`, which `backend/pb_hooks/lib/protocols.cjs` lists as accepted. The app sends Odyle when it first reads a character and then only when it changes; the reading stays live while the app's heartbeat reports the game connection and turns stale 45 seconds after that stops. The last value is always kept. Each character is shared per room. **When you deploy, also copy `backend/pb_migrations`**: `1791763204_character_sharing.js` moves room sharing to individual characters. Raw game traffic is never uploaded to PocketBase. **When you deploy, copy the current `backend/pb_hooks` to the server as well**: a backend with an empty registry rejects every reading and the app shows *Not saved*. See [packet reader details](https://github.com/oldbear24/odyle-windows/blob/main/docs/packet-reader.md).
 
 ## Run locally
 

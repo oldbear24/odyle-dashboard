@@ -2,7 +2,7 @@
 
 Discord authenticates the application account. PocketBase stores the provider identity mapping and account email/display name needed for sign-in, plus memberships and each character's region/server, name, Odyle total and observation timestamps. The room API exposes display names and opted-in character data, not account emails, authentication secrets or Discord tokens.
 
-Characters belong to accounts. Leaving, closing a room or signing out does not erase stored values. Turning off sharing in a room immediately hides character data from other room members while keeping it in the owner's account. Last saved values may be stale or offline; they remain visible with their timestamp where sharing is enabled, but are excluded from fresh readiness.
+Characters belong to accounts. Leaving, closing a room or signing out does not erase stored values. Sharing is chosen per character and room; turning it off immediately hides that character from other room members while keeping it in the owner's account. Last saved values may be stale or offline; they remain visible with their timestamp where sharing is enabled, but are excluded from fresh readiness.
 
 The app may detect the own character's name, server and region from game packets and save those normalized identity fields to the paired account. Manual identity setup uses the same limited endpoint. This creates an unknown reading, not a confirmed zero; it cannot set Odyle, ownership, observation timestamps or reading confidence. Repeating a saved identity preserves its existing history.
 

@@ -9,7 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { connect } from './sse.mjs';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18090';
-let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, legacyId;
+let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, legacyId, legacyRoomId;
+const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js'];
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   return { status: res.status, data: await res.json() };
@@ -49,21 +50,22 @@ before(async () => {
   oauthUrl = 'http://127.0.0.1:' + oauthServer.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-account-test-'));
   await cp(resolve('backend/pb_hooks'), join(directory, 'hooks'), { recursive: true });
-  await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true, filter: path => !path.endsWith('1791763203_packet_only.js') });
+  await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true, filter: path => !upgrades.some(name => path.endsWith(name)) });
   // Only this disposable test backend approves the synthetic fixture adapter.
   await writeFile(join(directory, 'hooks', 'lib', 'protocols.cjs'), "module.exports = { verifiedAdapters: ['test-fixture-v1'] };");
   // Synthetic account issuance exists only in the temporary test hooks. There
   // is no password login, test auth route or Discord bypass in production.
   await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; let user; try{user=e.app.findFirstRecordByData('users','displayName',name);}catch{user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);}return e.json(200,{token:user.newAuthToken(),record:user});});`);
   await writeFile(join(directory, 'hooks', 'oauth-fixture.pb.js'), `routerAdd('POST','/__test__/oauth-provider',e => { const users=e.app.findCollectionByNameOrId('users'); users.oauth2={enabled:true,providers:[{name:'discord',clientId:'test-application',clientSecret:'test-only-secret',tokenURL:'${oauthUrl}/token',userInfoURL:'${oauthUrl}/user'}]};e.app.save(users); return e.json(200,{success:true}); });`);
-  await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); });`);
+  await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
   await start();
   const users = await Promise.all(['Owner', 'Player', 'Viewer', 'Outsider'].map(name => request('/__test__/account', { name })));
   for (const result of users) assert.equal(result.status, 200, JSON.stringify(result.data));
   [owner, player, viewer, outsider] = users.map(r => r.data);
   const legacy = await request('/__test__/legacy', { user: outsider.record.id }); assert.equal(legacy.status, 200); legacyId = legacy.data.id;
+  const legacyRoom = await request('/__test__/legacy-room', { user: outsider.record.id }); assert.equal(legacyRoom.status, 200, JSON.stringify(legacyRoom.data)); legacyRoomId = legacyRoom.data.id;
   await stop();
-  await cp(resolve('backend/pb_migrations/1791763203_packet_only.js'), join(directory, 'migrations/1791763203_packet_only.js'));
+  for (const name of upgrades) await cp(resolve('backend/pb_migrations', name), join(directory, 'migrations', name));
   await start();
 });
 after(async () => { await stop(); if (oauthServer) await new Promise(resolve => oauthServer.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
@@ -71,6 +73,12 @@ test('packet-only upgrade preserves legacy totals and removes current confidence
   const legacy = await request('/api/collections/characters/records/' + legacyId, undefined, outsider, 'GET');
   assert.equal(legacy.status, 200); assert.equal(legacy.data.value, 123); assert.equal(legacy.data.confirmed, true); assert.equal(legacy.data.valid, false);
   assert.equal(legacy.data.source, 'manual'); assert.equal(legacy.data.lastReadingAt, '2026-10-12 12:00:00.000Z');
+});
+test('per-character upgrade keeps every character of a sharing membership shared', async () => {
+  const listed = (await request('/api/odyle/rooms', undefined, outsider, 'GET')).data.rooms.find(r => r.id === legacyRoomId);
+  assert.deepEqual(listed.sharedCharacters, [legacyId]); assert.equal(listed.sharing, true);
+  const own = (await request('/api/odyle/snapshot/' + legacyRoomId, undefined, outsider, 'GET')).data.members[0];
+  assert.equal(own.characters[0].shared, true); assert.equal(own.sharing, true);
 });
 test('first Discord OAuth sign-in creates an account; repeat sign-in retains its rooms', async () => {
   const credentials = { provider: 'discord', code: 'valid-test-discord-code', codeVerifier: 'a'.repeat(43), redirectURL: url + '/api/oauth2-redirect', createData: { displayName: 'Adventurer' } };
@@ -112,11 +120,11 @@ test('character identity can be saved before any game reading without accepting 
   await stop(); await start();
   assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, user, 'GET')).data.value, 265);
 });
-test('Windows UI can save a first character and an alt', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
+test('Windows UI follows the game character, sends only changes and shares per character', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
   const pair = (await action('desktop-code', {}, user)).data;
   const output = execFileSync('dotnet', ['run', '--project', process.env.ODYLE_WINDOWS_UI_CHECKS, '-c', 'Release', '--', url, pair.code], { encoding: 'utf8', timeout: 60000 });
-  assert.match(output, /UI character creation, alt, cancel, validation, publishing and persistence passed/);
+  assert.match(output, /game-driven characters, change-only sending, in-game switch attribution, per-character room sharing and persistence passed/);
 });
 test('Discord accounts, persistent characters, private rooms and desktop pairing', async t => {
   await t.test('Discord is the only enabled sign-in provider; public password registration is closed', async () => {
@@ -154,11 +162,22 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     assert.equal((await request('/api/collections/characters/records/' + first.id, undefined, owner, 'GET')).status, 404);
     assert.equal((await request('/api/collections/characters/records/' + first.id, { value: 999 }, player, 'PATCH')).status, 403);
   });
-  await t.test('sharing is explicit per room; viewers cannot share or administer', async () => {
-    assert.equal((await snapshot(owner)).data.members.find(m => m.user === player.record.id).characters.length, 0);
+  await t.test('sharing is explicit per character and room; viewers cannot share or administer', async () => {
+    const shared = async () => (await snapshot(owner)).data.members.find(m => m.user === player.record.id).characters;
+    assert.equal((await shared()).length, 0);
+    const own = (await snapshot(player)).data.members.find(m => m.user === player.record.id).characters;
+    assert.deepEqual(own.map(c => c.shared), [false, false]);
+    const one = await action('sharing', { roomId: room.id, characterId: first.id, enabled: true }, player);
+    assert.equal(one.status, 200, JSON.stringify(one.data)); assert.deepEqual(one.data.sharedCharacters, [first.id]);
+    let chars = await shared(); assert.deepEqual(chars.map(c => c.id), [first.id]); assert.equal(chars[0].value, 0); assert.equal(chars[0].shared, true);
+    assert.deepEqual((await request('/api/odyle/rooms', undefined, player, 'GET')).data.rooms.find(r => r.id === room.id).sharedCharacters, [first.id]);
+    assert.equal((await action('sharing', { roomId: room.id, characterId: first.id, enabled: true }, owner)).status, 403);
+    assert.equal((await action('sharing', { roomId: room.id, characterId: first.id, enabled: 'yes' }, player)).status, 400);
+    // Older clients without characterId share or hide every saved character at once.
     assert.equal((await action('sharing', { roomId: room.id, enabled: true }, player)).status, 200);
-    const chars = (await snapshot(owner)).data.members.find(m => m.user === player.record.id).characters;
-    assert.equal(chars.length, 2); assert.equal(chars.find(c => c.id === first.id).value, 0);
+    assert.equal((await shared()).length, 2);
+    assert.equal((await action('sharing', { roomId: room.id, characterId: second.id, enabled: false }, player)).status, 200);
+    chars = await shared(); assert.deepEqual(chars.map(c => c.id), [first.id]);
     assert.equal(JSON.stringify(chars).includes('readingSession'), false);
     assert.equal((await action('sharing', { roomId: room.id, enabled: true }, viewer)).status, 403);
     assert.equal((await action('settings', { roomId: room.id, cost: 20 }, viewer)).status, 403);

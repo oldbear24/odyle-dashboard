@@ -25,6 +25,7 @@ function notify(app, roomIds) {
     for (const key in clients) if (clients[key].hasSubscription(topic)) clients[key].send(new SubscriptionMessage({ name: topic, data: JSON.stringify({ refresh: true }) }));
   }
 }
+const shared = m => Array.from(m.getStringSlice('sharedCharacters'));
 const roomsFor = (app, userId) => list(app, 'room_members', 'user = {:user}', { user: userId }).map(m => m.getString('room'));
 function run(e, action) {
   try { return action(); } catch (error) {
@@ -45,7 +46,7 @@ function invite(app, room, role) {
 }
 function addMember(app, roomId, userId, role) {
   const record = new Record(app.findCollectionByNameOrId('room_members'));
-  record.set('room', roomId); record.set('user', userId); record.set('role', role); record.set('sharing', false); app.save(record); return record;
+  record.set('room', roomId); record.set('user', userId); record.set('role', role); record.set('sharedCharacters', []); app.save(record); return record;
 }
 function create(e) { return mutate(e, (app, user, body) => {
   const room = new Record(app.findCollectionByNameOrId('party_rooms'));
@@ -62,12 +63,16 @@ function join(e) { return mutate(e, (app, user, body, affected) => {
   if (app.countRecords('room_members', $dbx.hashExp({ room: room.id })) >= 50) throw new BadRequestError('Room is full.');
   const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room, membership: member };
 }); }
-function rooms(e) { return run(e, () => e.json(200, { rooms: list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }).map(m => ({ ...e.app.findRecordById('party_rooms', m.getString('room')).publicExport(), role: m.getString('role'), sharing: m.getBool('sharing') })) })); }
+function rooms(e) { return run(e, () => e.json(200, { rooms: list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }).map(m => ({ ...e.app.findRecordById('party_rooms', m.getString('room')).publicExport(), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) })); }
 function snapshot(e) { return run(e, () => {
   const id = e.request.pathValue('id'); membership(e.app, e.auth.id, id);
-  return e.json(200, { room: e.app.findRecordById('party_rooms', id), serverNow: now(), members: list(e.app, 'room_members', 'room = {:room}', { room: id }).map(m => ({ ...m.publicExport(), displayName: e.app.findRecordById('users', m.getString('user')).getString('displayName'),
-    characters: m.getBool('sharing') || m.getString('user') === e.auth.id ? list(e.app, 'characters', 'user = {:user}', { user: m.getString('user') }).map(c => c.publicExport()) : [],
-  })) });
+  // Others see only the characters a member linked to this room; members always
+  // see all of their own, each flagged with whether it is shared here.
+  return e.json(200, { room: e.app.findRecordById('party_rooms', id), serverNow: now(), members: list(e.app, 'room_members', 'room = {:room}', { room: id }).map(m => {
+    const linked = shared(m), mine = m.getString('user') === e.auth.id;
+    return { ...m.publicExport(), sharing: linked.length > 0, displayName: e.app.findRecordById('users', m.getString('user')).getString('displayName'),
+      characters: list(e.app, 'characters', 'user = {:user}', { user: m.getString('user') }).filter(c => mine || linked.includes(c.id)).map(c => ({ ...c.publicExport(), shared: linked.includes(c.id) })) };
+  }) });
 }); }
 function session(e) { return mutate(e, (app, user, body, affected) => {
   if (body.previousSessionId) {
@@ -106,7 +111,12 @@ function sharing(e) { return mutate(e, (app, user, body, affected) => {
   const m = membership(app, user.id, String(body.roomId));
   if (m.getString('role') === 'viewer') throw new ForbiddenError('Viewers cannot share characters with this room.');
   if (typeof body.enabled !== 'boolean') throw new BadRequestError('Sharing must be true or false.');
-  m.set('sharing', body.enabled); app.save(m); affected.push(m.getString('room'));
+  // Sharing is per character. Without characterId (older clients) the choice
+  // applies to every character the account has saved right now.
+  const targets = body.characterId ? [ownCharacter(app, user.id, String(body.characterId)).id] : list(app, 'characters', 'user = {:user}', { user: user.id }).map(c => c.id);
+  const next = shared(m).filter(id => !targets.includes(id)); if (body.enabled) next.push(...targets);
+  m.set('sharedCharacters', next); app.save(m); affected.push(m.getString('room'));
+  return { sharedCharacters: next };
 }); }
 function heartbeat(e) { return mutate(e, (app, user, body, affected) => {
   if (body.sessionId) {

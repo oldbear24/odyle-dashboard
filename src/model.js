@@ -3,13 +3,14 @@ export function status(member, now = Date.now()) {
   if (!member.sharing) return 'offline';
   if (!member.confirmed || !member.lastReadingAt) return 'unknown';
   if (!member.lastSeenAt || now - timestamp(member.lastSeenAt) >= 90000) return 'offline';
-  if (member.valid === false || member.source === 'manual') return 'stale';
-  if (now - timestamp(member.lastReadingAt) >= 45000 || now - timestamp(member.lastSeenAt) >= 45000) return 'stale';
+  // Readings are sent only when the value changes; the reader's heartbeat keeps
+  // an unchanged value live, so freshness follows presence, not reading age.
+  if (member.valid === false || member.source === 'manual' || now - timestamp(member.lastSeenAt) >= 45000) return 'stale';
   return 'live';
 }
 export function age(date, now = Date.now()) {
   if (!date) return 'No reading yet';
   const seconds = Math.max(0, Math.floor((now - timestamp(date)) / 1000));
-  return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
+  return seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`;
 }
 export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));

@@ -27,7 +27,9 @@ function status(member, now) {
   if (!member.sharing) return 'offline';
   if (!member.confirmed || !member.lastReadingAt) return 'unknown';
   if (!member.lastSeenAt || now - Date.parse(member.lastSeenAt) >= 90000) return 'offline';
-  if (now - Date.parse(member.lastReadingAt) >= 45000 || now - Date.parse(member.lastSeenAt) >= 45000) return 'stale';
+  // Readings are sent only when the value changes; the reader's heartbeat keeps
+  // an unchanged value live, so freshness follows presence, not reading age.
+  if (member.valid === false || now - Date.parse(member.lastSeenAt) >= 45000) return 'stale';
   return 'live';
 }
 module.exports = { text, integer, characterIdentity, reading, status };
