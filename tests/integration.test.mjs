@@ -57,6 +57,8 @@ before(async () => {
   // is no password login, test auth route or Discord bypass in production.
   await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; let user; try{user=e.app.findFirstRecordByData('users','displayName',name);}catch{user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);}return e.json(200,{token:user.newAuthToken(),record:user});});`);
   await writeFile(join(directory, 'hooks', 'oauth-fixture.pb.js'), `routerAdd('POST','/__test__/oauth-provider',e => { const users=e.app.findCollectionByNameOrId('users'); users.oauth2={enabled:true,providers:[{name:'discord',clientId:'test-application',clientSecret:'test-only-secret',tokenURL:'${oauthUrl}/token',userInfoURL:'${oauthUrl}/user'}]};e.app.save(users); return e.json(200,{success:true}); });`);
+  // Runs the odyle-expiry cron job on demand and reports which of the given invite codes it kept.
+  await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
   // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
   await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); });`);
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
@@ -121,6 +123,20 @@ test('character identity can be saved before any game reading without accepting 
   assert.equal(again.id, c.id); assert.equal(again.value, 265); assert.equal(again.confirmed, true); assert.equal(again.lastReadingAt, reported.data.character.lastReadingAt);
   await stop(); await start();
   assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, user, 'GET')).data.value, 265);
+});
+test('expiry cron removes expired invites but keeps fresh invites and pairing codes', async () => {
+  // Stored dates read '2026-10-13 21:40:00.000Z'; comparing them with an ISO 'T' timestamp
+  // treated anything later on the same UTC day as expired, so fresh codes died at the next tick.
+  const [author, guest] = await Promise.all(['Expiry owner', 'Expiry guest'].map(async name => (await request('/__test__/account', { name })).data));
+  const made = (await action('create', { name: 'Expiry room' }, author)).data;
+  const [fresh, stale] = ['reporter', 'viewer'].map(role => made.invites.find(i => i.role === role).code);
+  const pairing = (await action('desktop-code', {}, author)).data;
+  assert.equal((await request('/__test__/expire-invite', { code: stale })).status, 200);
+  const swept = await request('/__test__/cleanup', { codes: [fresh, stale] });
+  assert.equal(swept.status, 200, JSON.stringify(swept.data)); assert.deepEqual(swept.data.kept, [fresh]);
+  const joined = await action('join', { code: fresh }, guest); assert.equal(joined.status, 200, JSON.stringify(joined.data));
+  assert.equal((await action('join', { code: stale }, guest)).status, 400);
+  const paired = await action('pair', { code: pairing.code }); assert.equal(paired.status, 200, JSON.stringify(paired.data));
 });
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;

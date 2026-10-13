@@ -1,6 +1,9 @@
 const validate = require(__hooks + '/lib/validation.cjs');
 const now = () => new Date().toISOString();
 const expiry = seconds => new Date(Date.now() + seconds * 1000).toISOString();
+// Date fields are stored as '2026-10-13 21:40:00.000Z' and filters compare them as
+// strings, so filter params must use the same space-separated form, not ISO 'T'.
+const stamp = date => date.toISOString().replace('T', ' ');
 const list = (app, name, filter, params) => app.findRecordsByFilter(name, filter, 'id', 500, 0, params || {});
 function membership(app, userId, roomId) {
   const found = list(app, 'room_members', 'room = {:room} && user = {:user}', { room: roomId, user: userId });
@@ -163,8 +166,9 @@ function pair(e) { return run(e, () => {
   }); return e.json(200, result);
 }); }
 function cleanup() {
-  for (const name of ['room_invites', 'desktop_codes']) for (const item of list($app, name, 'expiresAt <= {:now}', { now: now() })) $app.delete(item);
-  for (const item of list($app, 'publisher_sessions', 'expiresAt <= {:now}', { now: now() })) {
+  const at = stamp(new Date());
+  for (const name of ['room_invites', 'desktop_codes']) for (const item of list($app, name, 'expiresAt <= {:now}', { now: at })) $app.delete(item);
+  for (const item of list($app, 'publisher_sessions', 'expiresAt <= {:now}', { now: at })) {
     for (const c of list($app, 'characters', 'readingSession = {:id}', { id: item.id })) { c.set('valid', false); $app.save(c); } $app.delete(item);
   }
 }
