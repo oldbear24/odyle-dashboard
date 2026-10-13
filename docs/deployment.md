@@ -29,6 +29,6 @@ If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker bui
 - Rate limits are enabled for room creation, invite joins and application routes. Configure trusted proxy IP headers only for your own proxy; do not trust arbitrary forwarded client IP headers.
 - Rooms and account-owned character values persist in the data volume. Freshness uses server timestamps; client clocks affect only display, corrected using heartbeat responses.
 - Invites can be reused during their 30-minute lifetime. Rotate them to stop new joins; remove a member to revoke existing access. Rooms allow up to 50 members, including viewers.
-- Browser sessions are tab-scoped; account tokens last seven days. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
+- Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
 
 Docker configuration is included but was not executed during the initial Windows development run. The Windows PocketBase binary, app API and static build were verified locally.

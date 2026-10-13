@@ -5,7 +5,8 @@ import './style.css';
 import './accounts.css';
 
 const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8090' : window.location.origin);
-const pb = new PocketBase(backend, new LocalAuthStore('odyle.account', window.sessionStorage));
+// Persisted in localStorage: the sign-in is shared by every tab of this browser and survives restarts.
+const pb = new PocketBase(backend, new LocalAuthStore('odyle.account'));
 pb.autoCancellation(false);
 const app = document.querySelector('#app');
 let room = null, members = [], rooms = [], characters = [], demo = false, online = false, invites = [];

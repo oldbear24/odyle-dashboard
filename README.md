@@ -6,7 +6,7 @@ A polished AION 2 party dashboard with **Discord sign-in**, persistent character
 
 ## Account and room flow
 
-1. Sign in with Discord. First sign-in creates your account.
+1. Sign in with Discord. First sign-in creates your account. The browser stays signed in (all tabs, across restarts) until you choose **Sign out of this browser** or skip the dashboard for seven days.
 2. Pair the Windows packet reader and start it before logging the character into the game. It can detect and save the character name, server and region automatically. **+ Add → Save character** is the manual identity fallback. Saving a character never requires entering Odyle; its value stays unknown until a verified game reading arrives.
 3. Create a private room, or join one using an invitation from its owner.
 4. Choose which of your characters each room sees under **My rooms & characters → Room sharing** (one switch per character and room), or on a character's card inside a room. Other members see the last saved value and timestamp of every shared character, and the Windows app lists the ones that are online. Room and sharing settings live on the dashboard; the Windows app only pairs, reads and displays.
