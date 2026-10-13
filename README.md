@@ -65,7 +65,7 @@ npm run build
 
 Integration tests use synthetic accounts in a temporary PocketBase instance on port 18090. They verify provider configuration, closed password registration, character creation before a reading, duplicate avoidance, multiple saved characters, account isolation, one-use pairing, realtime access, sequence rejection, and persistence across a real backend restart. Set `ODYLE_WINDOWS_CHECKS` and `ODYLE_WINDOWS_UI_CHECKS` to the Windows repository's corresponding test project paths to exercise both the compiled API client and the actual native Add/Save/Cancel flow. A synthetic packet adapter is approved only in the disposable test backend; these tests do not validate the Global protocol. Test-only auth hooks are generated in the temporary directory and are **not included in production**. Live Discord login requires your own provider credentials.
 
-GitHub Actions runs the checks and uploads the static build. [Deployment](docs/deployment.md), [API contract](docs/api.md), [privacy](docs/privacy.md).
+GitHub Actions runs the checks on every push; pushes to `main` also publish a Linux container image and a release with the PocketBase bundle. [Deployment](docs/deployment.md), [API contract](docs/api.md), [privacy](docs/privacy.md).
 
 The account migration locks the previous MVP's guest collections. New accounts use `users`, `party_rooms`, `room_members`, `characters`, `publisher_sessions`, `room_invites` and `desktop_codes`. Old guest tokens cannot use the new API. Guest data is preserved as locked records during migration rather than silently erased.
 

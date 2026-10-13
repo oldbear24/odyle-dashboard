@@ -20,6 +20,19 @@ Replace the example with your actual origin. Keep the port bound to loopback whe
 
 If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker build argument or Vite build environment variable, and allow that exact frontend origin. Static hosting alone cannot run PocketBase.
 
+## Releases
+
+Every push to `main` runs the checks, then publishes:
+
+- the image `ghcr.io/oldbear24/odyle-dashboard` for `linux/amd64` and `linux/arm64`, tagged `latest`, `<version>.<run number>` (for example `0.3.0.12`) and `sha-<commit>`. It is built without `VITE_POCKETBASE_URL`, so the UI talks to the instance that serves it;
+- the GitHub release `v<version>.<run number>` with `odyle-dashboard-<version>.<run number>-pocketbase.zip` and its checksum. The ZIP holds `pb_hooks`, `pb_migrations` and `pb_public`; upload them to a PocketBase or PocketHost instance and restart it.
+
+The version comes from `package.json`; bump it to start a new line. To run the published image instead of building locally, replace `build: .` in `compose.yaml` with:
+
+```yaml
+image: ghcr.io/oldbear24/odyle-dashboard:latest
+```
+
 ## Operations
 
 - Bootstrap the first PocketBase operator account locally. Restrict the management path `/_/` at your proxy to operator access.
