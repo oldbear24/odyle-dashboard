@@ -122,11 +122,11 @@ test('character identity can be saved before any game reading without accepting 
   await stop(); await start();
   assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, user, 'GET')).data.value, 265);
 });
-test('Windows UI follows the game character, sends only changes and shares per character', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
+test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
   const pair = (await action('desktop-code', {}, user)).data;
   const output = execFileSync('dotnet', ['run', '--project', process.env.ODYLE_WINDOWS_UI_CHECKS, '-c', 'Release', '--', url, pair.code], { encoding: 'utf8', timeout: 60000 });
-  assert.match(output, /game-driven characters, change-only sending, in-game switch attribution, per-character room sharing and persistence passed/);
+  assert.match(output, /game-driven characters, change-only sending, in-game switch attribution, dashboard-managed room sharing, party list and persistence passed/);
 });
 test('Discord accounts, persistent characters, private rooms and desktop pairing', async t => {
   await t.test('Discord is the only enabled sign-in provider; public password registration is closed', async () => {
