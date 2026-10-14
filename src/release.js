@@ -10,7 +10,7 @@ export function windowsApp(info) {
   const safe = url => typeof url === 'string' && url.startsWith('https://github.com/') ? url : page;
   if (!latest || !/^\d+(\.\d+){1,3}$/.test(String(latest.version || ''))) return { version: '', url: page, publishedAt: '', packages: [] };
   const packages = [];
-  if (latest.packages?.small?.url) packages.push({ kind: 'small', label: `Download for Windows x64 · ${packageSize(latest.packages.small.size || 0)}`, note: 'Needs the .NET 10 Desktop Runtime; Windows offers it if it is missing.', url: safe(latest.packages.small.url) });
-  if (latest.packages?.selfContained?.url) packages.push({ kind: 'self-contained', label: `Self-contained package · ${packageSize(latest.packages.selfContained.size || 0)}`, note: 'Includes the runtime.', url: safe(latest.packages.selfContained.url) });
+  if (latest.packages?.small?.url) packages.push({ kind: 'small', size: packageSize(latest.packages.small.size || 0), label: `Download for Windows x64 · ${packageSize(latest.packages.small.size || 0)}`, note: 'Needs the .NET 10 Desktop Runtime; Windows offers it if it is missing.', url: safe(latest.packages.small.url) });
+  if (latest.packages?.selfContained?.url) packages.push({ kind: 'self-contained', size: packageSize(latest.packages.selfContained.size || 0), label: `Self-contained package · ${packageSize(latest.packages.selfContained.size || 0)}`, note: 'Includes the runtime.', url: safe(latest.packages.selfContained.url) });
   return { version: latest.version, url: safe(latest.url), publishedAt: latest.publishedAt || '', packages };
 }

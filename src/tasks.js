@@ -1,4 +1,5 @@
 import { timestamp } from './model.js';
+import { t } from './i18n.js';
 // Daily and weekly resets of the Global service happen at one UTC hour (07:00 by
 // default) and the weekly reset on one weekday (Wednesday by default); the backend
 // reports both from odyle_settings. A task is done while it was checked after the
@@ -23,5 +24,5 @@ export const isDone = (task, now, resets = defaults) => Boolean(task.doneAt) && 
 // "2d 3h", "5h 12m", "4m" or "under a minute".
 export function remaining(ms) {
   const minutes = Math.max(0, Math.floor(ms / 60000)), hours = Math.floor(minutes / 60) % 24, daysLeft = Math.floor(minutes / 1440);
-  return daysLeft ? `${daysLeft}d ${hours}h` : hours ? `${hours}h ${minutes % 60}m` : minutes ? `${minutes}m` : 'under a minute';
+  return daysLeft ? `${daysLeft}d ${hours}h` : hours ? `${hours}h ${minutes % 60}m` : minutes ? `${minutes}m` : t('under a minute');
 }

@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 export const timestamp = date => Date.parse(String(date).replace(' ', 'T'));
 export function status(member, now = Date.now()) {
   if (!member.sharing) return 'offline';
@@ -9,8 +10,8 @@ export function status(member, now = Date.now()) {
   return 'live';
 }
 export function age(date, now = Date.now()) {
-  if (!date) return 'No reading yet';
+  if (!date) return t('No reading yet');
   const seconds = Math.max(0, Math.floor((now - timestamp(date)) / 1000));
-  return seconds < 60 ? `${seconds}s ago` : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`;
+  return seconds < 60 ? t('{n}s ago', { n: seconds }) : seconds < 3600 ? t('{n}m ago', { n: Math.floor(seconds / 60) }) : seconds < 86400 ? t('{n}h ago', { n: Math.floor(seconds / 3600) }) : t('{n}d ago', { n: Math.floor(seconds / 86400) });
 }
 export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));

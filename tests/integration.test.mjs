@@ -364,7 +364,7 @@ test('accounts see their history, delete characters, export their data, sign out
   assert.equal((await snapshot2(roomId, heir)).members.find(m => m.user === holder.record.id).displayName, 'Life keeper');
   // The account page lists the Windows apps that read for it; the export holds everything.
   const page = (await request('/api/odyle/account', undefined, holder, 'GET')).data;
-  assert.equal(page.account.displayName, 'Life keeper'); assert.deepEqual(page.apps.map(a => [a.sessionId, a.character]), [[session.sessionId, 'Historian']]); assert.equal(page.limits.characters, 30);
+  assert.equal(page.account.displayName, 'Life keeper'); assert.deepEqual(page.apps.map(a => [a.sessionId, a.character]), [[session.sessionId, 'Historian']]); assert.equal(page.limits.characters, 30); assert.equal(page.characters, 2);
   assert.equal((await request('/api/odyle/account', undefined, null, 'GET')).status, 401);
   const exported = (await request('/api/odyle/export', undefined, holder, 'GET')).data;
   assert.equal(exported.account.id, holder.record.id); assert.ok(exported.account.lastActiveAt);

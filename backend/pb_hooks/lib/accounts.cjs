@@ -381,7 +381,7 @@ function account(e) { return run(e, () => {
   const user = e.app.findRecordById('users', e.auth.id), reading = {};
   const sessions = e.app.findRecordsByFilter('publisher_sessions', 'user = {:user} && expiresAt > {:now}', '-updated', 20, 0, { user: user.id, now: stamp(new Date()) });
   for (const c of sessions.length ? e.app.findAllRecords('characters', $dbx.in('readingSession', ...sessions.map(s => s.id))) : []) reading[c.getString('readingSession')] = c.getString('characterName');
-  return e.json(200, { account: { id: user.id, displayName: user.getString('displayName'), email: user.email(), created: user.getString('created'), lastActiveAt: user.getString('lastActiveAt') }, limits, serverNow: now(),
+  return e.json(200, { account: { id: user.id, displayName: user.getString('displayName'), email: user.email(), created: user.getString('created'), lastActiveAt: user.getString('lastActiveAt') }, limits, serverNow: now(), characters: e.app.countRecords('characters', $dbx.hashExp({ user: user.id })),
     apps: sessions.map(s => ({ sessionId: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), character: reading[s.id] || '' })) });
 }); }
 function profile(e) { return mutate(e, (app, user, body, affected) => {
