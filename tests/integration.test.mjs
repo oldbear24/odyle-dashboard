@@ -304,6 +304,8 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     const spoofed = await fetch(url + '/api/collections/users/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Request-Context': 'oauth2' }, body: JSON.stringify(registration) });
     assert.equal(spoofed.status, 400);
     assert.equal((await action('create', { name: 'Anonymous room' })).status, 401);
+    // The anonymous-room collections of the first release are gone, not merely locked.
+    for (const name of ['rooms', 'members', 'invites']) assert.equal((await request('/api/collections/' + name + '/records', undefined, owner, 'GET')).status, 404);
   });
   const created = await action('create', { name: 'Persistent expedition', cost: 40 }, owner);
   assert.equal(created.status, 200, JSON.stringify(created.data)); room = created.data.room;
