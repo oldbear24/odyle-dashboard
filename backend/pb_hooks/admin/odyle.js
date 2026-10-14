@@ -146,7 +146,9 @@ export function settingsPage() {
   }
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const localHour = hour => new Date(Date.UTC(2000, 0, 1, hour)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const field = (id, label, input, help) => t.div({ className: 'col-lg-4' }, t.div({ className: 'field' }, t.label({ htmlFor: id }, label), input), t.div({ className: 'field-help' }, help));
+  const field = (id, label, input, help, width = 4) => t.div({ className: 'col-lg-' + width }, t.div({ className: 'field' }, t.label({ htmlFor: id }, label), input), t.div({ className: 'field-help' }, help));
+  // The dungeon catalog is edited as one name per line.
+  const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   load();
   return layout('#/odyle/settings', null,
     () => state.loading ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' })) : t.form({ className: 'grid', inert: () => state.saving, onsubmit: e => { e.preventDefault(); save(); } },
@@ -157,9 +159,14 @@ export function settingsPage() {
         () => Number.isInteger(state.form.dailyResetHour) && state.form.dailyResetHour >= 0 && state.form.dailyResetHour < 24 ? 'Daily tasks uncheck at ' + String(state.form.dailyResetHour).padStart(2, '0') + ':00 UTC, ' + localHour(state.form.dailyResetHour) + ' in your time zone.' : 'An hour from 0 to 23.'),
       field('odyle-weekly-reset', 'Weekly reset day', app.components.select({ id: 'odyle-weekly-reset', required: true, options: days.map(d => ({ label: capital(d), value: d })), value: () => state.form.weeklyResetDay, onchange: e => state.form.weeklyResetDay = e?.[0]?.value }),
         'Weekly tasks uncheck on this day at the daily reset hour.'),
+      field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => state.form.inactiveAccountDays = integer(e.target.value) }),
+        () => state.form.inactiveAccountDays ? 'Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close.' : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
+      field('odyle-dungeons', 'Dungeon catalog', t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'One dungeon per line', value: () => (state.form.dungeons || []).join('\n'), onchange: e => state.form.dungeons = lines(e.target.value) }),
+        () => (state.form.dungeons || []).length ? number(state.form.dungeons.length) + ' dungeons. New wishlist entries and planned runs must be one of them and take this spelling; existing entries stay.' : 'Empty: wishlists and planned runs take any dungeon name. One name per line, up to 200.', 8),
       t.div({ className: 'col-lg-12' }, t.hr()),
       t.div({ className: 'col-lg-12' }, t.div({ className: 'flex' },
-        t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.defaults } },
+        // Resets the game rules only; the retention period and the dungeon catalog stay.
+        t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: state.defaults.odylePerCube, dailyResetHour: state.defaults.dailyResetHour, weeklyResetDay: state.defaults.weeklyResetDay } },
           t.span({ className: 'txt' }, () => 'Use defaults (' + number(state.defaults?.odylePerCube) + ' · ' + String(state.defaults?.dailyResetHour ?? '').padStart(2, '0') + ':00 UTC · ' + capital(state.defaults?.weeklyResetDay || '') + ')')),
         t.div({ className: 'm-r-auto' }),
         () => state.changed ? [

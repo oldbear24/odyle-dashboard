@@ -21,6 +21,7 @@ async function request(path, body, auth, method = 'POST') {
 }
 const action = (name, body, auth) => request('/api/odyle/' + name, body, auth);
 const snapshot = auth => request('/api/odyle/snapshot/' + room.id, undefined, auth, 'GET');
+async function snapshot2(id, auth) { const res = await request('/api/odyle/snapshot/' + id, undefined, auth, 'GET'); assert.equal(res.status, 200, JSON.stringify(res.data)); return res.data; }
 async function stop() { if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('exit', resolve)); child.kill(); await closed; } }
 async function start() {
   child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl } });
@@ -97,6 +98,8 @@ before(async () => {
   // Joins are rate limited to 30 a minute and other tests use that budget; this adds a membership directly.
   await writeFile(join(directory, 'hooks', 'member-fixture.pb.js'), `routerAdd('POST','/__test__/member', e => { const b=e.requestInfo().body, m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',b.room); m.set('user',b.user); m.set('role',b.role); m.set('sharedCharacters',[]); e.app.save(m); return e.json(200,m); });`);
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
+  // Caps and retention: bulk records and an aged account, written directly so the tests keep their rate-limit budget.
+  await writeFile(join(directory, 'hooks', 'bulk-fixture.pb.js'), `routerAdd('POST','/__test__/characters', e => { const b=e.requestInfo().body; for (let i=0;i<b.count;i++) { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',b.user); c.set('characterName','Bulk'+i); c.set('server','Lumiel'); c.set('region','GLOBAL_EU'); e.app.save(c); } return e.json(200,{}); }); routerAdd('POST','/__test__/rooms', e => { const b=e.requestInfo().body; for (let i=0;i<b.count;i++) { const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',b.user); r.set('name','Bulk '+i); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',b.user); m.set('role',b.role||'owner'); e.app.save(m); if (b.role) { r.set('owner',b.other); e.app.save(r); } } return e.json(200,{}); }); routerAdd('POST','/__test__/inactive', e => { const b=e.requestInfo().body, u=e.app.findRecordById('users',b.user); u.set('lastActiveAt',new Date(Date.now()-b.days*86400000).toISOString()); e.app.save(u); return e.json(200,{}); }); routerAdd('POST','/__test__/retention', e => { require(__hooks + '/lib/accounts.cjs').retention(); return e.json(200,{}); });`);
   await start();
   const users = await Promise.all(['Owner', 'Player', 'Viewer', 'Outsider'].map(name => request('/__test__/account', { name })));
   for (const result of users) assert.equal(result.status, 200, JSON.stringify(result.data));
@@ -318,19 +321,171 @@ test('superusers watch connected apps and their packets live and edit the server
   } finally { await stream.close(); }
   // Server-wide settings: validated, partial changes keep the rest, and every client follows.
   const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
-  assert.deepEqual((await settings()).data.settings, { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday' });
+  assert.deepEqual((await settings()).data.settings, { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, dungeons: [] });
   assert.equal((await settings({ odylePerCube: 50 }, reader)).status, 403); assert.equal((await settings(undefined, reader)).status, 403);
-  for (const bad of [{ odylePerCube: 0 }, { odylePerCube: 1001 }, { odylePerCube: '50' }, { dailyResetHour: 24 }, { dailyResetHour: 1.5 }, { weeklyResetDay: 'someday' }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
+  for (const bad of [{ odylePerCube: 0 }, { odylePerCube: 1001 }, { odylePerCube: '50' }, { dailyResetHour: 24 }, { dailyResetHour: 1.5 }, { weeklyResetDay: 'someday' }, { inactiveAccountDays: 10 }, { inactiveAccountDays: -1 }, { dungeons: 'Fire Temple' }, { dungeons: [''] }, { dungeons: ['x'.repeat(61)] }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
   try {
     const changed = await settings({ odylePerCube: 50, dailyResetHour: 0, weeklyResetDay: 'monday' }); assert.equal(changed.status, 200, JSON.stringify(changed.data));
     assert.equal((await request('/api/odyle/rooms', undefined, reader, 'GET')).data.odylePerCube, 50);
     assert.deepEqual((await request('/api/odyle/tasks', undefined, reader, 'GET')).data.resets, { dailyResetHour: 0, weeklyResetDay: 'monday' });
-    assert.deepEqual((await settings({ odylePerCube: 45 })).data.settings, { odylePerCube: 45, dailyResetHour: 0, weeklyResetDay: 'monday' });
-  } finally { assert.equal((await settings({ odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday' })).status, 200); }
+    assert.deepEqual((await settings({ odylePerCube: 45 })).data.settings, { odylePerCube: 45, dailyResetHour: 0, weeklyResetDay: 'monday', inactiveAccountDays: 0, dungeons: [] });
+    // The dungeon catalog keeps the first spelling of each name.
+    assert.deepEqual((await settings({ dungeons: [' Fire   Temple ', 'fire temple', 'Udas Temple'] })).data.settings.dungeons, ['Fire Temple', 'Udas Temple']);
+  } finally { assert.equal((await settings({ odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', dungeons: [] })).status, 200); }
   // The dashboard extension: a stable entry that imports the page under its content hash.
   assert.match(await (await fetch(url + '/_/extensions.js')).text(), /extensions\/odyle\/odyle\.js\?v=/);
   const { version } = (await request('/api/odyle/admin/ui', undefined, null, 'GET')).data; assert.match(version, /^[0-9a-f]{16}$/);
   const page = await fetch(url + '/_/extensions/odyle/odyle.js?v=' + version); assert.equal(page.status, 200); assert.match(await page.text(), /export function monitorPage/);
+});
+test('accounts see their history, delete characters, export their data, sign out everywhere and delete themselves', async () => {
+  const [holder, heir, watcher, loner, stranger] = await Promise.all(['Life holder', 'Life heir', 'Life watcher', 'Life loner', 'Life stranger'].map(async name => (await request('/__test__/account', { name })).data));
+  const made = (await action('create', { name: 'Inherited room' }, holder)).data, roomId = made.room.id;
+  for (const [auth, role] of [[heir, 'reporter'], [watcher, 'viewer']]) assert.equal((await request('/__test__/member', { room: roomId, user: auth.record.id, role })).status, 200);
+  const lonely = (await action('create', { name: 'Lonely room' }, loner)).data.room.id;
+  assert.equal((await request('/__test__/member', { room: lonely, user: watcher.record.id, role: 'viewer' })).status, 200);
+  // Every change of a value is kept in the character's history; unchanged values are not.
+  const session = (await action('session', {}, holder)).data;
+  const reading = { sessionId: session.sessionId, characterName: 'Historian', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  const kept = (await action('report', { ...reading, sequence: 1, value: 100 }, holder)).data.character;
+  for (const [sequence, value] of [[2, 100], [3, 140]]) assert.equal((await action('report', { ...reading, sequence, value, characterId: kept.id }, holder)).status, 200);
+  const spare = (await action('character', { characterName: 'Spare', server: 'Lumiel', region: 'GLOBAL_EU' }, holder)).data.character;
+  assert.equal((await action('sharing', { roomId, characterId: kept.id, enabled: true }, holder)).status, 200);
+  const history = (id, auth) => request('/api/odyle/history/' + id, undefined, auth, 'GET');
+  const own = await history(kept.id, holder); assert.equal(own.status, 200, JSON.stringify(own.data));
+  assert.deepEqual(own.data.readings.map(r => r.value), [100, 140]); assert.equal(own.data.character.characterName, 'Historian');
+  // Rooms the character is shared in see it too, viewers included; nobody else does.
+  assert.deepEqual((await history(kept.id, watcher)).data.readings.map(r => r.value), [100, 140]);
+  assert.equal((await history(kept.id, stranger)).status, 403); assert.equal((await history(spare.id, heir)).status, 403);
+  assert.equal((await history('missingcharacter', holder)).status, 404);
+  assert.equal((await request('/api/collections/character_readings/records', undefined, holder, 'GET')).status, 403);
+  // The display name is changed on the dashboard and every room sees it.
+  for (const bad of ['', ' ', 'x'.repeat(41), 7]) assert.equal((await action('profile', { displayName: bad }, holder)).status, 400);
+  const renamed = await action('profile', { displayName: '  Life   keeper ' }, holder); assert.equal(renamed.status, 200, JSON.stringify(renamed.data));
+  assert.equal((await snapshot2(roomId, heir)).members.find(m => m.user === holder.record.id).displayName, 'Life keeper');
+  // The account page lists the Windows apps that read for it; the export holds everything.
+  const page = (await request('/api/odyle/account', undefined, holder, 'GET')).data;
+  assert.equal(page.account.displayName, 'Life keeper'); assert.deepEqual(page.apps.map(a => [a.sessionId, a.character]), [[session.sessionId, 'Historian']]); assert.equal(page.limits.characters, 30);
+  assert.equal((await request('/api/odyle/account', undefined, null, 'GET')).status, 401);
+  const exported = (await request('/api/odyle/export', undefined, holder, 'GET')).data;
+  assert.equal(exported.account.id, holder.record.id); assert.ok(exported.account.lastActiveAt);
+  assert.deepEqual(exported.characters.map(c => [c.characterName, c.history.map(h => h.value)]), [['Historian', [100, 140]], ['Spare', []]]);
+  assert.deepEqual(exported.rooms.map(r => [r.name, r.role, r.sharedCharacters]), [['Inherited room', 'owner', [kept.id]]]);
+  assert.deepEqual(exported.readerSessions.map(s => s.id), [session.sessionId]); assert.equal(JSON.stringify(exported).includes(holder.token), false);
+  // Deleting a character takes it out of every room, with its history.
+  assert.equal((await action('delete-character', { characterId: kept.id }, heir)).status, 403);
+  assert.equal((await action('delete-character', { characterId: spare.id }, holder)).status, 200);
+  assert.equal((await action('delete-character', { characterId: spare.id }, holder)).status, 404);
+  assert.equal((await action('delete-character', { characterId: kept.id }, holder)).status, 200);
+  assert.deepEqual((await request('/api/odyle/rooms', undefined, holder, 'GET')).data.rooms.find(r => r.id === roomId).sharedCharacters, []);
+  assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.characters, []);
+  assert.equal((await action('report', { ...reading, sequence: 4, value: 150, characterId: kept.id }, holder)).status, 404);
+  // Signing out everywhere ends every token and reader session but keeps this browser signed in.
+  const paired = (await action('pair', { code: (await action('desktop-code', {}, holder)).data.code })).data;
+  const fresh = await action('sign-out-everywhere', {}, holder); assert.equal(fresh.status, 200, JSON.stringify(fresh.data));
+  for (const old of [holder, paired]) assert.equal((await request('/api/odyle/rooms', undefined, old, 'GET')).status, 401);
+  const current = { token: fresh.data.token, record: fresh.data.record }; assert.equal((await request('/api/odyle/rooms', undefined, current, 'GET')).status, 200);
+  assert.equal((await action('heartbeat', { sessionId: session.sessionId }, current)).status, 403);
+  // Deleting the account passes its room to the longest-standing player and closes rooms nobody else can lead.
+  assert.equal((await action('delete-account', {}, current)).status, 400);
+  assert.equal((await action('delete-account', { confirm: true }, current)).status, 200);
+  assert.equal((await request('/api/odyle/rooms', undefined, current, 'GET')).status, 401);
+  const inherited = await snapshot2(roomId, heir);
+  assert.equal(inherited.room.owner, heir.record.id); assert.deepEqual(inherited.members.map(m => [m.user, m.role]), [[heir.record.id, 'owner'], [watcher.record.id, 'viewer']]);
+  assert.equal((await action('delete-account', { confirm: true }, loner)).status, 200);
+  assert.equal((await request('/api/odyle/snapshot/' + lonely, undefined, watcher, 'GET')).status, 403);
+  // Superusers can delete room owners in the PocketBase dashboard too; the room passes on the same way.
+  const operator = (await request('/__test__/superuser', {})).data;
+  const deleted = await fetch(url + '/api/collections/users/records/' + heir.record.id, { method: 'DELETE', headers: { Authorization: operator.token } });
+  assert.equal(deleted.status, 204, await deleted.text());
+  assert.equal((await request('/api/odyle/snapshot/' + roomId, undefined, watcher, 'GET')).status, 403);
+});
+test('room owners rename rooms, change roles and hand rooms over; runs are planned together', async () => {
+  const [lead, mate, guest, other] = await Promise.all(['Manage lead', 'Manage mate', 'Manage guest', 'Manage other'].map(async name => (await request('/__test__/account', { name })).data));
+  const roomId = (await action('create', { name: 'Managed room' }, lead)).data.room.id, elsewhere = (await action('create', { name: 'Other room' }, other)).data.room.id;
+  for (const [auth, role] of [[mate, 'reporter'], [guest, 'viewer']]) assert.equal((await request('/__test__/member', { room: roomId, user: auth.record.id, role })).status, 200);
+  const memberOf = async (auth, room = roomId) => (await snapshot2(room, lead)).members.find(m => m.user === auth.record.id);
+  const stream = await connect(url, mate.token, 'odyle.room.' + roomId);
+  try {
+    assert.equal((await action('rename', { roomId, name: ' Renamed room ' }, mate)).status, 403);
+    for (const name of ['', 'x'.repeat(61)]) assert.equal((await action('rename', { roomId, name }, lead)).status, 400);
+    const renamed = await action('rename', { roomId, name: ' Renamed room ' }, lead); assert.equal(renamed.status, 200, JSON.stringify(renamed.data)); assert.equal(renamed.data.room.name, 'Renamed room');
+    assert.equal((await stream.next())?.data.refresh, true);
+  } finally { await stream.close(); }
+  // A player made viewer stops sharing; the owner cannot change themselves or members of other rooms.
+  const own = (await action('character', { characterName: 'Mate main', server: 'Lumiel', region: 'GLOBAL_EU' }, mate)).data.character;
+  assert.equal((await action('sharing', { roomId, characterId: own.id, enabled: true }, mate)).status, 200);
+  const mateId = (await memberOf(mate)).id;
+  assert.equal((await action('role', { roomId, memberId: mateId, role: 'viewer' }, mate)).status, 403);
+  for (const bad of [{ role: 'owner' }, { role: 'admin' }]) assert.equal((await action('role', { roomId, memberId: mateId, ...bad }, lead)).status, 400);
+  assert.equal((await action('role', { roomId, memberId: (await memberOf(lead)).id, role: 'viewer' }, lead)).status, 403);
+  assert.equal((await action('role', { roomId, memberId: (await snapshot2(elsewhere, other)).members[0].id, role: 'viewer' }, lead)).status, 403);
+  assert.equal((await action('role', { roomId, memberId: mateId, role: 'viewer' }, lead)).status, 200);
+  assert.deepEqual(await memberOf(mate).then(m => [m.role, m.sharedCharacters]), ['viewer', []]);
+  assert.equal((await action('sharing', { roomId, characterId: own.id, enabled: true }, mate)).status, 403);
+  assert.equal((await action('role', { roomId, memberId: mateId, role: 'reporter' }, lead)).status, 200);
+  // Runs: players plan and join, viewers only read, the planner or owner cancels.
+  const soon = new Date(Date.now() + 3600000).toISOString(), plan = (auth, body) => action('plan', { roomId, ...body }, auth);
+  for (const startsAt of ['tomorrow', new Date(Date.now() - 2 * 3600000).toISOString(), new Date(Date.now() + 61 * 86400000).toISOString()]) assert.equal((await plan(mate, { dungeon: 'Fire Temple', startsAt })).status, 400);
+  assert.equal((await plan(mate, { dungeon: 'Fire Temple', startsAt: soon, note: 'x'.repeat(121) })).status, 400);
+  assert.equal((await plan(guest, { dungeon: 'Fire Temple', startsAt: soon })).status, 403); assert.equal((await plan(other, { dungeon: 'Fire Temple', startsAt: soon })).status, 403);
+  const planned = await plan(mate, { dungeon: ' Fire   Temple ', startsAt: soon, note: 'Bring potions' }); assert.equal(planned.status, 200, JSON.stringify(planned.data));
+  const run = planned.data.runs[0]; assert.deepEqual([run.dungeon, run.note, run.planner, run.attendees], ['Fire Temple', 'Bring potions', mate.record.id, [mate.record.id]]);
+  assert.equal(Date.parse(run.startsAt.replace(' ', 'T')), Date.parse(soon));
+  assert.equal((await plan(guest, { id: run.id, going: true })).status, 403); assert.equal((await plan(lead, { id: run.id })).status, 400);
+  assert.deepEqual((await plan(lead, { id: run.id, going: true })).data.runs[0].attendees, [mate.record.id, lead.record.id]);
+  assert.deepEqual((await snapshot2(roomId, guest)).runs.map(r => [r.id, r.attendees]), [[run.id, [mate.record.id, lead.record.id]]]);
+  assert.equal((await plan(other, { id: run.id, remove: true })).status, 403);
+  const second = (await plan(lead, { dungeon: 'Udas Temple', startsAt: new Date(Date.now() + 7200000).toISOString() })).data.runs.find(r => r.dungeon === 'Udas Temple');
+  assert.equal((await plan(mate, { id: second.id, remove: true })).status, 403);
+  assert.equal((await plan(lead, { id: run.id, remove: true })).status, 200);
+  assert.deepEqual((await snapshot2(roomId, lead)).runs.map(r => r.id), [second.id]);
+  // The owner hands the room over, stays as a player and can then leave; leaving takes them off runs.
+  assert.equal((await action('transfer', { roomId, memberId: mateId }, guest)).status, 403);
+  assert.equal((await action('leave', { roomId }, lead)).status, 400);
+  const handed = await action('transfer', { roomId, memberId: mateId }, lead); assert.equal(handed.status, 200, JSON.stringify(handed.data)); assert.equal(handed.data.room.owner, mate.record.id);
+  assert.deepEqual((await request('/api/odyle/rooms', undefined, lead, 'GET')).data.rooms.find(r => r.id === roomId).role, 'reporter');
+  assert.equal((await action('rename', { roomId, name: 'Mine again' }, lead)).status, 403);
+  assert.equal((await action('leave', { roomId }, lead)).status, 200);
+  const left = (await snapshot2(roomId, mate)).runs[0]; assert.deepEqual([left.planner, left.attendees], ['', []]);
+});
+test('a dungeon catalog guides wishlists and runs, accounts have caps and inactive accounts can be cleaned up', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, settings = body => request('/api/odyle/admin/settings', body, operator);
+  const [planner, collector, idle, busy] = await Promise.all(['Catalog planner', 'Cap collector', 'Retention idle', 'Retention busy'].map(async name => (await request('/__test__/account', { name })).data));
+  const roomId = (await action('create', { name: 'Catalog room' }, planner)).data.room.id;
+  assert.equal((await action('wishlist', { roomId, dungeon: 'Old Cave', wanted: true }, planner)).status, 200);
+  try {
+    assert.equal((await settings({ dungeons: ['Fire Temple', 'Udas Temple'] })).status, 200);
+    const room = await snapshot2(roomId, planner); assert.deepEqual(room.dungeons, ['Fire Temple', 'Udas Temple']);
+    // New entries must come from the catalog and take its spelling; existing ones can still be joined and left.
+    assert.equal((await action('wishlist', { roomId, dungeon: 'Unknown Cave', wanted: true }, planner)).status, 400);
+    assert.deepEqual((await action('wishlist', { roomId, dungeon: 'fire  temple', wanted: true }, planner)).data.wishlist.map(w => w.dungeon), ['Old Cave', 'Fire Temple']);
+    assert.equal((await action('plan', { roomId, dungeon: 'Unknown Cave', startsAt: new Date(Date.now() + 3600000).toISOString() }, planner)).status, 400);
+    assert.equal((await action('plan', { roomId, dungeon: 'udas temple', startsAt: new Date(Date.now() + 3600000).toISOString() }, planner)).data.runs[0].dungeon, 'Udas Temple');
+    assert.equal((await action('wishlist', { roomId, dungeon: 'Old Cave', wanted: false }, planner)).status, 200);
+  } finally { assert.equal((await settings({ dungeons: [] })).status, 200); }
+  // Caps: 30 characters, 20 owned rooms and 50 memberships per account.
+  assert.equal((await request('/__test__/characters', { user: collector.record.id, count: 29 })).status, 200);
+  assert.equal((await action('character', { characterName: 'Thirtieth', server: 'Lumiel', region: 'GLOBAL_EU' }, collector)).status, 200);
+  assert.equal((await action('character', { characterName: 'Thirtieth', server: 'Lumiel', region: 'GLOBAL_EU' }, collector)).status, 200);
+  assert.equal((await action('character', { characterName: 'One too many', server: 'Lumiel', region: 'GLOBAL_EU' }, collector)).status, 400);
+  const session = (await action('session', {}, collector)).data;
+  assert.equal((await action('report', { sessionId: session.sessionId, sequence: 1, characterName: 'Also too many', server: 'Lumiel', region: 'GLOBAL_EU', value: 1, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, collector)).status, 400);
+  assert.equal((await request('/__test__/rooms', { user: collector.record.id, count: 20 })).status, 200);
+  assert.equal((await action('create', { name: 'Twenty-first' }, collector)).status, 400);
+  assert.equal((await request('/__test__/rooms', { user: collector.record.id, count: 30, role: 'reporter', other: planner.record.id })).status, 200);
+  const invite = (await action('invites', { roomId }, planner)).data.invites[0].code;
+  assert.equal((await action('join', { code: invite }, collector)).status, 400);
+  // Inactive accounts are kept unless a superuser sets a period; then the nightly job deletes them.
+  assert.equal((await request('/__test__/inactive', { user: idle.record.id, days: 40 })).status, 200);
+  assert.equal((await request('/__test__/retention', {})).status, 200);
+  assert.equal((await request('/api/odyle/tasks', undefined, idle, 'GET')).status, 200);
+  assert.equal((await request('/__test__/inactive', { user: idle.record.id, days: 40 })).status, 200);
+  try {
+    assert.equal((await settings({ inactiveAccountDays: 30 })).status, 200);
+    assert.equal((await request('/__test__/retention', {})).status, 200);
+    assert.equal((await request('/api/odyle/tasks', undefined, idle, 'GET')).status, 401);
+    assert.equal((await request('/api/odyle/tasks', undefined, busy, 'GET')).status, 200);
+  } finally { assert.equal((await settings({ inactiveAccountDays: 0 })).status, 200); }
 });
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;

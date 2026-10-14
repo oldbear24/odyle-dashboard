@@ -7,6 +7,9 @@ const expiry = seconds => new Date(Date.now() + seconds * 1000).toISOString();
 // strings, so filter params must use the same space-separated form, not ISO 'T'.
 const stamp = date => date.toISOString().replace('T', ' ');
 const list = (app, name, filter, params) => app.findRecordsByFilter(name, filter, 'id', 500, 0, params || {});
+// Per-account caps. They only stop runaway or abusive clients: players keep a handful
+// of characters, and every character costs the portrait cron one PLAYNC lookup a day.
+const limits = { characters: 30, ownedRooms: 20, memberships: 50 };
 function membership(app, userId, roomId) {
   const found = list(app, 'room_members', 'room = {:room} && user = {:user}', { room: roomId, user: userId });
   if (!found.length) throw new ForbiddenError('You are not a member of this room.');
@@ -17,11 +20,20 @@ function owner(app, userId, roomId) {
   if (room.getString('owner') !== userId) throw new ForbiddenError('Only the room owner can do this.'); return room;
 }
 function ownCharacter(app, userId, id) {
-  const character = app.findRecordById('characters', id);
+  let character; try { character = app.findRecordById('characters', id); } catch { throw new NotFoundError('This character no longer exists.'); }
   if (character.getString('user') !== userId) throw new ForbiddenError('This character belongs to another account.'); return character;
 }
+// Another membership of the owner's room, for removing, re-roling or handing over.
+function otherMember(app, room, memberId, userId, message) {
+  let target; try { target = app.findRecordById('room_members', memberId); } catch { throw new NotFoundError('This member is no longer in the room.'); }
+  if (target.getString('room') !== room.id || target.getString('user') === userId) throw new ForbiddenError(message); return target;
+}
+function newCharacter(app, userId) {
+  if (app.countRecords('characters', $dbx.hashExp({ user: userId })) >= limits.characters) throw new BadRequestError('You can keep up to ' + limits.characters + ' characters. Delete one you no longer play under My rooms & characters.');
+  const record = new Record(app.findCollectionByNameOrId('characters')); record.set('user', userId); return record;
+}
 function ownSession(app, userId, id) {
-  const session = app.findRecordById('publisher_sessions', id);
+  let session; try { session = app.findRecordById('publisher_sessions', id); } catch { throw new ForbiddenError('Publisher session expired. Reconnect.'); }
   if (session.getString('user') !== userId || Date.parse(session.getString('expiresAt')) <= Date.now()) throw new ForbiddenError('Publisher session expired. Reconnect.'); return session;
 }
 function notify(app, roomIds) {
@@ -36,7 +48,15 @@ const odylePerCube = app => settings.read(app).odylePerCube;
 const roomJson = (room, cost) => ({ ...room.publicExport(), cost });
 const shared = m => Array.from(m.getStringSlice('sharedCharacters'));
 const roomsFor = (app, userId) => list(app, 'room_members', 'user = {:user}', { user: userId }).map(m => m.getString('room'));
+// lastActiveAt marks the last time the account used Odyle, for the optional clean-up
+// of inactive accounts (retention). Written at most hourly, so readings stay cheap.
+function touch(e) {
+  const auth = e.auth; if (!auth || auth.collection().name !== 'users') return;
+  if (auth.getString('lastActiveAt') > stamp(new Date(Date.now() - 3600000))) return;
+  try { const user = e.app.findRecordById('users', auth.id); user.set('lastActiveAt', now()); e.app.save(user); } catch (error) { console.log('Odyle activity mark failed: ' + error.message); }
+}
 function run(e, action) {
+  touch(e);
   try { return action(); } catch (error) {
     if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError) throw error;
     throw new BadRequestError(error.message || 'Request could not be completed.');
@@ -58,10 +78,15 @@ function addMember(app, roomId, userId, role) {
   record.set('room', roomId); record.set('user', userId); record.set('role', role); record.set('sharedCharacters', []); app.save(record); return record;
 }
 function create(e) { return mutate(e, (app, user, body) => {
+  if (app.countRecords('party_rooms', $dbx.hashExp({ owner: user.id })) >= limits.ownedRooms) throw new BadRequestError('You can own up to ' + limits.ownedRooms + ' rooms. Close one you no longer use.');
+  joinable(app, user.id);
   const room = new Record(app.findCollectionByNameOrId('party_rooms'));
   const cost = odylePerCube(app); room.set('name', validate.text(body.name, 'Room name', 60)); room.set('owner', user.id); room.set('cost', cost); app.save(room);
   return { room: roomJson(room, cost), membership: addMember(app, room.id, user.id, 'owner'), invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
 }); }
+function joinable(app, userId) {
+  if (app.countRecords('room_members', $dbx.hashExp({ user: userId })) >= limits.memberships) throw new BadRequestError('You can be in up to ' + limits.memberships + ' rooms. Leave one first.');
+}
 function join(e) { return mutate(e, (app, user, body, affected) => {
   const code = validate.text(body.code, 'Invite code', 20).replace(/[\s-]/g, '').toUpperCase(); let invitation;
   try { invitation = app.findFirstRecordByData('room_invites', 'digest', $security.sha256(code)); } catch { throw new BadRequestError('Invite is invalid or expired.'); }
@@ -70,6 +95,7 @@ function join(e) { return mutate(e, (app, user, body, affected) => {
   const existing = list(app, 'room_members', 'room = {:room} && user = {:user}', { room: room.id, user: user.id });
   if (existing.length) return { room: roomJson(room, cost), membership: existing[0] };
   if (app.countRecords('room_members', $dbx.hashExp({ room: room.id })) >= 50) throw new BadRequestError('Room is full.');
+  joinable(app, user.id);
   const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room: roomJson(room, cost), membership: member };
 }); }
 // One query for the memberships, one for their rooms and one for the cost; serverNow
@@ -80,7 +106,7 @@ function rooms(e) { return run(e, () => {
   return e.json(200, { odylePerCube: cost, serverNow: now(), rooms: memberships.filter(m => byId[m.getString('room')]).map(m => ({ ...roomJson(byId[m.getString('room')], cost), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) });
 }); }
 function snapshot(e) { return run(e, () => {
-  const id = e.request.pathValue('id'); membership(e.app, e.auth.id, id);
+  const id = e.request.pathValue('id'); membership(e.app, e.auth.id, id); const rules = settings.read(e.app);
   // Three queries for the whole room: members, their accounts and all their
   // characters, instead of two lookups per member.
   const room = e.app.findRecordById('party_rooms', id), members = list(e.app, 'room_members', 'room = {:room}', { room: id });
@@ -90,11 +116,11 @@ function snapshot(e) { return run(e, () => {
   for (const owned of Object.values(characters)) owned.sort((a, b) => (a.getString('created') < b.getString('created') ? -1 : a.getString('created') > b.getString('created') ? 1 : 0));
   // Others see only the characters a member linked to this room; members always
   // see all of their own, each flagged with whether it is shared here.
-  return e.json(200, { room: roomJson(room, odylePerCube(e.app)), serverNow: now(), members: members.map(m => {
+  return e.json(200, { room: roomJson(room, rules.odylePerCube), serverNow: now(), members: members.map(m => {
     const linked = shared(m), mine = m.getString('user') === e.auth.id;
     return { ...m.publicExport(), sharing: linked.length > 0, displayName: names[m.getString('user')] || '',
       characters: (characters[m.getString('user')] || []).filter(c => mine || linked.includes(c.id)).map(c => ({ ...c.publicExport(), shared: linked.includes(c.id) })) };
-  }), wishlist: wishlistOf(e.app, id, members) });
+  }), wishlist: wishlistOf(e.app, id, members), runs: runsOf(e.app, id, members), dungeons: rules.dungeons });
 }); }
 // The room's dungeon wishlist grouped by dungeon, most wanted first, then oldest.
 // `users` are the accounts that still need it; clients name them from `members`.
@@ -121,9 +147,12 @@ function wishlist(e) { return mutate(e, (app, user, body, affected) => {
     if (m.getString('role') === 'viewer') throw new ForbiddenError('Viewers cannot add dungeons to this room\'s wishlist.');
     if (app.countRecords('room_wishes', $dbx.hashExp({ member: m.id })) >= 20) throw new BadRequestError('You can have up to 20 dungeons on a room\'s wishlist.');
     if (!entry.length && wishlistOf(app, roomId).length >= 50) throw new BadRequestError('This room\'s wishlist is full (50 dungeons).');
+    // A new entry must be in the dungeon catalog, when there is one, and takes its spelling.
+    const listed = entry.length ? null : settings.dungeonName(app, wish.dungeon);
+    if (!entry.length && !listed) throw new BadRequestError('Choose a dungeon from the list.');
     const record = new Record(app.findCollectionByNameOrId('room_wishes'));
     // Joining an entry keeps its first spelling, whatever case this member typed.
-    record.set('room', roomId); record.set('member', m.id); record.set('dungeon', entry.length ? entry[0].getString('dungeon') : wish.dungeon); record.set('key', wish.key); app.save(record);
+    record.set('room', roomId); record.set('member', m.id); record.set('dungeon', entry.length ? entry[0].getString('dungeon') : listed.dungeon); record.set('key', wish.key); app.save(record);
   }
   affected.push(roomId); return { wishlist: wishlistOf(app, roomId) };
 }); }
@@ -153,11 +182,14 @@ function task(e) { return mutate(e, (app, user, body) => {
   }
   return checklist(app, user.id);
 }); }
+// Ends a reader session; the characters it read keep their values but turn stale.
+function endSession(app, session) {
+  for (const c of list(app, 'characters', 'readingSession = {:id}', { id: session.id })) { c.set('valid', false); app.save(c); }
+  app.delete(session);
+}
 function session(e) { return mutate(e, (app, user, body, affected) => {
   if (body.previousSessionId) {
-    const old = ownSession(app, user.id, String(body.previousSessionId));
-    for (const c of list(app, 'characters', 'readingSession = {:id}', { id: old.id })) { c.set('valid', false); app.save(c); }
-    app.delete(old); affected.push(...roomsFor(app, user.id));
+    endSession(app, ownSession(app, user.id, String(body.previousSessionId))); affected.push(...roomsFor(app, user.id));
   }
   const record = new Record(app.findCollectionByNameOrId('publisher_sessions'));
   record.set('user', user.id); record.set('expiresAt', expiry(86400)); app.save(record); return { sessionId: record.id, sequence: 0 };
@@ -169,7 +201,7 @@ function character(e) { return mutate(e, (app, user, body, affected) => {
   const data = validate.characterIdentity(body);
   const existing = list(app, 'characters', 'user = {:user} && region = {:region} && server = {:server} && characterName = {:name}', { user: user.id, region: data.region, server: data.server, name: data.characterName });
   if (existing.length) return { character: existing[0] };
-  const record = new Record(app.findCollectionByNameOrId('characters')); record.set('user', user.id);
+  const record = newCharacter(app, user.id);
   for (const key of ['characterName', 'server', 'region']) record.set(key, data[key]);
   record.set('confirmed', false); record.set('valid', false); app.save(record);
   affected.push(...roomsFor(app, user.id)); return { character: record };
@@ -180,15 +212,18 @@ function report(e) { return mutate(e, (app, user, body, affected) => {
   if (body.characterId) character = ownCharacter(app, user.id, String(body.characterId));
   else {
     const existing = list(app, 'characters', 'user = {:user} && region = {:region} && server = {:server} && characterName = {:name}', { user: user.id, region: data.region, server: data.server, name: data.characterName });
-    character = existing[0] || new Record(app.findCollectionByNameOrId('characters')); character.set('user', user.id);
+    character = existing[0] || newCharacter(app, user.id);
   }
   // An existing character keeps the identity the game gave it; only a lookup without
   // characterId may name a new one. lastReadingAt marks the last change, so a value
   // re-sent unchanged (the reader resumed after a pause) keeps its timestamp.
   if (!body.characterId) for (const key of ['characterName', 'server', 'region']) character.set(key, data[key]);
-  if (!character.getBool('confirmed') || character.getInt('value') !== data.value) character.set('lastReadingAt', now());
+  // Every change (the first reading included) is also kept in the character's history.
+  const changed = !character.getBool('confirmed') || character.getInt('value') !== data.value;
+  if (changed) character.set('lastReadingAt', now());
   character.set('value', data.value);
   character.set('confirmed', true); character.set('valid', true); character.set('source', data.source); character.set('parserVersion', data.parserVersion); character.set('lastSeenAt', now()); character.set('readingSession', session.id); app.save(character);
+  if (changed) { const point = new Record(app.findCollectionByNameOrId('character_readings')); point.set('character', character.id); point.set('value', data.value); app.save(point); }
   session.set('sequence', data.sequence); session.set('expiresAt', expiry(86400)); app.save(session); affected.push(...roomsFor(app, user.id)); return { character, serverNow: now() };
 }); }
 function sharing(e) { return mutate(e, (app, user, body, affected) => {
@@ -250,8 +285,7 @@ function invites(e) { return mutate(e, (app, user, body) => {
   return { invites: [invite(app, room, 'reporter'), invite(app, room, 'viewer')] };
 }); }
 function revoke(e) { return mutate(e, (app, user, body, affected) => {
-  const room = owner(app, user.id, String(body.roomId)), target = app.findRecordById('room_members', String(body.memberId));
-  if (target.getString('room') !== room.id || target.getString('user') === user.id) throw new ForbiddenError('Cannot remove this member.');
+  const room = owner(app, user.id, String(body.roomId)), target = otherMember(app, room, String(body.memberId), user.id, 'Cannot remove this member.');
   app.delete(target); affected.push(room.id);
 }); }
 function desktopCode(e) { return mutate(e, (app, user) => {
@@ -271,12 +305,144 @@ function pair(e) { return run(e, () => {
 function cleanup() {
   const at = stamp(new Date());
   for (const name of ['room_invites', 'desktop_codes']) for (const item of list($app, name, 'expiresAt <= {:now}', { now: at })) $app.delete(item);
-  for (const item of list($app, 'publisher_sessions', 'expiresAt <= {:now}', { now: at })) {
-    for (const c of list($app, 'characters', 'readingSession = {:id}', { id: item.id })) { c.set('valid', false); $app.save(c); } $app.delete(item);
-  }
+  for (const item of list($app, 'publisher_sessions', 'expiresAt <= {:now}', { now: at })) endSession($app, item);
+  // Odyle history covers 30 days; planned runs go a day after they started.
+  for (const item of list($app, 'character_readings', 'created < {:month}', { month: stamp(new Date(Date.now() - 30 * 86400000)) })) $app.delete(item);
+  for (const item of list($app, 'room_runs', 'startsAt < {:day}', { day: stamp(new Date(Date.now() - 86400000)) })) $app.delete(item);
 }
 function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
   if (clientId && clientSecret) { const users = app.findCollectionByNameOrId('users'); users.oauth2 = { enabled: true, providers: [{ name: 'discord', clientId, clientSecret }] }; app.save(users); }
 }
-module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
+// Upcoming runs of a room, soonest first; a run stays listed until three hours after it
+// started. `planner` and `attendees` are account ids; clients name them from `members`.
+function runsOf(app, roomId, members = list(app, 'room_members', 'room = {:room}', { room: roomId })) {
+  const users = {}; for (const m of members) users[m.id] = m.getString('user');
+  return app.findRecordsByFilter('room_runs', 'room = {:room} && startsAt >= {:since}', 'startsAt', 0, 0, { room: roomId, since: stamp(new Date(Date.now() - 3 * 3600000)) })
+    .map(r => ({ id: r.id, dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), planner: users[r.getString('plannedBy')] || '', attendees: Array.from(r.getStringSlice('attendees')).map(id => users[id]).filter(Boolean) }));
+}
+// Planned runs: { roomId, dungeon, startsAt, note? } plans one with the planner going,
+// { roomId, id, going } joins or leaves it and { roomId, id, remove: true } cancels it
+// (its planner or the room owner). Owners and players plan and join; viewers read.
+function plan(e) { return mutate(e, (app, user, body, affected) => {
+  const m = membership(app, user.id, String(body.roomId)), roomId = m.getString('room'), viewer = m.getString('role') === 'viewer';
+  if (body.id) {
+    let r; try { r = app.findRecordById('room_runs', String(body.id)); } catch { throw new NotFoundError('This run is no longer planned.'); }
+    if (r.getString('room') !== roomId) throw new NotFoundError('This run is no longer planned.');
+    if (body.remove === true) {
+      if (r.getString('plannedBy') !== m.id && m.getString('role') !== 'owner') throw new ForbiddenError('Only its planner or the room owner can cancel this run.');
+      app.delete(r);
+    } else if (typeof body.going === 'boolean') {
+      if (viewer) throw new ForbiddenError('Viewers cannot join runs.');
+      const going = Array.from(r.getStringSlice('attendees')).filter(id => id !== m.id); if (body.going) going.push(m.id);
+      r.set('attendees', going); app.save(r);
+    } else throw new BadRequestError('Send going (true or false) or remove: true.');
+  } else {
+    if (viewer) throw new ForbiddenError('Viewers cannot plan runs.');
+    const name = settings.dungeonName(app, body.dungeon); if (!name) throw new BadRequestError('Choose a dungeon from the list.');
+    const note = body.note === undefined || body.note === '' ? '' : validate.text(body.note, 'Note', 120), startsAt = validate.runStart(body.startsAt);
+    if (app.countRecords('room_runs', $dbx.hashExp({ room: roomId })) >= 20) throw new BadRequestError('A room can plan up to 20 runs at a time.');
+    const r = new Record(app.findCollectionByNameOrId('room_runs'));
+    r.set('room', roomId); r.set('dungeon', name.dungeon); r.set('startsAt', startsAt); r.set('note', note); r.set('plannedBy', m.id); r.set('attendees', [m.id]); app.save(r);
+  }
+  affected.push(roomId); return { runs: runsOf(app, roomId) };
+}); }
+// Room management by its owner: rename it, make a member a player (reporter) or a
+// viewer, or hand the room over. Viewers cannot share, so a member made viewer stops
+// sharing characters here. The previous owner stays as a player and can then leave.
+function rename(e) { return mutate(e, (app, user, body, affected) => {
+  const room = owner(app, user.id, String(body.roomId)); room.set('name', validate.text(body.name, 'Room name', 60)); app.save(room);
+  affected.push(room.id); return { room: roomJson(room, odylePerCube(app)) };
+}); }
+function role(e) { return mutate(e, (app, user, body, affected) => {
+  const room = owner(app, user.id, String(body.roomId)), target = otherMember(app, room, String(body.memberId), user.id, 'Cannot change this member.');
+  if (!['reporter', 'viewer'].includes(body.role)) throw new BadRequestError('Choose player or viewer.');
+  target.set('role', body.role); if (body.role === 'viewer') target.set('sharedCharacters', []); app.save(target);
+  affected.push(room.id); return { membership: target };
+}); }
+function transfer(e) { return mutate(e, (app, user, body, affected) => {
+  const room = owner(app, user.id, String(body.roomId)), target = otherMember(app, room, String(body.memberId), user.id, 'Cannot hand the room to this member.'), mine = membership(app, user.id, room.id);
+  target.set('role', 'owner'); app.save(target); mine.set('role', 'reporter'); app.save(mine);
+  room.set('owner', target.getString('user')); app.save(room);
+  affected.push(room.id); return { room: roomJson(room, odylePerCube(app)) };
+}); }
+// An account that is deleted (by its owner, a superuser or for inactivity) hands each
+// room it owns to its longest-standing player; a room without one closes. Runs as the
+// users delete hook in main.pb.js, inside the deleting transaction.
+function handOver(app, userId) {
+  for (const room of app.findRecordsByFilter('party_rooms', 'owner = {:user}', '', 0, 0, { user: userId })) {
+    const next = app.findRecordsByFilter('room_members', "room = {:room} && user != {:user} && role = 'reporter'", 'created', 1, 0, { room: room.id, user: userId })[0];
+    if (!next) { app.delete(room); continue; }
+    next.set('role', 'owner'); app.save(next); room.set('owner', next.getString('user')); app.save(room);
+  }
+}
+// The account page: profile, caps and the Windows apps (reader sessions) in use.
+function account(e) { return run(e, () => {
+  const user = e.app.findRecordById('users', e.auth.id), reading = {};
+  const sessions = e.app.findRecordsByFilter('publisher_sessions', 'user = {:user} && expiresAt > {:now}', '-updated', 20, 0, { user: user.id, now: stamp(new Date()) });
+  for (const c of sessions.length ? e.app.findAllRecords('characters', $dbx.in('readingSession', ...sessions.map(s => s.id))) : []) reading[c.getString('readingSession')] = c.getString('characterName');
+  return e.json(200, { account: { id: user.id, displayName: user.getString('displayName'), email: user.email(), created: user.getString('created'), lastActiveAt: user.getString('lastActiveAt') }, limits, serverNow: now(),
+    apps: sessions.map(s => ({ sessionId: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), character: reading[s.id] || '' })) });
+}); }
+function profile(e) { return mutate(e, (app, user, body, affected) => {
+  const record = app.findRecordById('users', user.id); record.set('displayName', validate.displayName(body.displayName)); app.save(record);
+  affected.push(...roomsFor(app, user.id)); return { record };
+}); }
+// Everything stored for the account as one JSON document (Download my data).
+function exportData(e) { return run(e, () => {
+  const app = e.app, user = app.findRecordById('users', e.auth.id), all = (name, filter, params) => app.findRecordsByFilter(name, filter, 'created', 0, 0, params);
+  const characters = all('characters', 'user = {:user}', { user: user.id }), memberships = all('room_members', 'user = {:user}', { user: user.id }), names = {};
+  for (const r of memberships.length ? app.findRecordsByIds('party_rooms', memberships.map(m => m.getString('room'))) : []) names[r.id] = r.getString('name');
+  const history = id => all('character_readings', 'character = {:id}', { id }).map(r => ({ value: r.getInt('value'), at: r.getString('created') }));
+  return e.json(200, {
+    exportedAt: now(),
+    account: { id: user.id, displayName: user.getString('displayName'), email: user.email(), created: user.getString('created'), lastActiveAt: user.getString('lastActiveAt'),
+      signIns: app.findAllExternalAuthsByRecord(user).map(a => ({ provider: a.getString('provider'), providerId: a.getString('providerId'), created: a.getString('created') })) },
+    characters: characters.map(c => ({ ...c.publicExport(), history: history(c.id) })),
+    rooms: memberships.map(m => ({ room: m.getString('room'), name: names[m.getString('room')] || '', role: m.getString('role'), joined: m.getString('created'), sharedCharacters: shared(m),
+      wishlist: all('room_wishes', 'member = {:member}', { member: m.id }).map(w => w.getString('dungeon')),
+      runs: all('room_runs', 'plannedBy = {:member} || attendees ~ {:member}', { member: m.id }).map(r => ({ dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), planned: r.getString('plannedBy') === m.id })) })),
+    tasks: tasksOf(app, user.id),
+    readerSessions: all('publisher_sessions', 'user = {:user}', { user: user.id }).map(s => ({ id: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), expiresAt: s.getString('expiresAt') })),
+  });
+}); }
+// Ends every sign-in of the account: other browsers and paired Windows apps lose their
+// tokens, reader sessions and pairing codes. The asking browser gets a new token.
+function signOutEverywhere(e) { return mutate(e, (app, user, body, affected) => {
+  const record = app.findRecordById('users', user.id); record.refreshTokenKey(); app.save(record);
+  for (const s of list(app, 'publisher_sessions', 'user = {:user}', { user: user.id })) endSession(app, s);
+  for (const code of list(app, 'desktop_codes', 'user = {:user}', { user: user.id })) app.delete(code);
+  affected.push(...roomsFor(app, user.id)); return { token: record.newAuthToken(), record };
+}); }
+// Deletes the account with its characters, history, memberships, wishes and tasks;
+// owned rooms pass on first (handOver). Body { confirm: true } guards against slips.
+function deleteAccount(e) { return mutate(e, (app, user, body, affected) => {
+  if (body.confirm !== true) throw new BadRequestError('Confirm that the account should be deleted.');
+  affected.push(...roomsFor(app, user.id)); app.delete(app.findRecordById('users', user.id));
+}); }
+// Deletes one character with its history and portrait; rooms stop listing it. A reader
+// that sees it in game again saves it as a new character.
+function deleteCharacter(e) { return mutate(e, (app, user, body, affected) => {
+  const c = ownCharacter(app, user.id, String(body.characterId)); affected.push(...roomsFor(app, user.id)); app.delete(c);
+}); }
+// A character's Odyle over the last 30 days, oldest first. Its owner and members of
+// rooms it is shared in may read it, like its current value.
+function history(e) { return run(e, () => {
+  const id = e.request.pathValue('id'); let c; try { c = e.app.findRecordById('characters', id); } catch { throw new NotFoundError('This character no longer exists.'); }
+  if (c.getString('user') !== e.auth.id) {
+    const rooms = list(e.app, 'room_members', 'user = {:owner} && sharedCharacters ~ {:id}', { owner: c.getString('user'), id }).map(m => m.getString('room'));
+    if (!rooms.some(room => list(e.app, 'room_members', 'room = {:room} && user = {:user}', { room, user: e.auth.id }).length)) throw new ForbiddenError('This character is not shared with you.');
+  }
+  const readings = Array.from(e.app.findRecordsByFilter('character_readings', 'character = {:id} && created >= {:since}', '-created', 500, 0, { id, since: stamp(new Date(Date.now() - 30 * 86400000)) })).reverse();
+  return e.json(200, { character: { id: c.id, characterName: c.getString('characterName'), value: c.getInt('value'), confirmed: c.getBool('confirmed') }, readings: readings.map(r => ({ value: r.getInt('value'), at: r.getString('created') })), serverNow: now() });
+}); }
+// Cron: deletes accounts unused for odyle_settings.inactiveAccountDays days (0 keeps
+// them), up to 200 a night. handOver passes their rooms on first.
+function retention() {
+  const days = settings.read($app).inactiveAccountDays; if (!days) return;
+  const cutoff = stamp(new Date(Date.now() - days * 86400000));
+  for (const user of $app.findRecordsByFilter('users', "lastActiveAt < {:cutoff} && (lastActiveAt != '' || created < {:cutoff})", 'lastActiveAt', 200, 0, { cutoff })) {
+    try { const rooms = roomsFor($app, user.id); $app.delete(user); notify($app, rooms); console.log('Odyle deleted inactive account ' + user.id); } catch (error) { console.log('Odyle could not delete inactive account ' + user.id + ': ' + error.message); }
+  }
+}
+module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, rename, role, transfer, plan, account, profile, exportData, signOutEverywhere, deleteAccount, deleteCharacter, history, handOver, retention, cleanup, membership, desktopCode, pair, configureDiscord };

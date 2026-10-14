@@ -23,6 +23,15 @@ function task(body) {
   if (!['daily', 'weekly'].includes(body.cadence)) throw new Error('Choose a daily or weekly task.');
   return { title: text(body.title, 'Task', 60).replace(/\s+/g, ' '), cadence: body.cadence };
 }
+// Display names are free text shown to room members; inner whitespace collapses.
+const displayName = value => text(value, 'Display name', 40).replace(/\s+/g, ' ');
+// A planned run starts at most an hour ago (late entries) and at most 60 days ahead.
+function runStart(value, now = Date.now()) {
+  const at = typeof value === 'string' ? Date.parse(value) : NaN;
+  if (!Number.isFinite(at)) throw new Error('Choose when the run starts.');
+  if (at < now - 3600000 || at > now + 60 * 86400000) throw new Error('A run can start from an hour ago up to 60 days ahead.');
+  return new Date(at).toISOString();
+}
 function reading(body, current, verifiedAdapters = []) {
   if (body.sessionId !== current.sessionId) throw new Error('Publisher session changed. Reconnect your client.');
   integer(body.sequence, 'Sequence', 1, Number.MAX_SAFE_INTEGER);
@@ -35,4 +44,4 @@ function reading(body, current, verifiedAdapters = []) {
   if (!regions.includes(body.region)) throw new Error('Select a Global region.');
   return { value: integer(body.value, 'Odyle', 0, 1000000), characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region, sequence: body.sequence, source: 'packet', parserVersion };
 }
-module.exports = { text, integer, characterIdentity, dungeon, task, reading };
+module.exports = { text, integer, characterIdentity, dungeon, task, displayName, runStart, reading };
