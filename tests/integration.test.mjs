@@ -526,11 +526,23 @@ test('accounts list their paired PCs and remove one without signing out elsewher
   assert.equal((await action('session', {}, me)).status, 200);
   page = await account(); const deskId = page.devices.find(d => d.name === 'DESK-PC').id;
   assert.equal(page.apps.find(a => a.sessionId === session.sessionId).device, deskId);
+  // A PC runs one app: its next session (a restart, an update) replaces the one it left open,
+  // and the character that session read stays valid for the restarted app to take over.
+  const fields = { characterName: 'Restarter', server: 'Lumiel', region: 'GLOBAL_EU', value: 500, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  const read = await action('report', { ...fields, sessionId: session.sessionId, sequence: 1 }, me); assert.equal(read.status, 200, JSON.stringify(read.data));
+  const restarted = (await action('session', { deviceKey: desk }, me)).data;
+  assert.equal((await action('heartbeat', { sessionId: session.sessionId }, me)).status, 403);
+  const kept = (await request('/api/collections/characters/records/' + read.data.character.id, undefined, me, 'GET')).data;
+  assert.equal(kept.valid, true); assert.equal(kept.value, 500);
+  page = await account();
+  assert.deepEqual(page.apps.filter(a => a.device === deskId).map(a => a.sessionId), [restarted.sessionId]);
+  assert.equal(page.apps.filter(a => !a.device).length, 1, 'a session opened without a device key is left alone');
+  assert.equal((await action('report', { ...fields, characterId: read.data.character.id, sessionId: restarted.sessionId, sequence: 1 }, me)).status, 200);
   // Only the owner removes a PC; removing it ends its session and its key at once.
   assert.equal((await action('forget-device', { deviceId: deskId }, other)).status, 403);
   assert.equal((await action('forget-device', { deviceId: 'missingdevice00' }, me)).status, 404);
   assert.equal((await action('forget-device', { deviceId: deskId }, me)).status, 200);
-  assert.equal((await action('heartbeat', { sessionId: session.sessionId }, me)).status, 403);
+  assert.equal((await action('heartbeat', { sessionId: restarted.sessionId }, me)).status, 403);
   assert.equal((await action('session', { deviceKey: desk }, me)).status, 401);
   assert.equal((await action('desktop-sign-in', { deviceKey: desk })).status, 401);
   // The other PC and this browser stay signed in.

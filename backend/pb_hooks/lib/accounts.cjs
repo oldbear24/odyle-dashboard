@@ -209,6 +209,10 @@ function session(e) { return mutate(e, (app, user, body, affected) => {
   if (body.previousSessionId) {
     endSession(app, ownSession(app, user.id, String(body.previousSessionId))); affected.push(...roomsFor(app, user.id));
   }
+  // A PC runs one Odyle at a time, so its new session replaces the ones it left open (a
+  // restart, an update, a crash). Their readings are not marked stale: a restarted app takes
+  // its character over within seconds, and otherwise the missing heartbeat turns it stale.
+  if (device) for (const old of list(app, 'publisher_sessions', 'device = {:device}', { device: device.id })) app.delete(old);
   const record = new Record(app.findCollectionByNameOrId('publisher_sessions'));
   record.set('user', user.id); record.set('expiresAt', expiry(86400)); if (device) record.set('device', device.id); app.save(record); return { sessionId: record.id, sequence: 0 };
 }); }
