@@ -246,7 +246,7 @@ export default {
   'Every change in the last 30 days. A value holds until the next change; the line marks one cube.': 'Každá změna za posledních 30 dní. Hodnota platí do další změny; čára značí jednu kostku.',
   'Sign in with Discord to connect your reader.': 'Pro připojení čtečky se přihlas přes Discord.',
   'Connect your packet reader': 'Připoj čtečku paketů',
-  'Copy this link, then click <strong>Paste link & connect</strong> in the Windows app. The reader starts by itself and follows the character you log in with.': 'Zkopíruj tento odkaz a ve Windows aplikaci klikni na <strong>Paste link & connect</strong>. Čtečka se spustí sama a sleduje postavu, se kterou se přihlásíš.',
+  'Copy this link, then click <strong>Paste link & connect</strong> in the Windows app. The reader starts by itself and follows the character you log in with.': 'Zkopíruj tento odkaz a ve Windows aplikaci klikni na <strong>Vložit odkaz a připojit</strong> (v anglické aplikaci <strong>Paste link & connect</strong>). Čtečka se spustí sama a sleduje postavu, se kterou se přihlásíš.',
   'Connection link copied.': 'Odkaz pro připojení zkopírován.',
   'Copy connection link': 'Kopírovat odkaz pro připojení',
   'The link expires in five minutes and works once. The app then stays paired, even after weeks switched off, until you disconnect it or sign out everywhere. The app requires Npcap.': 'Odkaz platí pět minut a jen jednou. Aplikace pak zůstane spárovaná, i když bude týdny vypnutá, dokud ji neodpojíš nebo se neodhlásíš všude. Aplikace potřebuje Npcap.',
