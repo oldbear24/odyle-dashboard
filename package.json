@@ -1,5 +1,5 @@
 {
   "name": "odyle-dashboard", "version": "0.4.0", "private": true, "type": "module",
   "scripts": { "dev": "vite --host 127.0.0.1", "build": "vite build", "preview": "vite preview --host 127.0.0.1", "test": "node --test tests/*.test.cjs", "test:integration": "node --test tests/integration.test.mjs", "backend:install": "node scripts/install-pocketbase.mjs", "backend": "node scripts/serve-pocketbase.mjs", "test:ui": "node --test tests/ui.test.mjs", "lint": "eslint ." },
-  "dependencies": { "pocketbase": "^0.26.8" }, "devDependencies": { "@eslint/js": "^10.0.1", "eslint": "^10.12.0", "globals": "^17.13.0", "playwright": "1.56.1", "vite": "^6.4.1" }
+  "dependencies": { "pocketbase": "^0.26.8" }, "devDependencies": { "@eslint/js": "^10.0.1", "eslint": "^10.12.0", "globals": "^17.13.0", "playwright": "1.56.1", "vite": "^8.3.4" }
 }
