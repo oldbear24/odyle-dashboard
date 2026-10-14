@@ -9,7 +9,7 @@ const stamp = date => date.toISOString().replace('T', ' ');
 const list = (app, name, filter, params) => app.findRecordsByFilter(name, filter, 'id', 500, 0, params || {});
 // Per-account caps. They only stop runaway or abusive clients: players keep a handful
 // of characters, and every character costs the portrait cron one PLAYNC lookup a day.
-const limits = { characters: 30, ownedRooms: 20, memberships: 50 };
+const limits = { characters: 30, ownedRooms: 20, memberships: 50, desktopDevices: 10 };
 function membership(app, userId, roomId) {
   const found = list(app, 'room_members', 'room = {:room} && user = {:user}', { room: roomId, user: userId });
   if (!found.length) throw new ForbiddenError('You are not a member of this room.');
@@ -58,7 +58,7 @@ function touch(e) {
 function run(e, action) {
   touch(e);
   try { return action(); } catch (error) {
-    if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError) throw error;
+    if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError || error instanceof UnauthorizedError) throw error;
     throw new BadRequestError(error.message || 'Request could not be completed.');
   }
 }
@@ -294,13 +294,41 @@ function desktopCode(e) { return mutate(e, (app, user) => {
   record.set('user', user.id); record.set('digest', $security.sha256(code)); record.set('expiresAt', expiry(300)); app.save(record);
   return { code, expiresAt: record.getString('expiresAt') };
 }); }
+// A paired Windows app's lasting credential. Only its digest is stored; the app keeps
+// the key (DPAPI) and trades it for account tokens with desktopSignIn. An account keeps
+// its most recently used devices, so stale pairings of reinstalled PCs drop off.
+function newDevice(app, userId) {
+  const devices = app.findRecordsByFilter('desktop_devices', 'user = {:user}', '-lastUsedAt,-created', 500, 0, { user: userId });
+  for (const old of devices.slice(limits.desktopDevices - 1)) app.delete(old);
+  const key = $security.randomString(48), record = new Record(app.findCollectionByNameOrId('desktop_devices'));
+  record.set('user', userId); record.set('digest', $security.sha256(key)); record.set('lastUsedAt', now()); app.save(record);
+  return key;
+}
+const deviceKey = body => validate.text(body.deviceKey, 'Device key', 100);
 function pair(e) { return run(e, () => {
   const code = validate.text(e.requestInfo().body.code, 'Pairing code', 24).replace(/[\s-]/g, '').toUpperCase(); let result;
   e.app.runInTransaction(app => {
     let record; try { record = app.findFirstRecordByData('desktop_codes', 'digest', $security.sha256(code)); } catch { throw new BadRequestError('Pairing code is invalid or expired.'); }
     if (Date.parse(record.getString('expiresAt')) <= Date.now()) throw new BadRequestError('Pairing code is invalid or expired.');
-    const user = app.findRecordById('users', record.getString('user')); app.delete(record); result = { token: user.newAuthToken(), record: user };
+    const user = app.findRecordById('users', record.getString('user')); app.delete(record); result = { token: user.newAuthToken(), record: user, deviceKey: newDevice(app, user.id) };
   }); return e.json(200, result);
+}); }
+// A device key for an app paired before keys existed; it asks with its still-valid token.
+function desktopDevice(e) { return mutate(e, (app, user) => ({ deviceKey: newDevice(app, user.id) })); }
+// Public: a fresh account token for a paired app. An unknown key (the app disconnected,
+// the account signed out everywhere or was deleted) is 401, and the app pairs again.
+function desktopSignIn(e) { return run(e, () => {
+  const digest = $security.sha256(deviceKey(e.requestInfo().body)); let device;
+  try { device = e.app.findFirstRecordByData('desktop_devices', 'digest', digest); } catch { throw new UnauthorizedError('This PC is no longer paired with an account.'); }
+  const user = e.app.findRecordById('users', device.getString('user'));
+  device.set('lastUsedAt', now()); e.app.save(device);
+  return e.json(200, { token: user.newAuthToken(), record: user });
+}); }
+// Public: the app's Disconnect forgets its key on the server too. Unknown keys are fine.
+function unpair(e) { return run(e, () => {
+  const digest = $security.sha256(deviceKey(e.requestInfo().body));
+  try { e.app.delete(e.app.findFirstRecordByData('desktop_devices', 'digest', digest)); } catch { /* already gone */ }
+  return e.json(200, { success: true });
 }); }
 function cleanup() {
   const at = stamp(new Date());
@@ -404,14 +432,15 @@ function exportData(e) { return run(e, () => {
       runs: all('room_runs', 'plannedBy = {:member} || attendees ~ {:member}', { member: m.id }).map(r => ({ dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), planned: r.getString('plannedBy') === m.id })) })),
     tasks: tasksOf(app, user.id),
     readerSessions: all('publisher_sessions', 'user = {:user}', { user: user.id }).map(s => ({ id: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), expiresAt: s.getString('expiresAt') })),
+    pairedWindowsApps: all('desktop_devices', 'user = {:user}', { user: user.id }).map(d => ({ pairedAt: d.getString('created'), lastSignInAt: d.getString('lastUsedAt') })),
   });
 }); }
 // Ends every sign-in of the account: other browsers and paired Windows apps lose their
-// tokens, reader sessions and pairing codes. The asking browser gets a new token.
+// tokens, device keys, reader sessions and pairing codes. The asking browser gets a new token.
 function signOutEverywhere(e) { return mutate(e, (app, user, body, affected) => {
   const record = app.findRecordById('users', user.id); record.refreshTokenKey(); app.save(record);
   for (const s of list(app, 'publisher_sessions', 'user = {:user}', { user: user.id })) endSession(app, s);
-  for (const code of list(app, 'desktop_codes', 'user = {:user}', { user: user.id })) app.delete(code);
+  for (const name of ['desktop_codes', 'desktop_devices']) for (const item of list(app, name, 'user = {:user}', { user: user.id })) app.delete(item);
   affected.push(...roomsFor(app, user.id)); return { token: record.newAuthToken(), record };
 }); }
 // Deletes the account with its characters, history, memberships, wishes and tasks;
@@ -445,4 +474,4 @@ function retention() {
     try { const rooms = roomsFor($app, user.id); $app.delete(user); notify($app, rooms); console.log('Odyle deleted inactive account ' + user.id); } catch (error) { console.log('Odyle could not delete inactive account ' + user.id + ': ' + error.message); }
   }
 }
-module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, rename, role, transfer, plan, account, profile, exportData, signOutEverywhere, deleteAccount, deleteCharacter, history, handOver, retention, cleanup, membership, desktopCode, pair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, rename, role, transfer, plan, account, profile, exportData, signOutEverywhere, deleteAccount, deleteCharacter, history, handOver, retention, cleanup, membership, desktopCode, pair, desktopDevice, desktopSignIn, unpair, configureDiscord };

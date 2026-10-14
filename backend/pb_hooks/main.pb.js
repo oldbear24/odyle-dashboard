@@ -1,6 +1,6 @@
 // POST /api/odyle/<action> runs the accounts.cjs function of the same name in camel case
 // (desktop-code → desktopCode).
-for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'task', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'rename', 'role', 'transfer', 'plan', 'profile', 'desktop-code', 'sign-out-everywhere', 'delete-account', 'delete-character']) {
+for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'task', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'rename', 'role', 'transfer', 'plan', 'profile', 'desktop-code', 'desktop-device', 'sign-out-everywhere', 'delete-account', 'delete-character']) {
   routerAdd('POST', '/api/odyle/' + action, e => {
     const name = e.request.url.path.split('/').pop();
     // The companion's requests also feed the superuser dashboard's packet list.
@@ -8,6 +8,9 @@ for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sha
   }, $apis.requireAuth('users'), $apis.bodyLimit(4096));
 }
 routerAdd('POST', '/api/odyle/pair', e => require(__hooks + '/lib/accounts.cjs').pair(e), $apis.bodyLimit(4096));
+// Public like pairing: a paired Windows app signs in, or forgets its pairing, with its device key.
+routerAdd('POST', '/api/odyle/desktop-sign-in', e => require(__hooks + '/lib/accounts.cjs').desktopSignIn(e), $apis.bodyLimit(4096));
+routerAdd('POST', '/api/odyle/unpair', e => require(__hooks + '/lib/accounts.cjs').unpair(e), $apis.bodyLimit(4096));
 routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs').rooms(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/accounts.cjs').tasks(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));

@@ -92,6 +92,7 @@ before(async () => {
   // Runs the odyle-expiry cron job on demand and reports which of the given invite codes it kept.
   await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
   // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
+  await writeFile(join(directory, 'hooks', 'devices-fixture.pb.js'), `routerAdd('POST','/__test__/devices', e => { const keys=e.requestInfo().body.keys, kept=[]; for (let i=0;i<keys.length;i++) { try { e.app.findFirstRecordByData('desktop_devices','digest',$security.sha256(keys[i])); kept.push(true); } catch { kept.push(false); } } return e.json(200,{kept}); });`);
   await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/reset-times', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'), b=e.requestInfo().body; r.set('dailyResetHour',b.hour); r.set('weeklyResetDay',b.day); e.app.save(r); return e.json(200,{}); });`);
   // Stands in for an operator signed in to the PocketBase dashboard.
   await writeFile(join(directory, 'hooks', 'superuser-fixture.pb.js'), `routerAdd('POST','/__test__/superuser', e => { let su; try { su=e.app.findAuthRecordByEmail('_superusers','operator@test.invalid'); } catch { su=new Record(e.app.findCollectionByNameOrId('_superusers')); su.setEmail('operator@test.invalid'); su.setPassword($security.randomString(48)); e.app.save(su); } return e.json(200,{token:su.newAuthToken()}); });`);
@@ -385,8 +386,10 @@ test('accounts see their history, delete characters, export their data, sign out
   assert.equal((await action('report', { ...reading, sequence: 4, value: 150, characterId: kept.id }, holder)).status, 404);
   // Signing out everywhere ends every token and reader session but keeps this browser signed in.
   const paired = (await action('pair', { code: (await action('desktop-code', {}, holder)).data.code })).data;
+  assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.map(a => Object.keys(a)), [['pairedAt', 'lastSignInAt']]);
   const fresh = await action('sign-out-everywhere', {}, holder); assert.equal(fresh.status, 200, JSON.stringify(fresh.data));
   for (const old of [holder, paired]) assert.equal((await request('/api/odyle/rooms', undefined, old, 'GET')).status, 401);
+  assert.equal((await action('desktop-sign-in', { deviceKey: paired.deviceKey })).status, 401);
   const current = { token: fresh.data.token, record: fresh.data.record }; assert.equal((await request('/api/odyle/rooms', undefined, current, 'GET')).status, 200);
   assert.equal((await action('heartbeat', { sessionId: session.sessionId }, current)).status, 403);
   // Deleting the account passes its room to the longest-standing player and closes rooms nobody else can lead.
@@ -578,10 +581,38 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     assert.equal((await action('pair', { code: pairing.data.code })).status, 400);
     const refreshed = await request('/api/collections/users/auth-refresh', {}, paired.data); assert.equal(refreshed.status, 200); assert.equal(refreshed.data.record.id, player.record.id);
   });
+  await t.test('a paired app keeps its pairing: its device key signs in again until it unpairs', async () => {
+    const paired = (await action('pair', { code: (await action('desktop-code', {}, player)).data.code })).data;
+    assert.match(paired.deviceKey, /^[A-Za-z0-9]{48}$/);
+    // The key, not the seven-day token, is what lasts: each sign-in issues a fresh account token.
+    const signedIn = await action('desktop-sign-in', { deviceKey: paired.deviceKey }); assert.equal(signedIn.status, 200, JSON.stringify(signedIn.data));
+    assert.equal(signedIn.data.record.id, player.record.id); assert.equal((await request('/api/odyle/rooms', undefined, signedIn.data, 'GET')).status, 200);
+    // Device sign-in is capped at 30 a minute per client; the whole run stays below that.
+    assert.equal((await action('desktop-sign-in', { deviceKey: 'x'.repeat(48) })).status, 401);
+    assert.equal((await action('desktop-sign-in', { deviceKey: 7 })).status, 400);
+    // An app paired before device keys existed gets one with its token.
+    const upgraded = await action('desktop-device', {}, paired); assert.equal(upgraded.status, 200); assert.notEqual(upgraded.data.deviceKey, paired.deviceKey);
+    assert.equal((await action('desktop-device', {})).status, 401);
+    assert.equal((await action('desktop-sign-in', { deviceKey: upgraded.data.deviceKey })).data.record.id, player.record.id);
+    // Disconnecting forgets only that app's key.
+    assert.equal((await action('unpair', { deviceKey: paired.deviceKey })).status, 200);
+    assert.equal((await action('unpair', { deviceKey: paired.deviceKey })).status, 200);
+    assert.equal((await action('desktop-sign-in', { deviceKey: paired.deviceKey })).status, 401);
+    assert.equal((await action('desktop-sign-in', { deviceKey: upgraded.data.deviceKey })).status, 200);
+  });
+  await t.test('an account keeps its ten most recently used Windows pairings', async () => {
+    const holder = (await request('/__test__/account', { name: 'Many PCs' })).data, keys = [];
+    for (let i = 0; i < 10; i++) keys.push((await action('desktop-device', {}, holder)).data.deviceKey);
+    // The first PC signed in last, so the second and third are the least recently used when two more pair.
+    assert.equal((await action('desktop-sign-in', { deviceKey: keys[0] })).status, 200);
+    for (let i = 0; i < 2; i++) keys.push((await action('desktop-device', {}, holder)).data.deviceKey);
+    assert.deepEqual((await request('/__test__/devices', { keys })).data.kept, [true, false, false, ...Array(9).fill(true)]);
+    assert.equal((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.length, 10);
+  });
   await t.test('compiled Windows client pairs and retains saved values', { skip: !process.env.ODYLE_WINDOWS_CHECKS }, async () => {
     const pair = (await action('desktop-code', {}, player)).data;
     const output = execFileSync('dotnet', ['run', '--project', process.env.ODYLE_WINDOWS_CHECKS, '-c', 'Release', '--', url, pair.code], { encoding: 'utf8', timeout: 60000 });
-    assert.match(output, /persistent character API check passed/);
+    assert.match(output, /persistent character API check passed/); assert.match(output, /lasting pairing check passed/);
   });
   await t.test('sequences are atomic, manual data, unverified adapters and impersonation are rejected', async () => {
     assert.equal((await action('report', input, player)).status, 400);
