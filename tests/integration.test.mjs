@@ -400,7 +400,7 @@ test('accounts see their history, delete characters, export their data, sign out
   assert.equal((await action('report', { ...reading, sequence: 4, value: 150, characterId: kept.id }, holder)).status, 404);
   // Signing out everywhere ends every token and reader session but keeps this browser signed in.
   const paired = (await action('pair', { code: (await action('desktop-code', {}, holder)).data.code, name: '  Gaming   PC  ' })).data;
-  assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.map(a => [Object.keys(a), a.name]), [[['name', 'pairedAt', 'lastSignInAt'], 'Gaming PC']]);
+  assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.map(a => [Object.keys(a).sort(), a.name]), [[['lastSignInAt', 'name', 'pairedAt'], 'Gaming PC']]);
   const fresh = await action('sign-out-everywhere', {}, holder); assert.equal(fresh.status, 200, JSON.stringify(fresh.data));
   for (const old of [holder, paired]) assert.equal((await request('/api/odyle/rooms', undefined, old, 'GET')).status, 401);
   assert.equal((await action('desktop-sign-in', { deviceKey: paired.deviceKey })).status, 401);
