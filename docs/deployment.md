@@ -37,6 +37,7 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 
 - Bootstrap the first PocketBase operator account locally. Restrict the management path `/_/` at your proxy to operator access.
 - Application clients use the Discord-enabled `users` auth collection, never superusers. Configure the provider using [Discord setup](discord-setup.md).
+- The PocketBase dashboard's **Odyle** page (`/_/#/odyle`) shows the connected Windows apps and their live requests and edits the game settings. It is the UI extension in `pb_hooks/admin` and is deployed with `pb_hooks`; PocketBase 0.37 or newer is required. If a CDN caches `/_/`, bypass its cache for `/_/extensions.js` and `/_/extensions/*` or purge both after a deploy.
 - Back up the data volume before upgrading PocketBase or migrations. Keep the pinned binary and SDK versions together and run integration checks on upgrades.
 - Character pictures need outbound HTTPS from the backend to `api-search.plaync.com`, `profileimg.plaync.com` and `fizz-download.playnccdn.com` (the portrait host redirects there). Without it characters keep their initials. `PLAYNC_SEARCH_URL` and `PLAYNC_IMAGE_URL` override both hosts for tests.
 - The Windows app download link needs outbound HTTPS from the backend to `api.github.com` (one request every ten minutes at most, cached in memory). Without it the dashboard links GitHub's latest-release page without a version. `ODYLE_WINDOWS_REPOSITORY` points at a fork of the Windows app; `ODYLE_WINDOWS_RELEASE_URL` replaces the feed URL for tests.

@@ -1,0 +1,28 @@
+/* Odyle page of the PocketBase superuser dashboard. Colors come from the PocketBase
+   UI variables, so the page follows its light and dark themes. */
+.odyle-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.odyle-stat{display:flex;flex-direction:column;gap:2px;padding:12px 15px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor)}
+.odyle-stat strong{font-size:1.7em;line-height:1.3}
+.odyle-table{overflow-x:auto;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius)}
+.odyle-table td{vertical-align:top}
+.odyle-status,.odyle-reading,.odyle-live{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.odyle-status:before,.odyle-reading:before,.odyle-live:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--surfaceAlt5Color);flex-shrink:0}
+.odyle-status.online:before,.odyle-reading.live:before,.odyle-live:before{background:var(--successColor)}
+.odyle-status.late:before,.odyle-reading.stale:before{background:var(--warningColor)}
+.odyle-status.offline,.odyle-reading.waiting{color:var(--surfaceTxtHintColor)}
+.odyle-reading{font-size:var(--smFontSize)}
+.odyle-live:before{animation:odyle-pulse 1.6s ease-in-out infinite}
+.odyle-live.paused:before{background:var(--warningColor);animation:none}
+.odyle-feed-head{flex-wrap:wrap}
+.odyle-toggle{display:inline-flex;align-items:center;margin:0}
+.odyle-feed{max-height:560px;overflow:auto;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);font-size:var(--smFontSize)}
+.odyle-packet{display:grid;grid-template-columns:auto 130px minmax(70px,160px) 1fr auto;gap:12px;align-items:baseline;padding:6px 12px;border-bottom:1px solid var(--surfaceAlt2Color)}
+.odyle-packet:last-child{border-bottom:0}
+.odyle-packet .label{justify-self:start}
+.odyle-packet-text{min-width:0;overflow-wrap:anywhere;font-family:var(--monospaceFontFamily);font-size:.95em}
+.odyle-packet.rejected{box-shadow:inset 3px 0 0 var(--dangerColor)}
+.odyle-packet.fresh{animation:odyle-arrive 1.5s ease-out}
+@keyframes odyle-arrive{from{background:var(--surfaceSuccessColor)}}
+@keyframes odyle-pulse{50%{opacity:.35}}
+@media (max-width:900px){.odyle-packet{grid-template-columns:auto auto 1fr auto}.odyle-packet-text{grid-column:1/-1;order:1}}
+@media (prefers-reduced-motion:reduce){.odyle-live:before,.odyle-packet.fresh{animation:none}}

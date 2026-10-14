@@ -92,6 +92,8 @@ before(async () => {
   await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
   // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
   await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/reset-times', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'), b=e.requestInfo().body; r.set('dailyResetHour',b.hour); r.set('weeklyResetDay',b.day); e.app.save(r); return e.json(200,{}); });`);
+  // Stands in for an operator signed in to the PocketBase dashboard.
+  await writeFile(join(directory, 'hooks', 'superuser-fixture.pb.js'), `routerAdd('POST','/__test__/superuser', e => { let su; try { su=e.app.findAuthRecordByEmail('_superusers','operator@test.invalid'); } catch { su=new Record(e.app.findCollectionByNameOrId('_superusers')); su.setEmail('operator@test.invalid'); su.setPassword($security.randomString(48)); e.app.save(su); } return e.json(200,{token:su.newAuthToken()}); });`);
   // Joins are rate limited to 30 a minute and other tests use that budget; this adds a membership directly.
   await writeFile(join(directory, 'hooks', 'member-fixture.pb.js'), `routerAdd('POST','/__test__/member', e => { const b=e.requestInfo().body, m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',b.room); m.set('user',b.user); m.set('role',b.role); m.set('sharedCharacters',[]); e.app.save(m); return e.json(200,m); });`);
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
@@ -285,6 +287,50 @@ test('accounts keep private daily and weekly checklists that reset by time', asy
   finally { assert.equal((await request('/__test__/reset-times', { hour: 7, day: 'wednesday' })).status, 200); }
   const removed = await change({ id: weekly.id, remove: true }); assert.equal(removed.status, 200, JSON.stringify(removed.data));
   assert.deepEqual(removed.data.tasks.map(t => t.id), [daily.id]);
+});
+test('superusers watch connected apps and their packets live and edit the server settings', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, reader = (await request('/__test__/account', { name: 'Monitored reader' })).data;
+  const monitor = auth => request('/api/odyle/admin/monitor', undefined, auth, 'GET');
+  // Only superusers reach the routes and the live topic.
+  assert.equal((await monitor()).status, 401); assert.equal((await monitor(reader)).status, 403);
+  await assert.rejects(() => connect(url, reader.token, 'odyle.admin.packets'));
+  const stream = await connect(url, operator.token, 'odyle.admin.packets');
+  try {
+    const session = (await action('session', {}, reader)).data;
+    assert.equal((await stream.next())?.data.packet.kind, 'session');
+    const reading = { sessionId: session.sessionId, sequence: 1, characterName: 'Watched', server: 'Lumiel', region: 'GLOBAL_EU', value: 390, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, token: 'never-listed' };
+    const saved = await action('report', reading, reader); assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    const live = (await stream.next())?.data.packet;
+    assert.equal(live.kind, 'report'); assert.equal(live.ok, true); assert.equal(live.account, 'Monitored reader'); assert.equal(live.user, reader.record.id);
+    assert.equal(live.characterName, 'Watched'); assert.equal(live.value, 390); assert.equal(live.sequence, 1); assert.equal(live.parserVersion, 'test-fixture-v1'); assert.equal('token' in live, false);
+    // Rejected requests are listed with their reason; heartbeats name their character.
+    assert.equal((await action('report', reading, reader)).status, 400);
+    const rejected = (await stream.next())?.data.packet; assert.equal(rejected.ok, false); assert.equal(rejected.error, 'Outdated reading.');
+    assert.equal((await action('heartbeat', { sessionId: session.sessionId, characterId: saved.data.character.id }, reader)).status, 200);
+    assert.equal((await stream.next())?.data.packet.characterName, 'Watched');
+    // Room and account routes are not packets.
+    assert.equal((await action('desktop-code', {}, reader)).status, 200); assert.equal(await stream.next(250), null);
+    const data = (await monitor(operator)).data, row = data.apps.find(a => a.sessionId === session.sessionId);
+    assert.equal(row.account, 'Monitored reader'); assert.equal(row.readings, 1); assert.ok(row.lastContactAt >= row.connectedAt);
+    assert.equal(row.character.characterName, 'Watched'); assert.equal(row.character.value, 390); assert.equal(row.character.valid, true);
+    assert.deepEqual(data.packets.slice(-4).map(p => [p.kind, p.ok]), [['session', true], ['report', true], ['report', false], ['heartbeat', true]]);
+    assert.equal(JSON.stringify(data).includes('never-listed'), false);
+  } finally { await stream.close(); }
+  // Server-wide settings: validated, partial changes keep the rest, and every client follows.
+  const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
+  assert.deepEqual((await settings()).data.settings, { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday' });
+  assert.equal((await settings({ odylePerCube: 50 }, reader)).status, 403); assert.equal((await settings(undefined, reader)).status, 403);
+  for (const bad of [{ odylePerCube: 0 }, { odylePerCube: 1001 }, { odylePerCube: '50' }, { dailyResetHour: 24 }, { dailyResetHour: 1.5 }, { weeklyResetDay: 'someday' }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
+  try {
+    const changed = await settings({ odylePerCube: 50, dailyResetHour: 0, weeklyResetDay: 'monday' }); assert.equal(changed.status, 200, JSON.stringify(changed.data));
+    assert.equal((await request('/api/odyle/rooms', undefined, reader, 'GET')).data.odylePerCube, 50);
+    assert.deepEqual((await request('/api/odyle/tasks', undefined, reader, 'GET')).data.resets, { dailyResetHour: 0, weeklyResetDay: 'monday' });
+    assert.deepEqual((await settings({ odylePerCube: 45 })).data.settings, { odylePerCube: 45, dailyResetHour: 0, weeklyResetDay: 'monday' });
+  } finally { assert.equal((await settings({ odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday' })).status, 200); }
+  // The dashboard extension: a stable entry that imports the page under its content hash.
+  assert.match(await (await fetch(url + '/_/extensions.js')).text(), /extensions\/odyle\/odyle\.js\?v=/);
+  const { version } = (await request('/api/odyle/admin/ui', undefined, null, 'GET')).data; assert.match(version, /^[0-9a-f]{16}$/);
+  const page = await fetch(url + '/_/extensions/odyle/odyle.js?v=' + version); assert.equal(page.status, 200); assert.match(await page.text(), /export function monitorPage/);
 });
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;

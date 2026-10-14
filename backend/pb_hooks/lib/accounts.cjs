@@ -1,5 +1,6 @@
 const validate = require(__hooks + '/lib/validation.cjs');
 const portraits = require(__hooks + '/lib/portraits.cjs');
+const settings = require(__hooks + '/lib/settings.cjs');
 const now = () => new Date().toISOString();
 const expiry = seconds => new Date(Date.now() + seconds * 1000).toISOString();
 // Date fields are stored as '2026-10-13 21:40:00.000Z' and filters compare them as
@@ -31,7 +32,7 @@ function notify(app, roomIds) {
 }
 // Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
 // Rooms keep their legacy cost field, but every response reports the setting.
-function odylePerCube(app) { try { return app.findFirstRecordByFilter('odyle_settings', 'id != ""').getInt('odylePerCube') || 40; } catch { return 40; } }
+const odylePerCube = app => settings.read(app).odylePerCube;
 const roomJson = (room, cost) => ({ ...room.publicExport(), cost });
 const shared = m => Array.from(m.getStringSlice('sharedCharacters'));
 const roomsFor = (app, userId) => list(app, 'room_members', 'user = {:user}', { user: userId }).map(m => m.getString('room'));
@@ -128,10 +129,7 @@ function wishlist(e) { return mutate(e, (app, user, body, affected) => {
 }); }
 // Reset times of the Global service, edited by superusers in odyle_settings next to
 // odylePerCube. Launch defaults: 07:00 UTC daily, Wednesday weekly.
-function resets(app) {
-  try { const s = app.findFirstRecordByFilter('odyle_settings', 'id != ""'); return { dailyResetHour: s.getInt('dailyResetHour'), weeklyResetDay: s.getString('weeklyResetDay') || 'wednesday' }; }
-  catch { return { dailyResetHour: 7, weeklyResetDay: 'wednesday' }; }
-}
+function resets(app) { const s = settings.read(app); return { dailyResetHour: s.dailyResetHour, weeklyResetDay: s.weeklyResetDay }; }
 // Personal daily and weekly checklists, oldest first. doneAt is the last time the
 // account checked a task; clients show it done while that is after the current reset
 // (src/tasks.js), so nothing has to uncheck tasks and nothing is deleted at reset.

@@ -45,7 +45,7 @@ The snapshot's `wishlist` is grouped by dungeon, most wanted first, then oldest:
 
 ## Daily and weekly tasks
 
-Each account keeps a private checklist of daily and weekly tasks. Titles are free text (1–60 characters, inner whitespace collapsed) and an account can keep up to 40 tasks. Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit in the PocketBase dashboard; the defaults are the Global service's 07:00 UTC and Wednesday.
+Each account keeps a private checklist of daily and weekly tasks. Titles are free text (1–60 characters, inner whitespace collapsed) and an account can keep up to 40 tasks. Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit on the PocketBase dashboard's Odyle page or under *Collections*; the defaults are the Global service's 07:00 UTC and Wednesday.
 
 | Method / route | Body | Result |
 | --- | --- | --- |
@@ -109,6 +109,35 @@ Returns `{ character, serverNow }`. Existing `characterId` must belong to the au
 
 The backend calls GitHub's `releases/latest` API at most every ten minutes and serves the cached answer, so browsers never contact GitHub and the unauthenticated API limit is never reached. Only versioned, published releases count; only `win-x64` packages with GitHub download links are listed, and checksum files are left out because the Windows app verifies its own downloads. When GitHub is unreachable the last known release is kept; without one, `latest` is `null` and clients link `releasesUrl`, GitHub's stable latest-release page. The dashboard shows the link on **My rooms & characters** and both packages in the **Pair Windows app** dialog. `ODYLE_WINDOWS_REPOSITORY` points the lookup at a fork; `ODYLE_WINDOWS_RELEASE_URL` replaces the feed URL for tests.
 
+## Superuser monitor and settings
+
+The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_hooks/admin`, served at `/_/extensions/odyle/`). The monitor and settings routes need a **superuser** token: anonymous requests answer 401 and `users` tokens 403.
+
+| Method / route | Body | Result |
+| --- | --- | --- |
+| GET `/api/odyle/admin/monitor` | — | `{ serverNow, apps, packets }` |
+| GET `/api/odyle/admin/settings` | — | `{ settings, defaults }` |
+| POST `/api/odyle/admin/settings` | `{ odylePerCube?, dailyResetHour?, weeklyResetDay? }` | Validates and saves the given values, keeps the others; `{ settings, defaults }` |
+| GET `/api/odyle/admin/ui` | — | Public `{ version }`: content hash of the extension page, see below |
+
+`apps` has one entry per open reader session, most recent contact first. A running Windows app keeps one session and touches it with every heartbeat and reading, so `lastContactAt` is its last contact (the page shows 45 seconds without contact as late and 90 as offline). `character` is the character that session read last, or `null`; a character moves to whichever session read it most recently.
+
+```json
+{ "sessionId": "session-id", "user": "user-id", "account": "Lumina", "connectedAt": "2026-10-14 11:52:10.438Z", "lastContactAt": "2026-10-14 11:52:30.537Z", "readings": 1, "character": { "id": "character-id", "characterName": "Lumina", "server": "Lumiel", "region": "GLOBAL_EU", "value": 390, "confirmed": true, "valid": true, "lastSeenAt": "2026-10-14 11:52:30.537Z", "lastReadingAt": "2026-10-14 11:52:10.481Z", "parserVersion": "global-reference-v1" } }
+```
+
+`packets` are the newest 200 requests to `session`, `report`, `heartbeat`, `invalidate` and `character`, oldest first, each with a server-wide increasing `id`. They are kept in server memory only and a restart clears them. Each lists `at`, `kind`, `user`, `account`, `ok`, the handling time `ms`, `error` when the request was rejected, and only these body fields: `previousSessionId` (session); `sessionId`, `sequence`, `characterId`, `characterName`, `server`, `region`, `value`, `parserVersion` (report); `sessionId`, `characterId` and the character's name (heartbeat, invalidate); `characterName`, `server`, `region` (character). Anything else in a body is never kept.
+
+```json
+{ "id": 4, "at": "2026-10-14T11:52:10.547Z", "kind": "report", "user": "user-id", "account": "Lumina", "ok": false, "ms": 0, "error": "Outdated reading.", "sessionId": "session-id", "sequence": 1, "characterName": "Lumina", "server": "Lumiel", "region": "GLOBAL_EU", "value": 400, "parserVersion": "global-reference-v1" }
+```
+
+Superusers subscribe to the realtime topic `odyle.admin.packets` to receive each packet as `{ packet }` the moment it is handled; other clients are refused at subscription and before every delivery.
+
+Settings: `odylePerCube` is an integer 1–1000, `dailyResetHour` 0–23 (UTC) and `weeklyResetDay` `sunday`…`saturday`. Saving creates the `odyle_settings` record if it was deleted. Rooms, room snapshots and the checklist report the new values on their next request.
+
+PocketBase serves extension files with a 14-day browser cache. The extension's entry (`main.js`) therefore stays unchanged and imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload.
+
 ## Realtime
 
-Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Events contain only `{ refresh: true }` and follow room, membership, sharing, wishlist, reading, session and portrait changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.
+Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Superusers can also subscribe to `odyle.admin.packets` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). Room events contain only `{ refresh: true }` and follow room, membership, sharing, wishlist, reading, session and portrait changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.
