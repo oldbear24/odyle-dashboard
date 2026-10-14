@@ -43,6 +43,25 @@ The snapshot's `wishlist` is grouped by dungeon, most wanted first, then oldest:
 
 `users` are account ids in the order they added the dungeon; clients take display names from `members`. Every change sends the room's realtime refresh. The `room_wishes` collection has no API rules; use the routes above.
 
+## Daily and weekly tasks
+
+Each account keeps a private checklist of daily and weekly tasks. Titles are free text (1–60 characters, inner whitespace collapsed) and an account can keep up to 40 tasks. Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit in the PocketBase dashboard; the defaults are the Global service's 07:00 UTC and Wednesday.
+
+| Method / route | Body | Result |
+| --- | --- | --- |
+| GET `/api/odyle/tasks` | — | `{ tasks, resets, serverNow }` of the signed-in account, oldest task first |
+| POST `/api/odyle/task` | `{ title, cadence }` | Adds a task; `cadence` is `daily` or `weekly` |
+| POST `/api/odyle/task` | `{ id, done }` | `true` stores the current time in `doneAt`, `false` clears it |
+| POST `/api/odyle/task` | `{ id, remove: true }` | Deletes the task |
+
+Every POST answers with the same `{ tasks, resets, serverNow }` as the GET:
+
+```json
+{ "tasks": [{ "id": "task-id", "user": "user-id", "title": "Daily dungeon", "cadence": "daily", "doneAt": "2026-10-13 18:00:00.000Z", "created": "2026-10-13 09:00:00.000Z", "updated": "2026-10-13 18:00:00.000Z" }], "resets": { "dailyResetHour": 7, "weeklyResetDay": "wednesday" }, "serverNow": "2026-10-13T18:00:01.000Z" }
+```
+
+A task of another account answers 403 and an unknown id 404. Tasks send no realtime events and are not part of room snapshots. The `user_tasks` collection has no API rules; use the routes above.
+
 ## Persistent characters and publisher sessions
 
 Own characters can be read with the normal PocketBase `characters` collection API. Others' records and all direct character writes are locked. Shared readings are read via authorized room snapshots; the Windows app reads `GET /api/odyle/snapshot/{id}` for each room to list the party.

@@ -1,6 +1,7 @@
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc } from './model';
 import { connectionLink } from './connection';
+import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour } from './tasks';
 import './style.css';
 import './accounts.css';
 
@@ -11,6 +12,7 @@ pb.autoCancellation(false);
 const app = document.querySelector('#app');
 let room = null, members = [], wishlist = [], rooms = [], characters = [], demo = false, online = false, invites = [];
 let serverOffset = 0, lastPulse = 0, busy = false, subscription = null, perCube = 40;
+let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
 let timer;
 const iconPaths = {
   diamond: '<path d="m12 2 8 10-8 10-8-10 8-10Z"/><path d="m4 12 8 4 8-4M12 2v20"/>',
@@ -20,6 +22,7 @@ const iconPaths = {
   shield: '<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
   bolt: '<path d="m14 2-9 12h6l-1 8 9-12h-6l1-8Z"/>',
+  check: '<path d="M10 6h11M10 12h11M10 18h11"/><path d="m3 6 1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/>', tick: '<path d="m5 12 4 4L19 6"/>',
 };
 const icon = name => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || iconPaths.diamond}</svg>`;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
@@ -35,7 +38,7 @@ function portrait(c, index, size = '') {
 }
 const ownCards = () => characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
 function shell(content, active = 'overview') {
-  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="Odyle home"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">PARTY COMMAND</div><nav><button data-action="overview" class="nav-item ${active === 'overview' ? 'active' : ''}">${icon('grid')} Overview <span class="nav-marker"></span></button><button data-action="library" class="nav-item ${active === 'library' ? 'active' : ''}">${icon('people')} My rooms & characters</button><button data-action="invite" class="nav-item">${icon('plus')} Invitations</button><button data-action="help" class="nav-item">${icon('shield')} Reader & privacy</button></nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>Global · Community tool</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">Workspace <span>/</span> <strong>${esc(room?.name || (pb.authStore.isValid ? 'My account' : 'Welcome'))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}"><i></i>${demo ? 'Demo workspace' : online ? 'Connected' : 'Not connected'}</span><button class="avatar" data-action="account" aria-label="Session details">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${content}<footer><span>${icon('shield')} Your characters, saved. Your party, private.</span><span>Odyle Party <span class="muted">/ 0.4 · Live packet readings</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
+  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="Odyle home"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">PARTY COMMAND</div><nav><button data-action="overview" class="nav-item ${active === 'overview' ? 'active' : ''}">${icon('grid')} Overview <span class="nav-marker"></span></button><button data-action="library" class="nav-item ${active === 'library' ? 'active' : ''}">${icon('people')} My rooms & characters</button><button data-action="tasks" class="nav-item ${active === 'tasks' ? 'active' : ''}">${icon('check')} Daily & weekly</button><button data-action="invite" class="nav-item">${icon('plus')} Invitations</button><button data-action="help" class="nav-item">${icon('shield')} Reader & privacy</button></nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>Global · Community tool</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">Workspace <span>/</span> <strong>${esc(room?.name || (pb.authStore.isValid ? 'My account' : 'Welcome'))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}"><i></i>${demo ? 'Demo workspace' : online ? 'Connected' : 'Not connected'}</span><button class="avatar" data-action="account" aria-label="Session details">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${content}<footer><span>${icon('shield')} Your characters, saved. Your party, private.</span><span>Odyle Party <span class="muted">/ 0.4 · Live packet readings</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
 }
 function welcome() {
   shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> BUILT FOR YOUR NEXT RUN</div><h1>Good runs start<br>with a ready party<span class="mint">.</span></h1><p class="intro">Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.</p><div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>One account. Every adventure.</h2><p>Your rooms and character readings stay with your Discord account, even after you close the app.</p><button class="button discord-button" data-action="discord">Continue with Discord ${icon('arrow')}</button><small>First sign-in creates your account. No separate password.</small></div><button class="text-button" data-action="demo">Explore the demo workspace ${icon('arrow')}</button><p class="welcome-note">No game account needed. No public directory. Just your party.</p></main>`);
@@ -96,19 +99,54 @@ function wishlistSection(now) {
   }).join('');
   return `<section class="party-section wishlist"><div class="section-heading"><h2>Dungeon wishlist <span>${wishlist.length}</span></h2><span class="refresh-label">Most wanted first</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : '<p class="wish-empty">Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.</p>'}</div></section>`;
 }
+// Full redraws keep a half-typed form entry (wishlist, task forms) and its focus.
+function keepingDrafts(render) {
+  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden])')].filter(i => i.value || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]`, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
+  render();
+  for (const d of drafts) { const input = document.querySelector(d.selector); if (!input) continue; input.value = d.value; if (d.focused) { input.focus(); input.setSelectionRange(d.start, d.end); } }
+}
+// Personal daily and weekly checklists. A task counts as done while it was checked
+// after the current reset (07:00 UTC and Wednesday by default; the server names
+// both from odyle_settings), so the lists clear by themselves and nothing is deleted.
+function taskPanel(cadence, now) {
+  const list = tasks.filter(t => t.cadence === cadence), done = list.filter(t => isDone(t, now, resets)), at = nextReset(cadence, now, resets), label = cadence === 'daily' ? 'Daily' : 'Weekly';
+  // Local time, but English names like the rest of the page (en-GB keeps the 24-hour clock).
+  const when = new Date(at).toLocaleString('en-GB', cadence === 'weekly' ? { weekday: 'long', hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
+  const rows = list.map(t => {
+    const checked = isDone(t, now, resets);
+    return `<div class="task-row ${checked ? 'done' : ''}"><label class="task-main"><input type="checkbox" data-task="${esc(t.id)}" ${checked ? 'checked' : ''}><span class="task-box">${icon('tick')}</span><span class="task-text"><strong>${esc(t.title)}</strong><small>${checked ? `Done <span data-age="${esc(t.doneAt)}">${age(t.doneAt, now)}</span>` : cadence === 'daily' ? 'Still to do today' : 'Still to do this week'}</small></span></label><button class="task-remove" data-remove-task="${esc(t.id)}" title="Remove ${esc(t.title)}" aria-label="Remove ${esc(t.title)}">×</button></div>`;
+  }).join('');
+  const empty = cadence === 'daily' ? 'No daily tasks yet. Add what you run every day; it unchecks itself at the daily reset.' : 'No weekly tasks yet. Add what you clear once a week; it unchecks itself at the weekly reset.';
+  return `<section class="party-section task-panel"><div class="section-heading"><h2>${label} <span>${done.length} / ${list.length}</span></h2><span class="refresh-label">Resets in <span data-reset="${cadence}">${remaining(at - now)}</span> · ${esc(when)}</span></div><div class="wish-panel"><div class="task-progress"><i style="width:${list.length ? done.length / list.length * 100 : 0}%"></i></div>${rows ? `<div class="task-list">${rows}</div>` : `<p class="wish-empty">${empty}</p>`}<form id="task-form-${cadence}" class="wish-form"><input name="title" maxlength="60" autocomplete="off" placeholder="Add a ${cadence} task" aria-label="${label} task" required><button class="button primary" type="submit">${icon('plus')} Add</button></form></div></section>`;
+}
+function tasksSignature() { const now = Date.now() + serverOffset; return canonical([tasks.map(t => [t.id, t.title, t.cadence, isDone(t, now, resets)]), resets]); }
+function tasksView() {
+  renderedTasks = tasksSignature(); const now = Date.now() + serverOffset;
+  const local = new Date(nextReset('daily', now, resets)).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  keepingDrafts(() => shell(`<main class="dashboard tasks-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> EVERY RESET, READY</div><h1>Daily & weekly<span class="mint">.</span></h1><p>Your own checklist, saved to your account. Tasks uncheck themselves at the daily reset, ${String(resetHour(resets)).padStart(2, '0')}:00 UTC (${esc(local)} your time), and at the weekly reset on ${dayName(resets)}.</p></div><span class="refresh-label"><i></i>Private to you</span></section><div class="task-grid">${taskPanel('daily', now)}${taskPanel('weekly', now)}</div></main>`, 'tasks'));
+}
+function updateResets() { const now = Date.now() + serverOffset; document.querySelectorAll('[data-reset]').forEach(el => { el.textContent = remaining(nextReset(el.dataset.reset, now, resets) - now); }); }
+function renderTasks() { if (tasksSignature() === renderedTasks) { updateAges(); updateResets(); } else tasksView(); }
+function applyTasks(data) { tasks = data.tasks || []; if (data.resets) resets = data.resets; }
+async function refreshTasks() {
+  const data = await pb.send('/api/odyle/tasks');
+  if (shown !== '/tasks') return; // navigated elsewhere while loading
+  applyTasks(data); if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
+}
+async function tasksPage(ticket) {
+  await leaveRoomTopic(); room = null; members = []; wishlist = []; demo = false; invites = [];
+  await refreshTasks(); if (ticket !== navigation) return; tasksView();
+}
 function dashboard() {
   rendered = signature();
-  // Room changes redraw the whole page; keep a half-typed wishlist entry and its focus.
-  const draft = document.querySelector('#wish-form input'), typing = draft && { value: draft.value, focused: document.activeElement === draft, start: draft.selectionStart, end: draft.selectionEnd };
   const now = Date.now() + serverOffset, party = flattened(), actual = party.filter(c => c.characterName);
   const live = actual.filter(c => status(c, now) === 'live'), ready = live.filter(c => c.value >= room.cost);
   // Odyle cannot be pooled. Each player brings one character (their best fresh one),
   // and the party can only do as many cubes as its lowest player allows.
   const players = Object.values(live.reduce((best, c) => (!best[c.user] || c.value > best[c.user].value ? { ...best, [c.user]: c } : best), {}));
   const lowest = players.reduce((low, c) => !low || c.value < low.value ? c : low, null), cubes = lowest ? Math.floor(lowest.value / room.cost) : 0;
-  shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> YOUR NEXT ADVENTURE</div><h1>Party overview<span class="mint">.</span></h1><p>${members.length} members · ${actual.length} characters in this room · Every last confirmed value stays saved.</p></div><div class="heading-actions">${demo ? '<span class="demo-tag">Sample data</span>' : ''}<button class="button primary" data-action="invite">${icon('plus')} Invite a friend</button></div></section><section class="stats"><article><div class="stat-caption">CHARACTER READINESS ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">Fresh characters with enough for a cube</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">LOWEST PLAYER ODYLE ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString() : '—'}<span class="unit">energy</span></div><div class="stat-detail">${lowest ? `${esc(lowest.displayName)}${lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`} · best character of each of ${players.length} ${players.length === 1 ? 'player' : 'players'}` : 'No current readings; old values stay on their cards'}</div></article><article><div class="stat-caption">PARTY CUBES ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${cubes === 1 ? 'cube' : 'cubes'}</span></div><div class="stat-detail">Lowest count in the room · ${room.cost} Odyle per cube</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>Party characters <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? 'Illustrative readings' : 'Live room updates'}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>A spot for your next ally</strong><span>Invite another Discord account</span></button></div></section>${wishlistSection(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>Your data. Your call.</h3><p>Account-owned characters. Room-scoped sharing.</p></div></div><p>All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.</p><button class="text-button" data-action="library">My rooms & characters ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">BEFORE YOU HEAD OUT</div><h3>Check the character you’re taking.</h3><p>${ready.length} ${ready.length === 1 ? 'character' : 'characters'} can currently claim a cube at ${room.cost} Odyle. A stale value remains stored but does not count as ready.</p><button class="button secondary" data-action="${demo ? 'help' : 'reading'}">${demo ? 'How readings work' : 'Connect packet reader'} ${icon('arrow')}</button></article></section></main>`);
-  const input = typing && document.querySelector('#wish-form input');
-  if (input) { input.value = typing.value; if (typing.focused) { input.focus(); input.setSelectionRange(typing.start, typing.end); } }
+  // Room changes redraw the whole page; keep a half-typed wishlist entry and its focus.
+  keepingDrafts(() => shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> YOUR NEXT ADVENTURE</div><h1>Party overview<span class="mint">.</span></h1><p>${members.length} members · ${actual.length} characters in this room · Every last confirmed value stays saved.</p></div><div class="heading-actions">${demo ? '<span class="demo-tag">Sample data</span>' : ''}<button class="button primary" data-action="invite">${icon('plus')} Invite a friend</button></div></section><section class="stats"><article><div class="stat-caption">CHARACTER READINESS ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">Fresh characters with enough for a cube</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">LOWEST PLAYER ODYLE ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString() : '—'}<span class="unit">energy</span></div><div class="stat-detail">${lowest ? `${esc(lowest.displayName)}${lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`} · best character of each of ${players.length} ${players.length === 1 ? 'player' : 'players'}` : 'No current readings; old values stay on their cards'}</div></article><article><div class="stat-caption">PARTY CUBES ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${cubes === 1 ? 'cube' : 'cubes'}</span></div><div class="stat-detail">Lowest count in the room · ${room.cost} Odyle per cube</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>Party characters <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? 'Illustrative readings' : 'Live room updates'}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>A spot for your next ally</strong><span>Invite another Discord account</span></button></div></section>${wishlistSection(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>Your data. Your call.</h3><p>Account-owned characters. Room-scoped sharing.</p></div></div><p>All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.</p><button class="text-button" data-action="library">My rooms & characters ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">BEFORE YOU HEAD OUT</div><h3>Check the character you’re taking.</h3><p>${ready.length} ${ready.length === 1 ? 'character' : 'characters'} can currently claim a cube at ${room.cost} Odyle. A stale value remains stored but does not count as ready.</p><button class="button secondary" data-action="${demo ? 'help' : 'reading'}">${demo ? 'How readings work' : 'Connect packet reader'} ${icon('arrow')}</button></article></section></main>`));
 }
 function card(c, index) {
   const now = Date.now() + serverOffset, state = status(c, now), fresh = state === 'live', known = c.confirmed && c.lastReadingAt, cost = room?.cost || perCube, cubes = known ? Math.floor(c.value / cost) : 0, ready = fresh && c.value >= cost;
@@ -157,7 +195,7 @@ async function openRoom(id, ticket) {
   subscription = stop;
 }
 
-// Every page has its own URL: #/ (welcome or your rooms), #/room/<id> and #/demo.
+// Every page has its own URL: #/ (welcome or your rooms), #/room/<id>, #/tasks and #/demo.
 // Hash routes keep the relative-base build working from any static host, and a
 // reload or shared link opens the same page. The last signed-in page is
 // remembered so a fresh visit resumes where the user was.
@@ -166,7 +204,7 @@ const memoryKey = 'odyle.location';
 function remembered() { try { return JSON.parse(localStorage.getItem(memoryKey)) || {}; } catch { return {}; } }
 function remember(path) { try { localStorage.setItem(memoryKey, JSON.stringify({ path, room: path.startsWith('/room/') ? path.slice(6) : remembered().room })); } catch {} }
 function forget(id) { try { if (!id) localStorage.removeItem(memoryKey); else if (remembered().room === id) localStorage.setItem(memoryKey, JSON.stringify({ path: '/' })); } catch {} }
-function currentPath() { const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|demo)?)$/); return match ? match[1] : '/'; }
+function currentPath() { const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|demo|tasks)?)$/); return match ? match[1] : '/'; }
 async function show(force = false) {
   const path = currentPath();
   if (path === shown && !force) return;
@@ -175,7 +213,7 @@ async function show(force = false) {
   if (!pb.authStore.isValid) { await leaveRoomTopic(); demo = false; room = null; return welcome(); }
   remember(path);
   const id = path.startsWith('/room/') ? path.slice(6) : '';
-  try { id ? await openRoom(id, ticket) : await library(ticket); }
+  try { if (path === '/tasks') await tasksPage(ticket); else if (id) await openRoom(id, ticket); else await library(ticket); }
   catch (error) {
     if (ticket !== navigation || !id || ![400, 403, 404].includes(error.status)) throw error;
     forget(id); await go('/', true); toast('That room is not available to your account.');
@@ -201,6 +239,7 @@ async function authenticated() {
       if (Date.now() - lastPulse >= 15000) {
         lastPulse = Date.now();
         if (room) await refreshRoom();
+        else if (shown === '/tasks') await refreshTasks();
         else {
           const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
           if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); }
@@ -209,6 +248,7 @@ async function authenticated() {
       }
       if (document.querySelector('#modal')?.open) return;
       if (room) renderDashboard();
+      else if (document.querySelector('.tasks-page')) renderTasks();
       else if (document.querySelector('.personal-characters .member-grid') && characters.length && librarySignature() !== renderedLibrary) renderCharacters();
       else updateAges();
     } catch { online = false; }
@@ -228,7 +268,7 @@ async function discordLogin() {
   await authenticated();
 }
 async function logout() {
-  await leaveRoomTopic(); clearInterval(timer); pb.authStore.clear(); forget(); room = null; members = []; wishlist = []; rooms = []; characters = []; online = false; demo = false;
+  await leaveRoomTopic(); clearInterval(timer); pb.authStore.clear(); forget(); room = null; members = []; wishlist = []; rooms = []; characters = []; tasks = []; online = false; demo = false;
   await go('/', true);
 }
 function demoSession() {
@@ -251,6 +291,7 @@ app.addEventListener('submit', async e => {
       if (demo) return modal('Plan your next run', '<p>This workspace uses sample data. Sign in with Discord to keep a dungeon wishlist in your own room.</p><button class="button discord-button" data-action="exit-demo">Sign in with Discord</button>');
       await send('wishlist', { roomId: room.id, dungeon: data.dungeon, wanted: true }); form.reset(); await refreshRoom();
     }
+    else if (form.id.startsWith('task-form-')) { applyTasks(await send('task', { title: data.title, cadence: form.id.slice(10) })); form.reset(); tasksView(); }
   } catch (error) { toast(error.message); }
   finally { busy = false; if (button.isConnected) button.disabled = false; }
 });
@@ -269,6 +310,7 @@ app.addEventListener('click', async e => {
       rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: result.sharedCharacters.length > 0 } : r);
       return renderSharing();
     }
+    if (el.dataset.removeTask) { el.disabled = true; try { applyTasks(await send('task', { id: el.dataset.removeTask, remove: true })); tasksView(); } finally { el.disabled = false; } return; }
     if (el.dataset.wish) {
       el.disabled = true; try { await send('wishlist', { roomId: room.id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
       return await refreshRoom();
@@ -280,6 +322,7 @@ app.addEventListener('click', async e => {
       case 'discord': await discordLogin(); break;
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
+      case 'tasks': await go('/tasks'); break;
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;
       case 'close-dialog': document.querySelector('#modal').close(); break;
@@ -288,12 +331,19 @@ app.addEventListener('click', async e => {
       case 'add-all': await send('sharing', { roomId: room.id, enabled: true }); await refreshRoom(); break;
       case 'generate-invites': invites = (await send('invites', { roomId: room.id })).invites; inviteDialog(); break;
       case 'desktop': await desktopDialog(); break;
-      case 'help': modal('Saved characters, fresh readings', '<p>Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.</p><p>Each character is shared per room: choose them under My rooms & characters → Room sharing, or inside the room: add one from the bar above the party and take it out with Remove from room on its card. Friends only see the characters you linked to that room. A viewer invite grants read-only room access.</p><p>Each room keeps a dungeon wishlist: add the dungeons you still need to run, join an entry with Need it too and take yourself off when you are done. The room owner can clear an entry for everyone.</p><p>The Windows app pairs with a one-time code. It reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.</p><p>The Windows app sends Odyle when it first reads it and whenever it changes. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved as history. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.</p>'); break;
-      case 'account': if (!pb.authStore.isValid || demo) await go('/'); else modal('Your Discord account', `<p>${esc(pb.authStore.record.displayName)} · Rooms and characters remain saved after sign-out.</p><button class="button secondary" data-action="library">My rooms & characters</button><button class="button secondary" data-action="desktop">Pair Windows app</button>${room ? `<button class="button danger" data-action="leave-room">${owner() ? 'Close this room' : 'Leave this room'}</button>` : ''}<button class="text-button" data-action="logout">Sign out of this browser</button>`); break;
+      case 'help': modal('Saved characters, fresh readings', '<p>Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.</p><p>Each character is shared per room: choose them under My rooms & characters → Room sharing, or inside the room: add one from the bar above the party and take it out with Remove from room on its card. Friends only see the characters you linked to that room. A viewer invite grants read-only room access.</p><p>Each room keeps a dungeon wishlist: add the dungeons you still need to run, join an entry with Need it too and take yourself off when you are done. The room owner can clear an entry for everyone.</p><p>Daily & weekly is your own checklist: add the tasks you run every day or week and tick them off. They uncheck themselves at the daily and weekly reset of the Global service, so nothing is deleted and nothing needs re-adding.</p><p>The Windows app pairs with a one-time code. It reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.</p><p>The Windows app sends Odyle when it first reads it and whenever it changes. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved as history. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.</p>'); break;
+      case 'account': if (!pb.authStore.isValid || demo) await go('/'); else modal('Your Discord account', `<p>${esc(pb.authStore.record.displayName)} · Rooms and characters remain saved after sign-out.</p><button class="button secondary" data-action="library">My rooms & characters</button><button class="button secondary" data-action="tasks">Daily & weekly tasks</button><button class="button secondary" data-action="desktop">Pair Windows app</button>${room ? `<button class="button danger" data-action="leave-room">${owner() ? 'Close this room' : 'Leave this room'}</button>` : ''}<button class="text-button" data-action="logout">Sign out of this browser</button>`); break;
       case 'leave-room': await send(owner() ? 'close' : 'leave', { roomId: room.id }); forget(room.id); await go('/'); toast('Your saved characters are retained.'); break;
       case 'logout': await logout(); break;
     }
   } catch (error) { toast(error.message); }
+});
+// Ticking a task saves the time it was done; it shows as done until the next reset.
+app.addEventListener('change', async e => {
+  const box = e.target; if (!box.matches?.('input[data-task]')) return;
+  const id = box.dataset.task, done = box.checked; box.disabled = true;
+  try { applyTasks(await send('task', { id, done })); tasksView(); document.querySelector(`input[data-task="${id}"]`)?.focus(); }
+  catch (error) { box.checked = !done; box.disabled = false; toast(error.message); }
 });
 // A picture that fails to load (removed meanwhile, server unreachable) uncovers the initials.
 app.addEventListener('error', e => { if (e.target.matches?.('.portrait img')) e.target.closest('.portrait-photo').remove(); }, true);

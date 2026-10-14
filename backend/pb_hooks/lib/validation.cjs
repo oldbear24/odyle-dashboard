@@ -17,6 +17,12 @@ function dungeon(value) {
   const name = text(value, 'Dungeon', 60).replace(/\s+/g, ' ');
   return { dungeon: name, key: name.toLowerCase() };
 }
+// A checklist task is free text (inner whitespace collapses) with a daily or weekly
+// cadence, which decides the reset that clears it.
+function task(body) {
+  if (!['daily', 'weekly'].includes(body.cadence)) throw new Error('Choose a daily or weekly task.');
+  return { title: text(body.title, 'Task', 60).replace(/\s+/g, ' '), cadence: body.cadence };
+}
 function reading(body, current, verifiedAdapters = []) {
   if (body.sessionId !== current.sessionId) throw new Error('Publisher session changed. Reconnect your client.');
   integer(body.sequence, 'Sequence', 1, Number.MAX_SAFE_INTEGER);
@@ -29,4 +35,4 @@ function reading(body, current, verifiedAdapters = []) {
   if (!regions.includes(body.region)) throw new Error('Select a Global region.');
   return { value: integer(body.value, 'Odyle', 0, 1000000), characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region, sequence: body.sequence, source: 'packet', parserVersion };
 }
-module.exports = { text, integer, characterIdentity, dungeon, reading };
+module.exports = { text, integer, characterIdentity, dungeon, task, reading };

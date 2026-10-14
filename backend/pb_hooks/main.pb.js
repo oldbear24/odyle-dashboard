@@ -1,4 +1,4 @@
-for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'desktop-code']) {
+for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'task', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'desktop-code']) {
   routerAdd('POST', '/api/odyle/' + action, e => {
     const name = e.request.url.path.split('/').pop();
     return require(__hooks + '/lib/accounts.cjs')[name === 'desktop-code' ? 'desktopCode' : name](e);
@@ -6,6 +6,7 @@ for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sha
 }
 routerAdd('POST', '/api/odyle/pair', e => require(__hooks + '/lib/accounts.cjs').pair(e), $apis.bodyLimit(4096));
 routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs').rooms(e), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/accounts.cjs').tasks(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));
 onRealtimeSubscribeRequest(e => {
   for (const topic of e.subscriptions) if (topic.startsWith('odyle.room.')) {

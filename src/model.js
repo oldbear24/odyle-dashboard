@@ -1,4 +1,4 @@
-const timestamp = date => Date.parse(String(date).replace(' ', 'T'));
+export const timestamp = date => Date.parse(String(date).replace(' ', 'T'));
 export function status(member, now = Date.now()) {
   if (!member.sharing) return 'offline';
   if (!member.confirmed || !member.lastReadingAt) return 'unknown';

@@ -80,7 +80,7 @@ before(async () => {
   // Runs the odyle-expiry cron job on demand and reports which of the given invite codes it kept.
   await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
   // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
-  await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); });`);
+  await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/reset-times', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'), b=e.requestInfo().body; r.set('dailyResetHour',b.hour); r.set('weeklyResetDay',b.day); e.app.save(r); return e.json(200,{}); });`);
   // Joins are rate limited to 10 a minute and other tests use that budget; this adds a membership directly.
   await writeFile(join(directory, 'hooks', 'member-fixture.pb.js'), `routerAdd('POST','/__test__/member', e => { const b=e.requestInfo().body, m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',b.room); m.set('user',b.user); m.set('role',b.role); m.set('sharedCharacters',[]); e.app.save(m); return e.json(200,m); });`);
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
@@ -241,6 +241,39 @@ test('room members keep a shared dungeon wishlist', async () => {
   // A member who leaves takes their entries along.
   assert.equal((await action('leave', { roomId }, mate)).status, 200);
   assert.deepEqual(await listed(author), [['Fire Temple', [author.record.id]]]);
+});
+test('accounts keep private daily and weekly checklists that reset by time', async () => {
+  const [me, other] = await Promise.all(['Task owner', 'Task other'].map(async name => (await request('/__test__/account', { name })).data));
+  const list = auth => request('/api/odyle/tasks', undefined, auth, 'GET');
+  const change = (body, auth = me) => action('task', body, auth);
+  // Defaults match the Global service: 07:00 UTC daily, Wednesday weekly; both are server settings.
+  const empty = await list(me); assert.equal(empty.status, 200, JSON.stringify(empty.data));
+  assert.deepEqual(empty.data.tasks, []); assert.deepEqual(empty.data.resets, { dailyResetHour: 7, weeklyResetDay: 'wednesday' }); assert.ok(empty.data.serverNow);
+  const added = await change({ title: '  Daily   dungeon ', cadence: 'daily' }); assert.equal(added.status, 200, JSON.stringify(added.data));
+  assert.equal((await change({ title: 'Weekly boss', cadence: 'weekly' })).status, 200);
+  for (const bad of [{ title: '', cadence: 'daily' }, { title: 'x'.repeat(61), cadence: 'daily' }, { title: 'Run', cadence: 'monthly' }, { title: 'Run' }]) assert.equal((await change(bad)).status, 400);
+  const mine = (await list(me)).data.tasks;
+  assert.deepEqual(mine.map(t => [t.title, t.cadence, t.doneAt]), [['Daily dungeon', 'daily', ''], ['Weekly boss', 'weekly', '']]);
+  const [daily, weekly] = mine;
+  // Checking stores the time and unchecking clears it; clients compare it with the reset.
+  const before = Date.now() - 1000, done = await change({ id: daily.id, done: true }); assert.equal(done.status, 200, JSON.stringify(done.data));
+  const stamp = done.data.tasks.find(t => t.id === daily.id).doneAt; assert.ok(Date.parse(stamp.replace(' ', 'T')) >= before, stamp);
+  assert.equal(done.data.tasks.find(t => t.id === weekly.id).doneAt, '');
+  assert.equal((await change({ id: daily.id, done: false })).data.tasks[0].doneAt, '');
+  assert.equal((await change({ id: daily.id })).status, 400);
+  // Private: another account neither sees nor changes them, and the collection is closed.
+  assert.deepEqual((await list(other)).data.tasks, []);
+  assert.equal((await change({ id: daily.id, done: true }, other)).status, 403);
+  assert.equal((await change({ id: daily.id, remove: true }, other)).status, 403);
+  assert.equal((await change({ id: 'missingtaskid00', done: true })).status, 404);
+  assert.equal((await request('/api/collections/user_tasks/records', undefined, me, 'GET')).status, 403);
+  assert.equal((await list()).status, 401);
+  // Superusers move the reset in odyle_settings and every client follows.
+  assert.equal((await request('/__test__/reset-times', { hour: 0, day: 'monday' })).status, 200);
+  try { assert.deepEqual((await list(me)).data.resets, { dailyResetHour: 0, weeklyResetDay: 'monday' }); }
+  finally { assert.equal((await request('/__test__/reset-times', { hour: 7, day: 'wednesday' })).status, 200); }
+  const removed = await change({ id: weekly.id, remove: true }); assert.equal(removed.status, 200, JSON.stringify(removed.data));
+  assert.deepEqual(removed.data.tasks.map(t => t.id), [daily.id]);
 });
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;

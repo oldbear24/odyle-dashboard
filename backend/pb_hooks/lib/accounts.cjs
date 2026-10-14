@@ -126,6 +126,35 @@ function wishlist(e) { return mutate(e, (app, user, body, affected) => {
   }
   affected.push(roomId); return { wishlist: wishlistOf(app, roomId) };
 }); }
+// Reset times of the Global service, edited by superusers in odyle_settings next to
+// odylePerCube. Launch defaults: 07:00 UTC daily, Wednesday weekly.
+function resets(app) {
+  try { const s = app.findFirstRecordByFilter('odyle_settings', 'id != ""'); return { dailyResetHour: s.getInt('dailyResetHour'), weeklyResetDay: s.getString('weeklyResetDay') || 'wednesday' }; }
+  catch { return { dailyResetHour: 7, weeklyResetDay: 'wednesday' }; }
+}
+// Personal daily and weekly checklists, oldest first. doneAt is the last time the
+// account checked a task; clients show it done while that is after the current reset
+// (src/tasks.js), so nothing has to uncheck tasks and nothing is deleted at reset.
+const tasksOf = (app, userId) => app.findRecordsByFilter('user_tasks', 'user = {:user}', 'created', 0, 0, { user: userId }).map(t => t.publicExport());
+const checklist = (app, userId) => ({ tasks: tasksOf(app, userId), resets: resets(app), serverNow: now() });
+function tasks(e) { return run(e, () => e.json(200, checklist(e.app, e.auth.id))); }
+// One route for the checklist: { title, cadence } adds a task, { id, done } stores or
+// clears the time it was checked and { id, remove: true } deletes it. Tasks are
+// private to the account and every answer carries the whole list.
+function task(e) { return mutate(e, (app, user, body) => {
+  if (body.id) {
+    let t; try { t = app.findRecordById('user_tasks', String(body.id)); } catch { throw new NotFoundError('This task no longer exists.'); }
+    if (t.getString('user') !== user.id) throw new ForbiddenError('This task belongs to another account.');
+    if (body.remove === true) app.delete(t);
+    else if (typeof body.done === 'boolean') { t.set('doneAt', body.done ? now() : ''); app.save(t); }
+    else throw new BadRequestError('Send done (true or false) or remove: true.');
+  } else {
+    const data = validate.task(body);
+    if (app.countRecords('user_tasks', $dbx.hashExp({ user: user.id })) >= 40) throw new BadRequestError('You can keep up to 40 tasks.');
+    const t = new Record(app.findCollectionByNameOrId('user_tasks')); t.set('user', user.id); t.set('title', data.title); t.set('cadence', data.cadence); app.save(t);
+  }
+  return checklist(app, user.id);
+}); }
 function session(e) { return mutate(e, (app, user, body, affected) => {
   if (body.previousSessionId) {
     const old = ownSession(app, user.id, String(body.previousSessionId));
@@ -252,4 +281,4 @@ function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
   if (clientId && clientSecret) { const users = app.findCollectionByNameOrId('users'); users.oauth2 = { enabled: true, providers: [{ name: 'discord', clientId, clientSecret }] }; app.save(users); }
 }
-module.exports = { create, join, rooms, snapshot, wishlist, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, cleanup, membership, desktopCode, pair, configureDiscord };
