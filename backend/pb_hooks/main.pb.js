@@ -3,14 +3,18 @@
 for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'task', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'rename', 'role', 'transfer', 'plan', 'discord-webhook', 'profile', 'desktop-code', 'desktop-device', 'forget-device', 'sign-out-everywhere', 'delete-account', 'delete-character']) {
   routerAdd('POST', '/api/odyle/' + action, e => {
     const name = e.request.url.path.split('/').pop();
-    // The companion's requests also feed the superuser dashboard's packet list.
+    // Every request also feeds the superuser dashboard's packet list.
     return require(__hooks + '/lib/admin.cjs').observe(e, name, () => require(__hooks + '/lib/accounts.cjs')[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())](e));
   }, $apis.requireAuth('users'), $apis.bodyLimit(4096));
 }
-routerAdd('POST', '/api/odyle/pair', e => require(__hooks + '/lib/accounts.cjs').pair(e), $apis.bodyLimit(4096));
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its device key.
-routerAdd('POST', '/api/odyle/desktop-sign-in', e => require(__hooks + '/lib/accounts.cjs').desktopSignIn(e), $apis.bodyLimit(4096));
-routerAdd('POST', '/api/odyle/unpair', e => require(__hooks + '/lib/accounts.cjs').unpair(e), $apis.bodyLimit(4096));
+// Handlers run in their own VM and see no outer variables, so each reads its action from the path.
+for (const action of ['pair', 'desktop-sign-in', 'unpair']) {
+  routerAdd('POST', '/api/odyle/' + action, e => {
+    const name = e.request.url.path.split('/').pop();
+    return require(__hooks + '/lib/admin.cjs').observe(e, name, () => require(__hooks + '/lib/accounts.cjs')[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())](e));
+  }, $apis.bodyLimit(4096));
+}
 routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs').rooms(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/accounts.cjs').tasks(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));
@@ -20,11 +24,15 @@ routerAdd('GET', '/api/odyle/account', e => require(__hooks + '/lib/accounts.cjs
 routerAdd('GET', '/api/odyle/export', e => require(__hooks + '/lib/accounts.cjs').exportData(e), $apis.requireAuth('users'));
 // Public: the newest Windows companion release, cached from GitHub (no account data involved).
 routerAdd('GET', '/api/odyle/windows-release', e => require(__hooks + '/lib/releases.cjs').windowsRelease(e));
+// Public: the message superusers set under Server controls, for the dashboard (signed in or not).
+routerAdd('GET', '/api/odyle/announcement', e => { const settings = require(__hooks + '/lib/settings.cjs'); return e.json(200, { announcement: settings.announcement(settings.read(e.app)) }); });
 // Superuser dashboard → Odyle (pb_hooks/admin, PocketBase UI extension): connected
-// Windows apps, their live requests and the server-wide settings (lib/admin.cjs).
+// Windows apps, live requests, background jobs and the server-wide settings (lib/admin.cjs).
 $app.onServe().bindFunc(e => { e.uiExtensions.push({ name: 'odyle', fs: $os.dirFS(__hooks + '/admin') }); return e.next(); });
 routerAdd('GET', '/api/odyle/admin/ui', e => require(__hooks + '/lib/admin.cjs').ui(e));
 routerAdd('GET', '/api/odyle/admin/monitor', e => require(__hooks + '/lib/admin.cjs').monitor(e), $apis.requireSuperuserAuth());
+routerAdd('GET', '/api/odyle/admin/jobs', e => require(__hooks + '/lib/admin.cjs').jobList(e), $apis.requireSuperuserAuth());
+routerAdd('POST', '/api/odyle/admin/jobs/{name}', e => require(__hooks + '/lib/admin.cjs').runJob(e), $apis.requireSuperuserAuth());
 routerAdd('GET', '/api/odyle/admin/settings', e => require(__hooks + '/lib/admin.cjs').readSettings(e), $apis.requireSuperuserAuth());
 // A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.
 routerAdd('POST', '/api/odyle/admin/settings', e => require(__hooks + '/lib/admin.cjs').saveSettings(e), $apis.requireSuperuserAuth(), $apis.bodyLimit(65536));
@@ -44,14 +52,16 @@ onRealtimeMessageSend(e => {
   }
   return e.next();
 });
-onBootstrap(e => { e.next(); require(__hooks + '/lib/accounts.cjs').configureDiscord(e.app); });
+// The Background jobs page counts from this server start.
+onBootstrap(e => { e.next(); e.app.store().set('odyle.startedAt', new Date().toISOString()); require(__hooks + '/lib/accounts.cjs').configureDiscord(e.app); });
 // Every account deletion (by its owner, in the superuser dashboard or for inactivity)
 // first passes the rooms it owns to another player or closes them.
 onRecordDelete(e => { require(__hooks + '/lib/accounts.cjs').handOver(e.app, e.record.id); return e.next(); }, 'users');
-cronAdd('odyle-expiry', '*/5 * * * *', () => require(__hooks + '/lib/accounts.cjs').cleanup());
-cronAdd('odyle-portraits', '* * * * *', () => require(__hooks + '/lib/accounts.cjs').refreshPortraits());
-cronAdd('odyle-reminders', '* * * * *', () => require(__hooks + '/lib/accounts.cjs').remindRuns());
-cronAdd('odyle-retention', '17 3 * * *', () => require(__hooks + '/lib/accounts.cjs').retention());
+// Each run is recorded for the superuser dashboard's Background jobs page (lib/jobs.cjs).
+cronAdd('odyle-expiry', '*/5 * * * *', () => require(__hooks + '/lib/jobs.cjs').run($app, 'odyle-expiry'));
+cronAdd('odyle-portraits', '* * * * *', () => require(__hooks + '/lib/jobs.cjs').run($app, 'odyle-portraits'));
+cronAdd('odyle-reminders', '* * * * *', () => require(__hooks + '/lib/jobs.cjs').run($app, 'odyle-reminders'));
+cronAdd('odyle-retention', '17 3 * * *', () => require(__hooks + '/lib/jobs.cjs').run($app, 'odyle-retention'));
 // Browser hardening for the dashboard pages and files it serves. API and admin
 // responses are left alone: the OAuth redirect page and the PocketBase UI need
 // inline scripts, and JSON needs none of these headers.

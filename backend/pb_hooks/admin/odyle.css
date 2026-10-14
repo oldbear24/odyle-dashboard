@@ -1,10 +1,26 @@
 /* Odyle page of the PocketBase superuser dashboard. Colors come from the PocketBase
    UI variables, so the page follows its light and dark themes. */
-.odyle-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.odyle-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .odyle-stat{display:flex;flex-direction:column;gap:2px;padding:12px 15px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor)}
 .odyle-stat strong{font-size:1.7em;line-height:1.3}
 .odyle-table{overflow-x:auto;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius)}
 .odyle-table td{vertical-align:top}
+.odyle-table table{font-variant-numeric:tabular-nums}
+/* Ages change every second; a fixed width keeps the columns from shifting. */
+.odyle-table td.odyle-age{min-width:7.5em}
+.odyle-filters{display:inline-flex;gap:2px;flex-wrap:wrap}
+.odyle-jobs{display:flex;flex-direction:column;gap:10px}
+.odyle-job{padding:12px 15px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor)}
+.odyle-job-head{gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.odyle-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.odyle-job-error{margin-top:10px;padding:8px 10px;border-radius:var(--borderRadius);background:var(--surfaceAlt1Color)}
+.odyle-job-error.current{background:var(--surfaceDangerColor,var(--surfaceAlt1Color))}
+.odyle-job-error .odyle-error{max-width:none;font-family:var(--monospaceFontFamily);font-size:var(--smFontSize)}
+.odyle-error{overflow-wrap:anywhere;max-width:420px}
+.odyle-section{margin-top:var(--baseSpacing)}
+.odyle-section:first-child{margin-top:0}
+.odyle-section .txt-hint{margin-top:2px}
+.field .odyle-toggle{margin:4px 0}
 .odyle-status,.odyle-reading,.odyle-live{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .odyle-status:before,.odyle-reading:before,.odyle-live:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--surfaceAlt5Color);flex-shrink:0}
 .odyle-status.online:before,.odyle-reading.live:before,.odyle-live:before{background:var(--successColor)}

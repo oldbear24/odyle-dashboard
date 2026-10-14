@@ -27,6 +27,10 @@ let serverOffset = 0, lastPulse = 0, renewedAt = 0, busy = false, subscription =
 let windowsRelease = null, windowsReleaseAt = 0;
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
 let account = null, renderedAccount = '';
+// The message superusers set under Server controls, refreshed every minute at most. Hiding
+// it lasts until the text changes.
+let announcement = null, announcementAt = 0;
+const hiddenAnnouncementKey = 'odyle.announcement.hidden';
 let timer;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
 const owner = () => demo || room?.owner === pb.authStore.record?.id;
@@ -43,12 +47,24 @@ function portrait(c, index, size = '') {
 const ownCards = () => characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
 const navItem = (action, active, name, label, marker = '') => `<button data-action="${action}" class="nav-item ${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)} ${label}${marker}</button>`;
 const connectionLabel = () => `<i></i>${demo ? t('Demo workspace') : online ? t('Connected') : t('Not connected')}`;
+function announcementBar() {
+  if (!announcement || storage.getItem(hiddenAnnouncementKey) === announcement.text) return '<div class="announcement-slot"></div>';
+  const warning = announcement.level === 'warning';
+  return `<div class="announcement-slot"><div class="announcement ${warning ? 'warning' : 'info'}" role="${warning ? 'alert' : 'status'}">${icon(warning ? 'alert' : 'info')}<p>${esc(announcement.text)}</p><button class="close-button" data-action="hide-announcement" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button></div></div>`;
+}
+function renderAnnouncement() { const el = document.querySelector('.announcement-slot'); if (el) el.outerHTML = announcementBar(); }
+async function loadAnnouncement(force = false) {
+  if (!force && Date.now() - announcementAt < 60000) return;
+  announcementAt = Date.now();
+  const next = (await pb.send('/api/odyle/announcement')).announcement || null;
+  if (JSON.stringify(next) !== JSON.stringify(announcement)) { announcement = next; renderAnnouncement(); }
+}
 // The topbar's connection state follows every refresh, not only full redraws.
 function renderConnection() { const el = document.querySelector('.topbar .connection'); if (!el) return; el.classList.toggle('connected', online || demo); el.innerHTML = connectionLabel(); }
 function shell(content, active = 'overview') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent;
-  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ ${esc(__APP_VERSION__)} · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
+  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ ${esc(__APP_VERSION__)} · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 function welcome(joining = false) {
@@ -373,6 +389,7 @@ async function authenticated() {
   // presence current (readers report every 20 seconds, a reading turns stale after
   // 45), and the 5-second tick only redraws ages and live/stale transitions locally.
   timer = setInterval(async () => {
+    loadAnnouncement().catch(() => { /* the next minute tries again */ });
     if (busy || demo) return;
     remindRuns().catch(() => { /* the next tick tries again */ });
     try {
@@ -535,6 +552,7 @@ app.addEventListener('click', async e => {
       case 'add-all': await send('sharing', { roomId: room.id, enabled: true }); await refreshRoom(); break;
       case 'generate-invites': invites = (await send('invites', { roomId: room.id })).invites; rememberInvites(storage, room.id, invites); inviteDialog(); break;
       case 'desktop': await desktopDialog(); break;
+      case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [
         t('Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.'),
         t('Each character is shared per room: choose them under My rooms & characters → Room sharing, or inside the room: add one from the bar above the party and take it out with Remove from room on its card. Friends only see the characters you linked to that room. A viewer invite grants read-only room access.'),
@@ -620,6 +638,7 @@ app.addEventListener('error', e => { if (e.target.matches?.('.portrait img')) e.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => { /* runs without offline files */ });
 useLanguage(detect(storage.getItem(languageKey), navigator.languages || [navigator.language])).catch(() => useLanguage('en')).then(() => {
   document.documentElement.lang = language(); document.title = t('Odyle — Party command');
+  loadAnnouncement(true).catch(() => { /* an older backend or no connection: no banner */ });
   if (pb.authStore.isValid) authenticated().catch(failure);
   else show().catch(failure);
 });

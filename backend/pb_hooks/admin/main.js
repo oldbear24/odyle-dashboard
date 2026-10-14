@@ -12,4 +12,6 @@ function load() {
 }
 app.store.headerLinks.push({ href: '#/odyle', icon: 'ri-pulse-line', label: 'Odyle' });
 app.routes.superuserOnly('#/odyle', async route => (await load()).monitorPage(route));
+app.routes.superuserOnly('#/odyle/jobs', async route => (await load()).jobsPage(route));
 app.routes.superuserOnly('#/odyle/settings', async route => (await load()).settingsPage(route));
+app.routes.superuserOnly('#/odyle/controls', async route => (await load()).controlsPage(route));

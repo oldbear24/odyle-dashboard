@@ -103,12 +103,13 @@ function join(e) { return mutate(e, (app, user, body, affected) => {
   joinable(app, user.id);
   const member = addMember(app, room.id, user.id, invitation.getString('role')); affected.push(room.id); return { room: roomJson(room, cost), membership: member };
 }); }
-// One query for the memberships, one for their rooms and one for the cost; serverNow
-// lets the dashboard correct its clock without a heartbeat round trip.
+// One query for the memberships, one for their rooms and one for the settings; serverNow
+// lets the dashboard correct its clock without a heartbeat round trip. The Windows app
+// shows the announcement from here, as it refreshes rooms every 15 seconds anyway.
 function rooms(e) { return run(e, () => {
-  const cost = odylePerCube(e.app), memberships = list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }), byId = {};
+  const rules = settings.read(e.app), cost = rules.odylePerCube, memberships = list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }), byId = {};
   for (const r of memberships.length ? e.app.findRecordsByIds('party_rooms', memberships.map(m => m.getString('room'))) : []) byId[r.id] = r;
-  return e.json(200, { odylePerCube: cost, serverNow: now(), rooms: memberships.filter(m => byId[m.getString('room')]).map(m => ({ ...roomJson(byId[m.getString('room')], cost), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) });
+  return e.json(200, { odylePerCube: cost, serverNow: now(), announcement: settings.announcement(rules), rooms: memberships.filter(m => byId[m.getString('room')]).map(m => ({ ...roomJson(byId[m.getString('room')], cost), role: m.getString('role'), sharedCharacters: shared(m), sharing: shared(m).length > 0 })) });
 }); }
 function snapshot(e) { return run(e, () => {
   const id = e.request.pathValue('id'); membership(e.app, e.auth.id, id); const rules = settings.read(e.app);
@@ -203,6 +204,7 @@ function endSession(app, session) {
 }
 // A paired app sends its device key, so removing the PC ends this session too; a key
 // the server no longer knows means the pairing ended (401, and the app pairs again).
+// Newer apps also send their version, for the superuser dashboard's Apps page.
 function session(e) { return mutate(e, (app, user, body, affected) => {
   const device = body.deviceKey ? findDevice(app, deviceKey(body)) : null;
   if (body.deviceKey && (!device || device.getString('user') !== user.id)) throw new UnauthorizedError('This PC is no longer paired with an account.');
@@ -214,8 +216,10 @@ function session(e) { return mutate(e, (app, user, body, affected) => {
   // its character over within seconds, and otherwise the missing heartbeat turns it stale.
   if (device) for (const old of list(app, 'publisher_sessions', 'device = {:device}', { device: device.id })) app.delete(old);
   const record = new Record(app.findCollectionByNameOrId('publisher_sessions'));
-  record.set('user', user.id); record.set('expiresAt', expiry(86400)); if (device) record.set('device', device.id); app.save(record); return { sessionId: record.id, sequence: 0 };
+  record.set('user', user.id); record.set('expiresAt', expiry(86400)); if (device) record.set('device', device.id); record.set('appVersion', appVersion(body.appVersion)); app.save(record); return { sessionId: record.id, sequence: 0 };
 }); }
+// A version like 0.6.0.12; anything else is left out, never refused.
+const appVersion = value => typeof value === 'string' && /^\d{1,5}(\.\d{1,5}){1,3}$/.test(value.trim()) ? value.trim() : '';
 function character(e) { return mutate(e, (app, user, body, affected) => {
   // Identity can be saved before the first game reading. This endpoint cannot
   // supply energy, confidence, ownership, timestamps or a publisher session.
@@ -230,7 +234,7 @@ function character(e) { return mutate(e, (app, user, body, affected) => {
 }); }
 function report(e) { return mutate(e, (app, user, body, affected) => {
   const session = ownSession(app, user.id, String(body.sessionId));
-  const data = validate.reading(body, { sessionId: session.id, sequence: session.getInt('sequence') }, require(__hooks + '/lib/protocols.cjs').verifiedAdapters); let character;
+  const data = validate.reading(body, { sessionId: session.id, sequence: session.getInt('sequence') }, settings.adapters(app)); let character;
   if (body.characterId) character = ownCharacter(app, user.id, String(body.characterId));
   else {
     const existing = list(app, 'characters', 'user = {:user} && region = {:region} && server = {:server} && characterName = {:name}', { user: user.id, region: data.region, server: data.server, name: data.characterName });
@@ -276,11 +280,16 @@ function gamePortrait(app, id) {
 }
 // Cron: new characters get their official portrait within a minute, missing ones
 // are retried hourly and the rest refresh daily. A few characters per run keeps
-// traffic to PLAYNC low.
+// traffic to PLAYNC low. Superusers can pause it (Server controls); characters
+// saved meanwhile get their portrait once it runs again.
 function refreshPortraits() {
-  const ago = ms => stamp(new Date(Date.now() - ms));
+  if (settings.read($app).portraitsPaused) return { skipped: 'paused' };
+  const ago = ms => stamp(new Date(Date.now() - ms)), result = { done: 0, failed: 0 };
   const due = $app.findRecordsByFilter('characters', "portraitCheckedAt = '' || (portrait = '' && portraitCheckedAt < {:hour}) || portraitCheckedAt < {:day}", 'portraitCheckedAt', 5, 0, { hour: ago(3600000), day: ago(86400000) });
-  for (const c of due) { try { gamePortrait($app, c.id); } catch (error) { console.log('Odyle portrait refresh failed for character ' + c.id + ': ' + error.message); } }
+  for (const c of due) {
+    try { gamePortrait($app, c.id); result.done++; } catch (error) { result.failed++; result.error = 'Character ' + c.id + ': ' + error.message; console.log('Odyle portrait refresh failed for character ' + c.id + ': ' + error.message); }
+  }
+  return result;
 }
 // Presence only. No realtime refresh is sent: clients derive live/stale from
 // lastSeenAt on their own schedule, and a broadcast every 20 seconds per reader
@@ -310,7 +319,10 @@ function revoke(e) { return mutate(e, (app, user, body, affected) => {
   const room = owner(app, user.id, String(body.roomId)), target = otherMember(app, room, String(body.memberId), user.id, 'Cannot remove this member.');
   app.delete(target); affected.push(room.id);
 }); }
+// Superusers can pause new pairings (Server controls); paired PCs keep signing in.
+function pairingOpen(app) { if (settings.read(app).pairingPaused) throw new BadRequestError('Pairing new PCs is paused for now. Try again later.'); }
 function desktopCode(e) { return mutate(e, (app, user) => {
+  pairingOpen(app);
   for (const old of list(app, 'desktop_codes', 'user = {:user}', { user: user.id })) app.delete(old);
   const code = $security.randomStringWithAlphabet(16, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), record = new Record(app.findCollectionByNameOrId('desktop_codes'));
   record.set('user', user.id); record.set('digest', $security.sha256(code)); record.set('expiresAt', expiry(300)); app.save(record);
@@ -338,6 +350,7 @@ const findDevice = (app, key) => { try { return app.findFirstRecordByData('deskt
 // list of paired PCs. Anything that is not a usable name is left out, never refused.
 const deviceName = value => typeof value === 'string' && value.trim() ? value.trim().replace(/\s+/g, ' ').slice(0, 40) : '';
 function pair(e) { return run(e, () => {
+  pairingOpen(e.app);
   const body = e.requestInfo().body, code = validate.text(body.code, 'Pairing code', 24).replace(/[\s-]/g, '').toUpperCase(); let result;
   e.app.runInTransaction(app => {
     let record; try { record = app.findFirstRecordByData('desktop_codes', 'digest', $security.sha256(code)); } catch { throw new BadRequestError('Pairing code is invalid or expired.'); }
@@ -370,12 +383,13 @@ function forgetDevice(e) { return mutate(e, (app, user, body, affected) => {
   dropDevice(app, device); affected.push(...roomsFor(app, user.id));
 }); }
 function cleanup() {
-  const at = stamp(new Date());
-  for (const name of ['room_invites', 'desktop_codes']) for (const item of list($app, name, 'expiresAt <= {:now}', { now: at })) $app.delete(item);
-  for (const item of list($app, 'publisher_sessions', 'expiresAt <= {:now}', { now: at })) endSession($app, item);
+  const at = stamp(new Date()); let done = 0;
+  for (const name of ['room_invites', 'desktop_codes']) for (const item of list($app, name, 'expiresAt <= {:now}', { now: at })) { $app.delete(item); done++; }
+  for (const item of list($app, 'publisher_sessions', 'expiresAt <= {:now}', { now: at })) { endSession($app, item); done++; }
   // Odyle history covers 30 days; planned runs go a day after they started.
-  for (const item of list($app, 'character_readings', 'created < {:month}', { month: stamp(new Date(Date.now() - 30 * 86400000)) })) $app.delete(item);
-  for (const item of list($app, 'room_runs', 'startsAt < {:day}', { day: stamp(new Date(Date.now() - 86400000)) })) $app.delete(item);
+  for (const item of list($app, 'character_readings', 'created < {:month}', { month: stamp(new Date(Date.now() - 30 * 86400000)) })) { $app.delete(item); done++; }
+  for (const item of list($app, 'room_runs', 'startsAt < {:day}', { day: stamp(new Date(Date.now() - 86400000)) })) { $app.delete(item); done++; }
+  return { done };
 }
 function configureDiscord(app) {
   const clientId = $os.getenv('DISCORD_CLIENT_ID'), clientSecret = $os.getenv('DISCORD_CLIENT_SECRET');
@@ -456,8 +470,11 @@ function discordWebhook(e) { return run(e, () => {
 }); }
 // Cron, every minute: posts each run to its room's Discord channel 15 minutes before it
 // starts, or at once when it was planned later than that. A run is announced once and
-// again after a new start time; a webhook Discord no longer knows is dropped.
+// again after a new start time; a webhook Discord no longer knows is dropped. Paused by
+// superusers (Server controls), runs starting meanwhile are not announced afterwards.
 function remindRuns() {
+  if (settings.read($app).remindersPaused) return { skipped: 'paused' };
+  const result = { done: 0, failed: 0 }, fail = message => { result.failed++; result.error = message; console.log('Odyle ' + message.charAt(0).toLowerCase() + message.slice(1)); };
   const at = new Date(), due = $app.findRecordsByFilter('room_runs', "remindedAt = '' && room.discordWebhook != '' && startsAt > {:now} && startsAt <= {:soon}", 'startsAt', 50, 0, { now: stamp(at), soon: stamp(new Date(at.getTime() + 15 * 60000)) });
   for (const r of due) {
     try {
@@ -465,11 +482,12 @@ function remindRuns() {
       const users = ids.length ? $app.findRecordsByIds('room_members', ids).map(m => m.getString('user')) : [];
       const going = users.length ? $app.findRecordsByIds('users', users).map(u => u.getString('displayName')) : [];
       const status = discord.post(url, discord.reminder({ roomName: room.getString('name'), dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), going, language: room.getString('discordLanguage') }));
-      if (status === 401 || status === 404) { room.set('discordWebhook', ''); $app.save(room); notify($app, [room.id]); console.log('Odyle dropped the Discord webhook of room ' + room.id + ': Discord answered ' + status); }
-      else if (status >= 200 && status < 300) { r.set('remindedAt', now()); $app.save(r); }
-      else console.log('Odyle reminder for run ' + r.id + ' failed: Discord answered ' + status);
-    } catch (error) { console.log('Odyle reminder for run ' + r.id + ' failed: ' + error.message); }
+      if (status === 401 || status === 404) { room.set('discordWebhook', ''); $app.save(room); notify($app, [room.id]); fail('Dropped the Discord webhook of room ' + room.id + ': Discord answered ' + status); }
+      else if (status >= 200 && status < 300) { r.set('remindedAt', now()); $app.save(r); result.done++; }
+      else fail('Reminder for run ' + r.id + ' failed: Discord answered ' + status);
+    } catch (error) { fail('Reminder for run ' + r.id + ' failed: ' + error.message); }
   }
+  return result;
 }
 // The runs the account is going to in the next 24 hours across all its rooms, for
 // reminders in the browser and the Windows app.
@@ -560,10 +578,12 @@ function history(e) { return run(e, () => {
 // Cron: deletes accounts unused for odyle_settings.inactiveAccountDays days (0 keeps
 // them), up to 200 a night. handOver passes their rooms on first.
 function retention() {
-  const days = settings.read($app).inactiveAccountDays; if (!days) return;
-  const cutoff = stamp(new Date(Date.now() - days * 86400000));
+  const days = settings.read($app).inactiveAccountDays; if (!days) return { skipped: 'off' };
+  const cutoff = stamp(new Date(Date.now() - days * 86400000)), result = { done: 0, failed: 0 };
   for (const user of $app.findRecordsByFilter('users', "lastActiveAt < {:cutoff} && (lastActiveAt != '' || created < {:cutoff})", 'lastActiveAt', 200, 0, { cutoff })) {
-    try { const rooms = roomsFor($app, user.id); $app.delete(user); notify($app, rooms); console.log('Odyle deleted inactive account ' + user.id); } catch (error) { console.log('Odyle could not delete inactive account ' + user.id + ': ' + error.message); }
+    try { const rooms = roomsFor($app, user.id); $app.delete(user); notify($app, rooms); result.done++; console.log('Odyle deleted inactive account ' + user.id); }
+    catch (error) { result.failed++; result.error = 'Account ' + user.id + ': ' + error.message; console.log('Odyle could not delete inactive account ' + user.id + ': ' + error.message); }
   }
+  return result;
 }
 module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, rename, role, transfer, plan, account, profile, exportData, signOutEverywhere, deleteAccount, deleteCharacter, history, handOver, retention, cleanup, membership, desktopCode, pair, desktopDevice, desktopSignIn, unpair, forgetDevice, discordWebhook, remindRuns, upcoming, configureDiscord };
