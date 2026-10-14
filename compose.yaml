@@ -5,6 +5,10 @@ services:
       - "127.0.0.1:8090:8090"
     volumes:
       - odyle-data:/pb/pb_data
+    # Discord credentials (docs/discord-setup.md); the service also starts without the file.
+    env_file:
+      - path: .env.backend
+        required: false
     command: ["--origins=http://127.0.0.1:8090"]
     restart: unless-stopped
 volumes:

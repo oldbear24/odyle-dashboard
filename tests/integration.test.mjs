@@ -11,6 +11,8 @@ import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18090';
 let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId;
 let releaseServer, releaseUrl, releaseHits = 0, releaseDown = false;
+// Stands in for Discord's webhook API; `discordAnswer` is the status it answers with.
+let discordServer, discordUrl, discordPosts = [], discordAnswer = 204;
 // Synthetic official portraits served by the PLAYNC stand-in; bump the version to change one.
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 let portraitVersion = 1;
@@ -24,7 +26,7 @@ const snapshot = auth => request('/api/odyle/snapshot/' + room.id, undefined, au
 async function snapshot2(id, auth) { const res = await request('/api/odyle/snapshot/' + id, undefined, auth, 'GET'); assert.equal(res.status, 200, JSON.stringify(res.data)); return res.data; }
 async function stop() { if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('exit', resolve)); child.kill(); await closed; } }
 async function start() {
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl, ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
   let log = ''; child.stdout.on('data', v => log += v); child.stderr.on('data', v => log += v);
   for (let i = 0; i < 50; i++) {
     try {
@@ -74,10 +76,16 @@ before(async () => {
     if (releaseDown) { res.writeHead(503); return res.end('{}'); }
     const asset = (name, size) => ({ name, size, browser_download_url: 'https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/' + name });
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ tag_name: 'v0.5.0.2', name: 'Odyle 0.5.0.2', html_url: 'https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2', published_at: '2026-10-13T22:34:09Z', draft: false, prerelease: false, assets: [asset('odyle-0.5.0.2-win-x64-self-contained.zip', 71595826), asset('odyle-0.5.0.2-win-x64-self-contained.zip.sha256', 108), asset('odyle-0.5.0.2-win-x64.zip', 217557), asset('odyle-0.5.0.2-win-x64.zip.sha256', 93)] }));
+    res.end(JSON.stringify({ tag_name: 'v0.5.0.2', name: 'Odyle 0.5.0.2', html_url: 'https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2', published_at: '2026-10-13T22:34:09Z', draft: false, prerelease: false, assets: [asset('odyle-0.5.0.2-win-x64-self-contained.zip', 71595826), asset('odyle-0.5.0.2-win-x64-self-contained.zip.sha256', 108), asset('odyle-0.5.0.2-win-x64.zip', 217557), asset('odyle-0.5.0.2-win-x64.zip.sha256', 93), asset('odyle-0.5.0.2-win-arm64.zip', 210000), asset('odyle-0.5.0.2-win-arm64-self-contained.zip', 70000000), asset('odyle-0.5.0.2-win-x64-setup.exe', 52428800), asset('odyle-0.5.0.2-win-x64-setup.exe.sha256', 100)] }));
   });
   await new Promise(resolve => releaseServer.listen(0, '127.0.0.1', resolve));
   releaseUrl = 'http://127.0.0.1:' + releaseServer.address().port + '/releases/latest';
+  discordServer = createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk;
+    discordPosts.push({ path: req.url, body: JSON.parse(body || '{}') }); res.writeHead(discordAnswer); res.end(discordAnswer === 204 ? '' : '{}');
+  });
+  await new Promise(resolve => discordServer.listen(0, '127.0.0.1', resolve));
+  discordUrl = 'http://127.0.0.1:' + discordServer.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-account-test-'));
   await cp(resolve('backend/pb_hooks'), join(directory, 'hooks'), { recursive: true });
   await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true, filter: path => !upgrades.some(name => path.endsWith(name)) });
@@ -101,6 +109,8 @@ before(async () => {
   await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
   // Caps and retention: bulk records and an aged account, written directly so the tests keep their rate-limit budget.
   await writeFile(join(directory, 'hooks', 'bulk-fixture.pb.js'), `routerAdd('POST','/__test__/characters', e => { const b=e.requestInfo().body; for (let i=0;i<b.count;i++) { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',b.user); c.set('characterName','Bulk'+i); c.set('server','Lumiel'); c.set('region','GLOBAL_EU'); e.app.save(c); } return e.json(200,{}); }); routerAdd('POST','/__test__/rooms', e => { const b=e.requestInfo().body; for (let i=0;i<b.count;i++) { const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',b.user); r.set('name','Bulk '+i); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',b.user); m.set('role',b.role||'owner'); e.app.save(m); if (b.role) { r.set('owner',b.other); e.app.save(r); } } return e.json(200,{}); }); routerAdd('POST','/__test__/inactive', e => { const b=e.requestInfo().body, u=e.app.findRecordById('users',b.user); u.set('lastActiveAt',new Date(Date.now()-b.days*86400000).toISOString()); e.app.save(u); return e.json(200,{}); }); routerAdd('POST','/__test__/retention', e => { require(__hooks + '/lib/accounts.cjs').retention(); return e.json(200,{}); });`);
+  // Runs the reminder cron now; ages a reading and a run so the clean-up has something to remove.
+  await writeFile(join(directory, 'hooks', 'reminders-fixture.pb.js'), `routerAdd('POST','/__test__/remind', e => { require(__hooks + '/lib/accounts.cjs').remindRuns(); return e.json(200, {}); }); routerAdd('POST','/__test__/age', e => { const b=e.requestInfo().body; e.app.db().newQuery('UPDATE ' + (b.collection === 'room_runs' ? 'room_runs SET startsAt' : 'character_readings SET created') + ' = {:at} WHERE id = {:id}').bind({ at: new Date(Date.now() - b.days * 86400000).toISOString().replace('T', ' '), id: b.id }).execute(); return e.json(200, {}); }); routerAdd('POST','/__test__/readings', e => e.json(200, e.app.findRecordsByFilter('character_readings', 'character = {:id}', 'created', 0, 0, { id: e.requestInfo().body.id }).map(r => r.id)));`);
   await start();
   const users = await Promise.all(['Owner', 'Player', 'Viewer', 'Outsider'].map(name => request('/__test__/account', { name })));
   for (const result of users) assert.equal(result.status, 200, JSON.stringify(result.data));
@@ -111,7 +121,7 @@ before(async () => {
   for (const name of upgrades) await cp(resolve('backend/pb_migrations', name), join(directory, 'migrations', name));
   await start();
 });
-after(async () => { await stop(); for (const server of [oauthServer, playncServer, releaseServer]) if (server) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
+after(async () => { await stop(); for (const server of [oauthServer, playncServer, releaseServer, discordServer]) if (server) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
 test('packet-only upgrade preserves legacy totals and removes current confidence', async () => {
   const legacy = await request('/api/collections/characters/records/' + legacyId, undefined, outsider, 'GET');
   assert.equal(legacy.status, 200); assert.equal(legacy.data.value, 123); assert.equal(legacy.data.confirmed, true); assert.equal(legacy.data.valid, false);
@@ -129,8 +139,12 @@ test('first Discord OAuth sign-in creates an account; repeat sign-in retains its
   assert.equal(firstLogin.status, 200, JSON.stringify(firstLogin.data));
   assert.equal(firstLogin.data.meta.isNew, true);
   assert.equal(firstLogin.data.record.email, 'oauth@test.invalid');
-  const profile = await request('/api/collections/users/records/' + firstLogin.data.record.id, { displayName: 'OAuth Tester' }, firstLogin.data, 'PATCH');
-  assert.equal(profile.status, 200, JSON.stringify(profile.data));
+  // The dashboard replaces the placeholder name through the profile route; the users
+  // collection itself is closed to writes, so its checks cannot be bypassed.
+  const profile = await action('profile', { displayName: 'OAuth Tester' }, firstLogin.data);
+  assert.equal(profile.status, 200, JSON.stringify(profile.data)); assert.equal(profile.data.record.displayName, 'OAuth Tester');
+  for (const change of [{ displayName: '   ' }, { lastActiveAt: '2099-01-01 00:00:00.000Z' }, { email: 'other@test.invalid' }])
+    assert.equal((await request('/api/collections/users/records/' + firstLogin.data.record.id, change, firstLogin.data, 'PATCH')).status, 403);
   const created = await action('create', { name: 'OAuth room' }, firstLogin.data);
   assert.equal(created.status, 200, JSON.stringify(created.data));
   const again = await request('/api/collections/users/auth-with-oauth2', credentials);
@@ -385,8 +399,8 @@ test('accounts see their history, delete characters, export their data, sign out
   assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.characters, []);
   assert.equal((await action('report', { ...reading, sequence: 4, value: 150, characterId: kept.id }, holder)).status, 404);
   // Signing out everywhere ends every token and reader session but keeps this browser signed in.
-  const paired = (await action('pair', { code: (await action('desktop-code', {}, holder)).data.code })).data;
-  assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.map(a => Object.keys(a)), [['pairedAt', 'lastSignInAt']]);
+  const paired = (await action('pair', { code: (await action('desktop-code', {}, holder)).data.code, name: '  Gaming   PC  ' })).data;
+  assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.map(a => [Object.keys(a), a.name]), [[['name', 'pairedAt', 'lastSignInAt'], 'Gaming PC']]);
   const fresh = await action('sign-out-everywhere', {}, holder); assert.equal(fresh.status, 200, JSON.stringify(fresh.data));
   for (const old of [holder, paired]) assert.equal((await request('/api/odyle/rooms', undefined, old, 'GET')).status, 401);
   assert.equal((await action('desktop-sign-in', { deviceKey: paired.deviceKey })).status, 401);
@@ -495,6 +509,120 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
     assert.equal((await request('/api/odyle/tasks', undefined, idle, 'GET')).status, 401);
     assert.equal((await request('/api/odyle/tasks', undefined, busy, 'GET')).status, 200);
   } finally { assert.equal((await settings({ inactiveAccountDays: 0 })).status, 200); }
+});
+test('accounts list their paired PCs and remove one without signing out elsewhere', async () => {
+  const me = (await request('/__test__/account', { name: 'PC owner' })).data, other = (await request('/__test__/account', { name: 'PC stranger' })).data;
+  const account = async (auth = me) => (await request('/api/odyle/account', undefined, auth, 'GET')).data;
+  // Two PCs: one names itself when it gets its key, the other at its next sign-in.
+  const desk = (await action('desktop-device', { name: 'DESK-PC' }, me)).data.deviceKey, laptop = (await action('desktop-device', {}, me)).data.deviceKey;
+  assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 'LAPTOP' })).status, 200);
+  assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 42 })).status, 200);
+  let page = await account(); assert.deepEqual(page.devices.map(d => d.name).sort(), ['DESK-PC', 'LAPTOP']);
+  for (const d of page.devices) assert.deepEqual(Object.keys(d).sort(), ['id', 'lastSignInAt', 'name', 'pairedAt']);
+  // A reader session opened with the key belongs to that PC; an unknown key is a pairing that ended.
+  const session = (await action('session', { deviceKey: desk }, me)).data; assert.ok(session.sessionId);
+  assert.equal((await action('session', { deviceKey: 'x'.repeat(48) }, me)).status, 401);
+  assert.equal((await action('session', { deviceKey: desk }, other)).status, 401);
+  assert.equal((await action('session', {}, me)).status, 200);
+  page = await account(); const deskId = page.devices.find(d => d.name === 'DESK-PC').id;
+  assert.equal(page.apps.find(a => a.sessionId === session.sessionId).device, deskId);
+  // Only the owner removes a PC; removing it ends its session and its key at once.
+  assert.equal((await action('forget-device', { deviceId: deskId }, other)).status, 403);
+  assert.equal((await action('forget-device', { deviceId: 'missingdevice00' }, me)).status, 404);
+  assert.equal((await action('forget-device', { deviceId: deskId }, me)).status, 200);
+  assert.equal((await action('heartbeat', { sessionId: session.sessionId }, me)).status, 403);
+  assert.equal((await action('session', { deviceKey: desk }, me)).status, 401);
+  assert.equal((await action('desktop-sign-in', { deviceKey: desk })).status, 401);
+  // The other PC and this browser stay signed in.
+  assert.equal((await action('desktop-sign-in', { deviceKey: laptop })).status, 200);
+  page = await account(); assert.deepEqual(page.devices.map(d => d.name), ['LAPTOP']);
+});
+test('accounts rename their tasks and put them in order', async () => {
+  const me = (await request('/__test__/account', { name: 'Task sorter' })).data, other = (await request('/__test__/account', { name: 'Task watcher' })).data;
+  const change = (body, auth = me) => action('task', body, auth);
+  for (const title of ['First', 'Second', 'Third']) assert.equal((await change({ title, cadence: 'daily' })).status, 200);
+  const weekly = (await change({ title: 'Weekly', cadence: 'weekly' })).data.tasks.find(t => t.title === 'Weekly');
+  const titles = data => data.tasks.filter(t => t.cadence === 'daily').map(t => t.title);
+  let tasks = (await change({ title: 'Fourth', cadence: 'daily' })).data; const [first, , third] = tasks.tasks.filter(t => t.cadence === 'daily');
+  assert.deepEqual(titles(tasks), ['First', 'Second', 'Third', 'Fourth']);
+  tasks = (await change({ id: third.id, move: 'up' })).data; assert.deepEqual(titles(tasks), ['First', 'Third', 'Second', 'Fourth']);
+  tasks = (await change({ id: first.id, move: 'up' })).data; assert.deepEqual(titles(tasks), ['First', 'Third', 'Second', 'Fourth']);
+  tasks = (await change({ id: first.id, move: 'down' })).data; assert.deepEqual(titles(tasks), ['Third', 'First', 'Second', 'Fourth']);
+  // Weekly tasks keep their own order; renaming collapses spaces like adding does.
+  assert.deepEqual((await change({ id: weekly.id, move: 'up' })).data.tasks.filter(t => t.cadence === 'weekly').map(t => t.title), ['Weekly']);
+  tasks = (await change({ id: third.id, title: '  Daily   boss ' })).data; assert.equal(tasks.tasks.find(t => t.id === third.id).title, 'Daily boss');
+  for (const bad of [{ id: third.id, title: '   ' }, { id: third.id, title: 'x'.repeat(61) }, { id: third.id, move: 'left' }]) assert.equal((await change(bad)).status, 400);
+  assert.equal((await change({ id: third.id, title: 'Mine now' }, other)).status, 403);
+  assert.equal((await change({ id: third.id, move: 'down' }, other)).status, 403);
+});
+test('planned runs can be changed, are posted to Discord and listed as upcoming', async () => {
+  const lead = (await request('/__test__/account', { name: 'Run lead' })).data, mate = (await request('/__test__/account', { name: 'Run *mate*' })).data, watcher = (await request('/__test__/account', { name: 'Run watcher' })).data;
+  const roomId = (await action('create', { name: 'Raid night' }, lead)).data.room.id;
+  for (const [who, role] of [[mate, 'reporter'], [watcher, 'viewer']]) assert.equal((await request('/__test__/member', { room: roomId, user: who.record.id, role })).status, 200);
+  const plan = (body, auth = lead) => action('plan', { roomId, ...body }, auth), soon = minutes => new Date(Date.now() + minutes * 60000).toISOString();
+  // A note of only spaces is no note.
+  let planned = await plan({ dungeon: 'Fire Temple', startsAt: soon(10), note: '   ' }); assert.equal(planned.status, 200, JSON.stringify(planned.data));
+  let run = planned.data.runs[0]; assert.equal(run.note, '');
+  // Its planner or the room owner changes it; other players and viewers cannot.
+  assert.equal((await plan({ id: run.id, note: 'Bring potions' }, mate)).status, 403);
+  assert.equal((await plan({ id: run.id, note: 'Bring potions' }, watcher)).status, 403);
+  for (const bad of [{ startsAt: 'soon' }, { startsAt: soon(-120) }, { note: 'x'.repeat(121) }, { dungeon: '' }]) assert.equal((await plan({ id: run.id, ...bad })).status, 400, JSON.stringify(bad));
+  const changed = await plan({ id: run.id, dungeon: 'Draupnir   Cave', startsAt: soon(12), note: 'Bring potions' }); assert.equal(changed.status, 200, JSON.stringify(changed.data));
+  run = changed.data.runs[0]; assert.deepEqual([run.dungeon, run.note], ['Draupnir Cave', 'Bring potions']);
+  assert.ok(Math.abs(Date.parse(run.startsAt.replace(' ', 'T')) - Date.parse(soon(12))) < 5000);
+  // Upcoming lists the runs the account is going to, across its rooms.
+  const upcoming = async auth => (await request('/api/odyle/upcoming', undefined, auth, 'GET')).data.runs;
+  assert.deepEqual((await upcoming(lead)).map(r => [r.id, r.room, r.dungeon]), [[run.id, 'Raid night', 'Draupnir Cave']]);
+  assert.deepEqual(await upcoming(mate), []);
+  assert.equal((await plan({ id: run.id, going: true }, mate)).status, 200); assert.equal((await upcoming(mate)).length, 1);
+  // Only the owner connects Discord; the webhook is tested first and never sent back.
+  const hook = discordUrl + '/api/webhooks/123456789012/' + 'a'.repeat(68), connect = (body, auth = lead) => action('discord-webhook', { roomId, ...body }, auth);
+  assert.equal((await connect({ webhook: hook }, mate)).status, 403);
+  for (const bad of ['https://example.com/api/webhooks/1/2', 'http://discord.com/api/webhooks/123456789012/' + 'a'.repeat(68), 'https://discord.com/api/other']) assert.equal((await connect({ webhook: bad })).status, 400, bad);
+  discordAnswer = 404; assert.equal((await connect({ webhook: hook })).status, 400); discordAnswer = 204;
+  discordPosts = []; const connected = await connect({ webhook: hook, language: 'cs' }); assert.equal(connected.status, 200, JSON.stringify(connected.data));
+  assert.equal(discordPosts.length, 1); assert.match(discordPosts[0].body.content, /Raid night/); assert.deepEqual(discordPosts[0].body.allowed_mentions, { parse: [] });
+  const shot = await snapshot2(roomId, mate); assert.equal(shot.room.discordReminders, true); assert.equal(JSON.stringify(shot).includes('webhooks'), false);
+  assert.equal(JSON.stringify(await request('/api/odyle/rooms', undefined, lead, 'GET')).includes('webhooks'), false);
+  // The cron posts a run once, 15 minutes ahead, with who is going; names cannot format the message.
+  discordPosts = []; await request('/__test__/remind', {}); await request('/__test__/remind', {});
+  assert.equal(discordPosts.length, 1); const embed = discordPosts[0].body.embeds[0];
+  assert.equal(embed.title, 'Draupnir Cave'); assert.match(embed.description, /<t:\d+:R>/); assert.match(embed.description, /Bring potions/);
+  assert.equal(embed.fields[0].name, 'Jdou (2)'); assert.match(embed.fields[0].value, /Run \\\*mate\\\*/);
+  // A new start time announces it again; a run further out waits.
+  assert.equal((await plan({ id: run.id, startsAt: soon(14) })).status, 200);
+  assert.equal((await plan({ dungeon: 'Fire Temple', startsAt: soon(90) })).status, 200);
+  discordPosts = []; await request('/__test__/remind', {}); assert.equal(discordPosts.length, 1); assert.equal(discordPosts[0].body.embeds[0].title, 'Draupnir Cave');
+  // A webhook Discord no longer knows is dropped.
+  assert.equal((await plan({ id: run.id, startsAt: soon(13) })).status, 200);
+  discordAnswer = 404; await request('/__test__/remind', {}); discordAnswer = 204;
+  assert.equal((await snapshot2(roomId, lead)).room.discordReminders, false);
+  // Runs a day past their start and history older than 30 days leave with the clean-up.
+  await request('/__test__/age', { collection: 'room_runs', id: run.id, days: 2 });
+  await request('/__test__/cleanup', { codes: [] });
+  assert.deepEqual((await snapshot2(roomId, lead)).runs.map(r => r.dungeon), ['Fire Temple']);
+  // Disconnecting works without a test post.
+  assert.equal((await connect({ webhook: hook })).status, 200); discordPosts = [];
+  assert.equal((await connect({ webhook: '' })).status, 200); assert.equal(discordPosts.length, 0); assert.equal((await snapshot2(roomId, lead)).room.discordReminders, false);
+});
+test('history older than 30 days leaves with the clean-up', async () => {
+  const me = (await request('/__test__/account', { name: 'Old history' })).data, session = (await action('session', {}, me)).data;
+  const read = (sequence, value) => action('report', { sessionId: session.sessionId, sequence, characterName: 'Oldtimer', server: 'Lumiel', region: 'GLOBAL_EU', value, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, me);
+  const character = (await read(1, 10)).data.character; assert.equal((await read(2, 20)).status, 200);
+  const [old] = (await request('/__test__/readings', { id: character.id })).data;
+  await request('/__test__/age', { collection: 'character_readings', id: old, days: 31 }); await request('/__test__/cleanup', { codes: [] });
+  assert.deepEqual((await request('/api/odyle/history/' + character.id, undefined, me, 'GET')).data.readings.map(r => r.value), [20]);
+});
+test('owners save a full dungeon catalog and closed rooms answer plainly', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, names = Array.from({ length: 200 }, (_, i) => `Dungeon number ${String(i).padStart(3, '0')} of the long expedition list`.slice(0, 60));
+  const saved = await fetch(url + '/api/odyle/admin/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: operator.token }, body: JSON.stringify({ dungeons: names }) });
+  assert.equal(saved.status, 200, await saved.clone().text()); assert.equal((await saved.json()).settings.dungeons.length, 200);
+  const cleared = await fetch(url + '/api/odyle/admin/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: operator.token }, body: JSON.stringify({ dungeons: [] }) }); assert.equal(cleared.status, 200);
+  const host = (await request('/__test__/account', { name: 'Closing host' })).data, roomId = (await action('create', { name: 'Short-lived' }, host)).data.room.id;
+  assert.equal((await action('close', { roomId }, host)).status, 200);
+  for (const [name, body] of [['close', { roomId }], ['rename', { roomId, name: 'Again' }], ['invites', { roomId }]]) {
+    const again = await action(name, body, host); assert.equal(again.status, 404, name); assert.equal(again.data.message, 'This room no longer exists.');
+  }
 });
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
@@ -664,6 +792,9 @@ test('the dashboard offers the newest Windows release through the backend, cache
   assert.equal(first.data.latest.publishedAt, '2026-10-13T22:34:09Z');
   assert.deepEqual(first.data.latest.packages.small, { name: 'odyle-0.5.0.2-win-x64.zip', size: 217557, url: 'https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64.zip' });
   assert.equal(first.data.latest.packages.selfContained.size, 71595826);
+  // The per-user installer and the ARM64 packages are listed next to the x64 ZIPs.
+  assert.equal(first.data.latest.packages.installer.name, 'odyle-0.5.0.2-win-x64-setup.exe');
+  assert.deepEqual([first.data.latest.packages.arm64.small.size, first.data.latest.packages.arm64.selfContained.name], [210000, 'odyle-0.5.0.2-win-arm64-self-contained.zip']);
   // Browsers get the packages only; checksums are verified by the Windows app itself.
   assert.equal(JSON.stringify(first.data).includes('.sha256'), false);
   // One GitHub request serves every visitor for ten minutes.
@@ -675,4 +806,11 @@ test('the dashboard offers the newest Windows release through the backend, cache
     const offline = await latest(); assert.equal(offline.status, 200, JSON.stringify(offline.data));
     assert.equal(offline.data.latest, null); assert.equal(offline.data.releasesUrl, 'https://github.com/oldbear24/odyle-windows/releases/latest');
   } finally { releaseDown = false; }
+});
+// Last: it spends this client's pairing budget for the minute.
+test('pairing and device sign-in are rate limited', async () => {
+  const statuses = []; for (let i = 0; i < 12; i++) statuses.push((await action('pair', { code: 'ZZZZZZZZZZZZZZZZ' })).status);
+  assert.ok(statuses.includes(429), statuses.join());
+  const signIns = []; for (let i = 0; i < 32; i++) signIns.push((await action('desktop-sign-in', { deviceKey: 'y'.repeat(48) })).status);
+  assert.ok(signIns.includes(429), signIns.join());
 });

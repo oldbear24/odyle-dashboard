@@ -24,5 +24,5 @@ export const isDone = (task, now, resets = defaults) => Boolean(task.doneAt) && 
 // "2d 3h", "5h 12m", "4m" or "under a minute".
 export function remaining(ms) {
   const minutes = Math.max(0, Math.floor(ms / 60000)), hours = Math.floor(minutes / 60) % 24, daysLeft = Math.floor(minutes / 1440);
-  return daysLeft ? `${daysLeft}d ${hours}h` : hours ? `${hours}h ${minutes % 60}m` : minutes ? `${minutes}m` : t('under a minute');
+  return daysLeft ? t('{d}d {h}h', { d: daysLeft, h: hours }) : hours ? t('{h}h {m}m', { h: hours, m: minutes % 60 }) : minutes ? t('{m}m', { m: minutes }) : t('under a minute');
 }

@@ -5,16 +5,22 @@ const { join } = require('node:path');
 const i18n = () => import('../src/i18n.js');
 // Every text the dashboard passes to t() or tn() as a literal, and every literal
 // message the backend answers with, must have a Czech entry.
-const literal = "'((?:[^'\\\\]|\\\\.)*)'", unescape = text => text.replace(/\\'/g, "'");
+// Single-quoted, double-quoted and plain template literals (without ${…}) all count.
+const literal = "(?:'((?:[^'\\\\]|\\\\.)*)'|\"((?:[^\"\\\\]|\\\\.)*)\"|`((?:[^`$\\\\]|\\\\.)*)`)";
+const unescape = text => text.replace(/\\(['"`])/g, '$1');
+const value = (m, at) => unescape(m[at] ?? m[at + 1] ?? m[at + 2]);
 function sources(directory, ending) { return readdirSync(directory).filter(name => name.endsWith(ending)).map(name => readFileSync(join(directory, name), 'utf8')); }
 test('every dashboard text and backend message has a Czech translation', async () => {
   const { default: cs } = await import('../src/locales/cs.js'), missing = [];
   for (const source of sources('src', '.js')) {
-    for (const m of source.matchAll(new RegExp(`\\bt\\(\\s*${literal}`, 'g'))) if (typeof cs[unescape(m[1])] !== 'string') missing.push(unescape(m[1]));
-    for (const m of source.matchAll(new RegExp(`\\btn\\(\\s*[^,]+,\\s*${literal}\\s*,\\s*${literal}`, 'g'))) { const key = unescape(m[1]) + '|' + unescape(m[2]); if (!Array.isArray(cs[key]) || cs[key].length !== 3) missing.push(key); }
+    for (const m of source.matchAll(new RegExp(`\\bError\\(\\s*${literal}\\s*\\)`, 'g'))) if (typeof cs[value(m, 1)] !== 'string') missing.push(value(m, 1));
+    for (const m of source.matchAll(new RegExp(`\\bt\\(\\s*${literal}`, 'g'))) if (typeof cs[value(m, 1)] !== 'string') missing.push(value(m, 1));
+    for (const m of source.matchAll(new RegExp(`\\btn\\(\\s*[^,]+,\\s*${literal}\\s*,\\s*${literal}`, 'g'))) { const key = value(m, 1) + '|' + value(m, 4); if (!Array.isArray(cs[key]) || cs[key].length !== 3) missing.push(key); }
   }
   for (const source of sources('backend/pb_hooks/lib', '.cjs'))
-    for (const m of source.matchAll(new RegExp(`(?:Error|BadRequestError|ForbiddenError|NotFoundError)\\(\\s*${literal}\\s*\\)`, 'g'))) if (typeof cs[unescape(m[1])] !== 'string') missing.push(unescape(m[1]));
+    for (const m of source.matchAll(new RegExp(`(?:Error|BadRequestError|ForbiddenError|NotFoundError|UnauthorizedError)\\(\\s*${literal}\\s*\\)`, 'g'))) if (typeof cs[value(m, 1)] !== 'string') missing.push(value(m, 1));
+  // Messages of the PocketBase SDK and server that reach the toast as they are.
+  for (const text of ['Something went wrong.', 'Too Many Requests.', 'Request entity too large.', 'The request requires valid record authorization token.', 'Only superusers can perform this action.', "The requested resource wasn't found.", 'Failed to fetch']) if (typeof cs[text] !== 'string') missing.push(text);
   for (const day of ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']) if (!cs[day]) missing.push(day);
   assert.deepEqual(missing, []);
   // Placeholders survive translation.

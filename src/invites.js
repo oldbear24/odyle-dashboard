@@ -14,3 +14,4 @@ function write(storage, rooms, now) {
 export function savedInvites(storage, roomId, now = Date.now()) { return (read(storage)[roomId] || []).filter(i => Date.parse(i.expiresAt) > now); }
 export function rememberInvites(storage, roomId, invites, now = Date.now()) { write(storage, { ...read(storage), [roomId]: invites.map(({ code, role, expiresAt }) => ({ code, role, expiresAt })) }, now); }
 export function forgetInvites(storage, roomId, now = Date.now()) { const rooms = read(storage); delete rooms[roomId]; write(storage, rooms, now); }
+export function forgetAllInvites(storage) { try { storage.removeItem(key); } catch { /* storage blocked */ } }

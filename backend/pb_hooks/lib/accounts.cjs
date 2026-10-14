@@ -1,6 +1,7 @@
 const validate = require(__hooks + '/lib/validation.cjs');
 const portraits = require(__hooks + '/lib/portraits.cjs');
 const settings = require(__hooks + '/lib/settings.cjs');
+const discord = require(__hooks + '/lib/discord.cjs');
 const now = () => new Date().toISOString();
 const expiry = seconds => new Date(Date.now() + seconds * 1000).toISOString();
 // Date fields are stored as '2026-10-13 21:40:00.000Z' and filters compare them as
@@ -16,7 +17,7 @@ function membership(app, userId, roomId) {
   return found[0];
 }
 function owner(app, userId, roomId) {
-  const room = app.findRecordById('party_rooms', roomId);
+  let room; try { room = app.findRecordById('party_rooms', roomId); } catch { throw new NotFoundError('This room no longer exists.'); }
   if (room.getString('owner') !== userId) throw new ForbiddenError('Only the room owner can do this.'); return room;
 }
 function ownCharacter(app, userId, id) {
@@ -45,7 +46,9 @@ function notify(app, roomIds) {
 // Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
 // Rooms keep their legacy cost field, but every response reports the setting.
 const odylePerCube = app => settings.read(app).odylePerCube;
-const roomJson = (room, cost) => ({ ...room.publicExport(), cost });
+// The Discord webhook is a hidden field, so publicExport never carries it; members only
+// learn whether the room posts reminders.
+const roomJson = (room, cost) => ({ ...room.publicExport(), cost, discordReminders: Boolean(room.getString('discordWebhook')) });
 const shared = m => Array.from(m.getStringSlice('sharedCharacters'));
 const roomsFor = (app, userId) => list(app, 'room_members', 'user = {:user}', { user: userId }).map(m => m.getString('room'));
 // lastActiveAt marks the last time the account used Odyle, for the optional clean-up
@@ -59,6 +62,8 @@ function run(e, action) {
   touch(e);
   try { return action(); } catch (error) {
     if (error instanceof BadRequestError || error instanceof ForbiddenError || error instanceof NotFoundError || error instanceof UnauthorizedError) throw error;
+    // A record deleted meanwhile (another tab, another member) is not a database error to show.
+    if (/no rows in result set/i.test(error.message || '')) throw new NotFoundError('This no longer exists. Reload the page.');
     throw new BadRequestError(error.message || 'Request could not be completed.');
   }
 }
@@ -159,26 +164,35 @@ function wishlist(e) { return mutate(e, (app, user, body, affected) => {
 // Reset times of the Global service, edited by superusers in odyle_settings next to
 // odylePerCube. Launch defaults: 07:00 UTC daily, Wednesday weekly.
 function resets(app) { const s = settings.read(app); return { dailyResetHour: s.dailyResetHour, weeklyResetDay: s.weeklyResetDay }; }
-// Personal daily and weekly checklists, oldest first. doneAt is the last time the
+// Personal daily and weekly checklists in the account's order. doneAt is the last time the
 // account checked a task; clients show it done while that is after the current reset
 // (src/tasks.js), so nothing has to uncheck tasks and nothing is deleted at reset.
-const tasksOf = (app, userId) => app.findRecordsByFilter('user_tasks', 'user = {:user}', 'created', 0, 0, { user: userId }).map(t => t.publicExport());
+const tasksOf = (app, userId) => app.findRecordsByFilter('user_tasks', 'user = {:user}', 'position,created', 0, 0, { user: userId }).map(t => t.publicExport());
+// A plain array: Go slices from the VM do not take element swaps.
+const taskList = (app, userId, cadence) => Array.from(app.findRecordsByFilter('user_tasks', 'user = {:user} && cadence = {:cadence}', 'position,created', 0, 0, { user: userId, cadence }));
 const checklist = (app, userId) => ({ tasks: tasksOf(app, userId), resets: resets(app), serverNow: now() });
 function tasks(e) { return run(e, () => e.json(200, checklist(e.app, e.auth.id))); }
 // One route for the checklist: { title, cadence } adds a task, { id, done } stores or
-// clears the time it was checked and { id, remove: true } deletes it. Tasks are
-// private to the account and every answer carries the whole list.
+// clears the time it was checked, { id, title } renames it, { id, move: 'up'|'down' }
+// moves it within its list and { id, remove: true } deletes it. Tasks are private to
+// the account and every answer carries the whole list.
 function task(e) { return mutate(e, (app, user, body) => {
   if (body.id) {
     let t; try { t = app.findRecordById('user_tasks', String(body.id)); } catch { throw new NotFoundError('This task no longer exists.'); }
     if (t.getString('user') !== user.id) throw new ForbiddenError('This task belongs to another account.');
     if (body.remove === true) app.delete(t);
     else if (typeof body.done === 'boolean') { t.set('doneAt', body.done ? now() : ''); app.save(t); }
-    else throw new BadRequestError('Send done (true or false) or remove: true.');
+    else if (body.title !== undefined) { t.set('title', validate.task({ title: body.title, cadence: t.getString('cadence') }).title); app.save(t); }
+    else if (body.move === 'up' || body.move === 'down') {
+      const order = taskList(app, user.id, t.getString('cadence')), at = order.findIndex(x => x.id === t.id), to = at + (body.move === 'up' ? -1 : 1);
+      if (to >= 0 && to < order.length) [order[at], order[to]] = [order[to], order[at]];
+      order.forEach((x, i) => { if (x.getInt('position') !== i + 1) { x.set('position', i + 1); app.save(x); } });
+    } else throw new BadRequestError('Send done (true or false), a new title, move (up or down) or remove: true.');
   } else {
     const data = validate.task(body);
     if (app.countRecords('user_tasks', $dbx.hashExp({ user: user.id })) >= 40) throw new BadRequestError('You can keep up to 40 tasks.');
-    const t = new Record(app.findCollectionByNameOrId('user_tasks')); t.set('user', user.id); t.set('title', data.title); t.set('cadence', data.cadence); app.save(t);
+    const last = taskList(app, user.id, data.cadence).pop(), t = new Record(app.findCollectionByNameOrId('user_tasks'));
+    t.set('user', user.id); t.set('title', data.title); t.set('cadence', data.cadence); t.set('position', last ? last.getInt('position') + 1 : 1); app.save(t);
   }
   return checklist(app, user.id);
 }); }
@@ -187,12 +201,16 @@ function endSession(app, session) {
   for (const c of list(app, 'characters', 'readingSession = {:id}', { id: session.id })) { c.set('valid', false); app.save(c); }
   app.delete(session);
 }
+// A paired app sends its device key, so removing the PC ends this session too; a key
+// the server no longer knows means the pairing ended (401, and the app pairs again).
 function session(e) { return mutate(e, (app, user, body, affected) => {
+  const device = body.deviceKey ? findDevice(app, deviceKey(body)) : null;
+  if (body.deviceKey && (!device || device.getString('user') !== user.id)) throw new UnauthorizedError('This PC is no longer paired with an account.');
   if (body.previousSessionId) {
     endSession(app, ownSession(app, user.id, String(body.previousSessionId))); affected.push(...roomsFor(app, user.id));
   }
   const record = new Record(app.findCollectionByNameOrId('publisher_sessions'));
-  record.set('user', user.id); record.set('expiresAt', expiry(86400)); app.save(record); return { sessionId: record.id, sequence: 0 };
+  record.set('user', user.id); record.set('expiresAt', expiry(86400)); if (device) record.set('device', device.id); app.save(record); return { sessionId: record.id, sequence: 0 };
 }); }
 function character(e) { return mutate(e, (app, user, body, affected) => {
   // Identity can be saved before the first game reading. This endpoint cannot
@@ -297,38 +315,55 @@ function desktopCode(e) { return mutate(e, (app, user) => {
 // A paired Windows app's lasting credential. Only its digest is stored; the app keeps
 // the key (DPAPI) and trades it for account tokens with desktopSignIn. An account keeps
 // its most recently used devices, so stale pairings of reinstalled PCs drop off.
-function newDevice(app, userId) {
+function newDevice(app, userId, name) {
   const devices = app.findRecordsByFilter('desktop_devices', 'user = {:user}', '-lastUsedAt,-created', 500, 0, { user: userId });
-  for (const old of devices.slice(limits.desktopDevices - 1)) app.delete(old);
+  for (const old of devices.slice(limits.desktopDevices - 1)) dropDevice(app, old);
   const key = $security.randomString(48), record = new Record(app.findCollectionByNameOrId('desktop_devices'));
-  record.set('user', userId); record.set('digest', $security.sha256(key)); record.set('lastUsedAt', now()); app.save(record);
+  record.set('user', userId); record.set('digest', $security.sha256(key)); record.set('lastUsedAt', now()); record.set('name', name || ''); app.save(record);
   return key;
 }
+// Ends a pairing: its key stops working and its reader sessions end (their readings turn
+// stale), so the app notices at its next heartbeat and asks for a new connection link.
+function dropDevice(app, device) {
+  for (const s of list(app, 'publisher_sessions', 'device = {:device}', { device: device.id })) endSession(app, s);
+  app.delete(device);
+}
 const deviceKey = body => validate.text(body.deviceKey, 'Device key', 100);
+const findDevice = (app, key) => { try { return app.findFirstRecordByData('desktop_devices', 'digest', $security.sha256(key)); } catch { return null; } };
+// The Windows computer name the app sends with pairing and sign-in; optional, for the
+// list of paired PCs. Anything that is not a usable name is left out, never refused.
+const deviceName = value => typeof value === 'string' && value.trim() ? value.trim().replace(/\s+/g, ' ').slice(0, 40) : '';
 function pair(e) { return run(e, () => {
-  const code = validate.text(e.requestInfo().body.code, 'Pairing code', 24).replace(/[\s-]/g, '').toUpperCase(); let result;
+  const body = e.requestInfo().body, code = validate.text(body.code, 'Pairing code', 24).replace(/[\s-]/g, '').toUpperCase(); let result;
   e.app.runInTransaction(app => {
     let record; try { record = app.findFirstRecordByData('desktop_codes', 'digest', $security.sha256(code)); } catch { throw new BadRequestError('Pairing code is invalid or expired.'); }
     if (Date.parse(record.getString('expiresAt')) <= Date.now()) throw new BadRequestError('Pairing code is invalid or expired.');
-    const user = app.findRecordById('users', record.getString('user')); app.delete(record); result = { token: user.newAuthToken(), record: user, deviceKey: newDevice(app, user.id) };
+    const user = app.findRecordById('users', record.getString('user')); app.delete(record); result = { token: user.newAuthToken(), record: user, deviceKey: newDevice(app, user.id, deviceName(body.name)) };
   }); return e.json(200, result);
 }); }
 // A device key for an app paired before keys existed; it asks with its still-valid token.
-function desktopDevice(e) { return mutate(e, (app, user) => ({ deviceKey: newDevice(app, user.id) })); }
+function desktopDevice(e) { return mutate(e, (app, user, body) => ({ deviceKey: newDevice(app, user.id, deviceName(body.name)) })); }
 // Public: a fresh account token for a paired app. An unknown key (the app disconnected,
 // the account signed out everywhere or was deleted) is 401, and the app pairs again.
 function desktopSignIn(e) { return run(e, () => {
-  const digest = $security.sha256(deviceKey(e.requestInfo().body)); let device;
-  try { device = e.app.findFirstRecordByData('desktop_devices', 'digest', digest); } catch { throw new UnauthorizedError('This PC is no longer paired with an account.'); }
+  const body = e.requestInfo().body, device = findDevice(e.app, deviceKey(body)), name = deviceName(body.name);
+  if (!device) throw new UnauthorizedError('This PC is no longer paired with an account.');
   const user = e.app.findRecordById('users', device.getString('user'));
-  device.set('lastUsedAt', now()); e.app.save(device);
+  device.set('lastUsedAt', now()); if (name) device.set('name', name); e.app.save(device);
   return e.json(200, { token: user.newAuthToken(), record: user });
 }); }
 // Public: the app's Disconnect forgets its key on the server too. Unknown keys are fine.
 function unpair(e) { return run(e, () => {
-  const digest = $security.sha256(deviceKey(e.requestInfo().body));
-  try { e.app.delete(e.app.findFirstRecordByData('desktop_devices', 'digest', digest)); } catch { /* already gone */ }
+  const device = findDevice(e.app, deviceKey(e.requestInfo().body));
+  if (device) { const rooms = roomsFor(e.app, device.getString('user')); e.app.runInTransaction(app => dropDevice(app, app.findRecordById('desktop_devices', device.id))); notify(e.app, rooms); }
   return e.json(200, { success: true });
+}); }
+// Account & data removes one paired PC, for example a lost or sold one; the other
+// browsers and PCs stay signed in.
+function forgetDevice(e) { return mutate(e, (app, user, body, affected) => {
+  let device; try { device = app.findRecordById('desktop_devices', String(body.deviceId)); } catch { throw new NotFoundError('This PC is no longer paired.'); }
+  if (device.getString('user') !== user.id) throw new ForbiddenError('This PC is paired with another account.');
+  dropDevice(app, device); affected.push(...roomsFor(app, user.id));
 }); }
 function cleanup() {
   const at = stamp(new Date());
@@ -350,8 +385,9 @@ function runsOf(app, roomId, members = list(app, 'room_members', 'room = {:room}
     .map(r => ({ id: r.id, dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), planner: users[r.getString('plannedBy')] || '', attendees: Array.from(r.getStringSlice('attendees')).map(id => users[id]).filter(Boolean) }));
 }
 // Planned runs: { roomId, dungeon, startsAt, note? } plans one with the planner going,
-// { roomId, id, going } joins or leaves it and { roomId, id, remove: true } cancels it
-// (its planner or the room owner). Owners and players plan and join; viewers read.
+// { roomId, id, going } joins or leaves it, { roomId, id, dungeon?, startsAt?, note? }
+// changes it and { roomId, id, remove: true } cancels it (changes and cancelling: its
+// planner or the room owner). Owners and players plan and join; viewers read.
 function plan(e) { return mutate(e, (app, user, body, affected) => {
   const m = membership(app, user.id, String(body.roomId)), roomId = m.getString('room'), viewer = m.getString('role') === 'viewer';
   if (body.id) {
@@ -364,11 +400,22 @@ function plan(e) { return mutate(e, (app, user, body, affected) => {
       if (viewer) throw new ForbiddenError('Viewers cannot join runs.');
       const going = Array.from(r.getStringSlice('attendees')).filter(id => id !== m.id); if (body.going) going.push(m.id);
       r.set('attendees', going); app.save(r);
-    } else throw new BadRequestError('Send going (true or false) or remove: true.');
+    } else if (body.dungeon !== undefined || body.startsAt !== undefined || body.note !== undefined) {
+      if (viewer) throw new ForbiddenError('Viewers cannot plan runs.');
+      if (r.getString('plannedBy') !== m.id && m.getString('role') !== 'owner') throw new ForbiddenError('Only its planner or the room owner can change this run.');
+      // A run keeps its dungeon when the name only differs in case or spacing, even if the catalog changed since.
+      if (body.dungeon !== undefined && validate.dungeon(body.dungeon).key !== validate.dungeon(r.getString('dungeon')).key) {
+        const name = settings.dungeonName(app, body.dungeon); if (!name) throw new BadRequestError('Choose a dungeon from the list.'); r.set('dungeon', name.dungeon);
+      }
+      // A new start time is announced again on Discord.
+      if (body.startsAt !== undefined) { const startsAt = validate.runStart(body.startsAt); if (Date.parse(startsAt) !== Date.parse(r.getString('startsAt').replace(' ', 'T'))) { r.set('startsAt', startsAt); r.set('remindedAt', ''); } }
+      if (body.note !== undefined) r.set('note', validate.note(body.note));
+      app.save(r);
+    } else throw new BadRequestError('Send going (true or false), the changes to the run or remove: true.');
   } else {
     if (viewer) throw new ForbiddenError('Viewers cannot plan runs.');
     const name = settings.dungeonName(app, body.dungeon); if (!name) throw new BadRequestError('Choose a dungeon from the list.');
-    const note = body.note === undefined || body.note === '' ? '' : validate.text(body.note, 'Note', 120), startsAt = validate.runStart(body.startsAt);
+    const note = validate.note(body.note), startsAt = validate.runStart(body.startsAt);
     if (app.countRecords('room_runs', $dbx.hashExp({ room: roomId })) >= 20) throw new BadRequestError('A room can plan up to 20 runs at a time.');
     const r = new Record(app.findCollectionByNameOrId('room_runs'));
     r.set('room', roomId); r.set('dungeon', name.dungeon); r.set('startsAt', startsAt); r.set('note', note); r.set('plannedBy', m.id); r.set('attendees', [m.id]); app.save(r);
@@ -394,6 +441,45 @@ function transfer(e) { return mutate(e, (app, user, body, affected) => {
   room.set('owner', target.getString('user')); app.save(room);
   affected.push(room.id); return { room: roomJson(room, odylePerCube(app)) };
 }); }
+// Room settings: the owner connects a Discord channel webhook ({ roomId, webhook, language })
+// or disconnects it (webhook ''). A test post proves the webhook before it is saved; it
+// runs outside a transaction because it waits on Discord. No response carries the URL.
+function discordWebhook(e) { return run(e, () => {
+  const body = e.requestInfo().body, room = owner(e.app, e.auth.id, String(body.roomId)), url = discord.webhook(body.webhook), language = body.language === 'cs' ? 'cs' : 'en';
+  if (url) discord.connect(url, room.getString('name'), language);
+  room.set('discordWebhook', url); room.set('discordLanguage', language); e.app.save(room); notify(e.app, [room.id]);
+  return e.json(200, { room: roomJson(room, odylePerCube(e.app)) });
+}); }
+// Cron, every minute: posts each run to its room's Discord channel 15 minutes before it
+// starts, or at once when it was planned later than that. A run is announced once and
+// again after a new start time; a webhook Discord no longer knows is dropped.
+function remindRuns() {
+  const at = new Date(), due = $app.findRecordsByFilter('room_runs', "remindedAt = '' && room.discordWebhook != '' && startsAt > {:now} && startsAt <= {:soon}", 'startsAt', 50, 0, { now: stamp(at), soon: stamp(new Date(at.getTime() + 15 * 60000)) });
+  for (const r of due) {
+    try {
+      const room = $app.findRecordById('party_rooms', r.getString('room')), url = room.getString('discordWebhook'), ids = Array.from(r.getStringSlice('attendees'));
+      const users = ids.length ? $app.findRecordsByIds('room_members', ids).map(m => m.getString('user')) : [];
+      const going = users.length ? $app.findRecordsByIds('users', users).map(u => u.getString('displayName')) : [];
+      const status = discord.post(url, discord.reminder({ roomName: room.getString('name'), dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), going, language: room.getString('discordLanguage') }));
+      if (status === 401 || status === 404) { room.set('discordWebhook', ''); $app.save(room); notify($app, [room.id]); console.log('Odyle dropped the Discord webhook of room ' + room.id + ': Discord answered ' + status); }
+      else if (status >= 200 && status < 300) { r.set('remindedAt', now()); $app.save(r); }
+      else console.log('Odyle reminder for run ' + r.id + ' failed: Discord answered ' + status);
+    } catch (error) { console.log('Odyle reminder for run ' + r.id + ' failed: ' + error.message); }
+  }
+}
+// The runs the account is going to in the next 24 hours across all its rooms, for
+// reminders in the browser and the Windows app.
+function upcoming(e) { return run(e, () => {
+  const memberships = list(e.app, 'room_members', 'user = {:user}', { user: e.auth.id }), mine = {}, names = {};
+  for (const m of memberships) mine[m.getString('room')] = m.id;
+  const rooms = Object.keys(mine); if (!rooms.length) return e.json(200, { runs: [], serverNow: now() });
+  for (const r of e.app.findRecordsByIds('party_rooms', rooms)) names[r.id] = r.getString('name');
+  const runs = e.app.findAllRecords('room_runs', $dbx.in('room', ...rooms), $dbx.exp('startsAt > {:now} AND startsAt <= {:until}', { now: stamp(new Date()), until: stamp(new Date(Date.now() + 86400000)) }))
+    .filter(r => Array.from(r.getStringSlice('attendees')).includes(mine[r.getString('room')]))
+    .map(r => ({ id: r.id, roomId: r.getString('room'), room: names[r.getString('room')] || '', dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note') }))
+    .sort((a, b) => a.startsAt < b.startsAt ? -1 : a.startsAt > b.startsAt ? 1 : 0);
+  return e.json(200, { runs, serverNow: now() });
+}); }
 // An account that is deleted (by its owner, a superuser or for inactivity) hands each
 // room it owns to its longest-standing player; a room without one closes. Runs as the
 // users delete hook in main.pb.js, inside the deleting transaction.
@@ -409,8 +495,10 @@ function account(e) { return run(e, () => {
   const user = e.app.findRecordById('users', e.auth.id), reading = {};
   const sessions = e.app.findRecordsByFilter('publisher_sessions', 'user = {:user} && expiresAt > {:now}', '-updated', 20, 0, { user: user.id, now: stamp(new Date()) });
   for (const c of sessions.length ? e.app.findAllRecords('characters', $dbx.in('readingSession', ...sessions.map(s => s.id))) : []) reading[c.getString('readingSession')] = c.getString('characterName');
+  const devices = e.app.findRecordsByFilter('desktop_devices', 'user = {:user}', '-lastUsedAt,-created', 0, 0, { user: user.id });
   return e.json(200, { account: { id: user.id, displayName: user.getString('displayName'), email: user.email(), created: user.getString('created'), lastActiveAt: user.getString('lastActiveAt') }, limits, serverNow: now(), characters: e.app.countRecords('characters', $dbx.hashExp({ user: user.id })),
-    apps: sessions.map(s => ({ sessionId: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), character: reading[s.id] || '' })) });
+    apps: sessions.map(s => ({ sessionId: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), character: reading[s.id] || '', device: s.getString('device') })),
+    devices: devices.map(d => ({ id: d.id, name: d.getString('name'), pairedAt: d.getString('created'), lastSignInAt: d.getString('lastUsedAt') })) });
 }); }
 function profile(e) { return mutate(e, (app, user, body, affected) => {
   const record = app.findRecordById('users', user.id); record.set('displayName', validate.displayName(body.displayName)); app.save(record);
@@ -432,7 +520,7 @@ function exportData(e) { return run(e, () => {
       runs: all('room_runs', 'plannedBy = {:member} || attendees ~ {:member}', { member: m.id }).map(r => ({ dungeon: r.getString('dungeon'), startsAt: r.getString('startsAt'), note: r.getString('note'), planned: r.getString('plannedBy') === m.id })) })),
     tasks: tasksOf(app, user.id),
     readerSessions: all('publisher_sessions', 'user = {:user}', { user: user.id }).map(s => ({ id: s.id, connectedAt: s.getString('created'), lastContactAt: s.getString('updated'), expiresAt: s.getString('expiresAt') })),
-    pairedWindowsApps: all('desktop_devices', 'user = {:user}', { user: user.id }).map(d => ({ pairedAt: d.getString('created'), lastSignInAt: d.getString('lastUsedAt') })),
+    pairedWindowsApps: all('desktop_devices', 'user = {:user}', { user: user.id }).map(d => ({ name: d.getString('name'), pairedAt: d.getString('created'), lastSignInAt: d.getString('lastUsedAt') })),
   });
 }); }
 // Ends every sign-in of the account: other browsers and paired Windows apps lose their
@@ -474,4 +562,4 @@ function retention() {
     try { const rooms = roomsFor($app, user.id); $app.delete(user); notify($app, rooms); console.log('Odyle deleted inactive account ' + user.id); } catch (error) { console.log('Odyle could not delete inactive account ' + user.id + ': ' + error.message); }
   }
 }
-module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, rename, role, transfer, plan, account, profile, exportData, signOutEverywhere, deleteAccount, deleteCharacter, history, handOver, retention, cleanup, membership, desktopCode, pair, desktopDevice, desktopSignIn, unpair, configureDiscord };
+module.exports = { create, join, rooms, snapshot, wishlist, tasks, task, character, report, heartbeat, sharing, refreshPortraits, session, invalidate, leave, close, invites, revoke, rename, role, transfer, plan, account, profile, exportData, signOutEverywhere, deleteAccount, deleteCharacter, history, handOver, retention, cleanup, membership, desktopCode, pair, desktopDevice, desktopSignIn, unpair, forgetDevice, discordWebhook, remindRuns, upcoming, configureDiscord };

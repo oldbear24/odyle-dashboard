@@ -1,6 +1,6 @@
 // POST /api/odyle/<action> runs the accounts.cjs function of the same name in camel case
 // (desktop-code → desktopCode).
-for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'task', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'rename', 'role', 'transfer', 'plan', 'profile', 'desktop-code', 'desktop-device', 'sign-out-everywhere', 'delete-account', 'delete-character']) {
+for (const action of ['create', 'join', 'character', 'report', 'heartbeat', 'sharing', 'wishlist', 'task', 'session', 'invalidate', 'leave', 'close', 'invites', 'revoke', 'rename', 'role', 'transfer', 'plan', 'discord-webhook', 'profile', 'desktop-code', 'desktop-device', 'forget-device', 'sign-out-everywhere', 'delete-account', 'delete-character']) {
   routerAdd('POST', '/api/odyle/' + action, e => {
     const name = e.request.url.path.split('/').pop();
     // The companion's requests also feed the superuser dashboard's packet list.
@@ -15,6 +15,7 @@ routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs')
 routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/accounts.cjs').tasks(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/history/{id}', e => require(__hooks + '/lib/accounts.cjs').history(e), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/upcoming', e => require(__hooks + '/lib/accounts.cjs').upcoming(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/account', e => require(__hooks + '/lib/accounts.cjs').account(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/export', e => require(__hooks + '/lib/accounts.cjs').exportData(e), $apis.requireAuth('users'));
 // Public: the newest Windows companion release, cached from GitHub (no account data involved).
@@ -25,7 +26,8 @@ $app.onServe().bindFunc(e => { e.uiExtensions.push({ name: 'odyle', fs: $os.dirF
 routerAdd('GET', '/api/odyle/admin/ui', e => require(__hooks + '/lib/admin.cjs').ui(e));
 routerAdd('GET', '/api/odyle/admin/monitor', e => require(__hooks + '/lib/admin.cjs').monitor(e), $apis.requireSuperuserAuth());
 routerAdd('GET', '/api/odyle/admin/settings', e => require(__hooks + '/lib/admin.cjs').readSettings(e), $apis.requireSuperuserAuth());
-routerAdd('POST', '/api/odyle/admin/settings', e => require(__hooks + '/lib/admin.cjs').saveSettings(e), $apis.requireSuperuserAuth(), $apis.bodyLimit(4096));
+// A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.
+routerAdd('POST', '/api/odyle/admin/settings', e => require(__hooks + '/lib/admin.cjs').saveSettings(e), $apis.requireSuperuserAuth(), $apis.bodyLimit(65536));
 onRealtimeSubscribeRequest(e => {
   for (const topic of e.subscriptions) if (topic.startsWith('odyle.room.')) {
     if (!e.auth || e.auth.collection().name !== 'users') throw new ForbiddenError();
@@ -48,6 +50,7 @@ onBootstrap(e => { e.next(); require(__hooks + '/lib/accounts.cjs').configureDis
 onRecordDelete(e => { require(__hooks + '/lib/accounts.cjs').handOver(e.app, e.record.id); return e.next(); }, 'users');
 cronAdd('odyle-expiry', '*/5 * * * *', () => require(__hooks + '/lib/accounts.cjs').cleanup());
 cronAdd('odyle-portraits', '* * * * *', () => require(__hooks + '/lib/accounts.cjs').refreshPortraits());
+cronAdd('odyle-reminders', '* * * * *', () => require(__hooks + '/lib/accounts.cjs').remindRuns());
 cronAdd('odyle-retention', '17 3 * * *', () => require(__hooks + '/lib/accounts.cjs').retention());
 // Browser hardening for the dashboard pages and files it serves. API and admin
 // responses are left alone: the OAuth redirect page and the PocketBase UI need

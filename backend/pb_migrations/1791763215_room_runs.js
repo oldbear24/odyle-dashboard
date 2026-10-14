@@ -3,7 +3,7 @@ migrate((app) => {
   // players plan and join them, viewers read them. Runs are deleted a day after they
   // started, with the room, or by their planner or the room owner. A run keeps going
   // when its planner leaves the room; leaving takes the member off every attendee
-  // list. No API rules: room snapshots list them and POST /api/odyle/run changes them.
+  // list. No API rules: room snapshots list them and POST /api/odyle/plan changes them.
   const rooms = app.findCollectionByNameOrId('party_rooms'), members = app.findCollectionByNameOrId('room_members');
   app.save(new Collection({ name: 'room_runs', type: 'base', fields: [
     { name: 'room', type: 'relation', collectionId: rooms.id, maxSelect: 1, cascadeDelete: true, required: true },

@@ -25,6 +25,8 @@ function task(body) {
 }
 // Display names are free text shown to room members; inner whitespace collapses.
 const displayName = value => text(value, 'Display name', 40).replace(/\s+/g, ' ');
+// The optional note of a planned run: empty or only spaces means no note.
+const note = value => value === undefined || value === null || (typeof value === 'string' && !value.trim()) ? '' : text(value, 'Note', 120).replace(/\s+/g, ' ');
 // A planned run starts at most an hour ago (late entries) and at most 60 days ahead.
 function runStart(value, now = Date.now()) {
   const at = typeof value === 'string' ? Date.parse(value) : NaN;
@@ -44,4 +46,4 @@ function reading(body, current, verifiedAdapters = []) {
   if (!regions.includes(body.region)) throw new Error('Select a Global region.');
   return { value: integer(body.value, 'Odyle', 0, 1000000), characterName: text(body.characterName, 'Character', 40), server: text(body.server, 'Server', 40), region: body.region, sequence: body.sequence, source: 'packet', parserVersion };
 }
-module.exports = { text, integer, characterIdentity, dungeon, task, displayName, runStart, reading };
+module.exports = { text, integer, characterIdentity, dungeon, task, displayName, note, runStart, reading };

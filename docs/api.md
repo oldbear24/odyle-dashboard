@@ -4,13 +4,13 @@ PocketBase 0.40.5. JSON requests; authenticated requests use a PocketBase **user
 
 ## Authentication
 
-The browser calls `pb.collection('users').authWithOAuth2({ provider: 'discord', createData: { displayName: 'Adventurer' } })`. PocketBase creates or loads the account linked to that Discord identity. Public password registration and password sign-in are disabled.
+The browser calls `pb.collection('users').authWithOAuth2({ provider: 'discord', createData: { displayName: 'Adventurer' } })`. PocketBase creates or loads the account linked to that Discord identity; a new account then takes its Discord name through `POST /api/odyle/profile`. Public password registration and password sign-in are disabled, and the `users` collection accepts no direct updates (only the routes below write accounts).
 
 `POST /api/odyle/desktop-code` with `{}` returns `{ code, expiresAt }` to an authenticated account. The 16-character code expires after five minutes, is stored as a digest, and replaces that account's previous unused code.
 
 The dashboard presents a connection link such as `https://your-backend.example/#odyle-pair=ABCDEFGH23456789`. The Windows app extracts the endpoint and code when the user clicks **Paste link & connect** or presses Enter in the pairing input. The fragment is never sent as part of an HTTP request. This link contains the short-lived pairing code, not the account token; only the intended Windows companion should receive it. Base-path deployments are preserved, insecure remote HTTP and embedded URL credentials are rejected. Older apps can still use the raw code with a separate endpoint.
 
-`POST /api/odyle/pair` is public and rate limited. Body `{ code }`; response `{ token, record, deviceKey }` for the same account. The code is consumed atomically. Windows stores the device key and token in DPAPI, never Discord credentials.
+`POST /api/odyle/pair` is public and rate limited. Body `{ code, name? }`, where `name` is the PC's Windows computer name (optional, up to 40 characters; anything else is left out, never refused); response `{ token, record, deviceKey }` for the same account. The code is consumed atomically. Windows stores the device key and token in DPAPI, never Discord credentials.
 
 ### Lasting pairing
 
@@ -18,11 +18,14 @@ The link is used once; the pairing lasts. `deviceKey` is a 48-character secret f
 
 | Method / route | Body | Result |
 | --- | --- | --- |
-| POST `/api/odyle/desktop-sign-in` | `{ deviceKey }` | Public, 30 a minute per client: `{ token, record }` for the paired account and the key's `lastUsedAt` is updated. An unknown key answers 401 and the app asks to pair again |
-| POST `/api/odyle/desktop-device` | `{}` | Signed-in account: `{ deviceKey }` for a new pairing. Apps paired before device keys existed call it once with their still-valid token |
-| POST `/api/odyle/unpair` | `{ deviceKey }` | Public, 30 a minute per client: forgets that key (the app's **Disconnect**); unknown keys answer 200 too |
+| POST `/api/odyle/desktop-sign-in` | `{ deviceKey, name? }` | Public, 30 a minute per client: `{ token, record }` for the paired account; the key's `lastUsedAt` is updated and a given `name` replaces the PC's name. An unknown key answers 401 and the app asks to pair again |
+| POST `/api/odyle/desktop-device` | `{ name? }` | Signed-in account: `{ deviceKey }` for a new pairing. Apps paired before device keys existed call it once with their still-valid token |
+| POST `/api/odyle/unpair` | `{ deviceKey }` | Public, 30 a minute per client: forgets that key and ends its reader sessions (the app's **Disconnect**); unknown keys answer 200 too |
+| POST `/api/odyle/forget-device` | `{ deviceId }` | Signed-in account (**Account & data → Remove PC**): forgets one of its pairings and ends that PC's reader sessions; another account's PC answers 403, an unknown one 404 |
 
-A pairing has no inactivity expiry: it ends when the app disconnects, the account signs out everywhere or is deleted. An account keeps its 10 most recently used pairings; pairing an eleventh PC drops the one unused longest. The data export lists them as `pairedWindowsApps` (`pairedAt`, `lastSignInAt`), without keys or digests.
+A pairing has no inactivity expiry: it ends when the app disconnects, the PC is removed on the dashboard, the account signs out everywhere or is deleted. An account keeps its 10 most recently used pairings; pairing an eleventh PC drops the one unused longest. The account page lists them (`devices` in `GET /api/odyle/account`) and the data export as `pairedWindowsApps` (`name`, `pairedAt`, `lastSignInAt`), without keys or digests.
+
+A paired app opens its reader session with its key (`POST /api/odyle/session` with `deviceKey`), which ties the session to the PC. Removing the PC deletes those sessions, so the app's next heartbeat answers 403 *Publisher session expired*; its new session with the same key answers 401 *This PC is no longer paired with an account.* and the app asks for a new link, within about a minute. Apps that open sessions without their key (releases before 0.6) stop at their next device sign-in instead: at start-up or within a day.
 
 `POST /api/collections/users/auth-refresh` refreshes a valid token. Tokens last seven days; accounts/data persist independently of token expiry. A Windows app paired by a backend without device keys keeps its connection only by refreshing within those seven days.
 
@@ -43,7 +46,8 @@ A pairing has no inactivity expiry: it ends when the app disconnects, the accoun
 | POST `/api/odyle/rename` | `{ roomId, name }` | Owner renames the room (1–60 characters); returns `{ room }` |
 | POST `/api/odyle/role` | `{ roomId, memberId, role }` | Owner makes another member `reporter` (player) or `viewer`; a member made viewer stops sharing characters in the room. Returns `{ membership }` |
 | POST `/api/odyle/transfer` | `{ roomId, memberId }` | Owner hands the room to another member, who becomes `owner`; the caller stays as `reporter`. Returns `{ room }` |
-| POST `/api/odyle/plan` | see [Planned runs](#planned-runs) | Plans, joins, leaves or cancels a run; returns `{ runs }` |
+| POST `/api/odyle/plan` | see [Planned runs](#planned-runs) | Plans, changes, joins, leaves or cancels a run; returns `{ runs }` |
+| POST `/api/odyle/discord-webhook` | `{ roomId, webhook, language? }` | Owner connects a Discord channel webhook for run reminders (`language` `en` or `cs`) or disconnects it (`webhook: ''`); see [Run reminders](#run-reminders). Returns `{ room }` |
 
 Room codes are valid for 30 minutes; memberships and rooms have no automatic inactivity expiry (accounts can have one, see [Account and data](#account-and-data)). Dashboards share codes as invite links of the form `https://your-dashboard.example/#/join/<code>`; the code stays in the fragment, so no server receives it with the page request, and opening the link while signed in calls `join` with it. An account can own up to 20 rooms and be a member of up to 50; a room holds up to 50 members. Every change answered by the routes above sends the room's realtime refresh. Sharing is per character: each membership lists the characters its owner linked to that room (`sharedCharacters` in `GET /api/odyle/rooms`). New characters start private everywhere. Room snapshots include only linked characters of other members; members always see all of their own characters, each with `shared: true|false`. Upgrading a backend keeps every character of a membership that shared everything shared. Viewer accounts can maintain private characters, but cannot share them in a viewer-only room. Display-name collisions are resolved by user/member IDs.
 
@@ -67,6 +71,7 @@ Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:
 | --- | --- | --- |
 | `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room |
 | `{ roomId, id, going }` | owner, players | `true` joins the run, `false` leaves it |
+| `{ roomId, id, dungeon?, startsAt?, note? }` | planner, owner | Changes the run with the same rules as planning; a dungeon that only differs in case or spacing keeps its name, an empty or blank `note` removes the note, a new `startsAt` announces the run on Discord again |
 | `{ roomId, id, remove: true }` | planner, owner | Cancels the run |
 
 The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run):
@@ -77,19 +82,27 @@ The snapshot's `runs` lists runs until three hours after they started, soonest f
 
 Viewers read runs but cannot plan or join them. The `room_runs` collection has no API rules.
 
+### Run reminders
+
+`GET /api/odyle/upcoming` returns `{ runs, serverNow }`: the runs the signed-in account is going to in the next 24 hours, across its rooms, soonest first, each `{ id, roomId, room, dungeon, startsAt, note }`. The dashboard (while open, when **Run reminders** is on in that browser) and the Windows app show a notification 15 minutes before each start.
+
+A room owner can connect a Discord channel webhook (`POST /api/odyle/discord-webhook`). Only `https://discord.com/api/webhooks/<id>/<token>` URLs (also `discordapp.com`, `ptb.` and `canary.`) are accepted; the backend posts a test message first and refuses the webhook when Discord does not accept it. The URL is stored in a hidden field: no response, snapshot or export carries it, and rooms report only `discordReminders: true|false`. Every minute the `odyle-reminders` job posts each run of those rooms that starts within 15 minutes and was not announced yet (dungeon, Discord timestamps that show in every reader's time zone, note and the display names of the members going, in the language chosen when connecting); mentions are switched off. A webhook Discord answers 401 or 404 for is dropped.
+
 ### Dungeon catalog
 
 Superusers can keep a list of dungeon names in `odyle_settings.dungeons` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). While it is empty, wishlist entries and runs take any name. Once it lists dungeons, a new wishlist entry or run must match one of them (regardless of case and spacing) and takes the catalog's spelling; existing wishlist entries can still be joined and left. Snapshots report the list as `dungeons` for suggestions.
 
 ## Daily and weekly tasks
 
-Each account keeps a private checklist of daily and weekly tasks. Titles are free text (1–60 characters, inner whitespace collapsed) and an account can keep up to 40 tasks. Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit on the PocketBase dashboard's Odyle page or under *Collections*; the defaults are the Global service's 07:00 UTC and Wednesday.
+Each account keeps a private checklist of daily and weekly tasks in its own order. Titles are free text (1–60 characters, inner whitespace collapsed) and an account can keep up to 40 tasks. Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit on the PocketBase dashboard's Odyle page or under *Collections*; the defaults are the Global service's 07:00 UTC and Wednesday.
 
 | Method / route | Body | Result |
 | --- | --- | --- |
-| GET `/api/odyle/tasks` | — | `{ tasks, resets, serverNow }` of the signed-in account, oldest task first |
+| GET `/api/odyle/tasks` | — | `{ tasks, resets, serverNow }` of the signed-in account in the account's order (`position`, then oldest first); new tasks go to the end of their list |
 | POST `/api/odyle/task` | `{ title, cadence }` | Adds a task; `cadence` is `daily` or `weekly` |
 | POST `/api/odyle/task` | `{ id, done }` | `true` stores the current time in `doneAt`, `false` clears it |
+| POST `/api/odyle/task` | `{ id, title }` | Renames the task (same rules as adding) |
+| POST `/api/odyle/task` | `{ id, move }` | `up` or `down` swaps it with its neighbour in the same list; at either end nothing changes |
 | POST `/api/odyle/task` | `{ id, remove: true }` | Deletes the task |
 
 Every POST answers with the same `{ tasks, resets, serverNow }` as the GET:
@@ -120,9 +133,9 @@ Each character record carries `portrait`, a file name or empty. Clients load the
 
 `portrait` is always the character's **official AION 2 portrait**; players cannot set, upload or replace it, and no route writes it. A backend cron job looks up new characters within a minute through PLAYNC's public Global character search (`api-search.plaync.com/aion2global/search/v2/character`, by name, server id and region) and downloads the `profileImageUrl` it lists from `profileimg.plaync.com`. It retries characters without a portrait hourly and refreshes the others daily, rewriting the file only when the image changed. The search server id is rebuilt from the saved server name and region (the game protocol's race × 1000 + region × 100 + server number); NA East and West are both tried. Characters the search does not list, such as ones on servers the reader cannot name, keep their initials; a failed lookup keeps the last downloaded portrait.
 
-`POST /api/odyle/character` accepts only `{ characterName, server, region }` and returns `{ character }` for the signed-in account. An account keeps up to 30 characters; saving or reporting a new one beyond that answers 400. It saves identity before any reading, with unknown Odyle (`confirmed: false`, `valid: false`, no reading timestamp or source). Repeating the same identity returns the existing record without changing its last value or confidence. Ownership always comes from authentication; extra fields such as `value`, `user`, `source`, `confirmed` and `characterId` are rejected. The Windows app uses this endpoint for automatic game identification and the explicit **Save character** fallback.
+`POST /api/odyle/character` accepts only `{ characterName, server, region }` and returns `{ character }` for the signed-in account. An account keeps up to 30 characters; saving or reporting a new one beyond that answers 400. It saves identity before any reading, with unknown Odyle (`confirmed: false`, `valid: false`, no reading timestamp or source). Repeating the same identity returns the existing record without changing its last value or confidence. Ownership always comes from authentication; extra fields such as `value`, `user`, `source`, `confirmed` and `characterId` are rejected. The Windows app uses this endpoint for automatic game identification.
 
-`POST /api/odyle/session` with `{}` returns `{ sessionId, sequence: 0 }`. Optional `{ previousSessionId }` rotates that device's session and invalidates its last readings without clearing stored values or other devices' sessions.
+`POST /api/odyle/session` with `{}` returns `{ sessionId, sequence: 0 }`. Optional `{ previousSessionId }` rotates that device's session and invalidates its last readings without clearing stored values or other devices' sessions. A paired app also sends `{ deviceKey }`; a key the server no longer knows (or of another account) answers 401, see [Lasting pairing](#lasting-pairing).
 
 `POST /api/odyle/report`:
 
@@ -151,7 +164,7 @@ Returns `{ character, serverNow }`. Existing `characterId` must belong to the au
 
 | Method / route | Body | Result |
 | --- | --- | --- |
-| GET `/api/odyle/account` | — | `{ account, characters, limits, apps, serverNow }`: `account` has `id`, `displayName`, `email`, `created`, `lastActiveAt`; `characters` is the number saved; `limits` is `{ characters: 30, ownedRooms: 20, memberships: 50 }`; `apps` lists the open reader sessions (`sessionId`, `connectedAt`, `lastContactAt`, `character`), most recent contact first |
+| GET `/api/odyle/account` | — | `{ account, characters, limits, apps, serverNow }`: `account` has `id`, `displayName`, `email`, `created`, `lastActiveAt`; `characters` is the number saved; `limits` is `{ characters: 30, ownedRooms: 20, memberships: 50 }`; `apps` lists the open reader sessions (`sessionId`, `connectedAt`, `lastContactAt`, `character`, `device`: the id of the PC that opened it, or empty), most recent contact first; `devices` lists the paired PCs (`id`, `name`, `pairedAt`, `lastSignInAt`), most recently used first |
 | POST `/api/odyle/profile` | `{ displayName }` | Sets the display name rooms show (1–40 characters, inner whitespace collapsed); returns `{ record }` |
 | GET `/api/odyle/export` | — | Everything stored for the account as one JSON document: account and sign-in identities, characters with their history, memberships with shared characters, wishlist entries and runs, tasks, reader sessions and paired Windows apps |
 | POST `/api/odyle/delete-character` | `{ characterId }` | Deletes one of the account's characters with its history and portrait; rooms stop listing it. Another account's character answers 403, an unknown one 404 |
@@ -168,7 +181,7 @@ Whenever an account is deleted (by this route, in the PocketBase dashboard or fo
 { "repository": "oldbear24/odyle-windows", "releasesUrl": "https://github.com/oldbear24/odyle-windows/releases/latest", "latest": { "version": "0.5.0.2", "tag": "v0.5.0.2", "url": "https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2", "publishedAt": "2026-10-13T22:34:09Z", "packages": { "small": { "name": "odyle-0.5.0.2-win-x64.zip", "size": 217557, "url": "https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64.zip" }, "selfContained": { "name": "odyle-0.5.0.2-win-x64-self-contained.zip", "size": 71595826, "url": "https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64-self-contained.zip" } } } }
 ```
 
-The backend calls GitHub's `releases/latest` API at most every ten minutes and serves the cached answer, so browsers never contact GitHub and the unauthenticated API limit is never reached. Only versioned, published releases count; only `win-x64` packages with GitHub download links are listed, and checksum files are left out because the Windows app verifies its own downloads. When GitHub is unreachable the last known release is kept; without one, `latest` is `null` and clients link `releasesUrl`, GitHub's stable latest-release page. The dashboard shows the link on **My rooms & characters** and both packages in the **Pair Windows app** dialog. `ODYLE_WINDOWS_REPOSITORY` points the lookup at a fork; `ODYLE_WINDOWS_RELEASE_URL` replaces the feed URL for tests.
+The backend calls GitHub's `releases/latest` API at most every ten minutes and serves the cached answer, so browsers never contact GitHub and the unauthenticated API limit is never reached. Only versioned, published releases count; only packages with GitHub download links are listed: the x64 ZIPs under `small`/`selfContained`, the per-user installer `odyle-<version>-win-x64-setup.exe` under `installer` and the Windows on ARM ZIPs under `arm64.small`/`arm64.selfContained`. Checksum files are left out because the Windows app verifies its own downloads. When GitHub is unreachable the last known release is kept; without one, `latest` is `null` and clients link `releasesUrl`, GitHub's stable latest-release page. The dashboard shows the link on **My rooms & characters** and the packages in the **Pair Windows app** dialog, the installer first. `ODYLE_WINDOWS_REPOSITORY` points the lookup at a fork; `ODYLE_WINDOWS_RELEASE_URL` replaces the feed URL for tests.
 
 ## Superuser monitor and settings
 
@@ -178,7 +191,7 @@ The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_ho
 | --- | --- | --- |
 | GET `/api/odyle/admin/monitor` | — | `{ serverNow, apps, packets }` |
 | GET `/api/odyle/admin/settings` | — | `{ settings, defaults }` |
-| POST `/api/odyle/admin/settings` | `{ odylePerCube?, dailyResetHour?, weeklyResetDay?, inactiveAccountDays?, dungeons? }` | Validates and saves the given values, keeps the others; `{ settings, defaults }` |
+| POST `/api/odyle/admin/settings` | `{ odylePerCube?, dailyResetHour?, weeklyResetDay?, inactiveAccountDays?, dungeons? }` | Validates and saves the given values, keeps the others; `{ settings, defaults }`. Bodies up to 64 KB, enough for a full dungeon catalog |
 | GET `/api/odyle/admin/ui` | — | Public `{ version }`: content hash of the extension page, see below |
 
 `apps` has one entry per open reader session, most recent contact first. A running Windows app keeps one session and touches it with every heartbeat and reading, so `lastContactAt` is its last contact (the page shows 45 seconds without contact as late and 90 as offline). `character` is the character that session read last, or `null`; a character moves to whichever session read it most recently.
@@ -201,4 +214,4 @@ PocketBase serves extension files with a 14-day browser cache. The extension's e
 
 ## Realtime
 
-Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Superusers can also subscribe to `odyle.admin.packets` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). Room events contain only `{ refresh: true }` and follow room, membership, role, sharing, wishlist, run, reading, session, portrait, display-name and character changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.
+Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Superusers can also subscribe to `odyle.admin.packets` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). Room events contain only `{ refresh: true }` and follow room, membership, role, sharing, wishlist, run, Discord reminder, reading, session, paired-PC, portrait, display-name and character changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.

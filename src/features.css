@@ -20,3 +20,13 @@ dialog .button+.button,dialog .button+.text-button{margin-top:8px}dialog.wide{ma
 .account-page .wish-row .status{flex-shrink:0}.account-page .party-section{margin-top:20px}.account-page .account-grid{margin-bottom:0}
 .invite-actions{display:flex;flex-direction:column;align-items:flex-end;gap:2px}.invite-link{display:inline-flex;align-items:center;gap:6px;border:1px solid #3c5546;background:transparent;color:var(--mint);font-size:11px;padding:5px 9px;border-radius:5px;white-space:nowrap}.invite-link svg{width:14px;height:14px}.invite-link:hover{background:#1f3427}
 @media(max-width:800px){.account-grid{grid-template-columns:1fr}.run-row{flex-wrap:wrap}.run-when{width:auto}.run-form{flex-wrap:wrap}.run-form input{flex:1 1 100%!important}.member-row{flex-wrap:wrap}.rename-form{flex-direction:column;align-items:stretch}.card-footer{flex-wrap:wrap}}
+/* Checklist tools, run changes and inline form errors */
+.task-tools{display:flex;gap:2px;margin-left:auto;flex-shrink:0}.task-tool{background:none;border:0;color:#8fa596;cursor:pointer;font-size:13px;line-height:1;padding:4px 5px;border-radius:4px}.task-tool:hover:not(:disabled){color:var(--mint);background:#1f2a24}.task-tool:disabled{opacity:.25;cursor:default}
+.task-edit{display:flex;gap:8px;align-items:center;padding:8px 14px}.task-edit input{flex:1;min-width:0;margin:0}.task-edit .button{padding:7px 12px;font-size:12px}
+.run-edit{display:grid;gap:10px}.run-edit .button{justify-self:start}
+.form-error{flex-basis:100%;margin:6px 0 0;color:#f0a8a8;font-size:12px;line-height:1.5}.wish-form .form-error,.rename-form .form-error{order:9}.wish-form,.rename-form{flex-wrap:wrap}
+#toast{cursor:pointer}
+/* Keyboard focus is always visible, inputs included */
+input:focus-visible,select:focus-visible{outline:2px solid var(--mint);outline-offset:1px}
+/* Readability: small print stays at 9.5px or more */
+.leader-label{font-size:8.5px}.stat-caption,.invite-row span{font-size:9.5px}.readiness,.card-footer,.invite-row small,.stat-number span.unit,.stat-detail,.connection,.refresh-label,footer{font-size:10px}

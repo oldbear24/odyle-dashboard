@@ -9,6 +9,7 @@ export default [
   { ...js.configs.recommended, rules: { ...js.configs.recommended.rules, ...rules } },
   { files: ['src/**/*.js'], languageOptions: { globals: { ...globals.browser, __APP_VERSION__: 'readonly' } } },
   { files: ['tests/**', 'scripts/**', 'vite.config.js', 'eslint.config.js'], languageOptions: { globals: globals.node } },
+  { files: ['public/sw.js'], languageOptions: { globals: globals.serviceworker } },
   // Browser checks also hand functions to the page (page.evaluate, addInitScript).
   { files: ['tests/ui.test.mjs'], languageOptions: { globals: { ...globals.node, ...globals.browser } } },
   { files: ['**/*.cjs'], languageOptions: { sourceType: 'commonjs' } },
