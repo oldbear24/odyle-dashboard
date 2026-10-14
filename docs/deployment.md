@@ -8,7 +8,7 @@ The simplest deployment serves both UI and API from one PocketBase instance. Kee
 docker compose up --build -d
 ```
 
-Open `http://127.0.0.1:8090` for a local installation. The image verifies the PocketBase release checksum, runs as a non-root user and stores the database in a named volume.
+Open `http://127.0.0.1:8090` for a local installation. The image verifies the PocketBase release checksum, runs as a non-root user, stores the database in a named volume and reports its health from `/api/health` (`docker compose ps` shows `healthy`).
 
 For internet access, put an HTTPS reverse proxy in front of port 8090 and change the Compose command to:
 
@@ -24,7 +24,7 @@ If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker bui
 
 Every push to `main` runs the checks, then publishes:
 
-- the image `ghcr.io/oldbear24/odyle-dashboard` for `linux/amd64` and `linux/arm64`, tagged `latest`, `<version>.<run number>` (for example `0.3.0.12`) and `sha-<commit>`. It is built without `VITE_POCKETBASE_URL`, so the UI talks to the instance that serves it;
+- the image `ghcr.io/oldbear24/odyle-dashboard` for `linux/amd64` and `linux/arm64`, tagged `latest`, `<version>.<run number>` (for example `0.4.0.12`) and `sha-<commit>`. It is built without `VITE_POCKETBASE_URL`, so the UI talks to the instance that serves it;
 - the GitHub release `v<version>.<run number>` with `odyle-dashboard-<version>.<run number>-pocketbase.zip` and its checksum. The ZIP holds `pb_hooks`, `pb_migrations` and `pb_public`; upload them to a PocketBase or PocketHost instance and restart it.
 
 The version comes from `package.json`; bump it to start a new line. To run the published image instead of building locally, replace `build: .` in `compose.yaml` with:
@@ -44,6 +44,8 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 - Dashboard pages and files are served with `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` (`pb_hooks/main.pb.js`). `/api/` and `/_/` are excluded because the OAuth redirect page and the PocketBase UI use inline scripts. Add HSTS at your HTTPS proxy.
 - Request/IP logs are disabled by the migration. Configure proxy logs consistently with your privacy preference.
 - Rate limits are enabled for room creation and invite joins (30 a minute each), application routes under `/api/odyle/` (600 a minute) and pairing and sign-in (10 a minute); all per client. Configure trusted proxy IP headers only for your own proxy; do not trust arbitrary forwarded client IP headers.
+- Accounts are capped at 30 characters, 20 owned rooms and 50 memberships. Unused accounts are kept unless you set **Delete inactive accounts after (days)** on the Odyle page (30 days or more; a nightly job at 03:17 server time deletes up to 200 accounts per run and passes their rooms on). Deleting an account in the PocketBase dashboard passes its rooms on the same way.
+- Odyle history keeps 30 days of changes per character and finished planned runs are deleted a day after their start, both by the five-minute expiry job.
 - Rooms and account-owned character values persist in the data volume. Freshness uses server timestamps; client clocks affect only display, corrected using heartbeat responses.
 - Invites can be reused during their 30-minute lifetime. Rotate them to stop new joins; remove a member to revoke existing access. Rooms allow up to 50 members, including viewers.
 - Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.

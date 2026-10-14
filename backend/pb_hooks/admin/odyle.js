@@ -133,8 +133,9 @@ export function monitorPage() {
 
 export function settingsPage() {
   app.store.title = 'Game settings';
-  const state = store({ loading: true, saving: false, form: null, initial: 'null', defaults: null, get changed() { return state.initial !== JSON.stringify(state.form); } });
-  const accept = data => { state.form = { ...data.settings }; state.initial = JSON.stringify(state.form); state.defaults = data.defaults; };
+  // dungeonText is the catalog as typed; form.dungeons is the list it saves.
+  const state = store({ loading: true, saving: false, form: null, dungeonText: '', initial: 'null', defaults: null, get changed() { return state.initial !== JSON.stringify(state.form); } });
+  const accept = data => { state.form = { ...data.settings }; state.dungeonText = (data.settings.dungeons || []).join('\n'); state.initial = JSON.stringify(state.form); state.defaults = data.defaults; };
   async function load() {
     try { accept(await app.pb.send('/api/odyle/admin/settings', { requestKey: null })); state.loading = false; } catch (error) { if (!error.isAbort) app.checkApiError(error); }
   }
@@ -161,7 +162,7 @@ export function settingsPage() {
         'Weekly tasks uncheck on this day at the daily reset hour.'),
       field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => state.form.inactiveAccountDays = integer(e.target.value) }),
         () => state.form.inactiveAccountDays ? 'Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close.' : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
-      field('odyle-dungeons', 'Dungeon catalog', t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'One dungeon per line', value: () => (state.form.dungeons || []).join('\n'), onchange: e => state.form.dungeons = lines(e.target.value) }),
+      field('odyle-dungeons', 'Dungeon catalog', t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'One dungeon per line', value: () => state.dungeonText, oninput: e => { state.dungeonText = e.target.value; state.form.dungeons = lines(e.target.value); } }),
         () => (state.form.dungeons || []).length ? number(state.form.dungeons.length) + ' dungeons. New wishlist entries and planned runs must be one of them and take this spelling; existing entries stay.' : 'Empty: wishlists and planned runs take any dungeon name. One name per line, up to 200.', 8),
       t.div({ className: 'col-lg-12' }, t.hr()),
       t.div({ className: 'col-lg-12' }, t.div({ className: 'flex' },
@@ -170,7 +171,7 @@ export function settingsPage() {
           t.span({ className: 'txt' }, () => 'Use defaults (' + number(state.defaults?.odylePerCube) + ' · ' + String(state.defaults?.dailyResetHour ?? '').padStart(2, '0') + ':00 UTC · ' + capital(state.defaults?.weeklyResetDay || '') + ')')),
         t.div({ className: 'm-r-auto' }),
         () => state.changed ? [
-          t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = JSON.parse(state.initial) }, t.span({ className: 'txt' }, 'Cancel')),
+          t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => { state.form = JSON.parse(state.initial); state.dungeonText = state.form.dungeons.join('\n'); } }, t.span({ className: 'txt' }, 'Cancel')),
           t.button({ className: () => 'btn expanded-lg ' + (state.saving ? 'loading' : ''), disabled: () => state.saving }, t.span({ className: 'txt' }, 'Save changes')),
         ] : null))));
 }

@@ -21,15 +21,19 @@ The dashboard presents a connection link such as `https://your-backend.example/#
 | POST `/api/odyle/create` | `{ name }` | Signed-in user creates owned room; returns `{ room, membership, invites }` |
 | POST `/api/odyle/join` | `{ code }` | Join as reporter/viewer; returns `{ room, membership }`; repeat join is idempotent |
 | GET `/api/odyle/rooms` | — | `{ rooms, odylePerCube, serverNow }`: all rooms of the current account |
-| GET `/api/odyle/snapshot/{id}` | — | Member-only `{ room, members, wishlist, serverNow }`; each member has `displayName` and `characters` |
+| GET `/api/odyle/snapshot/{id}` | — | Member-only `{ room, members, wishlist, runs, dungeons, serverNow }`; each member has `displayName` and `characters`; `dungeons` is the server's dungeon catalog (empty: any name) |
 | POST `/api/odyle/sharing` | `{ roomId, characterId, enabled }` | Reporter/owner shares or hides one of their own characters in this room; returns `{ sharedCharacters }`. Without `characterId` (older clients) the choice applies to every character saved at that moment |
 | POST `/api/odyle/wishlist` | `{ roomId, dungeon, wanted, everyone? }` | Adds (`wanted: true`, reporter/owner) or removes (`false`, any member) the caller's own entry for a dungeon; `everyone: true` with `wanted: false` lets the owner clear that dungeon for all members. Returns `{ wishlist }` |
 | POST `/api/odyle/invites` | `{ roomId }` | Owner revokes old codes and receives reporter/viewer invites |
 | POST `/api/odyle/revoke` | `{ roomId, memberId }` | Owner removes another membership |
 | POST `/api/odyle/leave` | `{ roomId }` | Non-owner removes their membership; character data remains |
 | POST `/api/odyle/close` | `{ roomId }` | Owner deletes room and memberships; character data remains |
+| POST `/api/odyle/rename` | `{ roomId, name }` | Owner renames the room (1–60 characters); returns `{ room }` |
+| POST `/api/odyle/role` | `{ roomId, memberId, role }` | Owner makes another member `reporter` (player) or `viewer`; a member made viewer stops sharing characters in the room. Returns `{ membership }` |
+| POST `/api/odyle/transfer` | `{ roomId, memberId }` | Owner hands the room to another member, who becomes `owner`; the caller stays as `reporter`. Returns `{ room }` |
+| POST `/api/odyle/plan` | see [Planned runs](#planned-runs) | Plans, joins, leaves or cancels a run; returns `{ runs }` |
 
-Room codes are valid for 30 minutes; memberships and rooms have no automatic inactivity expiry. Sharing is per character: each membership lists the characters its owner linked to that room (`sharedCharacters` in `GET /api/odyle/rooms`). New characters start private everywhere. Room snapshots include only linked characters of other members; members always see all of their own characters, each with `shared: true|false`. Upgrading a backend keeps every character of a membership that shared everything shared. Viewer accounts can maintain private characters, but cannot share them in a viewer-only room. Display-name collisions are resolved by user/member IDs.
+Room codes are valid for 30 minutes; memberships and rooms have no automatic inactivity expiry (accounts can have one, see [Account and data](#account-and-data)). Dashboards share codes as invite links of the form `https://your-dashboard.example/#/join/<code>`; the code stays in the fragment, so no server receives it with the page request, and opening the link while signed in calls `join` with it. An account can own up to 20 rooms and be a member of up to 50; a room holds up to 50 members. Every change answered by the routes above sends the room's realtime refresh. Sharing is per character: each membership lists the characters its owner linked to that room (`sharedCharacters` in `GET /api/odyle/rooms`). New characters start private everywhere. Room snapshots include only linked characters of other members; members always see all of their own characters, each with `shared: true|false`. Upgrading a backend keeps every character of a membership that shared everything shared. Viewer accounts can maintain private characters, but cannot share them in a viewer-only room. Display-name collisions are resolved by user/member IDs.
 
 ### Dungeon wishlist
 
@@ -42,6 +46,28 @@ The snapshot's `wishlist` is grouped by dungeon, most wanted first, then oldest:
 ```
 
 `users` are account ids in the order they added the dungeon; clients take display names from `members`. Every change sends the room's realtime refresh. The `room_wishes` collection has no API rules; use the routes above.
+
+### Planned runs
+
+Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:
+
+| Body | Who | Effect |
+| --- | --- | --- |
+| `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room |
+| `{ roomId, id, going }` | owner, players | `true` joins the run, `false` leaves it |
+| `{ roomId, id, remove: true }` | planner, owner | Cancels the run |
+
+The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run):
+
+```json
+[{ "id": "run-id", "dungeon": "Fire Temple", "startsAt": "2026-10-14 19:00:00.000Z", "note": "Bring potions", "planner": "user-id-1", "attendees": ["user-id-1", "user-id-2"] }]
+```
+
+Viewers read runs but cannot plan or join them. The `room_runs` collection has no API rules.
+
+### Dungeon catalog
+
+Superusers can keep a list of dungeon names in `odyle_settings.dungeons` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). While it is empty, wishlist entries and runs take any name. Once it lists dungeons, a new wishlist entry or run must match one of them (regardless of case and spacing) and takes the catalog's spelling; existing wishlist entries can still be joined and left. Snapshots report the list as `dungeons` for suggestions.
 
 ## Daily and weekly tasks
 
@@ -66,13 +92,23 @@ A task of another account answers 403 and an unknown id 404. Tasks send no realt
 
 Own characters can be read with the normal PocketBase `characters` collection API. Others' records and all direct character writes are locked. Shared readings are read via authorized room snapshots; the Windows app reads `GET /api/odyle/snapshot/{id}` for each room to list the party.
 
+### Odyle history
+
+Every reading that changes a character's value (the first one included) is also stored in `character_readings` for 30 days. `GET /api/odyle/history/{characterId}` returns the newest 500 changes of those 30 days, oldest first, to the character's owner and to members of rooms it is shared in (others get 403, unknown ids 404):
+
+```json
+{ "character": { "id": "character-id", "characterName": "Lumina", "value": 140, "confirmed": true }, "readings": [{ "value": 100, "at": "2026-10-13 18:00:00.000Z" }, { "value": 140, "at": "2026-10-14 09:12:00.000Z" }], "serverNow": "2026-10-14T12:00:00.000Z" }
+```
+
+The `character_readings` collection has no API rules.
+
 ### Character pictures
 
 Each character record carries `portrait`, a file name or empty. Clients load the image from `/api/files/characters/{id}/{portrait}` (the SDK's `pb.files.getURL(record, record.portrait)`); room snapshots include both fields for shared characters only, so other members never receive the link of a private character.
 
 `portrait` is always the character's **official AION 2 portrait**; players cannot set, upload or replace it, and no route writes it. A backend cron job looks up new characters within a minute through PLAYNC's public Global character search (`api-search.plaync.com/aion2global/search/v2/character`, by name, server id and region) and downloads the `profileImageUrl` it lists from `profileimg.plaync.com`. It retries characters without a portrait hourly and refreshes the others daily, rewriting the file only when the image changed. The search server id is rebuilt from the saved server name and region (the game protocol's race × 1000 + region × 100 + server number); NA East and West are both tried. Characters the search does not list, such as ones on servers the reader cannot name, keep their initials; a failed lookup keeps the last downloaded portrait.
 
-`POST /api/odyle/character` accepts only `{ characterName, server, region }` and returns `{ character }` for the signed-in account. It saves identity before any reading, with unknown Odyle (`confirmed: false`, `valid: false`, no reading timestamp or source). Repeating the same identity returns the existing record without changing its last value or confidence. Ownership always comes from authentication; extra fields such as `value`, `user`, `source`, `confirmed` and `characterId` are rejected. The Windows app uses this endpoint for automatic game identification and the explicit **Save character** fallback.
+`POST /api/odyle/character` accepts only `{ characterName, server, region }` and returns `{ character }` for the signed-in account. An account keeps up to 30 characters; saving or reporting a new one beyond that answers 400. It saves identity before any reading, with unknown Odyle (`confirmed: false`, `valid: false`, no reading timestamp or source). Repeating the same identity returns the existing record without changing its last value or confidence. Ownership always comes from authentication; extra fields such as `value`, `user`, `source`, `confirmed` and `characterId` are rejected. The Windows app uses this endpoint for automatic game identification and the explicit **Save character** fallback.
 
 `POST /api/odyle/session` with `{}` returns `{ sessionId, sequence: 0 }`. Optional `{ previousSessionId }` rotates that device's session and invalidates its last readings without clearing stored values or other devices' sessions.
 
@@ -99,6 +135,19 @@ Returns `{ character, serverNow }`. Existing `characterId` must belong to the au
 
 `POST /api/odyle/invalidate` with `{ characterId, sessionId }` marks the latest reading invalid for current readiness if it belongs to that session. It **retains** value, identity and observation timestamp. Confirmed historical values are distinct from current confidence (`valid`). A valid reading is live while presence is newer than 45 seconds, however old the value is; 45 seconds without presence or an invalidated reading is stale, and 90 seconds without presence means offline.
 
+## Account and data
+
+| Method / route | Body | Result |
+| --- | --- | --- |
+| GET `/api/odyle/account` | — | `{ account, characters, limits, apps, serverNow }`: `account` has `id`, `displayName`, `email`, `created`, `lastActiveAt`; `characters` is the number saved; `limits` is `{ characters: 30, ownedRooms: 20, memberships: 50 }`; `apps` lists the open reader sessions (`sessionId`, `connectedAt`, `lastContactAt`, `character`), most recent contact first |
+| POST `/api/odyle/profile` | `{ displayName }` | Sets the display name rooms show (1–40 characters, inner whitespace collapsed); returns `{ record }` |
+| GET `/api/odyle/export` | — | Everything stored for the account as one JSON document: account and sign-in identities, characters with their history, memberships with shared characters, wishlist entries and runs, tasks and reader sessions |
+| POST `/api/odyle/delete-character` | `{ characterId }` | Deletes one of the account's characters with its history and portrait; rooms stop listing it. Another account's character answers 403, an unknown one 404 |
+| POST `/api/odyle/sign-out-everywhere` | `{}` | Rotates the account's token key, so every token (other browsers, paired Windows apps) stops working, ends its reader sessions and pairing codes; returns `{ token, record }` for the calling browser |
+| POST `/api/odyle/delete-account` | `{ confirm: true }` | Deletes the account with its characters, history, memberships, wishlist entries and tasks |
+
+Whenever an account is deleted (by this route, in the PocketBase dashboard or for inactivity), each room it owns passes to its longest-standing player (`reporter`), or closes when it has none. `lastActiveAt` records the last use of any authenticated Odyle route (written at most hourly); when superusers set `inactiveAccountDays` (0 keeps accounts; at least 30), a nightly job deletes accounts unused for that many days.
+
 ## Windows app release
 
 `GET /api/odyle/windows-release` is public and returns the newest release of the Windows companion as the backend last read it from GitHub:
@@ -117,7 +166,7 @@ The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_ho
 | --- | --- | --- |
 | GET `/api/odyle/admin/monitor` | — | `{ serverNow, apps, packets }` |
 | GET `/api/odyle/admin/settings` | — | `{ settings, defaults }` |
-| POST `/api/odyle/admin/settings` | `{ odylePerCube?, dailyResetHour?, weeklyResetDay? }` | Validates and saves the given values, keeps the others; `{ settings, defaults }` |
+| POST `/api/odyle/admin/settings` | `{ odylePerCube?, dailyResetHour?, weeklyResetDay?, inactiveAccountDays?, dungeons? }` | Validates and saves the given values, keeps the others; `{ settings, defaults }` |
 | GET `/api/odyle/admin/ui` | — | Public `{ version }`: content hash of the extension page, see below |
 
 `apps` has one entry per open reader session, most recent contact first. A running Windows app keeps one session and touches it with every heartbeat and reading, so `lastContactAt` is its last contact (the page shows 45 seconds without contact as late and 90 as offline). `character` is the character that session read last, or `null`; a character moves to whichever session read it most recently.
@@ -134,10 +183,10 @@ The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_ho
 
 Superusers subscribe to the realtime topic `odyle.admin.packets` to receive each packet as `{ packet }` the moment it is handled; other clients are refused at subscription and before every delivery.
 
-Settings: `odylePerCube` is an integer 1–1000, `dailyResetHour` 0–23 (UTC) and `weeklyResetDay` `sunday`…`saturday`. Saving creates the `odyle_settings` record if it was deleted. Rooms, room snapshots and the checklist report the new values on their next request.
+Settings: `odylePerCube` is an integer 1–1000, `dailyResetHour` 0–23 (UTC), `weeklyResetDay` `sunday`…`saturday`, `inactiveAccountDays` 0 (keep accounts) or 30–3650, and `dungeons` a list of up to 200 dungeon names (1–60 characters; duplicates by case and spacing keep the first spelling). Saving creates the `odyle_settings` record if it was deleted. Rooms, room snapshots and the checklist report the new values on their next request.
 
 PocketBase serves extension files with a 14-day browser cache. The extension's entry (`main.js`) therefore stays unchanged and imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload.
 
 ## Realtime
 
-Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Superusers can also subscribe to `odyle.admin.packets` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). Room events contain only `{ refresh: true }` and follow room, membership, sharing, wishlist, reading, session and portrait changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.
+Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Superusers can also subscribe to `odyle.admin.packets` (see [Superuser monitor and settings](#superuser-monitor-and-settings)). Room events contain only `{ refresh: true }` and follow room, membership, role, sharing, wishlist, run, reading, session, portrait, display-name and character changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.

@@ -1,0 +1,39 @@
+name: Windows companion checks
+# Runs the Windows app's compiled API client and its native UI flow (odyle-windows,
+# tests/Odyle.Core.Checks and tests/Odyle.Reader.Checks) against this backend in the
+# integration tests: weekly, on demand and when the backend changes on main, so a
+# backend change that breaks the companion shows up here.
+on:
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['backend/**', 'tests/integration.test.mjs', '.github/workflows/windows-companion.yml']
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: oldbear24/odyle-windows
+          path: odyle-windows
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - run: npm ci
+      - run: npm run backend:install
+      # Built ahead: the integration tests give each check a minute to run.
+      - run: dotnet build odyle-windows/tests/Odyle.Core.Checks -c Release
+      - run: dotnet build odyle-windows/tests/Odyle.Reader.Checks -c Release
+      - run: npm run test:integration
+        env:
+          ODYLE_WINDOWS_CHECKS: odyle-windows/tests/Odyle.Core.Checks
+          ODYLE_WINDOWS_UI_CHECKS: odyle-windows/tests/Odyle.Reader.Checks

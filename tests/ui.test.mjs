@@ -27,7 +27,7 @@ before(async () => {
   await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true });
   await writeFile(join(directory, 'hooks', 'lib', 'protocols.cjs'), "module.exports = { verifiedAdapters: ['test-fixture-v1'] };");
   // Test-only account issuance; production has no password or test sign-in.
-  await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; const user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);return e.json(200,{token:user.newAuthToken(),record:user});});`);
+  await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; const user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);return e.json(200,{token:user.newAuthToken(),record:user});}); routerAdd('POST','/__test__/superuser',(e)=>{const su=new Record(e.app.findCollectionByNameOrId('_superusers'));su.setEmail('operator@test.invalid');su.setPassword(e.requestInfo().body.password);e.app.save(su);return e.json(200,{token:su.newAuthToken()});});`);
   child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--publicDir=' + resolve('dist'), '--automigrate=false'], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases' } });
   for (let i = 0; i < 50 && !(await fetch(url + '/api/health').then(r => r.ok, () => false)); i++) await delay(100);
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
@@ -206,4 +206,24 @@ test('an expired sign-in returns to the welcome page', async () => {
   const user = await account('Expiring');
   const { page, close } = await open({ ...user, token: user.token.slice(0, -4) + 'AAAA' }, '#/tasks');
   try { await page.locator('[data-action="discord"]').waitFor(); assert.equal(await page.evaluate(() => localStorage.getItem('odyle.account')), null); } finally { await close(); }
+});
+test('superusers keep the dungeon catalog and the inactive account period on the Odyle settings page', async () => {
+  const password = 'ui-test-' + Date.now() + '-Password', operator = (await request('/__test__/superuser', { password })).data;
+  const { page, errors, close } = await open(null, '_/#/login');
+  try {
+    await page.locator('#login_identity').fill('operator@test.invalid'); await page.locator('#login_pass').fill(password);
+    await page.locator('.auth-with-password-form button.next').click();
+    await page.locator('.page-header').first().waitFor();
+    await page.goto(url + '/_/#/odyle/settings');
+    await page.locator('#odyle-inactive').fill('365');
+    // Typed line by line, as a superuser would: Enter must not be swallowed by the list it saves.
+    await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple\n');
+    assert.match(await page.locator('#odyle-inactive').locator('xpath=../..').innerText(), /365 days/);
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByText('Saved the Odyle game settings.').waitFor();
+    await shot(page, 'admin-settings');
+    const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
+    assert.deepEqual([saved.dungeons, saved.inactiveAccountDays], [['Fire Temple', 'Udas Temple'], 365]);
+    assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0 }, operator); }
 });

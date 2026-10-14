@@ -22,10 +22,13 @@ jobs:
       - id: version
         run: echo "version=$(node -p "require('./package.json').version").$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - run: npm run backend:install
       - run: npm run test:integration
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
       # Same layout PocketBase expects next to its binary, ready to upload to PocketHost.
       - name: Package PocketBase bundle
         env:

@@ -5,6 +5,7 @@ COPY package*.json ./
 RUN npm ci
 COPY index.html vite.config.js ./
 COPY src ./src
+COPY public ./public
 ARG VITE_POCKETBASE_URL
 ENV VITE_POCKETBASE_URL=$VITE_POCKETBASE_URL
 RUN npm run build
@@ -28,4 +29,6 @@ COPY --chown=odyle:odyle backend/pb_migrations ./pb_migrations
 COPY --from=web --chown=odyle:odyle /src/dist ./pb_public
 USER odyle
 EXPOSE 8090
+# Docker and Compose report the container unhealthy when PocketBase stops answering.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD wget -qO /dev/null http://127.0.0.1:8090/api/health || exit 1
 ENTRYPOINT ["/pb/pocketbase", "serve", "--http=0.0.0.0:8090", "--automigrate=false"]

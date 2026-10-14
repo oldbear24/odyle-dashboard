@@ -138,6 +138,10 @@ test('first Discord OAuth sign-in creates an account; repeat sign-in retains its
   assert.equal(again.data.record.id, firstLogin.data.record.id);
   const saved = await request('/api/odyle/rooms', undefined, again.data, 'GET');
   assert.equal(saved.data.rooms[0].id, created.data.room.id);
+  // The data export names the Discord identity the account signs in with.
+  const exported = await request('/api/odyle/export', undefined, again.data, 'GET'); assert.equal(exported.status, 200, JSON.stringify(exported.data));
+  assert.deepEqual(exported.data.account.signIns.map(a => [a.provider, a.providerId]), [['discord', '100000000000000001']]);
+  assert.equal(exported.data.account.email, 'oauth@test.invalid');
   const invalid = await request('/api/collections/users/auth-with-oauth2', { ...credentials, code: 'invalid-code' });
   assert.equal(invalid.status, 400);
 });
@@ -390,7 +394,9 @@ test('accounts see their history, delete characters, export their data, sign out
   assert.equal((await action('delete-account', { confirm: true }, current)).status, 200);
   assert.equal((await request('/api/odyle/rooms', undefined, current, 'GET')).status, 401);
   const inherited = await snapshot2(roomId, heir);
-  assert.equal(inherited.room.owner, heir.record.id); assert.deepEqual(inherited.members.map(m => [m.user, m.role]), [[heir.record.id, 'owner'], [watcher.record.id, 'viewer']]);
+  assert.equal(inherited.room.owner, heir.record.id);
+  // Members come in id order, which is random.
+  assert.deepEqual(Object.fromEntries(inherited.members.map(m => [m.user, m.role])), { [heir.record.id]: 'owner', [watcher.record.id]: 'viewer' });
   assert.equal((await action('delete-account', { confirm: true }, loner)).status, 200);
   assert.equal((await request('/api/odyle/snapshot/' + lonely, undefined, watcher, 'GET')).status, 403);
   // Superusers can delete room owners in the PocketBase dashboard too; the room passes on the same way.
