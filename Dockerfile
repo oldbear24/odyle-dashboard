@@ -1,5 +1,5 @@
 # The static build is the same for every architecture, so it runs natively instead of under emulation.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src
 COPY package*.json ./
 RUN npm ci
