@@ -10,6 +10,7 @@ import { connect } from './sse.mjs';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18090';
 let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId;
+let releaseServer, releaseUrl, releaseHits = 0, releaseDown = false;
 // Synthetic official portraits served by the PLAYNC stand-in; bump the version to change one.
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 let portraitVersion = 1;
@@ -22,7 +23,7 @@ const action = (name, body, auth) => request('/api/odyle/' + name, body, auth);
 const snapshot = auth => request('/api/odyle/snapshot/' + room.id, undefined, auth, 'GET');
 async function stop() { if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('exit', resolve)); child.kill(); await closed; } }
 async function start() {
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl } });
   let log = ''; child.stdout.on('data', v => log += v); child.stderr.on('data', v => log += v);
   for (let i = 0; i < 50; i++) {
     try {
@@ -66,6 +67,16 @@ before(async () => {
   });
   await new Promise(resolve => playncServer.listen(0, '127.0.0.1', resolve));
   playncUrl = 'http://127.0.0.1:' + playncServer.address().port;
+  // Stands in for GitHub's "latest release" API of the Windows companion repository.
+  releaseServer = createServer((req, res) => {
+    releaseHits++;
+    if (releaseDown) { res.writeHead(503); return res.end('{}'); }
+    const asset = (name, size) => ({ name, size, browser_download_url: 'https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/' + name });
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ tag_name: 'v0.5.0.2', name: 'Odyle 0.5.0.2', html_url: 'https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2', published_at: '2026-10-13T22:34:09Z', draft: false, prerelease: false, assets: [asset('odyle-0.5.0.2-win-x64-self-contained.zip', 71595826), asset('odyle-0.5.0.2-win-x64-self-contained.zip.sha256', 108), asset('odyle-0.5.0.2-win-x64.zip', 217557), asset('odyle-0.5.0.2-win-x64.zip.sha256', 93)] }));
+  });
+  await new Promise(resolve => releaseServer.listen(0, '127.0.0.1', resolve));
+  releaseUrl = 'http://127.0.0.1:' + releaseServer.address().port + '/releases/latest';
   directory = await mkdtemp(join(tmpdir(), 'odyle-account-test-'));
   await cp(resolve('backend/pb_hooks'), join(directory, 'hooks'), { recursive: true });
   await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true, filter: path => !upgrades.some(name => path.endsWith(name)) });
@@ -94,7 +105,7 @@ before(async () => {
   for (const name of upgrades) await cp(resolve('backend/pb_migrations', name), join(directory, 'migrations', name));
   await start();
 });
-after(async () => { await stop(); for (const server of [oauthServer, playncServer]) if (server) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
+after(async () => { await stop(); for (const server of [oauthServer, playncServer, releaseServer]) if (server) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
 test('packet-only upgrade preserves legacy totals and removes current confidence', async () => {
   const legacy = await request('/api/collections/characters/records/' + legacyId, undefined, outsider, 'GET');
   assert.equal(legacy.status, 200); assert.equal(legacy.data.value, 123); assert.equal(legacy.data.confirmed, true); assert.equal(legacy.data.valid, false);
@@ -401,4 +412,27 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     assert.equal((await action('close', { roomId: room.id }, owner)).status, 200);
     assert.equal((await request('/api/collections/characters/records/' + second.id, undefined, player, 'GET')).data.value, 265);
   });
+});
+test('the dashboard offers the newest Windows release through the backend, cached and without sign-in', async () => {
+  const hits = releaseHits, latest = () => request('/api/odyle/windows-release', undefined, null, 'GET');
+  const first = await latest();
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  assert.equal(first.data.repository, 'oldbear24/odyle-windows');
+  assert.equal(first.data.releasesUrl, 'https://github.com/oldbear24/odyle-windows/releases/latest');
+  assert.equal(first.data.latest.version, '0.5.0.2'); assert.equal(first.data.latest.tag, 'v0.5.0.2');
+  assert.equal(first.data.latest.url, 'https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2');
+  assert.equal(first.data.latest.publishedAt, '2026-10-13T22:34:09Z');
+  assert.deepEqual(first.data.latest.packages.small, { name: 'odyle-0.5.0.2-win-x64.zip', size: 217557, url: 'https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64.zip' });
+  assert.equal(first.data.latest.packages.selfContained.size, 71595826);
+  // Browsers get the packages only; checksums are verified by the Windows app itself.
+  assert.equal(JSON.stringify(first.data).includes('.sha256'), false);
+  // One GitHub request serves every visitor for ten minutes.
+  const again = await latest(); assert.deepEqual(again.data, first.data); assert.equal(releaseHits, hits + 1);
+  // Without GitHub the stable latest-release page link is still offered.
+  releaseDown = true;
+  try {
+    await stop(); await start();
+    const offline = await latest(); assert.equal(offline.status, 200, JSON.stringify(offline.data));
+    assert.equal(offline.data.latest, null); assert.equal(offline.data.releasesUrl, 'https://github.com/oldbear24/odyle-windows/releases/latest');
+  } finally { releaseDown = false; }
 });

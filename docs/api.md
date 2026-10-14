@@ -99,6 +99,16 @@ Returns `{ character, serverNow }`. Existing `characterId` must belong to the au
 
 `POST /api/odyle/invalidate` with `{ characterId, sessionId }` marks the latest reading invalid for current readiness if it belongs to that session. It **retains** value, identity and observation timestamp. Confirmed historical values are distinct from current confidence (`valid`). A valid reading is live while presence is newer than 45 seconds, however old the value is; 45 seconds without presence or an invalidated reading is stale, and 90 seconds without presence means offline.
 
+## Windows app release
+
+`GET /api/odyle/windows-release` is public and returns the newest release of the Windows companion as the backend last read it from GitHub:
+
+```json
+{ "repository": "oldbear24/odyle-windows", "releasesUrl": "https://github.com/oldbear24/odyle-windows/releases/latest", "latest": { "version": "0.5.0.2", "tag": "v0.5.0.2", "url": "https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2", "publishedAt": "2026-10-13T22:34:09Z", "packages": { "small": { "name": "odyle-0.5.0.2-win-x64.zip", "size": 217557, "url": "https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64.zip" }, "selfContained": { "name": "odyle-0.5.0.2-win-x64-self-contained.zip", "size": 71595826, "url": "https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64-self-contained.zip" } } } }
+```
+
+The backend calls GitHub's `releases/latest` API at most every ten minutes and serves the cached answer, so browsers never contact GitHub and the unauthenticated API limit is never reached. Only versioned, published releases count; only `win-x64` packages with GitHub download links are listed, and checksum files are left out because the Windows app verifies its own downloads. When GitHub is unreachable the last known release is kept; without one, `latest` is `null` and clients link `releasesUrl`, GitHub's stable latest-release page. The dashboard shows the link on **My rooms & characters** and both packages in the **Pair Windows app** dialog. `ODYLE_WINDOWS_REPOSITORY` points the lookup at a fork; `ODYLE_WINDOWS_RELEASE_URL` replaces the feed URL for tests.
+
 ## Realtime
 
 Subscribe through the PocketBase SDK to `odyle.room.<roomId>`. The server checks room membership at subscription and before each delivery. Events contain only `{ refresh: true }` and follow room, membership, sharing, wishlist, reading, session and portrait changes, never heartbeats; fetch the authorized snapshot afterward and on reconnect. Removed members cannot fetch the snapshot or receive further notifications. User and provider tokens are never broadcast.

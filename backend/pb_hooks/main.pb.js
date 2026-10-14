@@ -8,6 +8,8 @@ routerAdd('POST', '/api/odyle/pair', e => require(__hooks + '/lib/accounts.cjs')
 routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs').rooms(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/accounts.cjs').tasks(e), $apis.requireAuth('users'));
 routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));
+// Public: the newest Windows companion release, cached from GitHub (no account data involved).
+routerAdd('GET', '/api/odyle/windows-release', e => require(__hooks + '/lib/releases.cjs').windowsRelease(e));
 onRealtimeSubscribeRequest(e => {
   for (const topic of e.subscriptions) if (topic.startsWith('odyle.room.')) {
     if (!e.auth || e.auth.collection().name !== 'users') throw new ForbiddenError();
