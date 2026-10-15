@@ -8,7 +8,12 @@ The simplest deployment serves both UI and API from one backend instance: Pocket
 docker compose up --build -d
 ```
 
-Open `http://127.0.0.1:8090` for a local installation. The image builds the backend from source with Go, runs as a non-root user, stores the database in a named volume and reports its health from `/api/health` (`docker compose ps` shows `healthy`).
+Open `http://127.0.0.1:8090` for a local installation. The image builds the backend from source with Go, with the dashboard built in, and runs it on distroless (`gcr.io/distroless/static-debian13`: the server, CA certificates and time zones, no shell or package manager) as the non-root user 10001, the user of the earlier Alpine image, so existing data volumes keep working. It stores the database in a named volume and reports its health with `odyle healthcheck`, which asks the running server for `/api/health` (`docker compose ps` shows `healthy`). Run server commands through the binary, for example `docker compose exec odyle /pb/odyle superuser upsert you@example.com <password>`. When the Compose command moves the server to another port, point the check there too:
+
+```yaml
+healthcheck:
+  test: ["CMD", "/pb/odyle", "healthcheck", "--url=http://127.0.0.1:9000/api/health"]
+```
 
 For internet access, put an HTTPS reverse proxy in front of port 8090 and change the Compose command to:
 

@@ -4,7 +4,8 @@
 //	odyle serve --http=127.0.0.1:8090 --dir=pb_data
 //
 // --publicDir=dist serves a dashboard folder instead, for example while developing; a
-// build without the dashboard serves pb_public next to the executable.
+// build without the dashboard serves pb_public next to the executable. odyle healthcheck
+// asks a running server whether it is healthy.
 package main
 
 import (
@@ -38,6 +39,7 @@ func main() {
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{TemplateLang: migratecmd.TemplateLangGo, Automigrate: false})
 
 	odyle.Register(app)
+	app.RootCmd.AddCommand(healthcheck())
 
 	// The dashboard (if the route path is not already defined).
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
@@ -53,6 +55,14 @@ func main() {
 		},
 		Priority: 999, // execute as late as possible
 	})
+
+	// The health check runs on its own: app.Start would open the data first.
+	if cmd, _, err := app.RootCmd.Find(os.Args[1:]); err == nil && cmd.Name() == "healthcheck" {
+		if err := app.RootCmd.Execute(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
