@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm, cp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -16,7 +16,10 @@ let discordServer, discordUrl, discordPosts = [], discordAnswer = 204;
 // Synthetic official portraits served by the PLAYNC stand-in; bump the version to change one.
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 let portraitVersion = 1;
+// The first start leaves these migrations out, so the legacy data the upgrade tests
+// check is written to an older database; every later start applies them.
 const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js'];
+let upgraded = false;
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   return { status: res.status, data: await res.json() };
@@ -26,17 +29,19 @@ const snapshot = auth => request('/api/odyle/snapshot/' + room.id, undefined, au
 async function snapshot2(id, auth) { const res = await request('/api/odyle/snapshot/' + id, undefined, auth, 'GET'); assert.equal(res.status, 200, JSON.stringify(res.data)); return res.data; }
 async function stop() { if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('exit', resolve)); child.kill(); await closed; } }
 async function start() {
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--automigrate=false'], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl, ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
+  // The test build of the backend (npm run backend:build): it approves only the synthetic
+  // test-fixture-v1 adapter and adds the /__test__ routes (backend/odyle/testing.go).
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data')], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl, ODYLE_DISCORD_WEBHOOK_BASE: discordUrl, ODYLE_TEST_SKIP_MIGRATIONS: upgraded ? '' : upgrades.join(',') } });
   let log = ''; child.stdout.on('data', v => log += v); child.stderr.on('data', v => log += v);
   for (let i = 0; i < 50; i++) {
     try {
       if ((await fetch(url + '/api/health')).ok) {
-        const configured = await request('/__test__/oauth-provider', {});
+        const configured = await request('/__test__/oauth-provider', { url: oauthUrl });
         assert.equal(configured.status, 200, JSON.stringify(configured.data)); return;
       }
     } catch {} await delay(100);
   }
-  throw new Error('PocketBase failed to start: ' + log.replace(/http[^\s]*pbinstall[^\s]*/g, '[redacted]'));
+  throw new Error('The backend failed to start (build it with npm run backend:build): ' + log.replace(/http[^\s]*pbinstall[^\s]*/g, '[redacted]'));
 }
 before(async () => {
   // Mock only Discord's remote responses; PocketBase still performs its real
@@ -87,38 +92,16 @@ before(async () => {
   await new Promise(resolve => discordServer.listen(0, '127.0.0.1', resolve));
   discordUrl = 'http://127.0.0.1:' + discordServer.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-account-test-'));
-  await cp(resolve('backend/pb_hooks'), join(directory, 'hooks'), { recursive: true });
-  await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true, filter: path => !upgrades.some(name => path.endsWith(name)) });
-  // Only this disposable test backend approves the synthetic fixture adapter.
-  await writeFile(join(directory, 'hooks', 'lib', 'protocols.cjs'), "module.exports = { verifiedAdapters: ['test-fixture-v1'] };");
-  // Synthetic account issuance exists only in the temporary test hooks. There
-  // is no password login, test auth route or Discord bypass in production.
-  await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; let user; try{user=e.app.findFirstRecordByData('users','displayName',name);}catch{user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);}return e.json(200,{token:user.newAuthToken(),record:user});});`);
-  await writeFile(join(directory, 'hooks', 'oauth-fixture.pb.js'), `routerAdd('POST','/__test__/oauth-provider',e => { const users=e.app.findCollectionByNameOrId('users'); users.oauth2={enabled:true,providers:[{name:'discord',clientId:'test-application',clientSecret:'test-only-secret',tokenURL:'${oauthUrl}/token',userInfoURL:'${oauthUrl}/user'}]};e.app.save(users); return e.json(200,{success:true}); });`);
-  // Runs the portrait cron job now; age-portrait makes a character's daily refresh due.
-  await writeFile(join(directory, 'hooks', 'portraits-fixture.pb.js'), `routerAdd('POST','/__test__/refresh-portraits', e => { require(__hooks + '/lib/accounts.cjs').refreshPortraits(); return e.json(200, {}); }); routerAdd('POST','/__test__/age-portrait', e => { const c=e.app.findRecordById('characters', e.requestInfo().body.id); c.set('portraitCheckedAt', new Date(Date.now() - 2 * 86400000).toISOString()); e.app.save(c); return e.json(200, {}); });`);
-  // Runs the odyle-expiry cron job on demand and reports which of the given invite codes it kept.
-  await writeFile(join(directory, 'hooks', 'expiry-fixture.pb.js'), `routerAdd('POST','/__test__/expire-invite', e => { const r=e.app.findFirstRecordByData('room_invites','digest',$security.sha256(e.requestInfo().body.code)); r.set('expiresAt',new Date(Date.now()-60000).toISOString()); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/cleanup', e => { require(__hooks + '/lib/accounts.cjs').cleanup(); const codes=e.requestInfo().body.codes, kept=[]; for (let i=0;i<codes.length;i++) { try { e.app.findFirstRecordByData('room_invites','digest',$security.sha256(codes[i])); kept.push(codes[i]); } catch {} } return e.json(200,{kept}); });`);
-  // Stands in for a superuser editing odyle_settings in the PocketBase dashboard.
-  await writeFile(join(directory, 'hooks', 'devices-fixture.pb.js'), `routerAdd('POST','/__test__/devices', e => { const keys=e.requestInfo().body.keys, kept=[]; for (let i=0;i<keys.length;i++) { try { e.app.findFirstRecordByData('desktop_devices','digest',$security.sha256(keys[i])); kept.push(true); } catch { kept.push(false); } } return e.json(200,{kept}); });`);
-  await writeFile(join(directory, 'hooks', 'settings-fixture.pb.js'), `routerAdd('POST','/__test__/odyle-per-cube', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'); r.set('odylePerCube',e.requestInfo().body.value); e.app.save(r); return e.json(200,{}); }); routerAdd('POST','/__test__/reset-times', e => { const r=e.app.findFirstRecordByFilter('odyle_settings','id != ""'), b=e.requestInfo().body; r.set('dailyResetHour',b.hour); r.set('weeklyResetDay',b.day); e.app.save(r); return e.json(200,{}); });`);
-  // Stands in for an operator signed in to the PocketBase dashboard.
-  await writeFile(join(directory, 'hooks', 'superuser-fixture.pb.js'), `routerAdd('POST','/__test__/superuser', e => { let su; try { su=e.app.findAuthRecordByEmail('_superusers','operator@test.invalid'); } catch { su=new Record(e.app.findCollectionByNameOrId('_superusers')); su.setEmail('operator@test.invalid'); su.setPassword($security.randomString(48)); e.app.save(su); } return e.json(200,{token:su.newAuthToken()}); });`);
-  // Joins are rate limited to 30 a minute and other tests use that budget; this adds a membership directly.
-  await writeFile(join(directory, 'hooks', 'member-fixture.pb.js'), `routerAdd('POST','/__test__/member', e => { const b=e.requestInfo().body, m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',b.room); m.set('user',b.user); m.set('role',b.role); m.set('sharedCharacters',[]); e.app.save(m); return e.json(200,m); });`);
-  await writeFile(join(directory, 'hooks', 'legacy-fixture.pb.js'), `routerAdd('POST','/__test__/legacy', e => { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',e.requestInfo().body.user); c.set('characterName','Legacy'); c.set('server','EU'); c.set('region','GLOBAL_EU'); c.set('value',123); c.set('confirmed',true); c.set('valid',true); c.set('source','manual'); c.set('lastReadingAt','2026-10-12 12:00:00.000Z'); e.app.save(c); return e.json(200,c); }); routerAdd('POST','/__test__/legacy-room', e => { const user=e.requestInfo().body.user; const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',user); r.set('name','Legacy room'); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',user); m.set('role','owner'); m.set('sharing',true); e.app.save(m); return e.json(200,r); });`);
-  // Caps and retention: bulk records and an aged account, written directly so the tests keep their rate-limit budget.
-  await writeFile(join(directory, 'hooks', 'bulk-fixture.pb.js'), `routerAdd('POST','/__test__/characters', e => { const b=e.requestInfo().body; for (let i=0;i<b.count;i++) { const c=new Record(e.app.findCollectionByNameOrId('characters')); c.set('user',b.user); c.set('characterName','Bulk'+i); c.set('server','Lumiel'); c.set('region','GLOBAL_EU'); e.app.save(c); } return e.json(200,{}); }); routerAdd('POST','/__test__/rooms', e => { const b=e.requestInfo().body; for (let i=0;i<b.count;i++) { const r=new Record(e.app.findCollectionByNameOrId('party_rooms')); r.set('owner',b.user); r.set('name','Bulk '+i); r.set('cost',40); e.app.save(r); const m=new Record(e.app.findCollectionByNameOrId('room_members')); m.set('room',r.id); m.set('user',b.user); m.set('role',b.role||'owner'); e.app.save(m); if (b.role) { r.set('owner',b.other); e.app.save(r); } } return e.json(200,{}); }); routerAdd('POST','/__test__/inactive', e => { const b=e.requestInfo().body, u=e.app.findRecordById('users',b.user); u.set('lastActiveAt',new Date(Date.now()-b.days*86400000).toISOString()); e.app.save(u); return e.json(200,{}); }); routerAdd('POST','/__test__/retention', e => { require(__hooks + '/lib/accounts.cjs').retention(); return e.json(200,{}); });`);
-  // Runs the reminder cron now; ages a reading and a run so the clean-up has something to remove.
-  await writeFile(join(directory, 'hooks', 'reminders-fixture.pb.js'), `routerAdd('POST','/__test__/remind', e => { require(__hooks + '/lib/accounts.cjs').remindRuns(); return e.json(200, {}); }); routerAdd('POST','/__test__/age', e => { const b=e.requestInfo().body; e.app.db().newQuery('UPDATE ' + (b.collection === 'room_runs' ? 'room_runs SET startsAt' : 'character_readings SET created') + ' = {:at} WHERE id = {:id}').bind({ at: new Date(Date.now() - b.days * 86400000).toISOString().replace('T', ' '), id: b.id }).execute(); return e.json(200, {}); }); routerAdd('POST','/__test__/readings', e => e.json(200, e.app.findRecordsByFilter('character_readings', 'character = {:id}', 'created', 0, 0, { id: e.requestInfo().body.id }).map(r => r.id)));`);
+  // Synthetic accounts, the jobs run on demand and records written directly come from the
+  // test build's /__test__ routes. There is no password login, test auth route or
+  // Discord bypass in production.
   await start();
   const users = await Promise.all(['Owner', 'Player', 'Viewer', 'Outsider'].map(name => request('/__test__/account', { name })));
   for (const result of users) assert.equal(result.status, 200, JSON.stringify(result.data));
   [owner, player, viewer, outsider] = users.map(r => r.data);
   const legacy = await request('/__test__/legacy', { user: outsider.record.id }); assert.equal(legacy.status, 200); legacyId = legacy.data.id;
   const legacyRoom = await request('/__test__/legacy-room', { user: outsider.record.id }); assert.equal(legacyRoom.status, 200, JSON.stringify(legacyRoom.data)); legacyRoomId = legacyRoom.data.id;
-  await stop();
-  for (const name of upgrades) await cp(resolve('backend/pb_migrations', name), join(directory, 'migrations', name));
+  await stop(); upgraded = true;
   await start();
 });
 after(async () => { await stop(); for (const server of [oauthServer, playncServer, releaseServer, discordServer]) if (server) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });

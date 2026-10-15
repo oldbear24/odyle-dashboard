@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { task } = require('../backend/pb_hooks/lib/validation.cjs');
-// The browser module decides when a checked task resets; the server only stores doneAt.
+// The browser module decides when a checked task resets; the server only stores doneAt
+// (its check of task titles and cadences is a Go test, backend/odyle).
 const tasks = () => import('../src/tasks.js');
 const at = iso => Date.parse(iso);
 test('daily and weekly periods follow the Global reset hour and weekday', async () => {
@@ -37,9 +37,4 @@ test('a task stays done until the reset after it was checked', async () => {
   assert.equal(remaining(5 * 3600000 + 12 * 60000), '5h 12m'); assert.equal(remaining(2 * 86400000 + 3 * 3600000), '2d 3h');
   assert.equal(dayName(), 'Wednesday'); assert.equal(dayName({ weeklyResetDay: 'monday' }), 'Monday'); assert.equal(dayName({ weeklyResetDay: 'funday' }), 'Wednesday');
   assert.equal(resetHour({ dailyResetHour: 0 }), 0); assert.equal(resetHour({ dailyResetHour: 24 }), 7); assert.equal(resetHour(undefined), 7);
-});
-test('tasks are short free text with a daily or weekly cadence', () => {
-  assert.deepEqual(task({ title: '  Lugbug   daily ', cadence: 'daily' }), { title: 'Lugbug daily', cadence: 'daily' });
-  assert.equal(task({ title: 'Weekly boss', cadence: 'weekly' }).cadence, 'weekly');
-  for (const bad of [{ title: '', cadence: 'daily' }, { title: 'x'.repeat(61), cadence: 'weekly' }, { title: 'Run', cadence: 'monthly' }, { title: 'Run' }, { title: 42, cadence: 'daily' }]) assert.throws(() => task(bad));
 });

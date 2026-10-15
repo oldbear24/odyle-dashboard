@@ -1,4 +1,5 @@
-# Keeps the pinned GitHub Actions, npm packages and the PocketBase base image current.
+# Keeps the pinned GitHub Actions, npm packages, the backend's Go modules (PocketBase
+# among them) and the Docker base images current.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,5 +12,9 @@ updates:
       interval: weekly
   - package-ecosystem: docker
     directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /backend
     schedule:
       interval: weekly

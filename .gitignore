@@ -4,5 +4,4 @@ dist/
 .env.backend
 .runtime/
 backend/pb_data/
-backend/pb_hooks/types.d.ts
 *.log

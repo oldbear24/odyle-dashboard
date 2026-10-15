@@ -28,8 +28,12 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
       - run: npm ci
-      - run: npm run backend:install
+      - run: npm run backend:build
       # Built ahead: the integration tests give each check a minute to run.
       - run: dotnet build odyle-windows/tests/Odyle.Core.Checks -c Release
       - run: dotnet build odyle-windows/tests/Odyle.Reader.Checks -c Release
