@@ -67,7 +67,10 @@ cronAdd('odyle-retention', '17 3 * * *', () => require(__hooks + '/lib/jobs.cjs'
 // inline scripts, and JSON needs none of these headers.
 routerUse(e => {
   const path = e.request.url.path;
-  if (!path.startsWith('/api/') && !path.startsWith('/_/')) {
+  // PocketBase lets browsers keep the superuser dashboard's extension entry (admin/main.js)
+  // for 14 days unless a header is already set, so a changed entry would miss them that long.
+  if (path === '/_/extensions.js') e.response.header().set('Cache-Control', 'no-cache');
+  else if (!path.startsWith('/api/') && !path.startsWith('/_/')) {
     const headers = e.response.header();
     headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'");
     headers.set('X-Frame-Options', 'DENY'); headers.set('X-Content-Type-Options', 'nosniff'); headers.set('Referrer-Policy', 'no-referrer');

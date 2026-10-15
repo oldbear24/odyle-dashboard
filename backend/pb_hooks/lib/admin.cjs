@@ -131,8 +131,9 @@ function saveSettings(e) {
   let saved; try { saved = settings.write(e.app, e.requestInfo().body || {}); } catch (error) { throw new BadRequestError(error.message || 'Settings could not be saved.'); }
   return e.json(200, settingsJson(e.app, saved));
 }
-// PocketBase serves extension files with a 14-day browser cache, so main.js imports
-// the page under this content hash and a deploy reaches open dashboards at once.
+// PocketBase serves extension files with a 14-day browser cache, so main.js (fetched on
+// every load, see main.pb.js) imports the page under this content hash and a deploy
+// reaches open dashboards at once.
 function ui(e) {
   const version = e.app.store().getOrSet('odyle.adminUi', () => $security.sha256(['odyle.js', 'odyle.css'].map(name => toString($os.readFile(__hooks + '/admin/' + name))).join('\n')).slice(0, 16));
   return e.json(200, { version });
