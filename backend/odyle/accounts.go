@@ -1427,20 +1427,18 @@ func forgetDevice(e *core.RequestEvent) error {
 // cleanup is the expiry job: expired invites, pairing codes and reader sessions,
 // history older than 30 days and planned runs a day after they started.
 func cleanup(app core.App) (result, error) {
-	at, done := stamp(time.Now()), 0
-	for _, name := range []string{"room_invites", "desktop_codes"} {
-		expired, err := list(app, name, "expiresAt <= {:now}", dbx.Params{"now": at})
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range expired {
-			if err := app.Delete(item); err != nil {
-				return nil, err
-			}
-			done++
-		}
+	at := time.Now()
+	done, err := purge(app, "room_invites", "expiresAt <= {:cutoff}", stamp(at))
+	if err != nil {
+		return nil, err
 	}
-	sessions, err := list(app, "publisher_sessions", "expiresAt <= {:now}", dbx.Params{"now": at})
+	codes, err := purge(app, "desktop_codes", "expiresAt <= {:cutoff}", stamp(at))
+	if err != nil {
+		return nil, err
+	}
+	done += codes
+	// Sessions end one by one: the characters they read turn stale.
+	sessions, err := list(app, "publisher_sessions", "expiresAt <= {:now}", dbx.Params{"now": stamp(at)})
 	if err != nil {
 		return nil, err
 	}
@@ -1451,25 +1449,43 @@ func cleanup(app core.App) (result, error) {
 		done++
 	}
 	// Odyle history covers 30 days; planned runs go a day after they started.
-	for _, old := range []struct {
-		collection, filter string
-		params             dbx.Params
-	}{
-		{"character_readings", "created < {:month}", dbx.Params{"month": ago(30 * 24 * time.Hour)}},
-		{"room_runs", "startsAt < {:day}", dbx.Params{"day": ago(24 * time.Hour)}},
-	} {
-		items, err := list(app, old.collection, old.filter, old.params)
+	history, err := purge(app, "character_readings", "created < {:cutoff}", stamp(at.Add(-30*24*time.Hour)))
+	if err != nil {
+		return nil, err
+	}
+	runs, err := purge(app, "room_runs", "startsAt < {:cutoff}", stamp(at.Add(-24*time.Hour)))
+	if err != nil {
+		return nil, err
+	}
+	return result{"done": done + history + runs}, nil
+}
+
+// Rows purge deletes per statement, and statements per run: a backlog (after a long
+// stop, say) goes over a few runs instead of holding the database in one long write.
+var purgeBatch, purgeBatches = 1000, 50
+
+// purge deletes the rows of a collection that match the condition (compared with
+// {:cutoff}) without loading them. It is only for the expiry job's invites, pairing
+// codes, history and runs: nothing refers to them and they have no files or hooks, so
+// deleting each record would add queries and change nothing else.
+func purge(app core.App, collection, condition, cutoff string) (int, error) {
+	query := "DELETE FROM {{" + collection + "}} WHERE [[id]] IN (SELECT [[id]] FROM {{" + collection + "}} WHERE " + condition + " LIMIT {:limit})"
+	total := 0
+	for range purgeBatches {
+		res, err := app.DB().NewQuery(query).Bind(dbx.Params{"cutoff": cutoff, "limit": purgeBatch}).Execute()
 		if err != nil {
-			return nil, err
+			return total, err
 		}
-		for _, item := range items {
-			if err := app.Delete(item); err != nil {
-				return nil, err
-			}
-			done++
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, err
+		}
+		total += int(n)
+		if n < int64(purgeBatch) {
+			break
 		}
 	}
-	return result{"done": done}, nil
+	return total, nil
 }
 
 // configureDiscord enables Discord sign-in from DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET.

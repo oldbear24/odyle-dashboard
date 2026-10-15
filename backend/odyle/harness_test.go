@@ -41,3 +41,29 @@ func newUser(t testing.TB, app core.App, name string) *core.Record {
 	}
 	return user
 }
+
+// saved saves a record of the collection with the given values.
+func saved(t testing.TB, app core.App, collection string, values map[string]any) *core.Record {
+	t.Helper()
+	record, err := newRecord(app, collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range values {
+		record.Set(k, v)
+	}
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// countOf is how many records of the collection there are.
+func countOf(t testing.TB, app core.App, collection string) int64 {
+	t.Helper()
+	n, err := app.CountRecords(collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
