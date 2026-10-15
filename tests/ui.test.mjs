@@ -31,7 +31,7 @@ before(async () => {
   await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true });
   await writeFile(join(directory, 'hooks', 'lib', 'protocols.cjs'), "module.exports = { verifiedAdapters: ['test-fixture-v1'] };");
   // Test-only account issuance; production has no password or test sign-in.
-  await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; const user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);return e.json(200,{token:user.newAuthToken(),record:user});}); routerAdd('POST','/__test__/superuser',(e)=>{const su=new Record(e.app.findCollectionByNameOrId('_superusers'));su.setEmail('operator@test.invalid');su.setPassword(e.requestInfo().body.password);e.app.save(su);return e.json(200,{token:su.newAuthToken()});});`);
+  await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; const user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);return e.json(200,{token:user.newAuthToken(),record:user});}); routerAdd('POST','/__test__/superuser',(e)=>{let su;try{su=e.app.findAuthRecordByEmail('_superusers','operator@test.invalid');}catch{su=new Record(e.app.findCollectionByNameOrId('_superusers'));su.setEmail('operator@test.invalid');}su.setPassword(e.requestInfo().body.password);e.app.save(su);return e.json(200,{token:su.newAuthToken()});});`);
   child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--publicDir=' + resolve('dist'), '--automigrate=false'], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
   for (let i = 0; i < 50 && !(await fetch(url + '/api/health').then(r => r.ok, () => false)); i++) await delay(100);
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
@@ -380,13 +380,18 @@ test('an expired sign-in returns to the welcome page', async () => {
   const { page, close } = await open({ ...user, token: user.token.slice(0, -4) + 'AAAA' }, '#/tasks');
   try { await page.locator('[data-action="discord"]').waitFor(); assert.equal(await page.evaluate(() => localStorage.getItem('odyle.account')), null); } finally { await close(); }
 });
-test('superusers keep the dungeon catalog and the inactive account period on the Odyle settings page', async () => {
+// A PocketBase dashboard tab signed in as the test superuser.
+async function superuser() {
   const password = 'ui-test-' + Date.now() + '-Password', operator = (await request('/__test__/superuser', { password })).data;
-  const { page, errors, close } = await open(null, '_/#/login');
+  const tab = await open(null, '_/#/login');
+  await tab.page.locator('#login_identity').fill('operator@test.invalid'); await tab.page.locator('#login_pass').fill(password);
+  await tab.page.locator('.auth-with-password-form button.next').click();
+  await tab.page.locator('.page-header').first().waitFor();
+  return { operator, ...tab };
+}
+test('superusers keep the dungeon catalog and the inactive account period on the Odyle settings page', async () => {
+  const { operator, page, errors, close } = await superuser();
   try {
-    await page.locator('#login_identity').fill('operator@test.invalid'); await page.locator('#login_pass').fill(password);
-    await page.locator('.auth-with-password-form button.next').click();
-    await page.locator('.page-header').first().waitFor();
     await page.goto(url + '/_/#/odyle/settings');
     await page.locator('#odyle-inactive').fill('365');
     // Typed line by line, as a superuser would: Enter must not be swallowed by the list it saves.
@@ -409,4 +414,55 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.equal((await fetch(url + '/_/extensions.js')).headers.get('cache-control'), 'no-cache');
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
   } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0 }, operator); }
+});
+test('superusers search, open and export packets and read the server status', async () => {
+  const reader = await account('Status reader');
+  const session = (await request('/api/odyle/session', { appVersion: '0.6.0.12' }, reader)).data;
+  const reading = { sessionId: session.sessionId, sequence: 1, characterName: 'Statusa', server: 'Lumiel', region: 'GLOBAL_EU', value: 390, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  assert.equal((await request('/api/odyle/report', reading, reader)).status, 200);
+  assert.equal((await request('/api/odyle/report', reading, reader)).status, 400);
+  assert.equal((await request('/api/odyle/rooms', undefined, reader, 'GET')).status, 200);
+  const { page, errors, close } = await superuser();
+  try {
+    await page.goto(url + '/_/#/odyle');
+    const rows = page.locator('.odyle-feed .odyle-packet');
+    await rows.filter({ hasText: 'Status reader' }).first().waitFor();
+    // The search narrows the list; a packet opens every field it keeps.
+    await page.locator('#odyle-search').fill('outdated statusa');
+    await page.getByText(/^1 of \d+ packets$/).waitFor();
+    assert.match(await rows.first().innerText(), /report rejected[\s\S]*Outdated reading/);
+    await rows.first().locator('.odyle-packet-text').click();
+    const detail = rows.first().locator('.odyle-packet-detail');
+    assert.match(await detail.innerText(), /parserVersion\s+test-fixture-v1/); assert.match(await detail.innerText(), /source\s+app/);
+    await shot(page, 'admin-packet');
+    // Its account narrows the list to that account; the export holds what is shown.
+    await page.locator('#odyle-search').fill('');
+    await detail.getByRole('button', { name: 'Only this account' }).click();
+    await page.locator('.odyle-chip', { hasText: 'Status reader' }).waitFor();
+    assert.ok(await rows.count() >= 3);
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export' }).click()]);
+    const exported = JSON.parse(await (await import('node:fs/promises')).readFile(await download.path(), 'utf8'));
+    assert.equal(exported.filters.account, reader.record.id); assert.equal(exported.packets.length, await rows.count());
+    assert.ok(exported.packets.every(p => p.user === reader.record.id)); assert.deepEqual(exported.packets.map(p => p.kind).slice(0, 3), ['session', 'report', 'report']);
+    // Server status: the last hour per minute, routes and rejection reasons.
+    await page.goto(url + '/_/#/odyle/status');
+    await page.locator('.odyle-minute .odyle-bar').first().waitFor();
+    assert.equal(await page.locator('.odyle-minute').count(), 60);
+    await page.locator('.odyle-minute').last().hover();
+    assert.match(await page.locator('.odyle-tip').innerText(), /Rejected[\s\S]*Windows app[\s\S]*Reads[\s\S]*requests?/);
+    // The keyboard reads the minutes too.
+    await page.locator('.odyle-chart').focus(); await page.keyboard.press('Home');
+    assert.equal(await page.locator('.odyle-minute').first().evaluate(el => el.classList.contains('active')), true);
+    const reasons = page.locator('tr', { hasText: 'Outdated reading.' });
+    assert.match(await reasons.innerText(), /report/);
+    assert.match(await page.locator('tr', { hasText: 'GET rooms' }).innerText(), /Read/);
+    assert.match(await page.locator('tr', { hasText: '0.6.0.12' }).innerText(), /0\.6\.0\.12\s+[1-9]/);
+    await shot(page, 'admin-status');
+    // A route links to its packets, the rejected ones from a reason.
+    await reasons.getByRole('link', { name: 'Show packets' }).click();
+    await page.locator('.odyle-chip', { hasText: 'report' }).waitFor();
+    assert.ok(await rows.count() >= 1);
+    assert.ok((await rows.allInnerTexts()).every(text => /report rejected/.test(text)));
+    assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
+  } finally { await close(); }
 });

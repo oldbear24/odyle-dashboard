@@ -29,15 +29,23 @@ function fetchLatest() {
   }
   return { version, tag: String(data.tag_name), url: github(data.html_url) ? data.html_url : 'https://github.com/' + repository() + '/releases/latest', publishedAt: String(data.published_at || ''), packages };
 }
+// The cache also keeps when GitHub last answered and why the last lookup failed, for
+// the superuser dashboard's Server status page.
+const cache = () => $app.store().has(key) ? JSON.parse($app.store().get(key)) : null;
 function latest() {
-  const store = $app.store(), cached = store.has(key) ? JSON.parse(store.get(key)) : null, now = Date.now();
+  const cached = cache(), now = Date.now();
   if (cached && now - cached.at < (cached.release ? fresh : retry)) return cached.release;
-  let release = cached ? cached.release : null;
-  try { release = fetchLatest(); } catch (error) { console.log('Odyle release lookup failed: ' + error.message); }
-  store.set(key, JSON.stringify({ at: now, release }));
+  let release = cached ? cached.release : null, fetchedAt = cached ? cached.fetchedAt || 0 : 0, error = '';
+  try { release = fetchLatest(); fetchedAt = now; } catch (failure) { error = String(failure.message || failure); console.log('Odyle release lookup failed: ' + error); }
+  $app.store().set(key, JSON.stringify({ at: now, release, fetchedAt, error }));
   return release;
+}
+function lookup() {
+  latest();
+  const cached = cache(), iso = at => at ? new Date(at).toISOString() : '';
+  return { repository: repository(), checkedAt: iso(cached && cached.at), fetchedAt: iso(cached && cached.fetchedAt), error: cached ? cached.error || '' : '', version: cached && cached.release ? cached.release.version : '', publishedAt: cached && cached.release ? cached.release.publishedAt : '' };
 }
 function windowsRelease(e) {
   return e.json(200, { repository: repository(), releasesUrl: 'https://github.com/' + repository() + '/releases/latest', latest: latest() });
 }
-module.exports = { windowsRelease, latest, fetchLatest };
+module.exports = { windowsRelease, latest, lookup, fetchLatest };
