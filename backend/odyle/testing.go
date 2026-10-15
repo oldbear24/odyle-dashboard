@@ -35,6 +35,19 @@ func fixture(se *core.ServeEvent, path string, handle func(e *core.RequestEvent,
 	})
 }
 
+// count reads a number a fixture was sent as a whole number.
+func count(v any) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	}
+	return 0
+}
+
 func save(app core.App, collection string, values map[string]any) (*core.Record, error) {
 	record, err := newRecord(app, collection)
 	if err != nil {

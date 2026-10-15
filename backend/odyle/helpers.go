@@ -83,14 +83,6 @@ func ids(records []*core.Record) []string {
 	return out
 }
 
-func field(records []*core.Record, name string) []string {
-	out := make([]string, len(records))
-	for i, r := range records {
-		out[i] = r.GetString(name)
-	}
-	return out
-}
-
 func unique(values []string) []string {
 	seen, out := map[string]bool{}, []string{}
 	for _, v := range values {

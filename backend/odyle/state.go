@@ -25,8 +25,8 @@ type state struct {
 	packets     []*object // the newest 200, oldest first
 	traffic     *traffic  // has its own lock
 
-	jobs    map[string]map[string]any // the last run of each job
-	running map[string]time.Time      // jobs running now, since
+	jobs    map[string]*jobRecord // the runs of each job
+	running map[string]time.Time  // jobs running now, since
 
 	portraits *portraitWork // has its own lock
 
@@ -44,7 +44,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]map[string]any{}, running: map[string]time.Time{}, portraits: newPortraitWork(),
+		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, portraits: newPortraitWork(),
 			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence()}
 	}).(*state)
 }

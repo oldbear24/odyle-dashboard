@@ -13,8 +13,36 @@ import (
 // it. Superusers can also start the routine jobs by hand; the account clean-up only
 // runs on its schedule.
 //
-// Each job answers { done, failed, error } or { skipped: 'paused' | 'off' }.
-type result = map[string]any
+// result is what a job run did: how many things it did and how many failed, with the
+// last failure's error, or why it was skipped ('paused', 'off' or 'running').
+type result struct {
+	Done    int    `json:"done"`
+	Failed  int    `json:"failed"`
+	Error   string `json:"error,omitempty"`
+	Skipped string `json:"skipped,omitempty"`
+}
+
+// fail counts a failure; its text is the run's error.
+func (r *result) fail(text string) {
+	r.Failed++
+	r.Error = text
+}
+
+// jobRecord is a job's runs since the server started, for the Background jobs page.
+type jobRecord struct {
+	Runs          int    `json:"runs"`
+	FailedRuns    int    `json:"failedRuns"`
+	TotalDone     int    `json:"totalDone"`
+	LastRunAt     string `json:"lastRunAt"`
+	Ms            int64  `json:"ms"`
+	ByHand        bool   `json:"byHand"`
+	Done          int    `json:"done"`
+	Failed        int    `json:"failed"`
+	Error         string `json:"error"`
+	Skipped       string `json:"skipped"`
+	LastFailureAt string `json:"lastFailureAt,omitempty"`
+	LastError     string `json:"lastError,omitempty"`
+}
 
 type job struct {
 	schedule string
@@ -40,7 +68,7 @@ func runJob(app core.App, name string, manual bool) result {
 	s.mu.Lock()
 	if since, ok := s.running[name]; ok && time.Since(since) < 10*time.Minute {
 		s.mu.Unlock()
-		return result{"skipped": "running"}
+		return result{Skipped: "running"}
 	}
 	s.running[name] = time.Now()
 	s.mu.Unlock()
@@ -52,29 +80,24 @@ func runJob(app core.App, name string, manual bool) result {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.running, name)
-	last := s.jobs[name]
-	if last == nil {
-		last = map[string]any{"runs": 0, "failedRuns": 0, "totalDone": 0}
+	next := jobRecord{}
+	if last := s.jobs[name]; last != nil {
+		next = *last
 	}
-	at, done, failed := now(), count(out["done"]), count(out["failed"])
-	next := map[string]any{}
-	for k, v := range last {
-		next[k] = v
-	}
-	next["lastRunAt"], next["ms"], next["byHand"] = at, ms, manual
-	next["done"], next["failed"], next["error"], next["skipped"] = done, failed, textOf(out["error"]), textOf(out["skipped"])
-	next["runs"], next["totalDone"] = count(last["runs"])+1, count(last["totalDone"])+done
-	next["failedRuns"] = count(last["failedRuns"])
+	at := now()
+	next.LastRunAt, next.Ms, next.ByHand = at, ms, manual
+	next.Done, next.Failed, next.Error, next.Skipped = out.Done, out.Failed, out.Error, out.Skipped
+	next.Runs++
+	next.TotalDone += out.Done
 	// The last failure stays listed after later runs succeed.
-	if failed > 0 {
-		next["failedRuns"] = count(last["failedRuns"]) + 1
-		next["lastFailureAt"] = at
-		next["lastError"] = textOf(out["error"])
-		if next["lastError"] == "" {
-			next["lastError"] = "Failed without a message."
+	if out.Failed > 0 {
+		next.FailedRuns++
+		next.LastFailureAt, next.LastError = at, out.Error
+		if next.LastError == "" {
+			next.LastError = "Failed without a message."
 		}
 	}
-	s.jobs[name] = next
+	s.jobs[name] = &next
 	return out
 }
 
@@ -82,38 +105,33 @@ func runJob(app core.App, name string, manual bool) result {
 func work(app core.App, name string, j job) (out result) {
 	defer func() {
 		if r := recover(); r != nil {
-			out = result{"failed": 1, "error": fmt.Sprint(r)}
+			out = result{Failed: 1, Error: fmt.Sprint(r)}
 			warn(app, "Odyle job failed", "job", name, "error", fmt.Sprint(r))
 		}
 	}()
 	out, err := j.work(app)
 	if err != nil {
 		warn(app, "Odyle job failed", "job", name, "error", message(err))
-		return result{"failed": 1, "error": message(err)}
-	}
-	if out == nil {
-		out = result{}
+		return result{Failed: 1, Error: message(err)}
 	}
 	return out
 }
 
-func count(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	}
-	return 0
+// jobEntry is a job on the Background jobs page: its runs (none before the first) and
+// whether it runs by hand, is paused or off, and runs now.
+type jobEntry struct {
+	Name string `json:"name"`
+	*jobRecord
+	Manual  bool   `json:"manual"`
+	State   string `json:"state"`
+	Running bool   `json:"running"`
 }
 
-func jobList(app core.App) []any {
+func jobList(app core.App) []jobEntry {
 	current, s := readSettings(app), stateOf(app)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]any, len(jobNames))
+	out := make([]jobEntry, len(jobNames))
 	for i, name := range jobNames {
 		j, state := jobs[name], "active"
 		if j.pause != nil && j.pause(current) {
@@ -121,15 +139,8 @@ func jobList(app core.App) []any {
 		} else if name == "odyle-retention" && current.InactiveAccountDays == 0 {
 			state = "off"
 		}
-		// The job's own fields come last, so a run record can never hide them.
-		entry := newObject().set("name", name)
-		for _, key := range []string{"runs", "failedRuns", "totalDone", "lastRunAt", "ms", "byHand", "done", "failed", "error", "skipped", "lastFailureAt", "lastError"} {
-			if v, ok := s.jobs[name][key]; ok {
-				entry.set(key, v)
-			}
-		}
 		_, running := s.running[name]
-		out[i] = entry.set("manual", j.manual).set("state", state).set("running", running)
+		out[i] = jobEntry{Name: name, jobRecord: s.jobs[name], Manual: j.manual, State: state, Running: running}
 	}
 	return out
 }

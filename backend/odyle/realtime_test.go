@@ -195,8 +195,8 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	own := listen(t, app, reader, userTopic+reader.Id)
 
 	at := time.Now()
-	beat(app, session, shared, at)
-	beat(app, session, private, at)
+	beat(app, viewOf[ReaderSession](session), viewOf[Character](shared), at)
+	beat(app, viewOf[ReaderSession](session), viewOf[Character](private), at)
 	deliver(app)
 	if _, data, ok := leads.next(); !ok || len(data["seen"].(map[string]any)) != 1 || data["seen"].(map[string]any)[shared.Id] != iso(at) {
 		t.Fatalf("the room heard %v", data)
@@ -210,7 +210,7 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	if stored.GetDateTime("lastSeenAt").Time().After(at.Add(-30 * time.Second)) {
 		t.Fatal("the heartbeat was written at once")
 	}
-	present(app, stored)
+	present(app, viewOf[Character](stored))
 	if stored.GetString("lastSeenAt") != stamp(at) {
 		t.Fatalf("answered lastSeenAt %s, want %s", stored.GetString("lastSeenAt"), stamp(at))
 	}
@@ -232,7 +232,7 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	if written.GetString("lastSeenAt") != stamp(at) || kept.GetDateTime("lastSeenAt").Time().After(time.Now().Add(-59*time.Minute)) || contacted.GetString("updated") != stamp(at) {
 		t.Fatalf("written %s, kept %s, session contact %s", written.GetString("lastSeenAt"), kept.GetString("lastSeenAt"), contacted.GetString("updated"))
 	}
-	if got := contactAt(app, contacted); got != stamp(at) {
+	if got := contactAt(app, viewOf[ReaderSession](contacted)); got != stamp(at) {
 		t.Fatalf("contact %s", got)
 	}
 	// A later reading is never set back by an older heartbeat.
@@ -240,7 +240,7 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	if err := app.Save(written); err != nil {
 		t.Fatal(err)
 	}
-	beat(app, session, written, at)
+	beat(app, viewOf[ReaderSession](session), viewOf[Character](written), at)
 	if err := presenceOf(app).write(app); err != nil {
 		t.Fatal(err)
 	}

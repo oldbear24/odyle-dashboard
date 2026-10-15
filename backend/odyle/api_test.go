@@ -39,7 +39,7 @@ func TestRoutesOverHTTP(t *testing.T) {
 		{Name: "a heartbeat is kept in memory and answered at once", Method: http.MethodPost, URL: "/api/odyle/heartbeat", Headers: token(mate),
 			Body: strings.NewReader(`{"sessionId":"` + session.Id + `","characterId":"` + shared.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"serverNow":`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, _ *http.Response) {
-				c, _ := app.FindRecordById("characters", shared.Id)
+				c, _ := findAs[Character](app, "characters", shared.Id)
 				if at, ok := seenAt(app, c); !ok || time.Since(at) > time.Minute {
 					t.Fatal("the heartbeat was not kept")
 				}

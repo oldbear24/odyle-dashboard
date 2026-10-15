@@ -77,7 +77,7 @@ func TestNewCharactersGetTheirPortraitAtOnceTwoLookupsAtATime(t *testing.T) {
 	}
 	// The job finds nothing left to do.
 	out, err := refreshPortraits(app)
-	if err != nil || out["done"] != 0 || stand.requests.Load() != 12 {
+	if err != nil || out.Done != 0 || stand.requests.Load() != 12 {
 		t.Fatalf("job after the lookups: %v, %v, %d requests", out, err, stand.requests.Load())
 	}
 }
@@ -103,7 +103,7 @@ func TestPausedPortraitsWaitForTheJob(t *testing.T) {
 	if !work.claim(id) {
 		t.Fatal("nothing should run for the character")
 	}
-	if out, err := refreshPortraits(app); err != nil || out["done"] != 0 || stand.requests.Load() != 0 {
+	if out, err := refreshPortraits(app); err != nil || out.Done != 0 || stand.requests.Load() != 0 {
 		t.Fatalf("the job took a running lookup: %v, %v", out, err)
 	}
 	if err := work.lookUp(app, id); err != nil {

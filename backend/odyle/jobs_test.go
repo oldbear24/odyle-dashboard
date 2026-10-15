@@ -35,7 +35,7 @@ func TestRemindersPostEachWebhookInTurnAndWebhooksTogether(t *testing.T) {
 		}
 	}
 	out, err := remindRuns(app)
-	if err != nil || out["done"] != 6 || out["failed"] != 0 {
+	if err != nil || out.Done != 6 || out.Failed != 0 {
 		t.Fatalf("%v, %v", out, err)
 	}
 	mu.Lock()
@@ -44,7 +44,7 @@ func TestRemindersPostEachWebhookInTurnAndWebhooksTogether(t *testing.T) {
 		t.Fatalf("%d posts, up to %d at a time per webhook and %d in all", posts, worst, most)
 	}
 	// Each run is announced once.
-	if again, err := remindRuns(app); err != nil || again["done"] != 0 || posts != 6 {
+	if again, err := remindRuns(app); err != nil || again.Done != 0 || posts != 6 {
 		t.Fatalf("a second run: %v, %v", again, err)
 	}
 }

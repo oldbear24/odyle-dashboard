@@ -130,24 +130,24 @@ func TestRemindersWaitWhenDiscordAsks(t *testing.T) {
 	// A short wait is waited out once.
 	answers <- limited("0.05", false)
 	out, err := remindRuns(app)
-	if err != nil || out["done"] != 1 || out["failed"] != 0 || posts.Load() != 2 {
+	if err != nil || out.Done != 1 || out.Failed != 0 || posts.Load() != 2 {
 		t.Fatalf("short wait: %v, %v, %d posts", out, err, posts.Load())
 	}
 	// A long one leaves the webhook alone until then, without posting again.
 	plan()
 	answers <- limited("30", false)
 	out, err = remindRuns(app)
-	if err != nil || out["done"] != 0 || out["failed"] != 1 || !strings.Contains(out["error"].(string), "waits") || posts.Load() != 3 {
+	if err != nil || out.Done != 0 || out.Failed != 1 || !strings.Contains(out.Error, "waits") || posts.Load() != 3 {
 		t.Fatalf("long wait: %v, %v, %d posts", out, err, posts.Load())
 	}
 	out, err = remindRuns(app)
-	if err != nil || out["done"] != 0 || out["failed"] != 0 || posts.Load() != 3 {
+	if err != nil || out.Done != 0 || out.Failed != 0 || posts.Load() != 3 {
 		t.Fatalf("while waiting: %v, %v, %d posts", out, err, posts.Load())
 	}
 	// Once the wait is over the run is posted.
 	stateOf(app).webhooks.until = nil
 	out, err = remindRuns(app)
-	if err != nil || out["done"] != 1 || posts.Load() != 4 {
+	if err != nil || out.Done != 1 || posts.Load() != 4 {
 		t.Fatalf("after the wait: %v, %v, %d posts", out, err, posts.Load())
 	}
 	// A global limit holds every webhook.

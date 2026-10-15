@@ -45,8 +45,8 @@ func TestCleanupPurgesWhatExpired(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 2 invites + 2 codes + 4 of the 5 old readings + 3 old runs.
-	if first["done"] != 11 {
-		t.Fatalf("first run did %v", first["done"])
+	if first.Done != 11 {
+		t.Fatalf("first run did %v", first.Done)
 	}
 	if n := countOf(t, app, "character_readings"); n != 3 {
 		t.Fatalf("%d readings after the first run", n)
@@ -55,8 +55,8 @@ func TestCleanupPurgesWhatExpired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second["done"] != 1 {
-		t.Fatalf("second run did %v", second["done"])
+	if second.Done != 1 {
+		t.Fatalf("second run did %v", second.Done)
 	}
 	for collection, kept := range map[string]int64{"character_readings": 2, "room_runs": 1, "room_invites": 1, "desktop_codes": 1, "characters": 1, "room_members": 1} {
 		if n := countOf(t, app, collection); n != kept {

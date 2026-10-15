@@ -244,24 +244,23 @@ func watchCharacters(app core.App) {
 // recorded. Never call it inside a transaction: it waits on PLAYNC. Portraits come only
 // from the game; no route lets players set or replace them.
 func gamePortrait(app core.App, id string) error {
-	before, err := app.FindRecordById("characters", id)
+	before, err := findAs[Character](app, "characters", id)
 	if err != nil {
 		return err
 	}
-	found, failure := fetchPortrait(before.GetString("characterName"), before.GetString("server"), before.GetString("region"))
+	found, failure := fetchPortrait(before.Name(), before.Server(), before.Region())
 	// Saved from a fresh copy in one transaction: a reading saved while PLAYNC answered,
 	// or saved meanwhile by another request, is kept. Rooms hear of a new picture from
 	// the character's record hooks (realtime.go).
 	if err := app.RunInTransaction(func(tx core.App) error {
-		c, err := tx.FindRecordById("characters", id)
+		c, err := findAs[Character](tx, "characters", id)
 		if err != nil {
 			return err
 		}
-		if found != nil && (found.hash != c.GetString("portraitHash") || c.GetString("portrait") == "") {
-			c.Set("portrait", found.file)
-			c.Set("portraitHash", found.hash)
+		if found != nil && (found.hash != c.PortraitHash() || c.Portrait() == "") {
+			c.SetPortrait(found.file, found.hash)
 		}
-		c.Set("portraitCheckedAt", now())
+		c.PortraitChecked()
 		return tx.Save(c)
 	}); err != nil {
 		return err
@@ -276,16 +275,16 @@ func gamePortrait(app core.App, id string) error {
 // (Server controls).
 func refreshPortraits(app core.App) (result, error) {
 	if readSettings(app).PortraitsPaused {
-		return result{"skipped": "paused"}, nil
+		return result{Skipped: "paused"}, nil
 	}
 	due, err := app.FindRecordsByFilter("characters", "portraitCheckedAt = '' || (portrait = '' && portraitCheckedAt < {:hour}) || portraitCheckedAt < {:day}", "portraitCheckedAt", 5, 0, dbx.Params{"hour": ago(time.Hour), "day": ago(24 * time.Hour)})
 	if err != nil {
-		return nil, err
+		return result{}, err
 	}
 	work := stateOf(app).portraits
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	out := result{"done": 0, "failed": 0}
+	out := result{}
 	for _, c := range due {
 		if !work.claim(c.Id) {
 			continue
@@ -295,12 +294,11 @@ func refreshPortraits(app core.App) (result, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				out["failed"] = out["failed"].(int) + 1
-				out["error"] = "Character " + c.Id + ": " + message(err)
+				out.fail("Character " + c.Id + ": " + message(err))
 				warn(app, "Odyle portrait refresh failed", "character", c.Id, "error", message(err))
 				return
 			}
-			out["done"] = out["done"].(int) + 1
+			out.Done++
 		})
 	}
 	wg.Wait()

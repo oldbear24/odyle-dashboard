@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/subscriptions"
@@ -43,14 +42,14 @@ type sighting struct {
 
 type roomNews struct {
 	refresh    bool
-	characters map[string]*core.Record // the latest copy of each changed character
-	removed    map[string]bool         // accounts that left or were removed
+	characters map[string]*Character // the latest copy of each changed character
+	removed    map[string]bool       // accounts that left or were removed
 	seen       map[string]sighting
 }
 
 type userNews struct {
 	refresh    bool
-	characters map[string]*core.Record
+	characters map[string]*Character
 	seen       map[string]time.Time // its characters' heartbeats
 	contact    map[string]time.Time // its reader sessions' heartbeats
 }
@@ -76,7 +75,7 @@ func (o *outbox) room(app core.App, id string, change func(*roomNews)) {
 	defer o.mu.Unlock()
 	n := o.rooms[id]
 	if n == nil {
-		n = &roomNews{characters: map[string]*core.Record{}, removed: map[string]bool{}, seen: map[string]sighting{}}
+		n = &roomNews{characters: map[string]*Character{}, removed: map[string]bool{}, seen: map[string]sighting{}}
 		o.rooms[id] = n
 	}
 	change(n)
@@ -91,7 +90,7 @@ func (o *outbox) user(app core.App, id string, change func(*userNews)) {
 	defer o.mu.Unlock()
 	n := o.users[id]
 	if n == nil {
-		n = &userNews{characters: map[string]*core.Record{}, seen: map[string]time.Time{}, contact: map[string]time.Time{}}
+		n = &userNews{characters: map[string]*Character{}, seen: map[string]time.Time{}, contact: map[string]time.Time{}}
 		o.users[id] = n
 	}
 	change(n)
@@ -170,18 +169,18 @@ func deliverRoom(app core.App, clients map[string]subscriptions.Client, id strin
 	if len(listeners) == 0 {
 		return nil
 	}
-	members, err := list(app, "room_members", "room = {:room}", dbx.Params{"room": id})
+	members, err := roomMembers(app, id)
 	if err != nil {
 		return err
 	}
 	shares := make(map[string][]string, len(members)) // account → the characters it shares here
 	for _, m := range members {
-		shares[m.GetString("user")] = stringSlice(m, "sharedCharacters")
+		shares[m.User()] = m.Shared()
 	}
 	exports := map[string]map[string]any{}
 	for characterId, c := range n.characters {
 		j := c.PublicExport()
-		j["shared"] = contains(shares[c.GetString("user")], characterId)
+		j["shared"] = contains(shares[c.User()], characterId)
 		exports[characterId] = j
 	}
 	for _, c := range listeners {
@@ -204,8 +203,8 @@ func deliverRoom(app core.App, clients map[string]subscriptions.Client, id strin
 				post(c, topic, map[string]any{"refresh": true})
 			} else if len(n.characters) > 0 {
 				changed := []any{}
-				for characterId, record := range n.characters {
-					if visible(record.GetString("user"), characterId) {
+				for characterId, character := range n.characters {
+					if visible(character.User(), characterId) {
 						changed = append(changed, exports[characterId])
 					}
 				}
@@ -283,8 +282,8 @@ func notifyUsers(app core.App, userIds ...string) {
 
 // characterChanged sends a changed character to its owner and to every room the owner
 // is in; each member hears of it only if they may see it.
-func characterChanged(app core.App, c *core.Record) {
-	owner, copy := c.GetString("user"), c.Clone()
+func characterChanged(app core.App, c *Character) {
+	owner, copy := c.User(), viewOf[Character](c.Clone())
 	present(app, copy)
 	roomIds, err := roomsFor(app, owner)
 	if err != nil {
@@ -314,17 +313,17 @@ func visiblyChanged(c *core.Record) bool {
 // the jobs or a superuser in the PocketBase dashboard.
 func watchChanges(app core.App) {
 	app.OnRecordAfterCreateSuccess("characters").BindFunc(func(e *core.RecordEvent) error {
-		characterChanged(e.App, e.Record)
+		characterChanged(e.App, viewOf[Character](e.Record))
 		return e.Next()
 	})
 	app.OnRecordAfterUpdateSuccess("characters").BindFunc(func(e *core.RecordEvent) error {
 		if visiblyChanged(e.Record) {
-			characterChanged(e.App, e.Record)
+			characterChanged(e.App, viewOf[Character](e.Record))
 		}
 		return e.Next()
 	})
 	app.OnRecordAfterDeleteSuccess("characters").BindFunc(func(e *core.RecordEvent) error {
-		owner := e.Record.GetString("user")
+		owner := viewOf[Character](e.Record).User()
 		if roomIds, err := roomsFor(e.App, owner); err == nil {
 			notify(e.App, roomIds)
 		}
@@ -332,22 +331,24 @@ func watchChanges(app core.App) {
 		return e.Next()
 	})
 	member := func(e *core.RecordEvent) error {
-		notify(e.App, []string{e.Record.GetString("room")})
-		notifyUsers(e.App, e.Record.GetString("user"))
+		m := viewOf[Member](e.Record)
+		notify(e.App, []string{m.Room()})
+		notifyUsers(e.App, m.User())
 		return e.Next()
 	}
 	app.OnRecordAfterCreateSuccess("room_members").BindFunc(member)
 	app.OnRecordAfterUpdateSuccess("room_members").BindFunc(member)
 	app.OnRecordAfterDeleteSuccess("room_members").BindFunc(func(e *core.RecordEvent) error {
-		user := e.Record.GetString("user")
-		changes(e.App).room(e.App, e.Record.GetString("room"), func(n *roomNews) { n.refresh, n.removed[user] = true, true })
+		m := viewOf[Member](e.Record)
+		user := m.User()
+		changes(e.App).room(e.App, m.Room(), func(n *roomNews) { n.refresh, n.removed[user] = true, true })
 		notifyUsers(e.App, user)
 		return e.Next()
 	})
 	app.OnRecordAfterUpdateSuccess("party_rooms").BindFunc(func(e *core.RecordEvent) error {
 		notify(e.App, []string{e.Record.Id})
 		if members, err := roomMembers(e.App, e.Record.Id); err == nil {
-			notifyUsers(e.App, field(members, "user")...)
+			notifyUsers(e.App, pluck(members, (*Member).User)...)
 		}
 		return e.Next()
 	})
@@ -367,7 +368,7 @@ func watchChanges(app core.App) {
 	app.OnRecordAfterDeleteSuccess("user_tasks", "publisher_sessions", "desktop_devices").BindFunc(own)
 	// A new display name; the hourly activity mark (touch) is no news.
 	app.OnRecordAfterUpdateSuccess("users").BindFunc(func(e *core.RecordEvent) error {
-		if e.Record.Original().GetString("displayName") != e.Record.GetString("displayName") {
+		if viewOf[Account](e.Record.Original()).DisplayName() != viewOf[Account](e.Record).DisplayName() {
 			notifyUsers(e.App, e.Record.Id)
 		}
 		return e.Next()

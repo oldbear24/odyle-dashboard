@@ -6,7 +6,6 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Presence. A running Windows app sends a heartbeat every 20 seconds: its reader
@@ -45,10 +44,10 @@ func newPresence() *presence {
 
 func presenceOf(app core.App) *presence { return stateOf(app).presence }
 
-// beat records a heartbeat of the session and, when it reads one, its character, and
-// tells the character's rooms and its owner.
-func beat(app core.App, session, character *core.Record, at time.Time) {
-	p, owner := presenceOf(app), session.GetString("user")
+// beat records a heartbeat of the session and, when it reads one (character is not
+// nil), its character, and tells the character's rooms and its owner.
+func beat(app core.App, session *ReaderSession, character *Character, at time.Time) {
+	p, owner := presenceOf(app), session.User()
 	p.mu.Lock()
 	p.sessions[session.Id] = contact{at: at}
 	if character != nil {
@@ -75,12 +74,12 @@ func beat(app core.App, session, character *core.Record, at time.Time) {
 
 // seenAt is the character's latest heartbeat when it is newer than its stored
 // lastSeenAt and came from the session that reads it.
-func seenAt(app core.App, c *core.Record) (time.Time, bool) {
+func seenAt(app core.App, c *Character) (time.Time, bool) {
 	p := presenceOf(app)
 	p.mu.Lock()
 	s, ok := p.characters[c.Id]
 	p.mu.Unlock()
-	if !ok || s.session != c.GetString("readingSession") || !s.at.After(c.GetDateTime("lastSeenAt").Time()) {
+	if !ok || s.session != c.ReadingSession() || !s.at.After(timeOf(c.LastSeenAt())) {
 		return time.Time{}, false
 	}
 	return s.at, true
@@ -88,26 +87,23 @@ func seenAt(app core.App, c *core.Record) (time.Time, bool) {
 
 // present sets a character's lastSeenAt to its latest heartbeat, for an answer; the
 // record is not saved.
-func present(app core.App, c *core.Record) {
+func present(app core.App, c *Character) {
 	if at, ok := seenAt(app, c); ok {
-		if when, err := types.ParseDateTime(at); err == nil {
-			c.Set("lastSeenAt", when)
-		}
+		c.SetLastSeenAt(at)
 	}
 }
 
 // contactAt is the reader session's last contact: its latest heartbeat, or the stored
 // updated time when that is newer.
-func contactAt(app core.App, session *core.Record) string {
-	stored := session.GetDateTime("updated").Time()
+func contactAt(app core.App, session *ReaderSession) string {
 	p := presenceOf(app)
 	p.mu.Lock()
 	c, ok := p.sessions[session.Id]
 	p.mu.Unlock()
-	if ok && c.at.After(stored) {
+	if ok && c.at.After(timeOf(session.Updated())) {
 		return stamp(c.at)
 	}
-	return session.GetString("updated")
+	return session.Updated()
 }
 
 // write stores the heartbeats not written yet. A character keeps a later lastSeenAt
@@ -222,7 +218,7 @@ func watchPresence(app core.App) {
 		return e.Next()
 	})
 	app.OnRecordEnrich("characters").BindFunc(func(e *core.RecordEnrichEvent) error {
-		present(e.App, e.Record)
+		present(e.App, viewOf[Character](e.Record))
 		return e.Next()
 	})
 	app.OnRecordAfterDeleteSuccess("publisher_sessions").BindFunc(func(e *core.RecordEvent) error {
