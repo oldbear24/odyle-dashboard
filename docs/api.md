@@ -186,11 +186,12 @@ The backend calls GitHub's `releases/latest` API at most every ten minutes and s
 
 ## Superuser monitor and settings
 
-The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_hooks/admin`, served at `/_/extensions/odyle/`). The monitor, jobs and settings routes need a **superuser** token: anonymous requests answer 401 and `users` tokens 403.
+The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_hooks/admin`, served at `/_/extensions/odyle/`). The monitor, status, jobs and settings routes need a **superuser** token: anonymous requests answer 401 and `users` tokens 403.
 
 | Method / route | Body | Result |
 | --- | --- | --- |
 | GET `/api/odyle/admin/monitor` | — | `{ serverNow, latestVersion, apps, packets }`; `latestVersion` is the newest Windows release (see [Windows app release](#windows-app-release)), or empty |
+| GET `/api/odyle/admin/status` | — | `{ serverNow, startedAt, database, counts, release, versions, traffic }`, see [Server status](#server-status) |
 | GET `/api/odyle/admin/jobs` | — | `{ serverNow, startedAt, jobs }` |
 | POST `/api/odyle/admin/jobs/{name}` | — | Runs `odyle-expiry`, `odyle-portraits` or `odyle-reminders` now; `{ result, serverNow, startedAt, jobs }`. `odyle-retention` only runs on its schedule (400), unknown names answer 404, a job still running 400 |
 | GET `/api/odyle/admin/settings` | — | `{ settings, defaults, builtInAdapters, acceptedAdapters, seenAdapters }` |
@@ -203,10 +204,10 @@ The PocketBase superuser dashboard has an **Odyle** page (UI extension in `pb_ho
 { "sessionId": "session-id", "user": "user-id", "account": "Lumina", "device": "DESKTOP-LUMINA", "appVersion": "0.6.0.12", "connectedAt": "2026-10-14 11:52:10.438Z", "lastContactAt": "2026-10-14 11:52:30.537Z", "readings": 1, "character": { "id": "character-id", "characterName": "Lumina", "server": "Lumiel", "region": "GLOBAL_EU", "value": 390, "confirmed": true, "valid": true, "lastSeenAt": "2026-10-14 11:52:30.537Z", "lastReadingAt": "2026-10-14 11:52:10.481Z", "parserVersion": "global-reference-v1" } }
 ```
 
-`packets` are the newest 200 requests to every `POST /api/odyle/<action>` route (the `kind` is the action), `pair`, `desktop-sign-in` and `unpair` included, oldest first, each with a server-wide increasing `id`. They are kept in server memory only and a restart clears them. Each lists `at`, `kind`, `user`, `account`, `ok`, the handling time `ms`, `error` when the request was rejected, and only the safe body fields of its route (`lib/admin.cjs`, `shown`), for example `previousSessionId` and `appVersion` (session); `sessionId`, `sequence`, `characterId`, `characterName`, `server`, `region`, `value`, `parserVersion` (report); `roomId` with the room's name for room routes; `taskId` and `runId` for the body `id` of task and plan. Tokens, invite and pairing codes, device keys, webhook URLs, run notes and task titles are never kept. A device sign-in names the account its key belongs to.
+`packets` are the newest 200 requests to every `POST /api/odyle/<action>` route (the `kind` is the action), `pair`, `desktop-sign-in` and `unpair` included, oldest first, each with a server-wide increasing `id`. They are kept in server memory only and a restart clears them. Each lists `at`, `kind`, its `source` (`app` for the Windows app's routes `session`, `report`, `heartbeat`, `invalidate`, `character`, `pair`, `desktop-sign-in`, `desktop-device` and `unpair`, `web` for the dashboard's), `user`, `account`, `ok`, the handling time `ms`, `error` when the request was rejected, and only the safe body fields of its route (`lib/admin.cjs`, `shown`), for example `previousSessionId` and `appVersion` (session); `sessionId`, `sequence`, `characterId`, `characterName`, `server`, `region`, `value`, `parserVersion` (report); `roomId` with the room's name for room routes; `taskId` and `runId` for the body `id` of task and plan. Tokens, invite and pairing codes, device keys, webhook URLs, run notes and task titles are never kept. A device sign-in names the account its key belongs to.
 
 ```json
-{ "id": 4, "at": "2026-10-14T11:52:10.547Z", "kind": "report", "user": "user-id", "account": "Lumina", "ok": false, "ms": 0, "error": "Outdated reading.", "sessionId": "session-id", "sequence": 1, "characterName": "Lumina", "server": "Lumiel", "region": "GLOBAL_EU", "value": 400, "parserVersion": "global-reference-v1" }
+{ "id": 4, "at": "2026-10-14T11:52:10.547Z", "kind": "report", "source": "app", "user": "user-id", "account": "Lumina", "ok": false, "ms": 0, "error": "Outdated reading.", "sessionId": "session-id", "sequence": 1, "characterName": "Lumina", "server": "Lumiel", "region": "GLOBAL_EU", "value": 400, "parserVersion": "global-reference-v1" }
 ```
 
 Superusers subscribe to the realtime topic `odyle.admin.packets` to receive each packet as `{ packet }` the moment it is handled; other clients are refused at subscription and before every delivery.
@@ -216,6 +217,21 @@ Settings: `odylePerCube` is an integer 1–1000, `dailyResetHour` 0–23 (UTC), 
 Server controls: `announcement` is one line of up to 300 characters (spaces and line breaks collapse; empty removes it) and `announcementLevel` `info` or `warning`. `portraitsPaused` and `remindersPaused` make those jobs skip their runs; `pairingPaused` refuses `desktop-code` and `pair` with *Pairing new PCs is paused for now. Try again later.* while paired PCs keep signing in. `adapters` is `{ extra, disabled }`: readings are accepted from the built-in adapters (`protocols.cjs`, listed as `builtInAdapters`) that are not disabled, plus up to 20 extra names (letters, digits, `.`, `-`, `_`, up to 80 characters); at least one must remain. `acceptedAdapters` is the resulting list and `seenAdapters` the adapter names in the latest packets with their saved and rejected readings.
 
 `jobs` lists each scheduled job with `name`, `manual` (can run by hand), `state` (`active`, `paused` or `off` while inactive accounts are kept), `running`, and since the server started (`startedAt`): `lastRunAt`, `ms`, `byHand`, the last run's `done`, `failed`, `error` or `skipped` (`paused`, `off`), and `runs`, `failedRuns`, `totalDone`, `lastFailureAt`, `lastError`. Records live in server memory like packets. Saving creates the `odyle_settings` record if it was deleted. Rooms, room snapshots and the checklist report the new values on their next request.
+
+### Server status
+
+`startedAt` is when the server started. `database` is `{ dataBytes, logsBytes }`: the sizes of `data.db` and of PocketBase's log database `auxiliary.db`, each with its write-ahead log. `counts` holds `accounts { total, active24h, active7d }` (by `lastActiveAt`), `characters { total, live }` (a valid reading with a heartbeat in the last 45 seconds), `rooms { total, discordReminders }`, `pairedPcs { total }`, `readerSessions { open, connected }` (in contact within 90 seconds), `plannedRuns { total, upcoming }`, `historyPoints { total }` and `tasks { total }`. `versions` lists the Windows apps in contact within 90 seconds by the `version` their session reported (`''` when the app sent none) with their number of `apps`. `release` is the Windows release lookup: `{ repository, version, publishedAt, checkedAt, fetchedAt, error }`, where `checkedAt` is the last time GitHub was asked, `fetchedAt` its last answer (both empty before the first) and `error` why the last lookup failed (empty when it worked).
+
+`traffic` is the last hour, counted per minute in server memory only (a restart starts it over): every `POST /api/odyle/<action>` route under its `kind` with the packet's `source`, and the Odyle GET routes (`rooms`, `tasks`, `snapshot`, `history`, `upcoming`, `account`, `export`, `windows-release`, `announcement`) as `GET <route>` with the source `read`. The superuser routes and requests refused before Odyle handles them (missing sign-in) are not counted, and no account is recorded.
+
+```json
+{ "minutes": [{ "at": "2026-10-15T08:30:00.000Z", "app": 4, "web": 1, "read": 3, "rejected": 2 }],
+  "total": { "count": 10, "rejected": 2, "averageMs": 2.6, "medianMs": 2, "p95Ms": 7, "maxMs": 7 },
+  "routes": [{ "kind": "report", "source": "app", "count": 4, "rejected": 1, "averageMs": 2.5, "medianMs": 2, "p95Ms": 4, "maxMs": 4 }],
+  "errors": [{ "kind": "report", "message": "Outdated reading.", "count": 1, "lastAt": "2026-10-15T08:30:53.048Z" }] }
+```
+
+`minutes` always has 60 entries, oldest first, each with the accepted requests by source and the rejected ones from any source. `routes` lists every route of the hour, busiest first, and `errors` up to 20 rejection reasons, most frequent first. `averageMs` and `maxMs` are exact; `medianMs` and `p95Ms` are upper bounds, because times are counted in steps of 1, 2, 5, 10, 25, 50, 100, 250 and 500 ms, 1, 2.5 and 5 s; they report the slowest time instead when that is lower, and for anything beyond 5 s. `total` has the timings only once a request was counted.
 
 PocketBase serves extension files with a 14-day browser cache. The backend sends the combined entry `/_/extensions.js` (the extension's `main.js`) with `Cache-Control: no-cache`, so browsers fetch it on every load, and the entry imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload.
 

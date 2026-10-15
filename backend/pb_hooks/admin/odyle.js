@@ -1,6 +1,7 @@
 // Odyle pages of the PocketBase superuser dashboard, imported by main.js: the Windows
 // apps connected right now and the requests ("packets") the apps and the dashboard
-// send as they arrive, the background jobs, the game settings and the server controls.
+// send as they arrive, the server's status with the last hour's traffic, the background
+// jobs, the game settings and the server controls.
 // `app`, `t`, `store` and `watch` are globals of the PocketBase UI (extension API of
 // PocketBase 0.37+, still marked experimental). Everything players control is rendered
 // as text nodes, never as HTML.
@@ -10,6 +11,7 @@ document.head.appendChild(t.link({ rel: 'stylesheet', href: stylesheet.href }));
 
 const pages = [
   { href: '#/odyle', icon: 'ri-pulse-line', label: 'Apps & packets' },
+  { href: '#/odyle/status', icon: 'ri-bar-chart-box-line', label: 'Server status' },
   { href: '#/odyle/jobs', icon: 'ri-timer-line', label: 'Background jobs' },
   { href: '#/odyle/settings', icon: 'ri-equalizer-line', label: 'Game settings' },
   { href: '#/odyle/controls', icon: 'ri-toggle-line', label: 'Server controls' },
@@ -48,12 +50,11 @@ function older(version, latest) {
   for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) < (b[i] || 0);
   return false;
 }
+// Newest first; a version the app did not send ('') last.
+const byVersion = (a, b) => !a ? 1 : !b ? -1 : older(a, b) ? 1 : older(b, a) ? -1 : 0;
 const place = p => [p.characterName, p.server ? p.server + (p.region ? ' (' + region(p.region) + ')' : '') : ''].filter(Boolean).join(' · ');
 const room = p => p.roomName || (p.roomId ? 'room ' + p.roomId : 'a room');
 const named = (text, name) => name ? text + ': ' + name : text;
-// Requests of the Windows app; everything else comes from the dashboard. Character saves
-// come from both, and count as the app's.
-const appKinds = ['session', 'report', 'heartbeat', 'invalidate', 'character', 'pair', 'desktop-sign-in', 'desktop-device', 'unpair'];
 function describe(p) {
   switch (p.kind) {
     case 'report': return (place(p) || 'Character') + ' → ' + number(p.value) + ' Odyle · #' + (p.sequence ?? '?') + ' · ' + (p.parserVersion || 'no adapter');
@@ -89,15 +90,21 @@ function describe(p) {
   }
 }
 const kindClass = { report: 'success', session: 'info', character: 'info', pair: 'info', create: 'info', invalidate: 'warning', unpair: 'warning', close: 'warning', 'forget-device': 'warning', 'sign-out-everywhere': 'warning', 'delete-account': 'warning', 'delete-character': 'warning' };
+// The server names each packet's source: the Windows app ('app') or the dashboard ('web').
 const filters = [
   { id: 'all', label: 'All', test: () => true },
-  { id: 'app', label: 'Windows app', test: p => appKinds.includes(p.kind) },
-  { id: 'web', label: 'Dashboard', test: p => !appKinds.includes(p.kind) },
+  { id: 'app', label: 'Windows app', test: p => p.source === 'app' },
+  { id: 'web', label: 'Dashboard', test: p => p.source === 'web' },
   { id: 'rejected', label: 'Rejected', test: p => !p.ok },
 ];
+// A packet's fields in a fixed order (the server's VM does not keep key order): its own
+// first, then the request's safe fields by name.
+const first = ['id', 'at', 'kind', 'source', 'ok', 'ms', 'error', 'account', 'user'];
+const fields = p => first.filter(key => key in p).concat(Object.keys(p).filter(key => !first.includes(key) && key !== 'fresh').sort()).map(key => [key, p[key]]);
+const plain = p => Object.fromEntries(fields(p));
 
-// The apps and jobs pages use PocketBase's wide wrapper; the forms keep the narrow one.
-const wide = ['#/odyle', '#/odyle/jobs'];
+// The apps, status and jobs pages use PocketBase's wide wrapper; the forms keep the narrow one.
+const wide = ['#/odyle', '#/odyle/status', '#/odyle/jobs'];
 function layout(active, actions, ...content) {
   return t.div({ className: 'page odyle-page' },
     app.components.pageSidebar({ className: 'odyle-sidebar' }, t.nav({ className: 'sidebar-content scrollable' },
@@ -113,10 +120,15 @@ const toggle = (id, label, checked, onchange) => t.div({ className: 'field odyle
 const field = (id, label, input, help, width = 4) => t.div({ className: 'col-lg-' + width }, t.div({ className: 'field' }, t.label({ htmlFor: id }, label), input), t.div({ className: 'field-help' }, help));
 const section = (title, hint) => t.div({ className: 'col-lg-12 odyle-section' }, t.div({ className: 'txt-lg' }, title), hint ? t.p({ className: 'txt-hint' }, hint) : null);
 
-export function monitorPage() {
+// Links from the Server status page open this page filtered: #/odyle?kind=report&filter=rejected
+// (and account=<user id>).
+export function monitorPage(route) {
   app.store.title = 'Apps & packets';
-  // feed is always current; frozen holds what is shown while the list is paused.
-  const state = store({ loading: true, failed: '', apps: [], latestVersion: '', feed: [], frozen: null, heartbeats: true, filter: 'all', offset: 0, now: Date.now() });
+  const query = name => route?.query?.[name]?.[0] || '';
+  // feed is always current; frozen holds what is shown while the list is paused. open is
+  // the packet whose fields are shown.
+  const state = store({ loading: true, failed: '', apps: [], latestVersion: '', feed: [], frozen: null, heartbeats: true, offset: 0, now: Date.now(), open: 0,
+    filter: filters.some(f => f.id === query('filter')) ? query('filter') : 'all', kind: query('kind'), account: query('account'), search: '' });
   const now = () => state.now + state.offset;
   let alive = true, poll = 0, tick = 0, unsubscribe = null;
   async function load() {
@@ -136,10 +148,26 @@ export function monitorPage() {
     state.feed = [{ ...packet, fresh: true }, ...state.feed].slice(0, 200);
   }
   const chosen = () => filters.find(f => f.id === state.filter) || filters[0];
-  const shown = () => (state.frozen || state.feed).filter(p => (state.heartbeats || p.kind !== 'heartbeat' || !p.ok) && chosen().test(p));
+  // The search matches the shown text and every field's value, ids and adapter names included.
+  const words = () => state.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const text = p => [describe(p), ...Object.values(p).filter(v => typeof v === 'string' || typeof v === 'number')].join(' ').toLowerCase();
+  const matches = p => (state.heartbeats || p.kind !== 'heartbeat' || !p.ok || state.kind === 'heartbeat') && chosen().test(p)
+    && (!state.kind || p.kind === state.kind) && (!state.account || p.user === state.account) && words().every(word => text(p).includes(word));
+  const shown = () => (state.frozen || state.feed).filter(matches);
+  const narrowed = () => state.kind || state.account || words().length || state.filter !== 'all' || !state.heartbeats;
   const waiting = () => state.frozen ? state.feed.filter(p => p.id > (state.frozen[0]?.id || 0)).length : 0;
   const recent = () => state.feed.filter(p => now() - timestamp(p.at) < 60000);
   const outdated = () => state.apps.filter(a => contact(a.lastContactAt, now()) !== 'offline' && older(a.appVersion, state.latestVersion));
+  const accountName = () => state.feed.find(p => p.user === state.account)?.account || state.apps.find(a => a.user === state.account)?.account || state.account;
+  const feed = () => document.querySelector('.odyle-feed-head')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const onlyAccount = user => { state.account = user; feed(); };
+  // The shown packets, oldest first like the API, with the filters that chose them.
+  function exportShown() {
+    const packets = shown().slice().reverse().map(plain);
+    app.utils.downloadJSON({ exportedAt: new Date().toISOString(), server: location.origin, filters: { source: state.filter, kind: state.kind, account: state.account, search: state.search.trim(), heartbeats: state.heartbeats }, packets }, 'odyle-packets-' + new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-'));
+  }
+  const chip = (label, value, clear) => t.span({ className: 'label sm odyle-chip' }, t.span({ className: 'txt-hint' }, label), ' ', value,
+    t.button({ type: 'button', className: 'odyle-chip-clear', title: 'Clear', ariaLabel: 'Clear ' + label.toLowerCase(), onclick: clear }, t.i({ className: 'ri-close-line', ariaHidden: true })));
 
   const version = a => !a.appVersion ? t.span({ className: 'txt-hint', title: 'Older Windows apps do not send their version' }, '—')
     : [t.div({ className: 'txt-code' }, a.appVersion), older(a.appVersion, state.latestVersion) ? t.span({ className: 'label sm warning', title: 'Newest release: ' + state.latestVersion }, 'update available') : state.latestVersion ? t.span({ className: 'txt-hint txt-sm' }, 'newest') : null];
@@ -147,20 +175,31 @@ export function monitorPage() {
   // is redrawn in its place. Only the status and ages tick every second.
   const appRow = a => t.tr({ rid: signature(a) + '@' + state.latestVersion },
     t.td(null, t.span({ className: () => 'odyle-status ' + contact(a.lastContactAt, now()) }, () => contactLabels[contact(a.lastContactAt, now())])),
-    t.td(null, t.div({ className: 'txt-bold' }, a.account || '—'), a.device ? t.div({ className: 'txt-sm' }, a.device) : null, t.div({ className: 'txt-hint txt-sm txt-code' }, a.sessionId)),
+    t.td(null, t.button({ type: 'button', className: 'odyle-link txt-bold', title: 'Show only this account\'s packets', onclick: () => onlyAccount(a.user) }, a.account || '—'), a.device ? t.div({ className: 'txt-sm' }, a.device) : null, t.div({ className: 'txt-hint txt-sm txt-code' }, a.sessionId)),
     t.td({ className: 'txt-nowrap' }, version(a)),
     // A character belongs to the session that read it last, so older sessions lose it.
     t.td(null, a.character ? [t.div(null, place(a.character)), t.span({ className: () => 'odyle-reading ' + reading(a.character, now()).state }, () => reading(a.character, now()).label)] : () => contact(a.lastContactAt, now()) === 'offline' ? t.span({ className: 'txt-hint' }, '—') : t.span({ className: 'odyle-reading waiting' }, 'Waiting for the game')),
     t.td({ className: 'txt-right' }, a.character?.confirmed ? [t.div({ className: 'txt-bold' }, number(a.character.value)), t.div({ className: 'txt-hint txt-sm' }, () => 'changed ' + ago(a.character.lastReadingAt, now()))] : '—'),
     t.td({ className: 'txt-nowrap odyle-age' }, t.div(null, () => ago(a.lastContactAt, now())), t.div({ className: 'txt-hint txt-sm', title: when(a.connectedAt) }, () => 'connected ' + ago(a.connectedAt, now()))),
     t.td({ className: 'txt-right' }, number(a.readings)));
+  // Every field of one packet, with shortcuts to the packets like it.
+  const value = (key, v) => key === 'at' ? when(v) + ' · ' + v : key === 'ms' ? v + ' ms' : String(v);
+  const detail = p => t.div({ className: 'odyle-packet-detail', onclick: e => e.stopPropagation() },
+    t.dl({ className: 'odyle-fields' }, fields(p).flatMap(([key, v]) => [t.dt({ className: 'txt-hint' }, key), t.dd({ className: key === 'error' ? 'txt-danger' : '' }, value(key, v))])),
+    t.div({ className: 'flex odyle-detail-actions' },
+      p.user ? t.button({ type: 'button', className: 'btn sm secondary', disabled: () => state.account === p.user, onclick: () => state.account = p.user }, t.i({ className: 'ri-user-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Only this account')) : null,
+      t.button({ type: 'button', className: 'btn sm secondary', disabled: () => state.kind === p.kind, onclick: () => state.kind = p.kind }, t.i({ className: 'ri-filter-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Only ' + p.kind)),
+      t.button({ type: 'button', className: 'btn sm transparent secondary', onclick: async () => { await app.utils.copyToClipboard(JSON.stringify(plain(p), null, 2)); app.toasts.success('Packet ' + p.id + ' copied as JSON.'); } }, t.i({ className: 'ri-file-copy-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Copy JSON'))));
   // Packets never change, so rows are keyed and kept: only new ones are drawn (and flash).
-  const packetRow = p => t.div({ rid: p.id + '@' + p.at, className: 'odyle-packet' + (p.ok ? '' : ' rejected') + (p.fresh ? ' fresh' : '') },
+  // A click opens the packet's fields, unless it selected text to copy.
+  const expand = p => { if (!String(window.getSelection?.() || '')) state.open = state.open === p.id ? 0 : p.id; };
+  const packetRow = p => t.div({ rid: p.id + '@' + p.at, className: () => 'odyle-packet' + (p.ok ? '' : ' rejected') + (p.fresh ? ' fresh' : '') + (state.open === p.id ? ' open' : ''), onclick: () => expand(p) },
     t.span({ className: 'txt-hint', title: when(p.at) }, clock(p.at)),
-    t.span({ className: 'label sm ' + (p.ok ? kindClass[p.kind] || '' : 'danger') }, p.ok ? p.kind : p.kind + ' rejected'),
-    t.span({ className: 'txt-bold txt-ellipsis', title: p.account }, p.account || '—'),
-    t.span({ className: 'odyle-packet-text' }, describe(p), p.ok ? null : t.span({ className: 'txt-danger' }, ' — ' + p.error)),
-    t.span({ className: 'odyle-packet-ms txt-hint txt-nowrap' }, number(p.ms) + ' ms'));
+    t.button({ type: 'button', className: 'label sm odyle-kind ' + (p.ok ? kindClass[p.kind] || '' : 'danger'), title: 'Show only ' + p.kind + ' packets', onclick: e => { e.stopPropagation(); state.kind = p.kind; } }, p.ok ? p.kind : p.kind + ' rejected'),
+    p.user ? t.button({ type: 'button', className: 'odyle-link txt-bold txt-ellipsis', title: 'Show only ' + (p.account || 'this account') + '\'s packets', onclick: e => { e.stopPropagation(); state.account = p.user; } }, p.account || '—') : t.span({ className: 'txt-hint' }, '—'),
+    t.button({ type: 'button', className: 'odyle-packet-text', ariaExpanded: () => state.open === p.id, title: 'Show every field', onclick: e => { e.stopPropagation(); expand(p); } }, describe(p), p.ok ? null : t.span({ className: 'txt-danger' }, ' — ' + p.error)),
+    t.span({ className: 'odyle-packet-ms txt-hint txt-nowrap' }, number(p.ms) + ' ms'),
+    () => state.open === p.id ? detail(p) : null);
   const heads = ['Status', 'Account', 'App', 'Game', 'Odyle', 'Last contact', 'Readings'];
 
   return layout('#/odyle', app.components.refreshButton({ onclick: load }),
@@ -195,8 +234,167 @@ export function monitorPage() {
       t.button({ type: 'button', className: 'btn sm secondary', onclick: () => state.frozen = state.frozen ? null : state.feed.slice() },
         t.i({ className: () => state.frozen ? 'ri-play-line' : 'ri-pause-line', ariaHidden: true }),
         t.span({ className: 'txt' }, () => state.frozen ? 'Resume' + (waiting() ? ' (' + number(waiting()) + ' new)' : '') : 'Pause'))),
-    t.div({ className: 'odyle-feed' }, () => shown().length ? shown().map(packetRow) : t.div({ className: 'odyle-packet txt-hint' }, () => state.loading ? 'Loading…' : state.feed.length ? 'No packets match this filter.' : 'No packets since the server started.')),
-    t.p({ className: 'txt-hint txt-sm m-t-sm' }, 'Packets are Odyle\'s own requests: from the Windows app reader sessions, Odyle readings, heartbeats every 20 seconds, stale marks, character saves and pairings; from the dashboard every room, sharing, wishlist, run, task and account change. Only safe fields are kept (never tokens, codes, keys, webhooks, notes or task titles). The newest 200 are kept in server memory only and a restart clears them; game traffic itself never reaches the server.')));
+    t.div({ className: 'flex m-b-sm odyle-feed-tools' },
+      t.div({ className: 'odyle-search' }, t.i({ className: 'ri-search-line txt-hint', ariaHidden: true }),
+        t.input({ type: 'search', id: 'odyle-search', placeholder: 'Search packets: account, character, room, error, id…', ariaLabel: 'Search packets', value: () => state.search, oninput: e => state.search = e.target.value })),
+      () => state.kind ? chip('Kind', state.kind, () => state.kind = '') : null,
+      () => state.account ? chip('Account', accountName(), () => state.account = '') : null,
+      t.div({ className: 'm-r-auto' }),
+      t.span({ className: 'txt-hint txt-sm txt-nowrap' }, () => narrowed() ? number(shown().length) + ' of ' + number((state.frozen || state.feed).length) + ' packets' : number(shown().length) + ' packets'),
+      t.button({ type: 'button', className: 'btn sm transparent secondary', disabled: () => !shown().length, title: 'The packets shown, as JSON', onclick: exportShown }, t.i({ className: 'ri-download-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Export'))),
+    t.div({ className: 'odyle-feed' }, () => shown().length ? shown().map(packetRow) : t.div({ className: 'odyle-packet txt-hint' }, () => state.loading ? 'Loading…' : state.feed.length ? 'No packets match these filters.' : 'No packets since the server started.')),
+    t.p({ className: 'txt-hint txt-sm m-t-sm' }, 'Packets are Odyle\'s own requests: from the Windows app reader sessions, Odyle readings, heartbeats every 20 seconds, stale marks, character saves and pairings; from the dashboard every room, sharing, wishlist, run, task and account change. Click a packet for all its fields, its kind or account to show only those. Only safe fields are kept (never tokens, codes, keys, webhooks, notes or task titles). The newest 200 are kept in server memory only and a restart clears them; game traffic itself never reaches the server.')));
+}
+
+// The traffic chart's series, stacked from the baseline in this order (rejected first, so
+// it is read against the axis); colors in odyle.css.
+const series = [
+  { id: 'rejected', label: 'Rejected' },
+  { id: 'app', label: 'Windows app' },
+  { id: 'web', label: 'Dashboard' },
+  { id: 'read', label: 'Reads' },
+];
+const sourceLabels = { app: 'Windows app', web: 'Dashboard', read: 'Read' };
+const plotHeight = 160;
+// The scale's top: 2, 4, 6, 8 or 10 times a power of ten, so its half is a whole number too.
+function ceiling(value) { for (let power = 1; ; power *= 10) for (const step of [2, 4, 6, 8, 10]) if (step * power >= value) return step * power; }
+const duration = ms => { const m = Math.floor(ms / 60000); return !(m >= 1) ? Math.max(0, Math.floor(ms / 1000) || 0) + 's' : m < 60 ? m + 'm' : m < 1440 ? Math.floor(m / 60) + 'h ' + m % 60 + 'm' : Math.floor(m / 1440) + 'd ' + Math.floor(m % 1440 / 60) + 'h'; };
+const millis = ms => typeof ms !== 'number' ? '—' : ms < 1000 ? number(ms) + ' ms' : (ms / 1000).toLocaleString([], { maximumFractionDigits: 1 }) + ' s';
+const share = (part, whole) => whole ? (part / whole * 100).toLocaleString([], { maximumFractionDigits: 1 }) + ' %' : '—';
+const minuteLabel = at => Number.isFinite(timestamp(at)) ? new Date(timestamp(at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+// Packet routes link to the packet list, filtered; reads are never listed as packets.
+const packets = (kind, extra = '') => '#/odyle?kind=' + encodeURIComponent(kind) + extra;
+
+export function statusPage() {
+  app.store.title = 'Server status';
+  const empty = { serverNow: '', startedAt: '', database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [] } };
+  // hover is the minute (its time) the chart's tooltip shows.
+  const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '' });
+  const now = () => state.now + state.offset;
+  let poll = 0, tick = 0;
+  async function load() {
+    try {
+      const data = await app.pb.send('/api/odyle/admin/status', { requestKey: null });
+      if (Array.isArray(data?.traffic?.minutes)) { state.offset = timestamp(data.serverNow) - Date.now(); state.data = data; state.failed = ''; }
+    } catch (error) { if (!error.isAbort) state.failed = error.message || 'The server status could not be loaded.'; }
+    state.loading = false;
+  }
+  const traffic = () => state.data.traffic, minutes = () => traffic().minutes, total = m => series.reduce((sum, s) => sum + m[s.id], 0);
+  const top = () => ceiling(Math.max(0, ...minutes().map(total)));
+  const busiest = () => Math.max(0, ...minutes().map(total));
+  // Per minute over the hour, or over the minutes since a server start less than an hour ago.
+  const perMinute = () => traffic().total.count / Math.min(60, Math.max(1, Math.ceil((now() - timestamp(state.data.startedAt)) / 60000)) || 60);
+  const counts = name => state.data.counts[name] || {};
+  const latest = () => state.data.release.version || '';
+
+  // Requests per minute, stacked by source. Each minute's column is its hover target; the
+  // arrow keys move through the minutes when the chart has focus.
+  const segment = (m, s, scale) => m[s.id] ? t.div({ className: 'odyle-segment ' + s.id, style: 'height:' + Math.max(2, Math.round(m[s.id] / scale * plotHeight)) + 'px' }) : null;
+  const column = m => { const scale = top(); return t.div({ rid: m.at + '@' + signature(m) + '@' + scale, className: () => 'odyle-minute' + (state.hover === m.at ? ' active' : ''), onpointerenter: () => state.hover = m.at }, total(m) ? t.div({ className: 'odyle-bar' }, series.map(s => segment(m, s, scale))) : null); };
+  const hovered = () => minutes().findIndex(m => m.at === state.hover);
+  const tip = () => {
+    const i = hovered(); if (i < 0) return null;
+    // Beside the minute, towards the middle of the chart, so the bar stays in sight.
+    const m = minutes()[i], side = i < minutes().length / 2 ? ' after' : ' before';
+    return t.div({ className: 'odyle-tip' + side, style: 'left:' + (i + 0.5) / minutes().length * 100 + '%' },
+      t.div({ className: 'txt-hint txt-sm' }, minuteLabel(m.at) + ' – ' + minuteLabel(new Date(timestamp(m.at) + 60000).toISOString())),
+      series.map(s => t.div({ className: 'odyle-tip-row' }, t.span({ className: 'odyle-key-line ' + s.id }), t.strong(null, number(m[s.id])), t.span({ className: 'txt-hint' }, s.label))),
+      t.div({ className: 'odyle-tip-row total' }, t.strong(null, number(total(m))), t.span({ className: 'txt-hint' }, total(m) === 1 ? 'request' : 'requests')));
+  };
+  function move(e) {
+    const list = minutes(), i = hovered(), last = list.length - 1;
+    const next = { ArrowLeft: Math.max(0, (i < 0 ? last : i) - 1), ArrowRight: Math.min(last, (i < 0 ? last : i) + 1), Home: 0, End: last }[e.key];
+    if (next === undefined || !list.length) return;
+    e.preventDefault(); state.hover = list[next].at;
+  }
+  const legend = () => series.map(s => t.span({ className: 'odyle-key' }, t.span({ className: 'odyle-swatch ' + s.id }), s.id === 'rejected' ? t.i({ className: 'ri-error-warning-line', ariaHidden: true }) : null,
+    s.label, ' ', t.strong(null, () => number(minutes().reduce((sum, m) => sum + m[s.id], 0)))));
+  const chart = t.div({ className: 'odyle-chart', tabIndex: 0, role: 'group', ariaLabel: 'Requests per minute over the last hour. The arrow keys read each minute.',
+    onkeydown: move, onfocus: () => { if (!state.hover && minutes().length) state.hover = minutes()[minutes().length - 1].at; }, onblur: () => state.hover = '' },
+    t.div({ className: 'odyle-legend' }, legend()),
+    t.div({ className: 'odyle-plot', style: 'height:' + plotHeight + 'px' },
+      t.div({ className: 'odyle-gridline', style: 'bottom:' + plotHeight + 'px' }, t.span(null, () => number(top()))),
+      t.div({ className: 'odyle-gridline', style: 'bottom:' + plotHeight / 2 + 'px' }, t.span(null, () => number(top() / 2))),
+      t.div({ className: 'odyle-gridline base', style: 'bottom:0' }, t.span(null, '0')),
+      t.div({ className: 'odyle-bars', onpointerleave: () => { if (document.activeElement !== chart) state.hover = ''; } }, () => minutes().map(column)),
+      t.div({ className: 'odyle-tip-layer', ariaLive: 'polite' }, tip)),
+    // A time under every quarter hour.
+    t.div({ className: 'odyle-axis', ariaHidden: true }, () => minutes().map(m => t.span({ rid: m.at }, new Date(timestamp(m.at)).getMinutes() % 15 === 0 ? minuteLabel(m.at) : ''))));
+  // The same minutes as a table, newest first, for reading without the chart.
+  const minuteTable = () => {
+    const busy = minutes().filter(total).reverse();
+    return busy.length ? t.div({ className: 'odyle-table m-t-xs' }, t.table(null,
+      t.thead(null, t.tr(null, t.th(null, 'Minute'), series.map(s => t.th({ className: 'txt-right' }, s.label)), t.th({ className: 'txt-right' }, 'Total'))),
+      t.tbody(null, busy.map(m => t.tr(null, t.td({ className: 'txt-nowrap' }, minuteLabel(m.at)), series.map(s => t.td({ className: 'txt-right' }, number(m[s.id]))), t.td({ className: 'txt-right txt-bold' }, number(total(m)))))))) : t.div({ className: 'txt-hint txt-sm m-t-xs' }, 'No requests in the last hour.');
+  };
+
+  const routeRow = r => t.tr({ rid: signature(r) },
+    t.td({ className: 'txt-code' }, r.source === 'read' ? r.kind : t.a({ href: packets(r.kind), title: 'Show these packets' }, r.kind)),
+    t.td(null, sourceLabels[r.source] || r.source),
+    t.td({ className: 'txt-right' }, number(r.count)),
+    t.td({ className: 'txt-right txt-nowrap' }, !r.rejected ? t.span({ className: 'txt-hint' }, '0') : r.source === 'read' ? t.span({ className: 'txt-danger' }, number(r.rejected) + ' · ' + share(r.rejected, r.count))
+      : t.a({ href: packets(r.kind, '&filter=rejected'), className: 'txt-danger', title: 'Show the rejected ones among the latest packets' }, number(r.rejected) + ' · ' + share(r.rejected, r.count))),
+    t.td({ className: 'txt-right txt-nowrap' }, millis(r.averageMs)),
+    t.td({ className: 'txt-right txt-nowrap' }, '≤ ' + millis(r.medianMs)),
+    t.td({ className: 'txt-right txt-nowrap' }, '≤ ' + millis(r.p95Ms)),
+    t.td({ className: 'txt-right txt-nowrap' }, millis(r.maxMs)));
+  const routeHeads = ['Route', 'Source', 'Requests', 'Rejected', 'Average', 'Median', '95 %', 'Slowest'];
+  const reasonRow = r => t.tr({ rid: signature(r) },
+    t.td({ className: 'odyle-error' }, r.message),
+    t.td({ className: 'txt-code txt-nowrap' }, r.kind),
+    t.td({ className: 'txt-right' }, number(r.count)),
+    t.td({ className: 'txt-nowrap odyle-age', title: when(r.lastAt) }, () => ago(r.lastAt, now())),
+    t.td({ className: 'txt-right txt-nowrap' }, r.kind.startsWith('GET ') ? null : t.a({ href: packets(r.kind, '&filter=rejected'), title: 'The rejected ones among the latest packets' }, 'Show packets')));
+  const versionRow = v => t.tr({ rid: signature(v) + '@' + latest() },
+    t.td({ className: 'txt-code' }, v.version || t.span({ className: 'txt-hint' }, 'not sent (older app)')),
+    t.td({ className: 'txt-right' }, number(v.apps)),
+    t.td(null, !v.version || !latest() ? null : older(v.version, latest()) ? t.span({ className: 'label sm warning' }, 'update available') : t.span({ className: 'txt-hint txt-sm' }, 'newest')));
+  const release = () => state.data.release;
+
+  return layout('#/odyle/status', app.components.refreshButton({ onclick: load }),
+    t.div({ onmount: () => { load(); poll = setInterval(load, 10000); tick = setInterval(() => state.now = Date.now(), 1000); }, onunmount: () => { clearInterval(poll); clearInterval(tick); } },
+      () => state.failed ? t.div({ className: 'alert danger m-b-sm' }, state.failed) : null,
+      t.div({ className: 'odyle-stats m-b-base' },
+        stat('Server running', () => state.data.startedAt ? duration(now() - timestamp(state.data.startedAt)) : '—', () => state.data.startedAt ? 'since ' + when(state.data.startedAt) : ''),
+        stat('Requests last hour', () => number(traffic().total.count), () => perMinute().toLocaleString([], { maximumFractionDigits: 1 }) + ' a minute · busiest ' + number(busiest())),
+        stat('Rejected last hour', () => number(traffic().total.rejected), () => share(traffic().total.rejected, traffic().total.count) + ' of the requests'),
+        stat('Handling time', () => traffic().total.count ? '≤ ' + millis(traffic().total.p95Ms) : '—', () => traffic().total.count ? '95 % of requests · median ≤ ' + millis(traffic().total.medianMs) + ' · slowest ' + millis(traffic().total.maxMs) : 'no requests yet'),
+        stat('Database', () => state.data.database.dataBytes ? app.utils.formattedFileSize(state.data.database.dataBytes) : '—', () => state.data.database.logsBytes ? 'logs ' + app.utils.formattedFileSize(state.data.database.logsBytes) : '')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Requests per minute'), t.span({ className: 'txt-hint txt-sm' }, 'the last hour, by source; rejected ones from any source')),
+      t.div({ className: 'odyle-card m-b-base' }, chart,
+        t.details({ className: 'odyle-minutes' }, t.summary({ className: 'txt-sm' }, 'Minutes as a table'), minuteTable)),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Routes'), t.span({ className: 'txt-hint txt-sm' }, 'the last hour, busiest first')),
+      t.div({ className: 'odyle-table m-b-xs' }, t.table(null,
+        t.thead(null, t.tr(null, routeHeads.map((h, i) => t.th({ className: i > 1 ? 'txt-right' : '' }, h)))),
+        t.tbody(null, () => traffic().routes.length ? traffic().routes.map(routeRow) : t.tr(null, t.td({ colSpan: routeHeads.length, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'No requests in the last hour.'))))),
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'Handling time is measured inside Odyle\'s route, from the request to its answer. Median and 95 % are upper bounds: times are counted in steps of 1, 2, 5, 10, 25, 50, 100, 250 and 500 ms, 1, 2.5 and 5 s.'),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Rejection reasons'), t.span({ className: 'txt-hint txt-sm' }, 'the last hour, most frequent first')),
+      t.div({ className: 'odyle-table m-b-base' }, t.table(null,
+        t.thead(null, t.tr(null, t.th(null, 'Reason'), t.th(null, 'Route'), t.th({ className: 'txt-right' }, 'Count'), t.th(null, 'Last'), t.th(null, ''))),
+        t.tbody(null, () => traffic().errors.length ? traffic().errors.map(reasonRow) : t.tr(null, t.td({ colSpan: 5, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'Nothing was rejected in the last hour.'))))),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Stored data')),
+      t.div({ className: 'odyle-stats m-b-base' },
+        stat('Accounts', () => number(counts('accounts').total), () => number(counts('accounts').active24h) + ' active in 24 h · ' + number(counts('accounts').active7d) + ' in 7 days'),
+        stat('Characters', () => number(counts('characters').total), () => number(counts('characters').live) + ' with a live reading'),
+        stat('Rooms', () => number(counts('rooms').total), () => number(counts('rooms').discordReminders) + ' with Discord reminders'),
+        stat('Paired PCs', () => number(counts('pairedPcs').total), () => number(counts('readerSessions').connected) + ' apps connected · ' + number(counts('readerSessions').open) + ' sessions open'),
+        stat('Planned runs', () => number(counts('plannedRuns').total), () => number(counts('plannedRuns').upcoming) + ' still to start'),
+        stat('Odyle history', () => number(counts('historyPoints').total), 'changes of the last 30 days'),
+        stat('Checklist tasks', () => number(counts('tasks').total), 'daily and weekly')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
+      t.div({ className: 'grid m-b-base' },
+        t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
+          t.div({ className: 'txt-hint txt-sm' }, 'Newest release'),
+          t.div({ className: 'txt-lg txt-bold' }, () => latest() || '—'),
+          t.div({ className: 'txt-sm' }, () => release().publishedAt ? 'published ' + when(release().publishedAt) : 'not known yet'),
+          t.div({ className: 'txt-hint txt-sm' }, () => release().checkedAt ? 'GitHub checked ' + ago(release().checkedAt, now()) + (release().fetchedAt ? ', last answered ' + ago(release().fetchedAt, now()) : ', no answer since the server started') : ''),
+          () => release().error ? t.div({ className: 'alert warning m-t-xs odyle-error' }, 'The last lookup failed: ', release().error) : null,
+          () => release().repository ? t.a({ className: 'txt-sm', href: 'https://github.com/' + release().repository + '/releases', target: '_blank', rel: 'noopener noreferrer' }, 'Releases on GitHub ↗') : null)),
+        t.div({ className: 'col-lg-7' }, t.div({ className: 'odyle-table' }, t.table(null,
+          t.thead(null, t.tr(null, t.th(null, 'Connected app version'), t.th({ className: 'txt-right' }, 'Apps'), t.th(null, ''))),
+          t.tbody(null, () => state.data.versions.length ? state.data.versions.slice().sort((a, b) => byVersion(a.version, b.version)).map(versionRow) : t.tr(null, t.td({ colSpan: 3, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'No Windows app is connected.'))))),
+          t.div({ className: 'field-help' }, 'Apps in contact within the last 90 seconds.'))),
+      t.p({ className: 'txt-hint txt-sm' }, 'Traffic counts every Odyle route, the dashboard\'s reads included, per minute in server memory only; a restart starts it over, and requests refused before Odyle handles them (no sign-in) are not counted. The page refreshes every 10 seconds.')));
 }
 
 // What each background job does; main.pb.js holds the schedules, lib/jobs.cjs the records.

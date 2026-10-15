@@ -1,7 +1,7 @@
 // The Odyle pages of the superuser dashboard (pb_hooks/admin): the Windows apps
 // connected right now, the requests the apps and the dashboard send as they arrive
-// ("packets"), the background jobs and the server-wide settings. Only superusers reach
-// these routes and the realtime topic.
+// ("packets"), the server's status with the last hour's traffic, the background jobs and
+// the server-wide settings. Only superusers reach these routes and the realtime topic.
 //
 // Packets are Odyle's own API requests, never game traffic. The newest 200 live in
 // memory only: nothing is written to the database, and a restart clears them.
@@ -9,6 +9,7 @@ const settings = require(__hooks + '/lib/settings.cjs');
 const protocols = require(__hooks + '/lib/protocols.cjs');
 const jobs = require(__hooks + '/lib/jobs.cjs');
 const releases = require(__hooks + '/lib/releases.cjs');
+const traffic = require(__hooks + '/lib/traffic.cjs');
 const now = () => new Date().toISOString();
 // Date fields are stored as '2026-10-13 21:40:00.000Z'; filters compare them as strings.
 const stamp = date => date.toISOString().replace('T', ' ');
@@ -29,6 +30,9 @@ const shown = {
   sharing: ['roomId', 'characterId', 'enabled'], wishlist: ['roomId', 'dungeon', 'wanted', 'everyone'], plan: ['roomId', 'id:runId', 'dungeon', 'startsAt', 'going', 'remove'], 'discord-webhook': ['roomId', 'language'],
   task: ['id:taskId', 'done', 'move', 'remove'], profile: ['displayName'], 'desktop-code': [], 'forget-device': ['deviceId'], 'sign-out-everywhere': [], 'delete-account': [], 'delete-character': ['characterId'],
 };
+// Requests of the Windows app (source 'app'); everything else comes from the dashboard
+// ('web'). Character saves come from both, and count as the app's.
+const appKinds = ['session', 'report', 'heartbeat', 'invalidate', 'character', 'pair', 'desktop-sign-in', 'desktop-device', 'unpair'];
 function details(kind, body) {
   const out = {};
   for (const field of shown[kind]) {
@@ -58,7 +62,7 @@ function broadcast(app, packet) {
 }
 function publish(e, kind, error, ms) {
   let body = {}; try { body = e.requestInfo().body || {}; } catch {}
-  const packet = { at: now(), kind, user: e.auth ? e.auth.id : '', account: e.auth ? e.auth.getString('displayName') : '', ok: !error, ms, ...details(kind, body) };
+  const packet = { at: now(), kind, source: appKinds.includes(kind) ? 'app' : 'web', user: e.auth ? e.auth.id : '', account: e.auth ? e.auth.getString('displayName') : '', ok: !error, ms, ...details(kind, body) };
   if (error) packet.error = String(error.message || 'Rejected.').slice(0, 200);
   // Heartbeats and invalidations name their character by id only, room routes their room.
   if (packet.characterId && !packet.characterName) try { packet.characterName = e.app.findRecordById('characters', packet.characterId).getString('characterName'); } catch {}
@@ -69,15 +73,19 @@ function publish(e, kind, error, ms) {
     packet.user = user.id; packet.account = user.getString('displayName'); if (!packet.name) packet.name = device.getString('name');
   } catch {}
   broadcast(e.app, remember(e.app, packet));
+  traffic.record(e.app, kind, packet.source, ms, error);
 }
-// Wraps an Odyle route: the request is answered exactly as before, then listed,
-// accepted or rejected, for superusers. A monitor failure never fails the request.
-function observe(e, kind, handle) {
-  if (!shown[kind]) return handle();
+// Runs a route's handler exactly as before and hands its outcome to `done`. A monitor
+// failure never fails the request.
+function measure(handle, done) {
   const started = Date.now(); let error = null;
   try { return handle(); } catch (failure) { error = failure; throw failure; }
-  finally { try { publish(e, kind, error, Date.now() - started); } catch (failure) { console.log('Odyle packet monitor failed: ' + failure.message); } }
+  finally { try { done(error, Date.now() - started); } catch (failure) { console.log('Odyle monitor failed: ' + failure.message); } }
 }
+// An Odyle request (POST route) is listed for superusers, accepted or rejected, and counted.
+function observe(e, kind, handle) { return shown[kind] ? measure(handle, (error, ms) => publish(e, kind, error, ms)) : handle(); }
+// An Odyle read (GET route) is only counted for the Server status page, never listed.
+function timed(e, name, handle) { return measure(handle, (error, ms) => traffic.record(e.app, 'GET ' + name, 'read', ms, error)); }
 // One row per reader session. A running Windows app keeps one and touches it with
 // every heartbeat (20 s) and reading, so `updated` is its last contact. Sessions
 // expire a day after the last contact and the expiry cron deletes them. Rows keep a
@@ -105,6 +113,43 @@ function apps(app) {
 // The newest Windows release (cached by releases.cjs), so the page can mark outdated apps.
 function latestVersion() { try { const release = releases.latest(); return release ? release.version : ''; } catch { return ''; } }
 function monitor(e) { return e.json(200, { serverNow: now(), latestVersion: latestVersion(), apps: apps(e.app), packets: packets(e.app) }); }
+
+// Server status: the database's size, what it holds, the Windows apps connected by
+// version, the release lookup and the last hour's traffic (lib/traffic.cjs).
+function counts(app) {
+  const at = Date.now(), since = ms => stamp(new Date(at - ms)), count = (name, ...exprs) => app.countRecords(name, ...exprs);
+  const after = (field, ms) => $dbx.exp(field + ' >= {:at}', { at: since(ms) });
+  const open = $dbx.exp('expiresAt > {:now}', { now: since(0) });
+  return {
+    accounts: { total: count('users'), active24h: count('users', after('lastActiveAt', 86400000)), active7d: count('users', after('lastActiveAt', 7 * 86400000)) },
+    // A reading is live while its heartbeat is less than 45 seconds old, as on the dashboard.
+    characters: { total: count('characters'), live: count('characters', $dbx.hashExp({ valid: true }), after('lastSeenAt', 45000)) },
+    rooms: { total: count('party_rooms'), discordReminders: count('party_rooms', $dbx.exp("discordWebhook != ''")) },
+    pairedPcs: { total: count('desktop_devices') },
+    readerSessions: { open: count('publisher_sessions', open), connected: count('publisher_sessions', open, after('updated', 90000)) },
+    plannedRuns: { total: count('room_runs'), upcoming: count('room_runs', after('startsAt', 0)) },
+    historyPoints: { total: count('character_readings') },
+    tasks: { total: count('user_tasks') },
+  };
+}
+// Bytes of the database files with their write-ahead logs; a missing file counts 0.
+function size(app, ...names) {
+  let total = 0;
+  for (const name of names) try { total += $os.stat(app.dataDir() + '/' + name).size(); } catch {}
+  return total;
+}
+// The Windows apps in contact within the last 90 seconds (online or late), by the version
+// their session reported ('' when the app did not send one).
+function versions(app) {
+  const seen = {}, at = Date.now();
+  for (const s of app.findRecordsByFilter('publisher_sessions', 'expiresAt > {:now} && updated >= {:since}', '', 1000, 0, { now: stamp(new Date(at)), since: stamp(new Date(at - 90000)) })) seen[s.getString('appVersion')] = (seen[s.getString('appVersion')] || 0) + 1;
+  return Object.keys(seen).map(version => ({ version, apps: seen[version] }));
+}
+function release() { try { return releases.lookup(); } catch (error) { return { error: String(error.message || error) }; } }
+function status(e) {
+  return e.json(200, { serverNow: now(), startedAt: e.app.store().get('odyle.startedAt') || '', database: { dataBytes: size(e.app, 'data.db', 'data.db-wal'), logsBytes: size(e.app, 'auxiliary.db', 'auxiliary.db-wal') },
+    counts: counts(e.app), release: release(), versions: versions(e.app), traffic: traffic.summary(e.app) });
+}
 const jobsJson = (app, extra) => ({ serverNow: now(), startedAt: app.store().get('odyle.startedAt') || '', jobs: jobs.list(app), ...extra });
 function jobList(e) { return e.json(200, jobsJson(e.app)); }
 function runJob(e) {
@@ -138,4 +183,4 @@ function ui(e) {
   const version = e.app.store().getOrSet('odyle.adminUi', () => $security.sha256(['odyle.js', 'odyle.css'].map(name => toString($os.readFile(__hooks + '/admin/' + name))).join('\n')).slice(0, 16));
   return e.json(200, { version });
 }
-module.exports = { observe, monitor, jobList, runJob, readSettings, saveSettings, ui, topic };
+module.exports = { observe, timed, monitor, status, jobList, runJob, readSettings, saveSettings, ui, topic };

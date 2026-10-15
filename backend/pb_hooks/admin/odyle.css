@@ -1,5 +1,6 @@
-/* Odyle page of the PocketBase superuser dashboard. Colors come from the PocketBase
-   UI variables, so the page follows its light and dark themes. */
+/* Odyle pages of the PocketBase superuser dashboard. Colors come from the PocketBase
+   UI variables, so the pages follow its light and dark themes; only the traffic chart
+   brings its own series colors, one set per theme. */
 .odyle-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .odyle-stat{display:flex;flex-direction:column;gap:2px;padding:12px 15px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor)}
 .odyle-stat strong{font-size:1.7em;line-height:1.3}
@@ -40,5 +41,56 @@
 .odyle-packet.fresh{animation:odyle-arrive 1.5s ease-out}
 @keyframes odyle-arrive{from{background:var(--surfaceSuccessColor)}}
 @keyframes odyle-pulse{50%{opacity:.35}}
+/* A packet opens its fields on click; its kind and account narrow the list. */
+.odyle-packet{cursor:pointer}
+.odyle-packet:hover,.odyle-packet.open{background:var(--surfaceAlt1Color)}
+.odyle-link,.odyle-packet-text,.odyle-chip-clear{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.odyle-link{max-width:100%}
+.odyle-link:hover,.odyle-packet-text:hover{text-decoration:underline}
+.odyle-kind{border:0;font-family:inherit;cursor:pointer}
+.odyle-packet-detail{grid-column:1/-1;order:2;padding:6px 0 4px;cursor:auto}
+.odyle-fields{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:2px 16px;margin:0 0 8px;font-family:var(--monospaceFontFamily)}
+.odyle-fields dd{margin:0;overflow-wrap:anywhere}
+@media (min-width:1100px){.odyle-fields{grid-template-columns:max-content minmax(0,1fr) max-content minmax(0,1fr)}}
+.odyle-detail-actions{gap:6px;flex-wrap:wrap}
+.odyle-feed-tools{gap:8px;flex-wrap:wrap}
+.odyle-search{position:relative;flex:1 1 260px;max-width:440px}
+.odyle-search i{position:absolute;left:10px;top:50%;transform:translateY(-50%)}
+.odyle-search input{width:100%;height:var(--smBtnHeight);padding:0 10px 0 32px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor);color:var(--surfaceTxtColor);font:inherit}
+.odyle-chip{display:inline-flex;align-items:center;gap:2px}
+.odyle-chip-clear{padding-left:4px;line-height:1}
+/* Server status */
+.odyle-card{padding:12px 15px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor)}
+/* Requests per minute. Series colors are checked for color-blind separation against
+   both themes' surfaces; stacked segments and neighbouring bars keep a 2px gap. */
+.odyle-chart{--odyle-rejected:#d03b3b;--odyle-app:#2a78d6;--odyle-web:#eb6834;--odyle-read:#1baf7a;border-radius:var(--borderRadius);outline-offset:6px}
+[data-color-scheme=dark] .odyle-chart{--odyle-app:#3987e5;--odyle-web:#d95926;--odyle-read:#199e70}
+.odyle-chart .rejected{--odyle-color:var(--odyle-rejected)}
+.odyle-chart .app{--odyle-color:var(--odyle-app)}
+.odyle-chart .web{--odyle-color:var(--odyle-web)}
+.odyle-chart .read{--odyle-color:var(--odyle-read)}
+.odyle-legend{display:flex;flex-wrap:wrap;gap:4px 18px;margin-bottom:12px;font-size:var(--smFontSize)}
+.odyle-key{display:inline-flex;align-items:center;gap:6px}
+.odyle-swatch{width:10px;height:10px;border-radius:2px;background:var(--odyle-color)}
+.odyle-plot{position:relative;margin:8px 0 0 3.2em}
+.odyle-gridline{position:absolute;left:0;right:0;border-top:1px solid var(--surfaceAlt2Color)}
+.odyle-gridline.base{border-top-color:var(--surfaceAlt5Color)}
+.odyle-gridline span{position:absolute;right:100%;margin-right:8px;transform:translateY(-50%);font-size:var(--smFontSize);line-height:1;color:var(--surfaceTxtHintColor);font-variant-numeric:tabular-nums}
+.odyle-bars{position:absolute;inset:0;display:flex;align-items:flex-end}
+.odyle-minute{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;justify-content:center;border-radius:4px 4px 0 0}
+.odyle-minute.active{background:var(--surfaceAlt2Color)}
+.odyle-bar{width:min(24px,calc(100% - 2px));display:flex;flex-direction:column-reverse;gap:2px;border-radius:4px 4px 0 0;overflow:hidden}
+.odyle-segment{flex-shrink:0;background:var(--odyle-color)}
+.odyle-axis{display:flex;height:1.4em;margin:6px 0 0 3.2em;font-size:var(--smFontSize);color:var(--surfaceTxtHintColor);font-variant-numeric:tabular-nums}
+.odyle-axis span{flex:1;min-width:0;display:flex;justify-content:center;white-space:nowrap}
+.odyle-tip-layer{position:absolute;inset:0;pointer-events:none}
+.odyle-tip{position:absolute;top:0;z-index:2;min-width:150px;padding:8px 10px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor);box-shadow:0 4px 14px rgba(0,0,0,.12);font-size:var(--smFontSize);transform:translateX(14px)}
+.odyle-tip.before{transform:translateX(calc(-100% - 14px))}
+.odyle-tip-row{display:flex;align-items:center;gap:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.odyle-tip-row strong{min-width:2.4em;text-align:right}
+.odyle-tip-row.total{margin-top:4px;padding:4px 0 0 20px;border-top:1px solid var(--surfaceAlt2Color)}
+.odyle-key-line{width:14px;height:2px;border-radius:1px;background:var(--odyle-color)}
+.odyle-minutes{margin-top:12px}
+.odyle-minutes summary{cursor:pointer;color:var(--surfaceTxtHintColor)}
 @media (max-width:900px){.odyle-packet{grid-template-columns:auto auto 1fr auto}.odyle-packet-text{grid-column:1/-1;order:1}}
 @media (prefers-reduced-motion:reduce){.odyle-live:before,.odyle-packet.fresh{animation:none}}

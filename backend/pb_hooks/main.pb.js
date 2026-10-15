@@ -15,22 +15,25 @@ for (const action of ['pair', 'desktop-sign-in', 'unpair']) {
     return require(__hooks + '/lib/admin.cjs').observe(e, name, () => require(__hooks + '/lib/accounts.cjs')[name.replace(/-([a-z])/g, (_, c) => c.toUpperCase())](e));
   }, $apis.bodyLimit(4096));
 }
-routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/accounts.cjs').rooms(e), $apis.requireAuth('users'));
-routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/accounts.cjs').tasks(e), $apis.requireAuth('users'));
-routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/accounts.cjs').snapshot(e), $apis.requireAuth('users'));
-routerAdd('GET', '/api/odyle/history/{id}', e => require(__hooks + '/lib/accounts.cjs').history(e), $apis.requireAuth('users'));
-routerAdd('GET', '/api/odyle/upcoming', e => require(__hooks + '/lib/accounts.cjs').upcoming(e), $apis.requireAuth('users'));
-routerAdd('GET', '/api/odyle/account', e => require(__hooks + '/lib/accounts.cjs').account(e), $apis.requireAuth('users'));
-routerAdd('GET', '/api/odyle/export', e => require(__hooks + '/lib/accounts.cjs').exportData(e), $apis.requireAuth('users'));
+// Reads are timed for the superuser dashboard's Server status page (lib/traffic.cjs).
+routerAdd('GET', '/api/odyle/rooms', e => require(__hooks + '/lib/admin.cjs').timed(e, 'rooms', () => require(__hooks + '/lib/accounts.cjs').rooms(e)), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/tasks', e => require(__hooks + '/lib/admin.cjs').timed(e, 'tasks', () => require(__hooks + '/lib/accounts.cjs').tasks(e)), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/snapshot/{id}', e => require(__hooks + '/lib/admin.cjs').timed(e, 'snapshot', () => require(__hooks + '/lib/accounts.cjs').snapshot(e)), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/history/{id}', e => require(__hooks + '/lib/admin.cjs').timed(e, 'history', () => require(__hooks + '/lib/accounts.cjs').history(e)), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/upcoming', e => require(__hooks + '/lib/admin.cjs').timed(e, 'upcoming', () => require(__hooks + '/lib/accounts.cjs').upcoming(e)), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/account', e => require(__hooks + '/lib/admin.cjs').timed(e, 'account', () => require(__hooks + '/lib/accounts.cjs').account(e)), $apis.requireAuth('users'));
+routerAdd('GET', '/api/odyle/export', e => require(__hooks + '/lib/admin.cjs').timed(e, 'export', () => require(__hooks + '/lib/accounts.cjs').exportData(e)), $apis.requireAuth('users'));
 // Public: the newest Windows companion release, cached from GitHub (no account data involved).
-routerAdd('GET', '/api/odyle/windows-release', e => require(__hooks + '/lib/releases.cjs').windowsRelease(e));
+routerAdd('GET', '/api/odyle/windows-release', e => require(__hooks + '/lib/admin.cjs').timed(e, 'windows-release', () => require(__hooks + '/lib/releases.cjs').windowsRelease(e)));
 // Public: the message superusers set under Server controls, for the dashboard (signed in or not).
-routerAdd('GET', '/api/odyle/announcement', e => { const settings = require(__hooks + '/lib/settings.cjs'); return e.json(200, { announcement: settings.announcement(settings.read(e.app)) }); });
+routerAdd('GET', '/api/odyle/announcement', e => require(__hooks + '/lib/admin.cjs').timed(e, 'announcement', () => { const settings = require(__hooks + '/lib/settings.cjs'); return e.json(200, { announcement: settings.announcement(settings.read(e.app)) }); }));
 // Superuser dashboard → Odyle (pb_hooks/admin, PocketBase UI extension): connected
-// Windows apps, live requests, background jobs and the server-wide settings (lib/admin.cjs).
+// Windows apps, live requests, server status, background jobs and the server-wide
+// settings (lib/admin.cjs).
 $app.onServe().bindFunc(e => { e.uiExtensions.push({ name: 'odyle', fs: $os.dirFS(__hooks + '/admin') }); return e.next(); });
 routerAdd('GET', '/api/odyle/admin/ui', e => require(__hooks + '/lib/admin.cjs').ui(e));
 routerAdd('GET', '/api/odyle/admin/monitor', e => require(__hooks + '/lib/admin.cjs').monitor(e), $apis.requireSuperuserAuth());
+routerAdd('GET', '/api/odyle/admin/status', e => require(__hooks + '/lib/admin.cjs').status(e), $apis.requireSuperuserAuth());
 routerAdd('GET', '/api/odyle/admin/jobs', e => require(__hooks + '/lib/admin.cjs').jobList(e), $apis.requireSuperuserAuth());
 routerAdd('POST', '/api/odyle/admin/jobs/{name}', e => require(__hooks + '/lib/admin.cjs').runJob(e), $apis.requireSuperuserAuth());
 routerAdd('GET', '/api/odyle/admin/settings', e => require(__hooks + '/lib/admin.cjs').readSettings(e), $apis.requireSuperuserAuth());

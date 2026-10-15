@@ -323,7 +323,7 @@ test('superusers watch connected apps and their packets live and edit the server
     const reading = { sessionId: session.sessionId, sequence: 1, characterName: 'Watched', server: 'Lumiel', region: 'GLOBAL_EU', value: 390, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, token: 'never-listed' };
     const saved = await action('report', reading, reader); assert.equal(saved.status, 200, JSON.stringify(saved.data));
     const live = (await stream.next())?.data.packet;
-    assert.equal(live.kind, 'report'); assert.equal(live.ok, true); assert.equal(live.account, 'Monitored reader'); assert.equal(live.user, reader.record.id);
+    assert.equal(live.kind, 'report'); assert.equal(live.ok, true); assert.equal(live.account, 'Monitored reader'); assert.equal(live.user, reader.record.id); assert.equal(live.source, 'app');
     assert.equal(live.characterName, 'Watched'); assert.equal(live.value, 390); assert.equal(live.sequence, 1); assert.equal(live.parserVersion, 'test-fixture-v1'); assert.equal('token' in live, false);
     // Rejected requests are listed with their reason; heartbeats name their character.
     assert.equal((await action('report', reading, reader)).status, 400);
@@ -332,7 +332,7 @@ test('superusers watch connected apps and their packets live and edit the server
     assert.equal((await stream.next())?.data.packet.characterName, 'Watched');
     // Dashboard requests are packets too, with their safe fields only: never the pairing code.
     const code = (await action('desktop-code', {}, reader)).data.code;
-    const web = (await stream.next())?.data.packet; assert.equal(web.kind, 'desktop-code'); assert.equal(web.ok, true); assert.equal(web.account, 'Monitored reader');
+    const web = (await stream.next())?.data.packet; assert.equal(web.kind, 'desktop-code'); assert.equal(web.ok, true); assert.equal(web.account, 'Monitored reader'); assert.equal(web.source, 'web');
     const data = (await monitor(operator)).data, row = data.apps.find(a => a.sessionId === session.sessionId);
     assert.equal(row.account, 'Monitored reader'); assert.equal(row.readings, 1); assert.ok(row.lastContactAt >= row.connectedAt);
     assert.equal(row.appVersion, '0.6.0.12'); assert.equal(row.device, ''); assert.equal(data.latestVersion, '0.5.0.2');
@@ -416,6 +416,46 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const { version } = (await request('/api/odyle/admin/ui', undefined, null, 'GET')).data;
   assert.match(await (await fetch(url + '/_/extensions/odyle/odyle.js?v=' + version)).text(), /export function jobsPage[\s\S]*export function controlsPage/);
   assert.match(await (await fetch(url + '/_/extensions.js')).text(), /#\/odyle\/jobs[\s\S]*#\/odyle\/controls/);
+});
+test('superusers read the server status: stored data, connected app versions, the release lookup and the last hour of traffic', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, member = (await request('/__test__/account', { name: 'Counted member' })).data;
+  const status = auth => request('/api/odyle/admin/status', undefined, auth, 'GET');
+  assert.equal((await status()).status, 401); assert.equal((await status(member)).status, 403);
+  const route = (data, kind) => data.traffic.routes.find(r => r.kind === kind) || { count: 0, rejected: 0 };
+  const reason = (data, kind, message) => data.traffic.errors.find(r => r.kind === kind && r.message === message) || { count: 0 };
+  const before = (await status(operator)).data;
+  const session = (await action('session', { appVersion: '0.6.0.13' }, member)).data;
+  const reading = { sessionId: session.sessionId, sequence: 1, characterName: 'Counted', server: 'Lumiel', region: 'GLOBAL_EU', value: 120, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  assert.equal((await action('report', reading, member)).status, 200);
+  assert.equal((await action('report', reading, member)).status, 400);
+  assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).status, 200);
+  assert.equal((await request('/api/odyle/snapshot/missingroom0000', undefined, member, 'GET')).status, 403);
+  const data = (await status(operator)).data;
+  assert.ok(Date.parse(data.startedAt) <= Date.parse(data.serverNow));
+  assert.ok(data.database.dataBytes > 0); assert.equal(typeof data.database.logsBytes, 'number');
+  // Packets count with their source, reads as reads; rejections keep their reason.
+  assert.equal(data.traffic.minutes.length, 60); assert.ok(Date.parse(data.traffic.minutes[59].at) <= Date.parse(data.serverNow));
+  assert.deepEqual(Object.keys(data.traffic.minutes[59]).sort(), ['app', 'at', 'read', 'rejected', 'web']);
+  assert.deepEqual([route(data, 'report').source, route(data, 'session').source, route(data, 'GET rooms').source, route(data, 'GET snapshot').source], ['app', 'app', 'read', 'read']);
+  assert.equal(route(data, 'report').count, route(before, 'report').count + 2); assert.equal(route(data, 'report').rejected, route(before, 'report').rejected + 1);
+  assert.equal(route(data, 'GET rooms').count, route(before, 'GET rooms').count + 1); assert.equal(route(data, 'GET snapshot').rejected, route(before, 'GET snapshot').rejected + 1);
+  assert.equal(reason(data, 'report', 'Outdated reading.').count, reason(before, 'report', 'Outdated reading.').count + 1);
+  assert.equal(reason(data, 'GET snapshot', 'You are not a member of this room.').count, reason(before, 'GET snapshot', 'You are not a member of this room.').count + 1);
+  assert.ok(data.traffic.total.count >= before.traffic.total.count + 5); assert.ok(data.traffic.total.p95Ms >= data.traffic.total.medianMs);
+  for (const key of ['averageMs', 'medianMs', 'p95Ms', 'maxMs']) assert.equal(typeof route(data, 'report')[key], 'number');
+  // The superuser routes themselves are never counted.
+  assert.equal(data.traffic.routes.some(r => r.kind.includes('admin') || r.kind === 'GET status'), false);
+  // What the database holds, and the connected apps by version.
+  assert.ok(data.counts.accounts.total >= 2 && data.counts.accounts.active24h >= 1 && data.counts.accounts.active7d >= data.counts.accounts.active24h);
+  assert.ok(data.counts.characters.live >= 1 && data.counts.characters.total >= data.counts.characters.live);
+  assert.ok(data.counts.readerSessions.connected >= 1 && data.counts.readerSessions.open >= data.counts.readerSessions.connected);
+  for (const [name, keys] of Object.entries({ rooms: ['total', 'discordReminders'], pairedPcs: ['total'], plannedRuns: ['total', 'upcoming'], historyPoints: ['total'], tasks: ['total'] })) for (const key of keys) assert.equal(typeof data.counts[name][key], 'number', name + '.' + key);
+  assert.equal(data.versions.find(v => v.version === '0.6.0.13')?.apps, 1);
+  // The release lookup: GitHub's last answer and when it was asked.
+  assert.equal(data.release.version, '0.5.0.2'); assert.equal(data.release.publishedAt, '2026-10-13T22:34:09Z'); assert.equal(data.release.error, ''); assert.equal(data.release.repository, 'oldbear24/odyle-windows');
+  assert.ok(Date.parse(data.release.fetchedAt) <= Date.parse(data.release.checkedAt));
+  // Nothing an account keeps secret reaches the page.
+  assert.equal(JSON.stringify(data).includes(member.token), false); assert.equal(JSON.stringify(data).includes('Counted member'), false);
 });
 test('accounts see their history, delete characters, export their data, sign out everywhere and delete themselves', async () => {
   const [holder, heir, watcher, loner, stranger] = await Promise.all(['Life holder', 'Life heir', 'Life watcher', 'Life loner', 'Life stranger'].map(async name => (await request('/__test__/account', { name })).data));
@@ -878,6 +918,9 @@ test('the dashboard offers the newest Windows release through the backend, cache
     await stop(); await start();
     const offline = await latest(); assert.equal(offline.status, 200, JSON.stringify(offline.data));
     assert.equal(offline.data.latest, null); assert.equal(offline.data.releasesUrl, 'https://github.com/oldbear24/odyle-windows/releases/latest');
+    // Superusers see why the lookup failed on the Server status page.
+    const operator = (await request('/__test__/superuser', {})).data, lookup = (await request('/api/odyle/admin/status', undefined, operator, 'GET')).data.release;
+    assert.deepEqual([lookup.version, lookup.fetchedAt, lookup.error], ['', '', 'GitHub answered 503.']); assert.ok(Date.parse(lookup.checkedAt) <= Date.now());
   } finally { releaseDown = false; }
 });
 // Last: it spends this client's pairing budget for the minute.

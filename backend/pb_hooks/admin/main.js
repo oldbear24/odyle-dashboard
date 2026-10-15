@@ -19,6 +19,7 @@ header.textContent = '@media (max-width:520px){.app-main-nav .header-link:not(.a
 document.head.append(header);
 app.store.headerLinks.push({ href: '#/odyle', icon: 'ri-pulse-line', label: 'Odyle' });
 app.routes.superuserOnly('#/odyle', async route => (await load()).monitorPage(route));
+app.routes.superuserOnly('#/odyle/status', async route => (await load()).statusPage(route));
 app.routes.superuserOnly('#/odyle/jobs', async route => (await load()).jobsPage(route));
 app.routes.superuserOnly('#/odyle/settings', async route => (await load()).settingsPage(route));
 app.routes.superuserOnly('#/odyle/controls', async route => (await load()).controlsPage(route));
