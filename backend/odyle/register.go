@@ -100,6 +100,7 @@ func Register(app core.App) {
 		return e.Next()
 	})
 
+	watchSettings(app)
 	scheduleJobs(app)
 }
 

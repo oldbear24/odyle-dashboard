@@ -7,12 +7,14 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// state is what the backend keeps in server memory only: the newest packets, the last
-// hour's traffic, the background jobs' records and the cached Windows release. A restart
-// clears it.
+// state is what the backend keeps in server memory only: the settings, the newest
+// packets, the last hour's traffic, the background jobs' records and the cached Windows
+// release. A restart clears it.
 type state struct {
 	mu        sync.Mutex
 	startedAt string
+
+	settings settingsCache // has its own lock
 
 	packetCount int64
 	packets     []*object // the newest 200, oldest first
