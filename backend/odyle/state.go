@@ -23,6 +23,8 @@ type state struct {
 	jobs    map[string]map[string]any // the last run of each job
 	running map[string]time.Time      // jobs running now, since
 
+	portraits *portraitWork // has its own lock
+
 	webhooks webhookWaits // has its own lock
 
 	releaseAt        time.Time // the last lookup
@@ -37,6 +39,6 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]map[string]any{}, running: map[string]time.Time{}}
+		return &state{traffic: newTraffic(), jobs: map[string]map[string]any{}, running: map[string]time.Time{}, portraits: newPortraitWork()}
 	}).(*state)
 }

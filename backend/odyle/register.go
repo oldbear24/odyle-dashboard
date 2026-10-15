@@ -103,6 +103,7 @@ func Register(app core.App) {
 	})
 
 	watchSettings(app)
+	watchCharacters(app)
 	scheduleJobs(app)
 }
 

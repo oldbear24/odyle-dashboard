@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -10,23 +11,56 @@ import (
 	_ "github.com/oldbear24/odyle-dashboard/backend/migrations"
 )
 
-// newTestApp is PocketBase on an empty data directory with every Odyle migration
-// applied and Odyle registered (routes, hooks and jobs; the jobs never run on their
-// own), for tests that need the database or the hooks.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if migrated.dir != "" {
+		os.RemoveAll(migrated.dir)
+	}
+	os.Exit(code)
+}
+
+// migrated is a data directory with every migration applied, made once; each test app
+// starts on a copy of it instead of migrating a database of its own.
+var migrated struct {
+	once sync.Once
+	dir  string
+	err  error
+}
+
+func migratedDataDir() (string, error) {
+	migrated.once.Do(func() {
+		if migrated.dir, migrated.err = os.MkdirTemp("", "odyle-test-data-"); migrated.err != nil {
+			return
+		}
+		app := core.NewBaseApp(core.BaseAppConfig{DataDir: migrated.dir, EncryptionEnv: "pb_test_env"})
+		if migrated.err = app.Bootstrap(); migrated.err == nil {
+			migrated.err = app.RunAppMigrations()
+		}
+		if err := app.ResetBootstrapState(); migrated.err == nil {
+			migrated.err = err
+		}
+	})
+	return migrated.dir, migrated.err
+}
+
+// newTestApp is PocketBase on a fresh database with every Odyle migration applied and
+// Odyle registered (routes, hooks and jobs; the jobs never run on their own), for tests
+// that need the database or the hooks.
 func newTestApp(t testing.TB) *tests.TestApp {
 	t.Helper()
 	// Nothing in the tests may reach GitHub; tests of the release lookup set their own feed.
 	if os.Getenv("ODYLE_WINDOWS_RELEASE_URL") == "" {
 		t.Setenv("ODYLE_WINDOWS_RELEASE_URL", "http://127.0.0.1:9/releases/latest")
 	}
-	app, err := tests.NewTestAppWithConfig(core.BaseAppConfig{DataDir: t.TempDir(), EncryptionEnv: "pb_test_env"})
+	dir, err := migratedDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := tests.NewTestAppWithConfig(core.BaseAppConfig{DataDir: dir, EncryptionEnv: "pb_test_env"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(app.Cleanup)
-	if err := app.RunAppMigrations(); err != nil {
-		t.Fatal(err)
-	}
 	Register(app)
 	return app
 }

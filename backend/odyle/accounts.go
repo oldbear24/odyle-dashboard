@@ -1,12 +1,14 @@
 package odyle
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -1000,65 +1002,6 @@ func sharing(e *core.RequestEvent) error {
 	})
 }
 
-// gamePortrait loads the official portrait into the character; the file is only
-// rewritten when the image changed. Download errors are returned after the attempt is
-// recorded. Never call it inside a transaction: it waits on PLAYNC. Portraits come only
-// from the game; no route lets players set or replace them.
-func gamePortrait(app core.App, id string) error {
-	before, err := app.FindRecordById("characters", id)
-	if err != nil {
-		return err
-	}
-	found, failure := fetchPortrait(before.GetString("characterName"), before.GetString("server"), before.GetString("region"))
-	// Reload: a reading may have been saved while PLAYNC answered.
-	c, err := app.FindRecordById("characters", id)
-	if err != nil {
-		return err
-	}
-	changed := found != nil && (found.hash != c.GetString("portraitHash") || c.GetString("portrait") == "")
-	if changed {
-		c.Set("portrait", found.file)
-		c.Set("portraitHash", found.hash)
-	}
-	c.Set("portraitCheckedAt", now())
-	if err := app.Save(c); err != nil {
-		return err
-	}
-	if changed {
-		roomIds, err := roomsFor(app, c.GetString("user"))
-		if err != nil {
-			return err
-		}
-		notify(app, roomIds)
-	}
-	return failure
-}
-
-// refreshPortraits is a job: new characters get their official portrait within a
-// minute, missing ones are retried hourly and the rest refresh daily. A few characters
-// per run keeps traffic to PLAYNC low. Superusers can pause it (Server controls);
-// characters saved meanwhile get their portrait once it runs again.
-func refreshPortraits(app core.App) (result, error) {
-	if readSettings(app).PortraitsPaused {
-		return result{"skipped": "paused"}, nil
-	}
-	out := result{"done": 0, "failed": 0}
-	due, err := app.FindRecordsByFilter("characters", "portraitCheckedAt = '' || (portrait = '' && portraitCheckedAt < {:hour}) || portraitCheckedAt < {:day}", "portraitCheckedAt", 5, 0, dbx.Params{"hour": ago(time.Hour), "day": ago(24 * time.Hour)})
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range due {
-		if err := gamePortrait(app, c.Id); err != nil {
-			out["failed"] = out["failed"].(int) + 1
-			out["error"] = "Character " + c.Id + ": " + message(err)
-			warn(app, "Odyle portrait refresh failed", "character", c.Id, "error", message(err))
-			continue
-		}
-		out["done"] = out["done"].(int) + 1
-	}
-	return out, nil
-}
-
 // heartbeat is presence only. No realtime refresh is sent: clients derive live/stale
 // from lastSeenAt on their own schedule, and a broadcast every 20 seconds per reader
 // made every member refetch the whole snapshot for nothing.
@@ -1796,32 +1739,74 @@ func discordWebhook(e *core.RequestEvent) error {
 // minutes before it starts, or at once when it was planned later than that. A run is
 // announced once and again after a new start time; a webhook Discord no longer knows is
 // dropped. Paused by superusers (Server controls), runs starting meanwhile are not
-// announced afterwards.
+// announced afterwards. Discord limits each webhook, so the runs of one webhook are
+// posted one after another; up to four webhooks post at the same time, so one slow
+// channel does not hold up the others.
 func remindRuns(app core.App) (result, error) {
 	if readSettings(app).RemindersPaused {
 		return result{"skipped": "paused"}, nil
 	}
+	var mu sync.Mutex
 	out := result{"done": 0, "failed": 0}
 	// text is the job's last error on the Background jobs page; the log line keeps the fields.
 	fail := func(text, event string, args ...any) {
+		mu.Lock()
 		out["failed"] = out["failed"].(int) + 1
 		out["error"] = text
+		mu.Unlock()
 		warn(app, event, args...)
 	}
 	at := time.Now()
 	due, err := app.FindRecordsByFilter("room_runs", "remindedAt = '' && room.discordWebhook != '' && startsAt > {:now} && startsAt <= {:soon}", "startsAt", 50, 0, dbx.Params{"now": stamp(at), "soon": stamp(at.Add(15 * time.Minute))})
+	if err != nil || len(due) == 0 {
+		return out, err
+	}
+	rooms, err := app.FindRecordsByIds("party_rooms", unique(field(due, "room")))
 	if err != nil {
 		return nil, err
 	}
-	for _, r := range due {
-		reminded, err := remindRun(app, r, fail)
-		if err != nil {
-			fail("Reminder for run "+r.Id+" failed: "+message(err), "Odyle run reminder failed", "run", r.Id, "error", message(err))
-		} else if reminded {
-			out["done"] = out["done"].(int) + 1
-		}
+	webhooks := map[string]string{}
+	for _, room := range rooms {
+		webhooks[room.Id] = room.GetString("discordWebhook")
 	}
+	groups, order := map[string][]*core.Record{}, []string{}
+	for _, r := range due {
+		link := webhooks[r.GetString("room")]
+		if groups[link] == nil {
+			order = append(order, link)
+		}
+		groups[link] = append(groups[link], r)
+	}
+	slots := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for _, link := range order {
+		wg.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			for _, r := range groups[link] {
+				reminded, err := safeRemind(app, r, fail)
+				if err != nil {
+					fail("Reminder for run "+r.Id+" failed: "+message(err), "Odyle run reminder failed", "run", r.Id, "error", message(err))
+				} else if reminded {
+					mu.Lock()
+					out["done"] = out["done"].(int) + 1
+					mu.Unlock()
+				}
+			}
+		})
+	}
+	wg.Wait()
 	return out, nil
+}
+
+// safeRemind is remindRun with a panic turned into its error.
+func safeRemind(app core.App, r *core.Record, fail func(text, event string, args ...any)) (reminded bool, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("the reminder failed: %v", p)
+		}
+	}()
+	return remindRun(app, r, fail)
 }
 
 // remindRun posts one run and reports whether Discord took it.
@@ -1831,6 +1816,10 @@ func remindRun(app core.App, r *core.Record, fail func(text, event string, args 
 		return false, err
 	}
 	url, attendees, users := room.GetString("discordWebhook"), stringSlice(r, "attendees"), []string{}
+	// Dropped by an earlier run of this job (Discord no longer knew it), or disconnected meanwhile.
+	if url == "" {
+		return false, nil
+	}
 	if len(attendees) > 0 {
 		members, err := app.FindRecordsByIds("room_members", attendees)
 		if err != nil {

@@ -94,9 +94,11 @@ func fixtures(se *core.ServeEvent) {
 		users.OAuth2.Providers = []core.OAuth2ProviderConfig{{Name: "discord", ClientId: "test-application", ClientSecret: "test-only-secret", TokenURL: base + "/token", UserInfoURL: base + "/user"}}
 		return map[string]any{"success": true}, e.App.Save(users)
 	})
-	// The scheduled jobs, run now.
+	// The scheduled jobs, run now, once the portrait lookups of newly saved characters are
+	// done, so the job finds what they did.
 	for path, work := range map[string]func(core.App) (result, error){"refresh-portraits": refreshPortraits, "retention": retention, "remind": remindRuns} {
 		fixture(se, path, func(e *core.RequestEvent, _ body) (any, error) {
+			stateOf(e.App).portraits.wait()
 			_, err := work(e.App)
 			return map[string]any{}, err
 		})

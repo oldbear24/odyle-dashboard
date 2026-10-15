@@ -180,6 +180,9 @@ test('characters get their official portrait from the game; players cannot chang
   const refresh = async () => { for (let i = 0; i < 3; i++) assert.equal((await request('/__test__/refresh-portraits', {})).status, 200); };
   const dayLater = async () => assert.equal((await request('/__test__/age-portrait', { id: c.id })).status, 200);
 
+  // A saved character gets its portrait right away, without waiting for the job.
+  for (let i = 0; i < 50 && !(await own()).portrait; i++) await delay(50);
+  assert.match((await own()).portrait, /\.png$/);
   await refresh();
   const game = await own(); assert.match(game.portrait, /\.png$/);
   assert.equal('portraitHash' in game || 'portraitCheckedAt' in game, false);
