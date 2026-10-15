@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -127,8 +126,6 @@ func stringSlice(r *core.Record, key string) []string {
 	}
 	return []string{}
 }
-
-func logf(format string, args ...any) { log.Printf(format, args...) }
 
 // ---------------------------------------------------------------- request bodies
 //

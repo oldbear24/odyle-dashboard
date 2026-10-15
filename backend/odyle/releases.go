@@ -151,7 +151,7 @@ func latestRelease(app core.App) map[string]any {
 	s.releaseChecked, s.releaseAt, s.releaseError = true, checked, ""
 	if err != nil {
 		s.releaseError = err.Error()
-		logf("Odyle release lookup failed: %s", s.releaseError)
+		warn(app, "Odyle release lookup failed", "error", s.releaseError)
 	} else {
 		s.release, s.releaseFetchedAt = found, checked
 	}

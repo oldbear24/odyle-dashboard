@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -165,7 +166,7 @@ func measure(handle func(*core.RequestEvent) error, done func(e *core.RequestEve
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logf("Odyle monitor failed: %v", r)
+					warn(e.App, "Odyle monitor failed", "path", e.Request.URL.Path, "error", fmt.Sprint(r))
 				}
 			}()
 			done(e, err, time.Since(started).Milliseconds())

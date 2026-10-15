@@ -151,7 +151,7 @@ func touch(e *core.RequestEvent) {
 		err = e.App.Save(user)
 	}
 	if err != nil {
-		logf("Odyle activity mark failed: %v", err)
+		warn(e.App, "Odyle activity mark failed", "user", auth.Id, "error", err.Error())
 	}
 }
 
@@ -294,14 +294,6 @@ var codeSeparators = regexp.MustCompile(`[\s\x{a0}\x{1680}\x{2000}-\x{200a}\x{20
 // normalizeCode drops spaces and dashes of a typed code and upper-cases it.
 func normalizeCode(code string) string {
 	return strings.ToUpper(codeSeparators.ReplaceAllString(code, ""))
-}
-
-func lowerFirst(text string) string {
-	if text == "" {
-		return text
-	}
-	r := []rune(text)
-	return strings.ToLower(string(r[0])) + string(r[1:])
 }
 
 func join(e *core.RequestEvent) error {
@@ -1058,7 +1050,7 @@ func refreshPortraits(app core.App) (result, error) {
 		if err := gamePortrait(app, c.Id); err != nil {
 			out["failed"] = out["failed"].(int) + 1
 			out["error"] = "Character " + c.Id + ": " + message(err)
-			logf("Odyle portrait refresh failed for character %s: %s", c.Id, message(err))
+			warn(app, "Odyle portrait refresh failed", "character", c.Id, "error", message(err))
 			continue
 		}
 		out["done"] = out["done"].(int) + 1
@@ -1793,10 +1785,11 @@ func remindRuns(app core.App) (result, error) {
 		return result{"skipped": "paused"}, nil
 	}
 	out := result{"done": 0, "failed": 0}
-	fail := func(text string) {
+	// text is the job's last error on the Background jobs page; the log line keeps the fields.
+	fail := func(text, event string, args ...any) {
 		out["failed"] = out["failed"].(int) + 1
 		out["error"] = text
-		logf("Odyle %s", lowerFirst(text))
+		warn(app, event, args...)
 	}
 	at := time.Now()
 	due, err := app.FindRecordsByFilter("room_runs", "remindedAt = '' && room.discordWebhook != '' && startsAt > {:now} && startsAt <= {:soon}", "startsAt", 50, 0, dbx.Params{"now": stamp(at), "soon": stamp(at.Add(15 * time.Minute))})
@@ -1806,7 +1799,7 @@ func remindRuns(app core.App) (result, error) {
 	for _, r := range due {
 		reminded, err := remindRun(app, r, fail)
 		if err != nil {
-			fail("Reminder for run " + r.Id + " failed: " + message(err))
+			fail("Reminder for run "+r.Id+" failed: "+message(err), "Odyle run reminder failed", "run", r.Id, "error", message(err))
 		} else if reminded {
 			out["done"] = out["done"].(int) + 1
 		}
@@ -1815,7 +1808,7 @@ func remindRuns(app core.App) (result, error) {
 }
 
 // remindRun posts one run and reports whether Discord took it.
-func remindRun(app core.App, r *core.Record, fail func(string)) (bool, error) {
+func remindRun(app core.App, r *core.Record, fail func(text, event string, args ...any)) (bool, error) {
 	room, err := app.FindRecordById("party_rooms", r.GetString("room"))
 	if err != nil {
 		return false, err
@@ -1847,12 +1840,12 @@ func remindRun(app core.App, r *core.Record, fail func(string)) (bool, error) {
 			return false, err
 		}
 		notify(app, []string{room.Id})
-		fail("Dropped the Discord webhook of room " + room.Id + ": Discord answered " + strconv.Itoa(status))
+		fail("Dropped the Discord webhook of room "+room.Id+": Discord answered "+strconv.Itoa(status), "Odyle dropped a Discord webhook that Discord no longer knows", "room", room.Id, "status", status)
 	case status >= 200 && status < 300:
 		r.Set("remindedAt", now())
 		return true, app.Save(r)
 	default:
-		fail("Reminder for run " + r.Id + " failed: Discord answered " + strconv.Itoa(status))
+		fail("Reminder for run "+r.Id+" failed: Discord answered "+strconv.Itoa(status), "Odyle run reminder failed", "run", r.Id, "status", status)
 	}
 	return false, nil
 }
@@ -2246,12 +2239,12 @@ func retention(app core.App) (result, error) {
 		if err != nil {
 			out["failed"] = out["failed"].(int) + 1
 			out["error"] = "Account " + user.Id + ": " + message(err)
-			logf("Odyle could not delete inactive account %s: %s", user.Id, message(err))
+			warn(app, "Odyle could not delete an inactive account", "user", user.Id, "error", message(err))
 			continue
 		}
 		notify(app, roomIds)
 		out["done"] = out["done"].(int) + 1
-		logf("Odyle deleted inactive account %s", user.Id)
+		info(app, "Odyle deleted an inactive account", "user", user.Id)
 	}
 	return out, nil
 }

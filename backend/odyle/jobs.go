@@ -83,12 +83,12 @@ func work(app core.App, name string, j job) (out result) {
 	defer func() {
 		if r := recover(); r != nil {
 			out = result{"failed": 1, "error": fmt.Sprint(r)}
-			logf("Odyle job %s failed: %v", name, r)
+			warn(app, "Odyle job failed", "job", name, "error", fmt.Sprint(r))
 		}
 	}()
 	out, err := j.work(app)
 	if err != nil {
-		logf("Odyle job %s failed: %s", name, message(err))
+		warn(app, "Odyle job failed", "job", name, "error", message(err))
 		return result{"failed": 1, "error": message(err)}
 	}
 	if out == nil {
