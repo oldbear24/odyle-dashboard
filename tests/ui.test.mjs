@@ -412,6 +412,10 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     await shot(page, 'admin-phone-header');
     // A changed extension entry reaches browsers on their next load, not after 14 days.
     assert.equal((await fetch(url + '/_/extensions.js')).headers.get('cache-control'), 'no-cache');
+    // A browser still holding an entry from before that drops its cache once, on its next visit.
+    const visit = await fetch(url + '/_/'), again = await fetch(url + '/_/', { headers: { Cookie: 'odyle_entry=1' } });
+    assert.equal(visit.headers.get('clear-site-data'), '"cache"'); assert.match(visit.headers.get('set-cookie'), /^odyle_entry=1; Path=\/_\/;/);
+    assert.equal(again.headers.get('clear-site-data'), null);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
   } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0 }, operator); }
 });

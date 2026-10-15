@@ -233,7 +233,7 @@ Server controls: `announcement` is one line of up to 300 characters (spaces and 
 
 `minutes` always has 60 entries, oldest first, each with the accepted requests by source and the rejected ones from any source. `routes` lists every route of the hour, busiest first, and `errors` up to 20 rejection reasons, most frequent first. `averageMs` and `maxMs` are exact; `medianMs` and `p95Ms` are upper bounds, because times are counted in steps of 1, 2, 5, 10, 25, 50, 100, 250 and 500 ms, 1, 2.5 and 5 s; they report the slowest time instead when that is lower, and for anything beyond 5 s. `total` has the timings only once a request was counted.
 
-PocketBase serves extension files with a 14-day browser cache. The backend sends the combined entry `/_/extensions.js` (the extension's `main.js`) with `Cache-Control: no-cache`, so browsers fetch it on every load, and the entry imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload.
+PocketBase serves extension files with a 14-day browser cache. The backend sends the combined entry `/_/extensions.js` (the extension's `main.js`) with `Cache-Control: no-cache`, so browsers fetch it on every load, and the entry imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload. Browsers that loaded the entry before it was sent with `no-cache` would keep it for up to 14 days, so the dashboard page `/_/` answers each browser once with `Clear-Site-Data: "cache"` and marks it with the cookie `odyle_entry=1` (path `/_/`); the browser then fetches the current entry. Browsers honour that header only over HTTPS or on localhost.
 
 ## Realtime
 

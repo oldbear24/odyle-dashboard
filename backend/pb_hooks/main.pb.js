@@ -73,7 +73,14 @@ routerUse(e => {
   // PocketBase lets browsers keep the superuser dashboard's extension entry (admin/main.js)
   // for 14 days unless a header is already set, so a changed entry would miss them that long.
   if (path === '/_/extensions.js') e.response.header().set('Cache-Control', 'no-cache');
-  else if (!path.startsWith('/api/') && !path.startsWith('/_/')) {
+  // Browsers that opened the superuser dashboard before that header keep their old entry
+  // without asking again, the Odyle link out of sight on phones included. Their HTTP cache
+  // of this site is dropped once, on the next visit to the dashboard, so they fetch the
+  // current entry; the cookie marks browsers that have done it.
+  else if (path === '/_/' && e.request.method === 'GET' && !/(?:^|;\s*)odyle_entry=1(?:;|$)/.test(e.request.header.get('Cookie') || '')) {
+    e.response.header().set('Clear-Site-Data', '"cache"');
+    e.response.header().add('Set-Cookie', 'odyle_entry=1; Path=/_/; Max-Age=31536000; SameSite=Lax; HttpOnly');
+  } else if (!path.startsWith('/api/') && !path.startsWith('/_/')) {
     const headers = e.response.header();
     headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'");
     headers.set('X-Frame-Options', 'DENY'); headers.set('X-Content-Type-Options', 'nosniff'); headers.set('Referrer-Policy', 'no-referrer');
