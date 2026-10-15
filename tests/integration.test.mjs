@@ -25,6 +25,9 @@ async function request(path, body, auth, method = 'POST') {
   return { status: res.status, data: await res.json() };
 }
 const action = (name, body, auth) => request('/api/odyle/' + name, body, auth);
+// Realtime news is delivered a moment after a change; this delivers what is pending, so a
+// stream opened next hears only of later changes.
+const settle = async () => assert.equal((await request('/__test__/settle', {})).status, 200);
 const snapshot = auth => request('/api/odyle/snapshot/' + room.id, undefined, auth, 'GET');
 async function snapshot2(id, auth) { const res = await request('/api/odyle/snapshot/' + id, undefined, auth, 'GET'); assert.equal(res.status, 200, JSON.stringify(res.data)); return res.data; }
 async function stop() { if (child && child.exitCode === null) { const closed = new Promise(resolve => child.once('exit', resolve)); child.kill(); await closed; } }
@@ -241,7 +244,7 @@ test('room members keep a shared dungeon wishlist', async () => {
   assert.deepEqual(await listed(watcher), both); assert.deepEqual(await listed(mate), both);
 
   // Viewers only read it, outsiders get nothing and the collection is closed to direct access.
-  const stream = await connect(url, watcher.token, 'odyle.room.' + roomId);
+  await settle(); const stream = await connect(url, watcher.token, 'odyle.room.' + roomId);
   try {
     assert.equal((await wish(watcher, 'Udas Temple')).status, 403);
     assert.equal((await wish(stranger, 'Udas Temple')).status, 403);
@@ -514,7 +517,7 @@ test('room owners rename rooms, change roles and hand rooms over; runs are plann
   const roomId = (await action('create', { name: 'Managed room' }, lead)).data.room.id, elsewhere = (await action('create', { name: 'Other room' }, other)).data.room.id;
   for (const [auth, role] of [[mate, 'reporter'], [guest, 'viewer']]) assert.equal((await request('/__test__/member', { room: roomId, user: auth.record.id, role })).status, 200);
   const memberOf = async (auth, room = roomId) => (await snapshot2(room, lead)).members.find(m => m.user === auth.record.id);
-  const stream = await connect(url, mate.token, 'odyle.room.' + roomId);
+  await settle(); const stream = await connect(url, mate.token, 'odyle.room.' + roomId);
   try {
     assert.equal((await action('rename', { roomId, name: ' Renamed room ' }, mate)).status, 403);
     for (const name of ['', 'x'.repeat(61)]) assert.equal((await action('rename', { roomId, name }, lead)).status, 400);
@@ -857,13 +860,15 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     assert.equal((await request('/api/collections/characters/records/' + second.id, undefined, player, 'GET')).data.value, 265);
   });
   await t.test('live room subscription requires membership; revoked listeners lose access', async () => {
-    const stream = await connect(url, viewer.token, 'odyle.room.' + room.id);
+    await settle(); const stream = await connect(url, viewer.token, 'odyle.room.' + room.id);
     try {
       await action('sharing', { roomId: room.id, enabled: true }, owner); assert.equal((await stream.next())?.data.refresh, true);
       const memberId = (await snapshot(owner)).data.members.find(m => m.user === viewer.record.id).id;
+      // A removed member hears once that it was removed, and nothing after that.
       await action('revoke', { roomId: room.id, memberId }, owner);
+      assert.deepEqual((await stream.next())?.data, { refresh: true, removed: true });
       await action('sharing', { roomId: room.id, enabled: false }, owner);
-      assert.equal(await stream.next(250), null); assert.equal((await snapshot(viewer)).status, 403);
+      assert.equal(await stream.next(400), null); assert.equal((await snapshot(viewer)).status, 403);
     } finally { await stream.close(); }
     await assert.rejects(() => connect(url, outsider.token, 'odyle.room.' + room.id));
   });

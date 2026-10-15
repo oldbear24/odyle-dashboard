@@ -250,16 +250,14 @@ func gamePortrait(app core.App, id string) error {
 	}
 	found, failure := fetchPortrait(before.GetString("characterName"), before.GetString("server"), before.GetString("region"))
 	// Saved from a fresh copy in one transaction: a reading saved while PLAYNC answered,
-	// or saved meanwhile by another request, is kept.
-	var changed bool
-	var owner string
+	// or saved meanwhile by another request, is kept. Rooms hear of a new picture from
+	// the character's record hooks (realtime.go).
 	if err := app.RunInTransaction(func(tx core.App) error {
 		c, err := tx.FindRecordById("characters", id)
 		if err != nil {
 			return err
 		}
-		changed, owner = found != nil && (found.hash != c.GetString("portraitHash") || c.GetString("portrait") == ""), c.GetString("user")
-		if changed {
+		if found != nil && (found.hash != c.GetString("portraitHash") || c.GetString("portrait") == "") {
 			c.Set("portrait", found.file)
 			c.Set("portraitHash", found.hash)
 		}
@@ -267,13 +265,6 @@ func gamePortrait(app core.App, id string) error {
 		return tx.Save(c)
 	}); err != nil {
 		return err
-	}
-	if changed {
-		roomIds, err := roomsFor(app, owner)
-		if err != nil {
-			return err
-		}
-		notify(app, roomIds)
 	}
 	return failure
 }

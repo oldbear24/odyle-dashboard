@@ -13,6 +13,11 @@ import (
 type state struct {
 	mu        sync.Mutex
 	startedAt string
+	root      core.App // the app Register was given, never a transaction
+
+	changes   *outbox   // realtime news, delivered at once
+	sightings *outbox   // heartbeats for realtime, delivered every two seconds
+	presence  *presence // heartbeats not written yet
 
 	settings settingsCache // has its own lock
 
@@ -39,6 +44,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]map[string]any{}, running: map[string]time.Time{}, portraits: newPortraitWork()}
+		return &state{traffic: newTraffic(), jobs: map[string]map[string]any{}, running: map[string]time.Time{}, portraits: newPortraitWork(),
+			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence()}
 	}).(*state)
 }

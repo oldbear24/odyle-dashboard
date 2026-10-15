@@ -103,6 +103,14 @@ func fixtures(se *core.ServeEvent) {
 			return map[string]any{}, err
 		})
 	}
+	// Delivers the realtime news collected so far (realtime.go) once running portrait
+	// lookups are done, so a stream opened next hears only of later changes.
+	fixture(se, "settle", func(e *core.RequestEvent, _ body) (any, error) {
+		stateOf(e.App).portraits.wait()
+		changes(e.App).deliver(e.App)
+		sightings(e.App).deliver(e.App)
+		return map[string]any{}, nil
+	})
 	// Runs the expiry job and reports which of the given invite codes it kept.
 	fixture(se, "cleanup", func(e *core.RequestEvent, b body) (any, error) {
 		if _, err := cleanup(e.App); err != nil {
@@ -196,6 +204,11 @@ func fixtures(se *core.ServeEvent) {
 		}
 		user.Set("lastActiveAt", time.Now().Add(-time.Duration(count(b["days"]))*24*time.Hour).UTC().Format(isoLayout))
 		return map[string]any{}, e.App.Save(user)
+	})
+	// A reading whose heartbeat stopped the given seconds ago.
+	fixture(se, "age-seen", func(e *core.RequestEvent, b body) (any, error) {
+		_, err := e.App.DB().NewQuery("UPDATE characters SET lastSeenAt = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": ago(time.Duration(count(b["seconds"])) * time.Second), "id": b.str("id")}).Execute()
+		return map[string]any{}, err
 	})
 	fixture(se, "age-portrait", func(e *core.RequestEvent, b body) (any, error) {
 		c, err := e.App.FindRecordById("characters", b.str("id"))

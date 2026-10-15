@@ -16,7 +16,7 @@ For internet access, put an HTTPS reverse proxy in front of port 8090 and change
 command: ["--origins=https://odyle.example.com"]
 ```
 
-Replace the example with your actual origin. Keep the port bound to loopback when the proxy runs on the host. Forward HTTP/1.1 connections and disable response buffering for `/api/realtime` so SSE arrives immediately. PocketBase checks collection permissions on realtime subscriptions; the additional message hook rechecks revoked/expired membership before delivery.
+Replace the example with your actual origin. Keep the port bound to loopback when the proxy runs on the host. Forward HTTP/1.1 connections and disable response buffering for `/api/realtime` so SSE arrives immediately: open dashboards follow rooms, readings and heartbeats over it and otherwise fall back to fetching every 15 seconds. Odyle checks room membership on subscription and with every delivery, and unsubscribes a member who left or was removed; PocketBase checks collection permissions on its own topics.
 
 If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker build argument or Vite build environment variable, and allow that exact frontend origin. Static hosting alone cannot run the backend.
 
@@ -50,7 +50,7 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 - Accounts are capped at 30 characters, 20 owned rooms, 50 memberships, 40 tasks and 10 paired Windows PCs. Unused accounts are kept unless you set **Delete inactive accounts after (days)** on the Odyle page (30 days or more; a nightly job at 03:17 server time deletes up to 200 accounts per run and passes their rooms on). Deleting an account in the PocketBase dashboard passes its rooms on the same way.
 - The server-wide settings (`odyle_settings`) are kept in memory and read again after every change made through PocketBase: the **Odyle** pages, **Collections → odyle_settings** or the API. A change written straight into the SQLite file applies after a restart.
 - Odyle history keeps 30 days of changes per character and finished planned runs are deleted a day after their start, both by the five-minute expiry job.
-- Rooms and account-owned character values persist in the data volume. Freshness uses server timestamps; client clocks affect only display, corrected using heartbeat responses.
+- Rooms and account-owned character values persist in the data volume. Freshness uses server timestamps; client clocks affect only display, corrected using heartbeat responses. Heartbeats are written every ten seconds and when the backend stops; a crash loses at most those ten seconds of presence, which the next heartbeats restore.
 - Invites can be reused during their 30-minute lifetime. Rotate them to stop new joins; remove a member to revoke existing access. Rooms allow up to 50 members, including viewers.
 - Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
 

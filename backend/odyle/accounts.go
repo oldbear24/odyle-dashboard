@@ -14,7 +14,6 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
 )
 
 // Per-account caps. They only stop runaway or abusive clients: players keep a handful
@@ -103,18 +102,6 @@ func ownSession(app core.App, userId, id string) (*core.Record, error) {
 		return nil, forbidden("Publisher session expired. Reconnect.")
 	}
 	return session, nil
-}
-
-// notify tells the rooms' subscribers to fetch their snapshot again.
-func notify(app core.App, roomIds []string) {
-	for _, id := range unique(roomIds) {
-		topic := "odyle.room." + id
-		for _, client := range app.SubscriptionsBroker().Clients() {
-			if client.HasSubscription(topic) {
-				client.Send(subscriptions.Message{Name: topic, Data: []byte(`{"refresh":true}`)})
-			}
-		}
-	}
 }
 
 // Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
@@ -420,6 +407,7 @@ func snapshot(e *core.RequestEvent) error {
 			visible := []any{}
 			for _, c := range characters[m.GetString("user")] {
 				if mine || contains(linked, c.Id) {
+					present(e.App, c)
 					j := c.PublicExport()
 					j["shared"] = contains(linked, c.Id)
 					visible = append(visible, j)
@@ -779,7 +767,7 @@ func appVersion(value any) string {
 // (401, and the app pairs again). Newer apps also send their version, for the
 // superuser dashboard's Apps page.
 func session(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		var device *core.Record
 		if b.set("deviceKey") {
 			key, err := deviceKey(b)
@@ -798,11 +786,6 @@ func session(e *core.RequestEvent) error {
 			if err := endSession(app, previous); err != nil {
 				return nil, err
 			}
-			roomIds, err := roomsFor(app, user.Id)
-			if err != nil {
-				return nil, err
-			}
-			*affected = append(*affected, roomIds...)
 		}
 		// A PC runs one Odyle at a time, so its new session replaces the ones it left open (a
 		// restart, an update, a crash). Their readings are not marked stale: a restarted app
@@ -839,7 +822,7 @@ func session(e *core.RequestEvent) error {
 // character saves a character's identity before its first game reading. This route
 // cannot supply energy, confidence, ownership, timestamps or a reader session.
 func character(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		for key := range b {
 			if key != "characterName" && key != "server" && key != "region" {
 				return nil, badRequest("Only character name, server and region may be saved here.")
@@ -868,11 +851,6 @@ func character(e *core.RequestEvent) error {
 		if err := app.Save(record); err != nil {
 			return nil, err
 		}
-		roomIds, err := roomsFor(app, user.Id)
-		if err != nil {
-			return nil, err
-		}
-		*affected = append(*affected, roomIds...)
 		return map[string]any{"character": record}, nil
 	})
 }
@@ -883,7 +861,7 @@ func sameCharacter(app core.App, userId string, data identity) ([]*core.Record, 
 
 // report saves a reading of the Windows app.
 func report(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		session, err := ownSession(app, user.Id, b.str("sessionId"))
 		if err != nil {
 			return nil, err
@@ -946,11 +924,7 @@ func report(e *core.RequestEvent) error {
 		if err := app.Save(session); err != nil {
 			return nil, err
 		}
-		roomIds, err := roomsFor(app, user.Id)
-		if err != nil {
-			return nil, err
-		}
-		*affected = append(*affected, roomIds...)
+		// Rooms and the owner hear of the character from its record hooks (realtime.go).
 		return map[string]any{"character": character, "serverNow": now()}, nil
 	})
 }
@@ -1002,39 +976,38 @@ func sharing(e *core.RequestEvent) error {
 	})
 }
 
-// heartbeat is presence only. No realtime refresh is sent: clients derive live/stale
-// from lastSeenAt on their own schedule, and a broadcast every 20 seconds per reader
-// made every member refetch the whole snapshot for nothing.
+// heartbeat is presence only: the session is in contact and the character it reads is
+// seen. Both are kept in memory and written every ten seconds (presence.go); the
+// character's rooms and its owner hear of it over realtime, without a snapshot.
 func heartbeat(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+	return run(e, func() error {
+		b, err := requestBody(e)
+		if err != nil {
+			return err
+		}
 		if b.set("sessionId") {
-			session, err := ownSession(app, user.Id, b.str("sessionId"))
+			session, err := ownSession(e.App, e.Auth.Id, b.str("sessionId"))
 			if err != nil {
-				return nil, err
+				return err
 			}
-			session.Set("expiresAt", expiry(86400))
-			if err := app.Save(session); err != nil {
-				return nil, err
-			}
+			var read *core.Record
 			if b.set("characterId") {
-				c, err := ownCharacter(app, user.Id, b.str("characterId"))
+				c, err := ownCharacter(e.App, e.Auth.Id, b.str("characterId"))
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if c.GetString("readingSession") == session.Id {
-					c.Set("lastSeenAt", now())
-					if err := app.Save(c); err != nil {
-						return nil, err
-					}
+					read = c
 				}
 			}
+			beat(e.App, session, read, time.Now())
 		}
-		return map[string]any{"serverNow": now()}, nil
+		return e.JSON(200, map[string]any{"serverNow": now()})
 	})
 }
 
 func invalidate(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		c, err := ownCharacter(app, user.Id, b.str("characterId"))
 		if err != nil {
 			return nil, err
@@ -1043,15 +1016,7 @@ func invalidate(e *core.RequestEvent) error {
 			return nil, nil
 		}
 		c.Set("valid", false)
-		if err := app.Save(c); err != nil {
-			return nil, err
-		}
-		roomIds, err := roomsFor(app, user.Id)
-		if err != nil {
-			return nil, err
-		}
-		*affected = append(*affected, roomIds...)
-		return nil, nil
+		return nil, app.Save(c)
 	})
 }
 
@@ -1976,7 +1941,7 @@ func account(e *core.RequestEvent) error {
 		}
 		apps := make([]any, len(sessions))
 		for i, s := range sessions {
-			apps[i] = map[string]any{"sessionId": s.Id, "connectedAt": s.GetString("created"), "lastContactAt": s.GetString("updated"), "character": reading[s.Id], "device": s.GetString("device")}
+			apps[i] = map[string]any{"sessionId": s.Id, "connectedAt": s.GetString("created"), "lastContactAt": contactAt(e.App, s), "character": reading[s.Id], "device": s.GetString("device")}
 		}
 		paired := make([]any, len(devices))
 		for i, d := range devices {
@@ -2061,6 +2026,7 @@ func exportData(e *core.RequestEvent) error {
 			for j, p := range points {
 				history[j] = map[string]any{"value": p.GetInt64("value"), "at": p.GetString("created")}
 			}
+			present(app, c)
 			j := c.PublicExport()
 			j["history"] = history
 			exportedCharacters[i] = j
@@ -2091,7 +2057,7 @@ func exportData(e *core.RequestEvent) error {
 		}
 		readerSessions := make([]any, len(sessions))
 		for i, s := range sessions {
-			readerSessions[i] = map[string]any{"id": s.Id, "connectedAt": s.GetString("created"), "lastContactAt": s.GetString("updated"), "expiresAt": s.GetString("expiresAt")}
+			readerSessions[i] = map[string]any{"id": s.Id, "connectedAt": s.GetString("created"), "lastContactAt": contactAt(app, s), "expiresAt": s.GetString("expiresAt")}
 		}
 		devices, err := all(app, "desktop_devices", "user = {:user}", mine)
 		if err != nil {

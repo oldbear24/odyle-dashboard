@@ -1,7 +1,6 @@
 package odyle
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
 
 	"github.com/oldbear24/odyle-dashboard/backend/admin"
 )
@@ -95,14 +93,10 @@ func packets(app core.App) []*object {
 }
 
 func broadcast(app core.App, packet *object) {
-	data, err := json.Marshal(map[string]any{"packet": packet})
-	if err != nil {
-		return
-	}
-	message := subscriptions.Message{Name: packetTopic, Data: data}
+	message := map[string]any{"packet": packet}
 	for _, client := range app.SubscriptionsBroker().Clients() {
 		if client.HasSubscription(packetTopic) {
-			client.Send(message)
+			post(client, packetTopic, message)
 		}
 	}
 }
@@ -240,9 +234,10 @@ func apps(app core.App) ([]map[string]any, error) {
 	for i, s := range sessions {
 		var character any
 		if c := reading[s.Id]; c != nil {
+			present(app, c)
 			character = map[string]any{"id": c.Id, "characterName": c.GetString("characterName"), "server": c.GetString("server"), "region": c.GetString("region"), "value": c.GetInt64("value"), "confirmed": c.GetBool("confirmed"), "valid": c.GetBool("valid"), "lastSeenAt": c.GetString("lastSeenAt"), "lastReadingAt": c.GetString("lastReadingAt"), "parserVersion": c.GetString("parserVersion")}
 		}
-		rows[i] = map[string]any{"sessionId": s.Id, "user": s.GetString("user"), "account": names[s.GetString("user")], "device": devices[s.GetString("device")], "appVersion": s.GetString("appVersion"), "connectedAt": s.GetString("created"), "lastContactAt": s.GetString("updated"), "readings": s.GetInt64("sequence"), "character": character}
+		rows[i] = map[string]any{"sessionId": s.Id, "user": s.GetString("user"), "account": names[s.GetString("user")], "device": devices[s.GetString("device")], "appVersion": s.GetString("appVersion"), "connectedAt": s.GetString("created"), "lastContactAt": contactAt(app, s), "readings": s.GetInt64("sequence"), "character": character}
 	}
 	key := func(row map[string]any) string {
 		return strings.ToLower(row["account"].(string)) + "\u0000" + row["connectedAt"].(string) + "\u0000" + row["sessionId"].(string)
