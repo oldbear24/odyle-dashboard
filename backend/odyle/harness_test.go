@@ -36,7 +36,7 @@ func migratedDataDir() (string, error) {
 		if migrated.err = app.Bootstrap(); migrated.err == nil {
 			migrated.err = app.RunAppMigrations()
 		}
-		if err := app.ResetBootstrapState(); migrated.err == nil {
+		if err := app.ClearBootstrap(); migrated.err == nil {
 			migrated.err = err
 		}
 	})
