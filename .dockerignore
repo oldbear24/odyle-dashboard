@@ -2,6 +2,7 @@ node_modules
 .git
 .runtime
 dist
+backend/web/dist
 backend/pb_data
 .env
 .env.backend

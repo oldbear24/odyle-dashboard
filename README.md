@@ -68,7 +68,7 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. **Configure Discord before real sign-in:** follow [Discord setup](docs/discord-setup.md). The callback is `http://127.0.0.1:8090/api/oauth2-redirect`. Put provider credentials in ignored `.env.backend`, never in frontend `VITE_*` variables. No Discord bot is needed.
 
-The backend is PocketBase **0.40.5** used as a Go library (`backend/go.mod`) with the Odyle routes, jobs, migrations and superuser page compiled in: `npm run backend:build` builds the server `.runtime/odyle` and the test build `.runtime/odyle-test`; rebuild after changing `backend/`. Migrations run on startup. Data is stored in ignored `backend/pb_data/`; keep this directory or your Docker data volume to retain accounts and readings.
+The backend is PocketBase **0.40.5** used as a Go library (`backend/go.mod`) with the Odyle routes, jobs, migrations and superuser page compiled in: `npm run backend:build` builds the server `.runtime/odyle` and the test build `.runtime/odyle-test`; rebuild after changing `backend/`. Both carry the dashboard of the last `npm run build` (copied into `backend/web/dist` for `go:embed`), so the server alone serves it; `--publicDir=dist` serves the folder instead, as `npm run backend` does. Migrations run on startup. Data is stored in ignored `backend/pb_data/`; keep this directory or your Docker data volume to retain accounts and readings.
 
 To serve UI and API together:
 

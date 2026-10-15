@@ -21,6 +21,8 @@ WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend ./
+# The dashboard is compiled in (backend/web).
+COPY --from=web /src/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/oldbear24/odyle-dashboard/backend/odyle.Version=$VERSION -X github.com/oldbear24/odyle-dashboard/backend/odyle.Commit=$COMMIT" -o /out/odyle .
 
 FROM alpine:3.22
@@ -29,7 +31,6 @@ RUN apk add --no-cache ca-certificates \
  && mkdir -p /pb/pb_data && chown -R odyle:odyle /pb
 WORKDIR /pb
 COPY --from=server /out/odyle /pb/odyle
-COPY --from=web --chown=odyle:odyle /src/dist ./pb_public
 USER odyle
 EXPOSE 8090
 # Docker and Compose report the container unhealthy when the backend stops answering.
