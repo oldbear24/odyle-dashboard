@@ -232,6 +232,30 @@ test('members keep the wishlist together, share characters and viewers only watc
     assert.deepEqual(viewer.errors, []);
   } finally { await viewer.close(); }
 });
+test('a room follows heartbeats and readings as they arrive, without fetching the room again', async () => {
+  const [lead, reader] = await Promise.all([account('Live lead'), account('Live reader')]);
+  const created = (await request('/api/odyle/create', { name: 'Live room' }, lead)).data;
+  assert.equal((await request('/api/odyle/join', { code: created.invites[0].code }, reader)).status, 200);
+  const session = (await request('/api/odyle/session', {}, reader)).data;
+  const reading = { sessionId: session.sessionId, characterName: 'Pulse', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  const c = (await request('/api/odyle/report', { ...reading, sequence: 1, value: 120 }, reader)).data.character;
+  assert.equal((await request('/api/odyle/sharing', { roomId: created.room.id, characterId: c.id, enabled: true }, reader)).status, 200);
+  // The reader went quiet a minute ago.
+  assert.equal((await request('/__test__/age-seen', { id: c.id, seconds: 60 })).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + created.room.id);
+  try {
+    const card = page.locator('.member-card', { hasText: 'Pulse' });
+    await card.locator('.status.offline, .status.stale').waitFor();
+    const fetched = []; page.on('request', r => { if (r.url().includes('/api/odyle/snapshot/')) fetched.push(r.url()); });
+    // Its next heartbeat makes it live again and a reading changes its value: both are pushed.
+    assert.equal((await request('/api/odyle/heartbeat', { sessionId: session.sessionId, characterId: c.id }, reader)).status, 200);
+    await card.locator('.status.live').waitFor({ timeout: 8000 });
+    assert.equal((await request('/api/odyle/report', { ...reading, sequence: 2, value: 150, characterId: c.id }, reader)).status, 200);
+    await card.locator('.energy strong', { hasText: '150' }).waitFor({ timeout: 5000 });
+    assert.deepEqual(fetched, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 test('the daily and weekly checklist adds, ticks, renames, orders and removes tasks', async () => {
   const user = await account('Checklist owner');
   const { page, errors, close } = await open(user, '#/tasks');

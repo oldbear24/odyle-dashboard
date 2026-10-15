@@ -9,6 +9,7 @@ import { inviteLink, joinCode, savedInvites, rememberInvites, forgetInvites, for
 import { historyChart, historyList, bindHistoryChart } from './history.js';
 import { runsSection, startsIn, runEditForm, calendarFile } from './runs.js';
 import { accountView } from './account.js';
+import { applyRoomCharacters, applyCharacters, applySeen, applyContact } from './live.js';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -22,7 +23,7 @@ const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.p
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
 let room = null, members = [], wishlist = [], runs = [], dungeons = [], rooms = [], characters = [], demo = false, online = false, invites = [];
-let serverOffset = 0, lastPulse = 0, renewedAt = 0, busy = false, subscription = null, perCube = 40;
+let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
@@ -208,8 +209,9 @@ async function tasksPage(ticket) {
   await leaveRoomTopic(); clearRoom(); editingTask = '';
   await refreshTasks(); if (ticket !== navigation) return; tasksView();
 }
-// The account page redraws when its apps change; ages tick in place.
-const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device]), account?.devices?.map(d => [d.id, d.name])]);
+// The account page redraws when its apps change or go online, late or offline; ages tick in place.
+const contactState = at => { const quiet = Date.now() + serverOffset - timestamp(at); return quiet < 45000 ? 'online' : quiet < 90000 ? 'late' : 'offline'; };
+const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device, contactState(a.lastContactAt)]), account?.devices?.map(d => [d.id, d.name])]);
 function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, reminders: reminderState(), now: Date.now() + serverOffset }), 'account')); }
 async function refreshAccount() {
   const data = await pb.send('/api/odyle/account');
@@ -306,7 +308,7 @@ async function refreshRoom() {
   characters = me()?.characters || characters;
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
-async function leaveRoomTopic() { if (subscription) { const stop = subscription; subscription = null; await stop(); } }
+async function leaveRoomTopic() { const stops = roomTopics; roomTopics = []; for (const stop of stops) await stop().catch(() => { /* already gone */ }); }
 async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
@@ -317,11 +319,87 @@ async function openRoom(id, ticket) {
   await leaveRoomTopic();
   clearRoom(); room = { id }; rendered = ''; await refreshRoom();
   if (ticket !== navigation) return;
-  const stop = await pb.realtime.subscribe('odyle.room.' + id, async () => {
-    try { await refreshRoom(); } catch (error) { if ([403, 404].includes(error.status)) { forget(id); await go('/', true); toast(t('Your access to this room ended. Your characters are still saved.')); } else { online = false; renderConnection(); } }
-  });
-  if (ticket !== navigation) return stop();
-  subscription = stop;
+  // The room's changes and its readers' heartbeats (backend/odyle/realtime.go). Without
+  // realtime the room is fetched every 15 seconds instead.
+  const topics = [];
+  try {
+    topics.push(await pb.realtime.subscribe('odyle.room.' + id, data => roomNews(id, data).catch(failure)));
+    topics.push(await pb.realtime.subscribe('odyle.presence.' + id, data => roomPresence(id, data)));
+  } catch { live = false; }
+  if (ticket !== navigation) { for (const stop of topics) await stop().catch(() => { /* already gone */ }); return; }
+  roomTopics = topics;
+}
+// News of the open room: changed characters are applied in place, anything else fetches
+// the snapshot again, and a member who was removed leaves the room.
+async function roomNews(id, data) {
+  if (room?.id !== id) return;
+  if (data?.removed) return leftRoom(id);
+  if (Array.isArray(data?.characters) && applyRoomCharacters(members, data.characters)) { characters = me()?.characters || characters; return renderPage(); }
+  try { await refreshRoom(); }
+  catch (error) { if ([403, 404].includes(error.status)) return leftRoom(id); online = false; renderConnection(); }
+}
+async function leftRoom(id) { forget(id); await go('/', true); toast(t('Your access to this room ended. Your characters are still saved.')); }
+function roomPresence(id, data) {
+  if (room?.id !== id || !data?.seen) return;
+  applySeen(data.seen, ...members.map(m => m.characters));
+  renderPage();
+}
+// The account's own topic while signed in: its characters, rooms, tasks and Windows apps
+// changed, or its readers sent heartbeats. A page fetches its data again when the
+// realtime connection comes back, as news may have been missed meanwhile.
+let ownTopic = null, ownTopicUser = '', connectTopic = null, live = false, connects = 0, disconnected;
+async function watchOwnTopic() {
+  const id = pb.authStore.record?.id;
+  if (!id || ownTopicUser === id) return;
+  await unwatchOwnTopic(); ownTopicUser = id;
+  try {
+    connects = pb.realtime.isConnected ? 1 : 0;
+    connectTopic = await pb.realtime.subscribe('PB_CONNECT', () => {
+      clearTimeout(disconnected); live = true;
+      if (connects++ > 0) refreshPage().then(renderPage, () => { online = false; renderConnection(); });
+    });
+    ownTopic = await pb.realtime.subscribe('odyle.user.' + id, data => ownNews(data));
+    if (pb.realtime.isConnected) live = true;
+  } catch { ownTopicUser = ''; live = false; }
+}
+async function unwatchOwnTopic() {
+  const stops = [ownTopic, connectTopic].filter(Boolean);
+  ownTopic = connectTopic = null; ownTopicUser = ''; live = false;
+  for (const stop of stops) await stop().catch(() => { /* already gone */ });
+}
+// A connection that stays away for three seconds counts as lost: pages fetch every 15 seconds until it is back.
+pb.realtime.onDisconnect = active => { if (active.length) { clearTimeout(disconnected); disconnected = setTimeout(() => { live = false; }, 3000); } };
+async function ownNews(data) {
+  if (demo || !data) return;
+  const library = !room && shown !== '/tasks' && shown !== '/account';
+  try {
+    // The open room hears of its own changes on its topic.
+    if (data.refresh) { if (!room) await refreshPage(); }
+    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library) await refreshPage();
+    if (data.seen) applySeen(data.seen, characters);
+    if (data.contact) applyContact(data.contact, account?.apps);
+    renderPage();
+  } catch (error) { if (error?.status === 401) return expired(); online = false; renderConnection(); }
+}
+// The current page's data, fetched again.
+async function refreshPage() {
+  if (room) await refreshRoom();
+  else if (shown === '/tasks') await refreshTasks();
+  else if (shown === '/account') await refreshAccount();
+  else {
+    const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
+    if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); }
+  }
+  online = true;
+}
+// Redraws what changed on the current page; ages and live/stale states tick in place.
+function renderPage() {
+  if (demo || document.querySelector('#modal')?.open) return;
+  if (room) renderDashboard();
+  else if (document.querySelector('.tasks-page')) renderTasks();
+  else if (document.querySelector('.account-page')) { if (accountSignature() !== renderedAccount) accountRender(); else updateAges(); }
+  else if (document.querySelector('.personal-characters') && librarySignature() !== renderedLibrary) renderLibrary();
+  else updateAges();
 }
 // Redraws the current page, for example after the language changed.
 function rerender() {
@@ -356,6 +434,7 @@ async function show(force = false) {
     catch (error) { if (ticket !== navigation) return; await go('/', true); return failed(error); }
   }
   remember(path);
+  watchOwnTopic().catch(() => { /* without realtime pages fetch every 15 seconds */ });
   const id = path.startsWith('/room/') ? path.slice(6) : '';
   try { if (path === '/tasks') await tasksPage(ticket); else if (path === '/account') await accountPage(ticket); else if (id) await openRoom(id, ticket); else await library(ticket); }
   catch (error) {
@@ -384,33 +463,25 @@ async function authenticated() {
   renewedAt = Date.now(); online = true;
   // A visit without a page in its URL resumes the last page of this browser.
   if (!/^#\//.test(location.hash)) history.replaceState(null, '', '#' + (remembered().path || '/'));
-  clearInterval(timer); lastPulse = Date.now();
-  // Realtime pushes real changes. This fallback refetch every 15 seconds keeps
-  // presence current (readers report every 20 seconds, a reading turns stale after
-  // 45), and the 5-second tick only redraws ages and live/stale transitions locally.
+  clearInterval(timer); lastPulse = lastCheck = Date.now();
+  // Realtime pushes changes and heartbeats (openRoom, watchOwnTopic), so a page fetches its
+  // data again only every five minutes, in case something was missed, and every 15
+  // seconds while realtime is down. In between, a health check every 15 seconds keeps the
+  // connection label right, and the 5-second tick redraws ages and live/stale states.
   timer = setInterval(async () => {
     loadAnnouncement().catch(() => { /* the next minute tries again */ });
     if (busy || demo) return;
     remindRuns().catch(() => { /* the next tick tries again */ });
     try {
       if (Date.now() - renewedAt >= renewEvery) { renewedAt = Date.now(); await pb.collection('users').authRefresh(); }
-      if (Date.now() - lastPulse >= 15000) {
-        lastPulse = Date.now();
-        if (room) await refreshRoom();
-        else if (shown === '/tasks') await refreshTasks();
-        else if (shown === '/account') await refreshAccount();
-        else {
-          const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-          if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); }
-        }
-        online = true;
+      if (Date.now() - lastPulse >= (live ? 300000 : 15000)) { lastPulse = lastCheck = Date.now(); await refreshPage(); }
+      else if (Date.now() - lastCheck >= 15000) {
+        lastCheck = Date.now(); const back = !online;
+        await pb.health.check(); online = true;
+        // Back after an outage: whatever happened meanwhile.
+        if (back) { lastPulse = Date.now(); await refreshPage(); }
       }
-      if (document.querySelector('#modal')?.open) return;
-      if (room) renderDashboard();
-      else if (document.querySelector('.tasks-page')) renderTasks();
-      else if (document.querySelector('.account-page')) { if (accountSignature() !== renderedAccount) accountRender(); else updateAges(); }
-      else if (document.querySelector('.personal-characters') && librarySignature() !== renderedLibrary) renderLibrary();
-      else updateAges();
+      renderPage();
     } catch (error) { if (error?.status === 401) return expired(); online = false; }
     finally { renderConnection(); }
   }, 5000);
@@ -438,7 +509,7 @@ async function discordLogin() {
 }
 async function logout() {
   // Invite codes stay usable for 30 minutes; a shared computer must not keep them.
-  await leaveRoomTopic(); clearInterval(timer); clearTimeout(retryTimer); pb.authStore.clear(); forget(); forgetAllInvites(storage); clearRoom(); rooms = []; characters = []; tasks = []; account = null; online = false;
+  await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); clearTimeout(retryTimer); pb.authStore.clear(); forget(); forgetAllInvites(storage); clearRoom(); rooms = []; characters = []; tasks = []; account = null; online = false;
   await go('/', true);
 }
 function demoSession() {
@@ -568,7 +639,8 @@ app.addEventListener('click', async e => {
       case 'confirm-leave': case 'confirm-close': { const id = room.id, closing = el.dataset.action === 'confirm-close'; await send(closing ? 'close' : 'leave', { roomId: id }); closeModal(); forget(id); if (closing) forgetInvites(storage, id); await go('/'); toast(closing ? t('Room closed. Your saved characters are retained.') : t('You left the room. Your saved characters are retained.')); break; }
       case 'export': download(JSON.stringify(await pb.send('/api/odyle/export'), null, 2), `odyle-data-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); break;
       case 'sign-out-everywhere': ask(t('Sign out everywhere?'), t('Every other browser and every paired Windows app loses access and must sign in or pair again. This browser stays signed in.'), t('Sign out everywhere'), { action: 'confirm-sign-out-everywhere' }); break;
-      case 'confirm-sign-out-everywhere': { const data = await send('sign-out-everywhere'); pb.authStore.save(data.token, data.record); closeModal(); toast(t('Signed out everywhere else. Pair your Windows app again to keep reading.')); await show(true); break; }
+      // The new token ends every realtime sign-in of the account, this browser's too: subscribe again with it.
+      case 'confirm-sign-out-everywhere': { const data = await send('sign-out-everywhere'); pb.authStore.save(data.token, data.record); await unwatchOwnTopic(); closeModal(); toast(t('Signed out everywhere else. Pair your Windows app again to keep reading.')); await show(true); break; }
       case 'delete-account': modal(t('Delete your account?'), `<p>${t('Your characters, their history, your memberships, wishlist entries and tasks are deleted for good. Rooms you own pass to their longest-standing player, or close if there is none. Download your data first if you want to keep it.')}</p><label>${esc(t('Type {name} to confirm', { name: pb.authStore.record.displayName }))}<input id="delete-confirm" autocomplete="off"></label><button class="button danger" data-action="confirm-delete-account">${t('Delete account for good')}</button><button class="button secondary" data-action="close-dialog">${t('Keep it')}</button>`); break;
       case 'confirm-delete-account': {
         if (document.querySelector('#delete-confirm')?.value.trim() !== pb.authStore.record.displayName) return toast(t('Type your display name exactly as shown to confirm.'));
