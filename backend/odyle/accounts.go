@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"net/http"
 	"os"
 	"regexp"
 	"sort"
@@ -1845,11 +1846,25 @@ func remindRun(app core.App, r *core.Record, fail func(text, event string, args 
 		}
 		going = field(accounts, "displayName")
 	}
-	status, err := postWebhook(url, reminder(room.GetString("name"), r.GetString("dungeon"), r.GetString("startsAt"), r.GetString("note"), going, room.GetString("discordLanguage")))
+	waits := &stateOf(app).webhooks
+	if waits.waiting(url, time.Now()) {
+		return false, nil
+	}
+	message := reminder(room.GetString("name"), r.GetString("dungeon"), r.GetString("startsAt"), r.GetString("note"), going, room.GetString("discordLanguage"))
+	res, err := postWebhook(url, message)
+	// A short wait (a burst of runs in one room) is waited out once.
+	if wait := retryAfter(res); err == nil && res.status == http.StatusTooManyRequests && wait <= 2*time.Second {
+		time.Sleep(wait)
+		res, err = postWebhook(url, message)
+	}
 	if err != nil {
 		return false, err
 	}
+	status := res.status
 	switch {
+	case status == http.StatusTooManyRequests:
+		wait := waits.wait(url, res, time.Now())
+		fail("Reminder for run "+r.Id+" waits: Discord asked to wait "+wait.Round(time.Second).String(), "Odyle run reminder waits for Discord", "run", r.Id, "room", room.Id, "retryAfter", wait.String())
 	case status == 401 || status == 404:
 		room.Set("discordWebhook", "")
 		if err := app.Save(room); err != nil {

@@ -48,6 +48,9 @@ func imageBase() string {
 
 var imageTypes = map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
 
+// portraitLimit is the largest portrait the characters' portrait field takes.
+const portraitLimit = 512 << 10
+
 type search struct {
 	serverId int
 	region   string
@@ -106,7 +109,7 @@ func imageURL(name, server, region string) (string, error) {
 	for _, s := range searches(server, region) {
 		// encodeURIComponent: spaces as %20.
 		query := "keyword=" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20") + "&serverId=" + strconv.Itoa(s.serverId) + "&region=" + s.region + "&localeInfo=en-US&page=1&size=20"
-		res, err := send("GET", searchURL()+"?"+query, map[string]string{"accept": "application/json", "user-agent": userAgent}, nil, 10*time.Second)
+		res, err := send(call{method: "GET", url: searchURL() + "?" + query, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 1 << 20})
 		if err != nil {
 			return "", err
 		}
@@ -142,7 +145,9 @@ func fetchPortrait(name, server, region string) (*portrait, error) {
 	if err != nil || link == "" {
 		return nil, err
 	}
-	res, err := send("GET", link, map[string]string{"user-agent": userAgent}, nil, 15*time.Second)
+	// The portrait host redirects to PLAYNC's download CDN (fizz-download.playnccdn.com).
+	// An image larger than the portrait field takes (512 KB) is refused while it is read.
+	res, err := send(call{method: "GET", url: link, headers: map[string]string{"user-agent": userAgent}, timeout: 15 * time.Second, limit: portraitLimit, redirects: []string{"*.plaync.com", "*.playnccdn.com"}})
 	if err != nil {
 		return nil, err
 	}

@@ -465,6 +465,7 @@ export default {
   'Paste a Discord webhook URL (https://discord.com/api/webhooks/…).': 'Vlož URL webhooku z Discordu (https://discord.com/api/webhooks/…).',
   'Discord could not be reached. Try again in a minute.': 'Discord je nedostupný. Zkus to za minutu.',
   'Discord did not accept this webhook. Copy it again from the channel settings.': 'Discord tento webhook nepřijal. Zkopíruj ho znovu z nastavení kanálu.',
+  'Discord asked to slow down. Try again in a minute.': 'Discord žádá o zpomalení. Zkus to za minutu.',
   'Change {dungeon}': 'Upravit {dungeon}',
   'Edit': 'Upravit',
   'Save run': 'Uložit run',

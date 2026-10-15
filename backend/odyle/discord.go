@@ -2,11 +2,15 @@ package odyle
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 // Planned-run reminders in a room's Discord channel, through a webhook its owner
@@ -62,8 +66,8 @@ func say(language string) words {
 	return languages["en"]
 }
 
-// postWebhook sends one message and answers Discord's status.
-func postWebhook(link string, payload map[string]any) (int, error) {
+// postWebhook sends one message and answers Discord's answer.
+func postWebhook(link string, payload map[string]any) (response, error) {
 	message := newObject().set("allowed_mentions", map[string]any{"parse": []any{}})
 	for _, key := range []string{"content", "embeds"} {
 		if v, ok := payload[key]; ok {
@@ -72,26 +76,61 @@ func postWebhook(link string, payload map[string]any) (int, error) {
 	}
 	raw, err := json.Marshal(message)
 	if err != nil {
-		return 0, err
+		return response{}, err
 	}
-	res, err := send("POST", link+"?wait=true", map[string]string{"content-type": "application/json", "user-agent": userAgent}, raw, 10*time.Second)
-	if err != nil {
-		return 0, err
-	}
-	return res.status, nil
+	return send(call{method: "POST", url: link + "?wait=true", headers: map[string]string{"content-type": "application/json", "user-agent": userAgent}, payload: raw, timeout: 10 * time.Second, limit: 64 << 10})
 }
 
 // connectWebhook makes the test post of a newly connected webhook; it fails when
 // Discord refuses it.
 func connectWebhook(link, roomName, language string) error {
-	status, err := postWebhook(link, map[string]any{"content": say(language).connected(plain(roomName))})
+	res, err := postWebhook(link, map[string]any{"content": say(language).connected(plain(roomName))})
 	if err != nil {
 		return badRequest("Discord could not be reached. Try again in a minute.")
 	}
-	if status < 200 || status >= 300 {
+	if res.status == http.StatusTooManyRequests {
+		return badRequest("Discord asked to slow down. Try again in a minute.")
+	}
+	if res.status < 200 || res.status >= 300 {
 		return badRequest("Discord did not accept this webhook. Copy it again from the channel settings.")
 	}
 	return nil
+}
+
+// Discord limits how often a webhook posts and answers 429 with how long to wait, for
+// that webhook or, when the limit is global, for all of them. The reminders job leaves
+// a waiting webhook alone until then; its runs stay due for a later run.
+type webhookWaits struct {
+	mu    sync.Mutex
+	until map[string]time.Time // by webhook digest; "*" for every webhook
+}
+
+func (w *webhookWaits) waiting(link string, at time.Time) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return at.Before(w.until[security.SHA256(link)]) || at.Before(w.until["*"])
+}
+
+func (w *webhookWaits) wait(link string, res response, at time.Time) time.Duration {
+	wait := max(retryAfter(res), time.Second)
+	key := security.SHA256(link)
+	if strings.EqualFold(res.header.Get("X-RateLimit-Global"), "true") {
+		key = "*"
+	} else if body, ok := res.json().(map[string]any); ok && body["global"] == true {
+		key = "*"
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.until == nil {
+		w.until = map[string]time.Time{}
+	}
+	for k, until := range w.until {
+		if !at.Before(until) {
+			delete(w.until, k)
+		}
+	}
+	w.until[key] = at.Add(wait)
+	return wait
 }
 
 func reminder(roomName, dungeon, startsAt, note string, going []string, language string) map[string]any {

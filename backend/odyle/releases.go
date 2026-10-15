@@ -80,7 +80,8 @@ func sizeOf(v any) float64 {
 func truthy(v any) bool { return body{"v": v}.set("v") }
 
 func fetchLatest() (map[string]any, error) {
-	res, err := send("GET", feedURL(), map[string]string{"accept": "application/vnd.github+json", "user-agent": userAgent}, nil, 10*time.Second)
+	// GitHub redirects the API of a renamed or moved repository.
+	res, err := send(call{method: "GET", url: feedURL(), headers: map[string]string{"accept": "application/vnd.github+json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 2 << 20, redirects: []string{"api.github.com"}})
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,8 @@ type state struct {
 	jobs    map[string]map[string]any // the last run of each job
 	running map[string]time.Time      // jobs running now, since
 
+	webhooks webhookWaits // has its own lock
+
 	releaseAt        time.Time // the last lookup
 	release          map[string]any
 	releaseChecked   bool
