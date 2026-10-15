@@ -31,24 +31,35 @@ jobs:
         run: test -z "$(gofmt -l backend)" || { gofmt -l backend; exit 1; }
       - run: npm test
       - run: npm run test:backend
+      # The race detector, every fuzz test fuzzed for 10 s, staticcheck (backend/staticcheck.conf)
+      # and govulncheck, built with the Go of backend/go.mod.
+      - name: Go race detector, fuzzing, staticcheck and govulncheck
+        working-directory: backend
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          go test -race ./...
+          for f in $(go test -list '^Fuzz' ./odyle | grep '^Fuzz'); do go test -run '^$' -fuzz "^$f\$" -fuzztime 10s ./odyle; done
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - run: npm run backend:build
       - run: npm run test:integration
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
-      # The server (migrations included) with the dashboard it serves from pb_public, for
-      # Linux and Windows.
+      # The server for Linux and Windows, with the migrations and the dashboard built in
+      # (backend/web).
       - name: Package the server
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p artifacts
+          cp -r dist/. backend/web/dist/
           for target in linux/amd64 linux/arm64 windows/amd64; do
             os=${target%/*}; arch=${target#*/}; exe=""; [ "$os" = windows ] && exe=.exe
             name="odyle-dashboard-$VERSION-$os-$arch"
             mkdir -p "artifacts/$name"
-            (cd backend && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "../artifacts/$name/odyle$exe" .)
-            cp -r dist "artifacts/$name/pb_public"
+            (cd backend && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w -X github.com/oldbear24/odyle-dashboard/backend/odyle.Version=$VERSION" -o "../artifacts/$name/odyle$exe" .)
             (cd "artifacts/$name" && zip -qr "../$name.zip" .)
             (cd artifacts && sha256sum "$name.zip" > "$name.zip.sha256")
             rm -r "artifacts/$name"
@@ -88,6 +99,9 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ needs.build.outputs.version }}
+            COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -112,7 +126,7 @@ jobs:
           cat > notes.md <<EOF
           Container image (linux/amd64, linux/arm64): \`docker pull $image\`
 
-          \`odyle-dashboard-$VERSION-<os>-<arch>.zip\` (linux-amd64, linux-arm64, windows-amd64) holds the server \`odyle\` and the dashboard in \`pb_public\`; run \`odyle serve\` in that folder. Migrations are built in and run at start.
+          \`odyle-dashboard-$VERSION-<os>-<arch>.zip\` (linux-amd64, linux-arm64, windows-amd64) holds the server \`odyle\`, with the dashboard and the migrations built in; run \`odyle serve\`. Migrations run at start.
           EOF
           gh release create "v$VERSION" artifacts/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Odyle dashboard $VERSION" --notes-file notes.md --generate-notes --latest

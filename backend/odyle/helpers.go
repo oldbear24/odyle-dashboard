@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -84,14 +83,6 @@ func ids(records []*core.Record) []string {
 	return out
 }
 
-func field(records []*core.Record, name string) []string {
-	out := make([]string, len(records))
-	for i, r := range records {
-		out[i] = r.GetString(name)
-	}
-	return out
-}
-
 func unique(values []string) []string {
 	seen, out := map[string]bool{}, []string{}
 	for _, v := range values {
@@ -127,8 +118,6 @@ func stringSlice(r *core.Record, key string) []string {
 	}
 	return []string{}
 }
-
-func logf(format string, args ...any) { log.Printf(format, args...) }
 
 // ---------------------------------------------------------------- request bodies
 //

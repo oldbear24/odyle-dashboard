@@ -140,10 +140,13 @@ func parseDate(s string) (time.Time, bool) {
 
 func atoi(s string) int { v, _ := strconv.Atoi(s); return v }
 
+// reading is a verified game reading: the character as the game names it, its Odyle,
+// the packet adapter that decoded it and the reader session's sequence number.
 type reading struct {
-	value                                        int64
-	characterName, server, region, parserVersion string
-	sequence                                     int64
+	identity
+	value         int64
+	parserVersion string
+	sequence      int64
 }
 
 // validReading checks a reading of the Windows app against its reader session.
@@ -187,5 +190,5 @@ func validReading(b body, sessionId string, sequence int64, adapters []string) (
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{value: value, characterName: name, server: server, region: region, sequence: seq, parserVersion: parserVersion}, nil
+	return reading{identity: identity{characterName: name, server: server, region: region}, value: value, sequence: seq, parserVersion: parserVersion}, nil
 }

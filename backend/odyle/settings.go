@@ -3,6 +3,7 @@ package odyle
 import (
 	"errors"
 	"regexp"
+	"sync"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -60,7 +61,64 @@ func stringList(value any) []string {
 	return out
 }
 
+// settingsCache keeps the settings in memory: most requests and every job read them,
+// and they change only when a superuser saves them. The odyle_settings hooks
+// (watchSettings) drop the copy after every change, so the next read loads the record
+// again, whether writeSettings saved it, a superuser edited it under Collections →
+// odyle_settings or a test fixture did. A read that loaded the record before a change
+// never keeps its older copy (generation).
+type settingsCache struct {
+	mu         sync.Mutex
+	generation uint64
+	value      *settings
+}
+
+func (c *settingsCache) drop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.generation++
+	c.value = nil
+}
+
+// readSettings answers the current settings. Callers must not change the lists in the
+// answer: they are shared with every other caller.
 func readSettings(app core.App) settings {
+	c := &stateOf(app).settings
+	c.mu.Lock()
+	if c.value != nil {
+		current := *c.value
+		c.mu.Unlock()
+		return current
+	}
+	generation := c.generation
+	c.mu.Unlock()
+	loaded := loadSettings(app)
+	c.mu.Lock()
+	if c.generation == generation {
+		c.value = &loaded
+	}
+	c.mu.Unlock()
+	return loaded
+}
+
+// watchSettings drops the cached settings whenever the record or its collection
+// changes, a failed change included.
+func watchSettings(app core.App) {
+	drop := func(e *core.RecordEvent) error { stateOf(e.App).settings.drop(); return e.Next() }
+	dropFailed := func(e *core.RecordErrorEvent) error { stateOf(e.App).settings.drop(); return e.Next() }
+	app.OnRecordAfterCreateSuccess("odyle_settings").BindFunc(drop)
+	app.OnRecordAfterUpdateSuccess("odyle_settings").BindFunc(drop)
+	app.OnRecordAfterDeleteSuccess("odyle_settings").BindFunc(drop)
+	app.OnRecordAfterCreateError("odyle_settings").BindFunc(dropFailed)
+	app.OnRecordAfterUpdateError("odyle_settings").BindFunc(dropFailed)
+	app.OnRecordAfterDeleteError("odyle_settings").BindFunc(dropFailed)
+	dropCollection := func(e *core.CollectionEvent) error { stateOf(e.App).settings.drop(); return e.Next() }
+	app.OnCollectionAfterUpdateSuccess("odyle_settings").BindFunc(dropCollection)
+	app.OnCollectionAfterDeleteSuccess("odyle_settings").BindFunc(dropCollection)
+}
+
+// loadSettings reads the odyle_settings record, or the defaults without one.
+func loadSettings(app core.App) settings {
 	s := findSettings(app)
 	if s == nil {
 		return defaultSettings()

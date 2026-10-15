@@ -1,7 +1,11 @@
-// The Odyle backend: PocketBase with the Odyle routes, jobs and migrations compiled
-// in, serving the dashboard from pb_public. Run it like PocketBase:
+// The Odyle backend: PocketBase with the Odyle routes, jobs, migrations and the
+// dashboard compiled in (backend/web). Run it like PocketBase:
 //
-//	odyle serve --http=127.0.0.1:8090 --dir=pb_data --publicDir=dist
+//	odyle serve --http=127.0.0.1:8090 --dir=pb_data
+//
+// --publicDir=dist serves a dashboard folder instead, for example while developing; a
+// build without the dashboard serves pb_public next to the executable. odyle healthcheck
+// asks a running server whether it is healthy.
 package main
 
 import (
@@ -19,6 +23,7 @@ import (
 
 	_ "github.com/oldbear24/odyle-dashboard/backend/migrations"
 	"github.com/oldbear24/odyle-dashboard/backend/odyle"
+	"github.com/oldbear24/odyle-dashboard/backend/web"
 )
 
 func main() {
@@ -34,21 +39,43 @@ func main() {
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{TemplateLang: migratecmd.TemplateLangGo, Automigrate: false})
 
 	odyle.Register(app)
+	app.RootCmd.AddCommand(healthcheck())
 
-	// The dashboard, from the public dir (if the route path is not already defined).
+	// The dashboard (if the route path is not already defined).
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
 			if !e.Router.HasRoute(http.MethodGet, "/{path...}") {
-				e.Router.GET("/{path...}", apis.Static(os.DirFS(publicDir), indexFallback))
+				serve, err := dashboard(app.RootCmd.PersistentFlags().Changed("publicDir"), publicDir, indexFallback)
+				if err != nil {
+					return err
+				}
+				e.Router.GET("/{path...}", serve)
 			}
 			return e.Next()
 		},
 		Priority: 999, // execute as late as possible
 	})
 
+	// The health check runs on its own: app.Start would open the data first.
+	if cmd, _, err := app.RootCmd.Find(os.Args[1:]); err == nil && cmd.Name() == "healthcheck" {
+		if err := app.RootCmd.Execute(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// dashboard serves the dashboard compiled in, or the public dir when --publicDir names
+// one or the binary holds none.
+func dashboard(chosen bool, publicDir string, indexFallback bool) (func(*core.RequestEvent) error, error) {
+	if built := web.Dashboard(); built != nil && !chosen {
+		return web.Serve(built, indexFallback)
+	}
+	return apis.Static(os.DirFS(publicDir), indexFallback), nil
 }
 
 // The default pb_public dir sits next to the executable.

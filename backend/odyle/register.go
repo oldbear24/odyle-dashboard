@@ -36,6 +36,7 @@ var testFixtures func(se *core.ServeEvent)
 
 // Register adds Odyle to a PocketBase app.
 func Register(app core.App) {
+	stateOf(app).root = app
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Superuser dashboard → Odyle (backend/admin, a PocketBase UI extension).
 		se.UIExtensions = append(se.UIExtensions, core.UIExtension{Name: "odyle", FS: admin.Files})
@@ -44,40 +45,15 @@ func Register(app core.App) {
 		if testFixtures != nil {
 			testFixtures(se)
 		}
+		// The newest Windows release, so the first visitors need not wait for GitHub.
+		go latestRelease(se.App)
 		return se.Next()
 	})
 
-	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
-		for _, topic := range e.Subscriptions {
-			if room, ok := strings.CutPrefix(topic, "odyle.room."); ok {
-				if e.Auth == nil || e.Auth.Collection().Name != "users" {
-					return apis.NewForbiddenError("", nil)
-				}
-				if _, err := membership(e.App, e.Auth.Id, room); err != nil {
-					return err
-				}
-			} else if strings.HasPrefix(topic, "odyle.admin.") && !(e.Auth != nil && e.Auth.IsSuperuser()) {
-				return apis.NewForbiddenError("", nil)
-			}
-		}
-		return e.Next()
-	})
-
-	// Every delivery checks again, so a removed member or an expired sign-in hears nothing more.
-	app.OnRealtimeMessageSend().BindFunc(func(e *core.RealtimeMessageEvent) error {
-		auth, _ := e.Client.Get(apis.RealtimeClientAuthKey).(*core.Record)
-		if room, ok := strings.CutPrefix(e.Message.Name, "odyle.room."); ok {
-			if auth == nil || auth.Collection().Name != "users" {
-				return nil
-			}
-			if _, err := membership(e.App, auth.Id, room); err != nil {
-				return nil
-			}
-		} else if strings.HasPrefix(e.Message.Name, "odyle.admin.") && (auth == nil || !auth.IsSuperuser()) {
-			return nil
-		}
-		return e.Next()
-	})
+	// Realtime topics and their news (realtime.go), heartbeats (presence.go).
+	watchSubscriptions(app)
+	watchChanges(app)
+	watchPresence(app)
 
 	// The Background jobs page counts from this server start.
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
@@ -100,6 +76,8 @@ func Register(app core.App) {
 		return e.Next()
 	})
 
+	watchSettings(app)
+	watchCharacters(app)
 	scheduleJobs(app)
 }
 
@@ -132,6 +110,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/admin/ui", uiVersion)
 	se.Router.GET("/api/odyle/admin/monitor", monitor).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/status", status).Bind(superuser)
+	se.Router.GET("/api/odyle/admin/pprof/{name}", pprofRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/jobs", jobsRoute).Bind(superuser)
 	se.Router.POST("/api/odyle/admin/jobs/{name}", runJobRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/settings", settingsRoute).Bind(superuser)

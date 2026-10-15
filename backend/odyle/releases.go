@@ -2,6 +2,8 @@ package odyle
 
 import (
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -79,14 +81,59 @@ func sizeOf(v any) float64 {
 
 func truthy(v any) bool { return body{"v": v}.set("v") }
 
-func fetchLatest() (map[string]any, error) {
-	res, err := send("GET", feedURL(), map[string]string{"accept": "application/vnd.github+json", "user-agent": userAgent}, nil, 10*time.Second)
+// answer is one lookup at GitHub.
+type answer struct {
+	release   map[string]any // the release, or nil when unchanged (304)
+	etag      string         // to ask whether it changed since
+	notBefore time.Time      // GitHub's rate limit: no lookup before then
+}
+
+// fetchLatest asks GitHub for the latest release. With the ETag of the release already
+// known, GitHub answers 304 when it is unchanged, and that answer does not count
+// against its rate limit.
+func fetchLatest(etag string) (answer, error) {
+	headers := map[string]string{"accept": "application/vnd.github+json", "user-agent": userAgent}
+	if etag != "" {
+		headers["if-none-match"] = etag
+	}
+	// GitHub redirects the API of a renamed or moved repository.
+	res, err := send(call{method: "GET", url: feedURL(), headers: headers, timeout: 10 * time.Second, limit: 2 << 20, redirects: []string{"api.github.com"}})
 	if err != nil {
-		return nil, err
+		return answer{}, err
+	}
+	if res.status == http.StatusNotModified && etag != "" {
+		return answer{etag: etag}, nil
 	}
 	if res.status != 200 {
-		return nil, errors.New("GitHub answered " + strconv.Itoa(res.status) + ".")
+		failure := errors.New("GitHub answered " + strconv.Itoa(res.status) + ".")
+		if until := rateLimited(res); !until.IsZero() {
+			failure = errors.New("GitHub answered " + strconv.Itoa(res.status) + ": rate limited until " + until.UTC().Format("15:04") + " UTC.")
+			return answer{notBefore: until}, failure
+		}
+		return answer{}, failure
 	}
+	release, err := parseRelease(res)
+	return answer{release: release, etag: res.header.Get("ETag")}, err
+}
+
+// rateLimited is when GitHub's rate limit lets the backend ask again, or zero when the
+// answer is not about the rate limit.
+func rateLimited(res response) time.Time {
+	if res.status != http.StatusForbidden && res.status != http.StatusTooManyRequests {
+		return time.Time{}
+	}
+	if wait := retryAfter(res); wait > 0 {
+		return time.Now().Add(wait)
+	}
+	if res.header.Get("X-RateLimit-Remaining") == "0" {
+		if reset, err := strconv.ParseInt(res.header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			return time.Unix(reset, 0)
+		}
+	}
+	return time.Time{}
+}
+
+func parseRelease(res response) (map[string]any, error) {
 	data, _ := res.json().(map[string]any)
 	version := strings.TrimPrefix(textOf(data["tag_name"]), "v")
 	if !releaseVersion.MatchString(version) || truthy(data["draft"]) || truthy(data["prerelease"]) {
@@ -129,33 +176,75 @@ func fetchLatest() (map[string]any, error) {
 	return map[string]any{"version": version, "tag": textOf(data["tag_name"]), "url": link, "publishedAt": textOf(data["published_at"]), "packages": packages}, nil
 }
 
-// latestRelease answers the cached release, asking GitHub when the cache is older than
-// ten minutes (a minute after a failed lookup). The cache also keeps when GitHub last
-// answered and why the last lookup failed, for the superuser dashboard's Server status page.
+// latestRelease answers the cached release. GitHub is asked again when the cache is
+// older than ten minutes (a minute while no release is known, and never before its
+// rate limit allows). Requests do not wait for that lookup: they get the release known
+// so far while it runs in the background, and only a request that finds no release at
+// all waits for it. Requests that arrive meanwhile share the one lookup. The backend
+// also looks the release up when it starts (Register), so visitors rarely wait. The
+// cache keeps when GitHub last answered and why the last lookup failed, for the
+// superuser dashboard's Server status page.
 func latestRelease(app core.App) map[string]any {
 	s := stateOf(app)
 	s.mu.Lock()
-	cached, release, at := s.releaseChecked, s.release, s.releaseAt
-	s.mu.Unlock()
-	wait := releaseRetry
+	release, wait := s.release, releaseRetry
 	if release != nil {
 		wait = releaseFresh
 	}
-	checked := time.Now()
-	if cached && checked.Sub(at) < wait {
+	at := time.Now()
+	if s.releaseChecked && at.Sub(s.releaseAt) < wait || at.Before(s.releaseNotBefore) {
+		s.mu.Unlock()
 		return release
 	}
-	found, err := fetchLatest()
+	lookup := s.releaseInFlight
+	if lookup == nil {
+		lookup = make(chan struct{})
+		s.releaseInFlight = lookup
+		etag := ""
+		if release != nil {
+			etag = s.releaseETag
+		}
+		go lookUpRelease(app, etag, lookup)
+	}
+	s.mu.Unlock()
+	if release != nil {
+		return release
+	}
+	<-lookup
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.releaseChecked, s.releaseAt, s.releaseError = true, checked, ""
-	if err != nil {
-		s.releaseError = err.Error()
-		logf("Odyle release lookup failed: %s", s.releaseError)
-	} else {
-		s.release, s.releaseFetchedAt = found, checked
-	}
 	return s.release
+}
+
+// lookUpRelease asks GitHub once and stores the answer, then lets the requests waiting
+// for it go on (done).
+func lookUpRelease(app core.App, etag string, done chan struct{}) {
+	checked := time.Now()
+	var found answer
+	var err error
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("the release lookup failed: %v", r)
+		}
+		s := stateOf(app)
+		s.mu.Lock()
+		s.releaseChecked, s.releaseAt, s.releaseError, s.releaseInFlight = true, checked, "", nil
+		s.releaseNotBefore = found.notBefore
+		switch {
+		case err != nil:
+			s.releaseError = err.Error()
+		case found.release != nil:
+			s.release, s.releaseETag, s.releaseFetchedAt = found.release, found.etag, checked
+		default: // unchanged
+			s.releaseFetchedAt = checked
+		}
+		s.mu.Unlock()
+		close(done)
+		if err != nil {
+			warn(app, "Odyle release lookup failed", "error", err.Error())
+		}
+	}()
+	found, err = fetchLatest(etag)
 }
 
 // releaseLookup is the release cache as the Server status page shows it.

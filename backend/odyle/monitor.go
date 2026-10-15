@@ -1,7 +1,7 @@
 package odyle
 
 import (
-	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -11,8 +11,6 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
 
 	"github.com/oldbear24/odyle-dashboard/backend/admin"
 )
@@ -94,14 +92,10 @@ func packets(app core.App) []*object {
 }
 
 func broadcast(app core.App, packet *object) {
-	data, err := json.Marshal(map[string]any{"packet": packet})
-	if err != nil {
-		return
-	}
-	message := subscriptions.Message{Name: packetTopic, Data: data}
+	message := map[string]any{"packet": packet}
 	for _, client := range app.SubscriptionsBroker().Clients() {
 		if client.HasSubscription(packetTopic) {
-			client.Send(message)
+			post(client, packetTopic, message)
 		}
 	}
 }
@@ -113,7 +107,7 @@ func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 	}
 	user, account := "", ""
 	if e.Auth != nil {
-		user, account = e.Auth.Id, e.Auth.GetString("displayName")
+		user, account = e.Auth.Id, viewOf[Account](e.Auth).DisplayName()
 	}
 	source := "web"
 	if appKinds[kind] {
@@ -131,23 +125,23 @@ func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 	// Heartbeats and invalidations name their character by id only, room routes their room.
 	if id, ok := packet.values["characterId"].(string); ok {
 		if _, named := packet.get("characterName"); !named {
-			if c, err := e.App.FindRecordById("characters", id); err == nil {
-				packet.set("characterName", c.GetString("characterName"))
+			if c, err := findAs[Character](e.App, "characters", id); err == nil {
+				packet.set("characterName", c.Name())
 			}
 		}
 	}
 	if id, ok := packet.values["roomId"].(string); ok {
-		if r, err := e.App.FindRecordById("party_rooms", id); err == nil {
-			packet.set("roomName", r.GetString("name"))
+		if r, err := findAs[Room](e.App, "party_rooms", id); err == nil {
+			packet.set("roomName", r.Name())
 		}
 	}
 	// A paired app signs in with its device key alone; the key names the account and is not kept.
 	if key, ok := b["deviceKey"].(string); kind == "desktop-sign-in" && failure == nil && ok {
-		if device, err := e.App.FindFirstRecordByData("desktop_devices", "digest", security.SHA256(key)); err == nil {
-			if owner, err := e.App.FindRecordById("users", device.GetString("user")); err == nil {
-				packet.set("user", owner.Id).set("account", owner.GetString("displayName"))
+		if device := findDevice(e.App, key); device != nil {
+			if owner, err := findAs[Account](e.App, "users", device.User()); err == nil {
+				packet.set("user", owner.Id).set("account", owner.DisplayName())
 				if name, _ := packet.values["name"].(string); name == "" {
-					packet.set("name", device.GetString("name"))
+					packet.set("name", device.Name())
 				}
 			}
 		}
@@ -165,7 +159,7 @@ func measure(handle func(*core.RequestEvent) error, done func(e *core.RequestEve
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logf("Odyle monitor failed: %v", r)
+					warn(e.App, "Odyle monitor failed", "path", e.Request.URL.Path, "error", fmt.Sprint(r))
 				}
 			}()
 			done(e, err, time.Since(started).Milliseconds())
@@ -197,41 +191,33 @@ func timed(name string, handle func(*core.RequestEvent) error) func(*core.Reques
 // fixed order (account, then connection time): ordering by last contact made every
 // heartbeat move its row.
 func apps(app core.App) ([]map[string]any, error) {
-	sessions, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now}", "-updated", 200, 0, dbx.Params{"now": stamp(time.Now())})
-	if err != nil || len(sessions) == 0 {
+	found, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now}", "-updated", 200, 0, dbx.Params{"now": stamp(time.Now())})
+	if err != nil || len(found) == 0 {
 		return []map[string]any{}, err
 	}
-	names, devices, reading := map[string]string{}, map[string]string{}, map[string]*core.Record{}
-	users, err := app.FindRecordsByIds("users", unique(field(sessions, "user")))
+	sessions, reading := views[ReaderSession](found), map[string]*Character{}
+	names, err := displayNames(app, pluck(sessions, (*ReaderSession).User))
 	if err != nil {
 		return nil, err
 	}
-	for _, u := range users {
-		names[u.Id] = u.GetString("displayName")
-	}
 	deviceIds := []string{}
-	for _, id := range unique(field(sessions, "device")) {
+	for _, id := range pluck(sessions, (*ReaderSession).Device) {
 		if id != "" {
 			deviceIds = append(deviceIds, id)
 		}
 	}
-	if len(deviceIds) > 0 {
-		found, err := app.FindRecordsByIds("desktop_devices", deviceIds)
-		if err != nil {
-			return nil, err
-		}
-		for _, d := range found {
-			devices[d.Id] = d.GetString("name")
-		}
-	}
-	// The character each session read most recently.
-	read, err := app.FindAllRecords("characters", dbx.In("readingSession", anys(ids(sessions))...))
+	devices, err := byID[Device](app, "desktop_devices", deviceIds)
 	if err != nil {
 		return nil, err
 	}
-	for _, c := range read {
-		id := c.GetString("readingSession")
-		if reading[id] == nil || reading[id].GetString("lastSeenAt") < c.GetString("lastSeenAt") {
+	// The character each session read most recently.
+	read, err := app.FindAllRecords("characters", dbx.In("readingSession", anys(ids(found))...))
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range views[Character](read) {
+		id := c.ReadingSession()
+		if reading[id] == nil || reading[id].LastSeenAt() < c.LastSeenAt() {
 			reading[id] = c
 		}
 	}
@@ -239,9 +225,14 @@ func apps(app core.App) ([]map[string]any, error) {
 	for i, s := range sessions {
 		var character any
 		if c := reading[s.Id]; c != nil {
-			character = map[string]any{"id": c.Id, "characterName": c.GetString("characterName"), "server": c.GetString("server"), "region": c.GetString("region"), "value": c.GetInt64("value"), "confirmed": c.GetBool("confirmed"), "valid": c.GetBool("valid"), "lastSeenAt": c.GetString("lastSeenAt"), "lastReadingAt": c.GetString("lastReadingAt"), "parserVersion": c.GetString("parserVersion")}
+			present(app, c)
+			character = map[string]any{"id": c.Id, "characterName": c.Name(), "server": c.Server(), "region": c.Region(), "value": c.Value(), "confirmed": c.Confirmed(), "valid": c.Valid(), "lastSeenAt": c.LastSeenAt(), "lastReadingAt": c.LastReadingAt(), "parserVersion": c.ParserVersion()}
 		}
-		rows[i] = map[string]any{"sessionId": s.Id, "user": s.GetString("user"), "account": names[s.GetString("user")], "device": devices[s.GetString("device")], "appVersion": s.GetString("appVersion"), "connectedAt": s.GetString("created"), "lastContactAt": s.GetString("updated"), "readings": s.GetInt64("sequence"), "character": character}
+		device := ""
+		if d := devices[s.Device()]; d != nil {
+			device = d.Name()
+		}
+		rows[i] = map[string]any{"sessionId": s.Id, "user": s.User(), "account": names[s.User()], "device": device, "appVersion": s.AppVersion(), "connectedAt": s.Created(), "lastContactAt": contactAt(app, s), "readings": s.Sequence(), "character": character}
 	}
 	key := func(row map[string]any) string {
 		return strings.ToLower(row["account"].(string)) + "\u0000" + row["connectedAt"].(string) + "\u0000" + row["sessionId"].(string)
@@ -317,8 +308,8 @@ func versions(app core.App) ([]*object, error) {
 		return nil, err
 	}
 	seen, out := map[string]*object{}, []*object{}
-	for _, s := range sessions {
-		version := s.GetString("appVersion")
+	for _, s := range views[ReaderSession](sessions) {
+		version := s.AppVersion()
 		if seen[version] == nil {
 			seen[version] = newObject().set("version", version).set("apps", 0)
 			out = append(out, seen[version])
@@ -333,7 +324,7 @@ func status(e *core.RequestEvent) error {
 	s.mu.Lock()
 	startedAt := s.startedAt
 	s.mu.Unlock()
-	out := newObject().set("serverNow", now()).set("startedAt", startedAt).
+	out := newObject().set("serverNow", now()).set("startedAt", startedAt).set("build", build()).set("runtime", runtimeStatus(e.App)).
 		set("database", newObject().set("dataBytes", size(e.App, "data.db", "data.db-wal")).set("logsBytes", size(e.App, "auxiliary.db", "auxiliary.db-wal")))
 	stored, err := counts(e.App)
 	if err != nil {
@@ -371,7 +362,7 @@ func runJobRoute(e *core.RequestEvent) error {
 		return badRequest("This job only runs on its schedule.")
 	}
 	out := runJob(e.App, name, true)
-	if out["skipped"] == "running" {
+	if out.Skipped == "running" {
 		return badRequest("This job is running right now. Try again in a moment.")
 	}
 	return e.JSON(200, jobsJSON(e.App, map[string]any{"result": out}))

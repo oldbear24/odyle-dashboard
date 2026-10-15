@@ -1,5 +1,8 @@
 node_modules/
-dist/
+/dist/
+# The dashboard build, copied in for go:embed (backend/web); only the placeholder is kept.
+backend/web/dist/*
+!backend/web/dist/.gitkeep
 .env
 .env.backend
 .runtime/
