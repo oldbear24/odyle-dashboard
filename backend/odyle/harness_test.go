@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"os"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -14,6 +15,10 @@ import (
 // own), for tests that need the database or the hooks.
 func newTestApp(t testing.TB) *tests.TestApp {
 	t.Helper()
+	// Nothing in the tests may reach GitHub; tests of the release lookup set their own feed.
+	if os.Getenv("ODYLE_WINDOWS_RELEASE_URL") == "" {
+		t.Setenv("ODYLE_WINDOWS_RELEASE_URL", "http://127.0.0.1:9/releases/latest")
+	}
 	app, err := tests.NewTestAppWithConfig(core.BaseAppConfig{DataDir: t.TempDir(), EncryptionEnv: "pb_test_env"})
 	if err != nil {
 		t.Fatal(err)

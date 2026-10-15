@@ -878,7 +878,9 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
   });
 });
 test('the dashboard offers the newest Windows release through the backend, cached and without sign-in', async () => {
-  const hits = releaseHits, latest = () => request('/api/odyle/windows-release', undefined, null, 'GET');
+  // The backend asks GitHub as it starts; that one answer serves every visitor for ten minutes.
+  await stop(); const hits = releaseHits; await start();
+  const latest = () => request('/api/odyle/windows-release', undefined, null, 'GET');
   const first = await latest();
   assert.equal(first.status, 200, JSON.stringify(first.data));
   assert.equal(first.data.repository, 'oldbear24/odyle-windows');
@@ -893,7 +895,6 @@ test('the dashboard offers the newest Windows release through the backend, cache
   assert.deepEqual([first.data.latest.packages.arm64.small.size, first.data.latest.packages.arm64.selfContained.name], [210000, 'odyle-0.5.0.2-win-arm64-self-contained.zip']);
   // Browsers get the packages only; checksums are verified by the Windows app itself.
   assert.equal(JSON.stringify(first.data).includes('.sha256'), false);
-  // One GitHub request serves every visitor for ten minutes.
   const again = await latest(); assert.deepEqual(again.data, first.data); assert.equal(releaseHits, hits + 1);
   // Without GitHub the stable latest-release page link is still offered.
   releaseDown = true;

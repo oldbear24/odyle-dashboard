@@ -27,9 +27,12 @@ type state struct {
 
 	releaseAt        time.Time // the last lookup
 	release          map[string]any
+	releaseETag      string // of release, for asking GitHub whether it changed
 	releaseChecked   bool
-	releaseFetchedAt time.Time // GitHub's last answer
-	releaseError     string    // why the last lookup failed
+	releaseFetchedAt time.Time     // GitHub's last answer
+	releaseError     string        // why the last lookup failed
+	releaseNotBefore time.Time     // GitHub's rate limit allows no lookup before then
+	releaseInFlight  chan struct{} // closed when the running lookup is done; nil while none runs
 }
 
 func stateOf(app core.App) *state {

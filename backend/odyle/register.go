@@ -44,6 +44,8 @@ func Register(app core.App) {
 		if testFixtures != nil {
 			testFixtures(se)
 		}
+		// The newest Windows release, so the first visitors need not wait for GitHub.
+		go latestRelease(se.App)
 		return se.Next()
 	})
 
