@@ -130,7 +130,8 @@ func fetchLatest() (map[string]any, error) {
 }
 
 // latestRelease answers the cached release, asking GitHub when the cache is older than
-// ten minutes (a minute after a failed lookup).
+// ten minutes (a minute after a failed lookup). The cache also keeps when GitHub last
+// answered and why the last lookup failed, for the superuser dashboard's Server status page.
 func latestRelease(app core.App) map[string]any {
 	s := stateOf(app)
 	s.mu.Lock()
@@ -140,18 +141,39 @@ func latestRelease(app core.App) map[string]any {
 	if release != nil {
 		wait = releaseFresh
 	}
-	if cached && time.Since(at) < wait {
+	checked := time.Now()
+	if cached && checked.Sub(at) < wait {
 		return release
 	}
-	if found, err := fetchLatest(); err != nil {
-		logf("Odyle release lookup failed: %v", err)
-	} else {
-		release = found
-	}
+	found, err := fetchLatest()
 	s.mu.Lock()
-	s.releaseChecked, s.release, s.releaseAt = true, release, time.Now()
-	s.mu.Unlock()
-	return release
+	defer s.mu.Unlock()
+	s.releaseChecked, s.releaseAt, s.releaseError = true, checked, ""
+	if err != nil {
+		s.releaseError = err.Error()
+		logf("Odyle release lookup failed: %s", s.releaseError)
+	} else {
+		s.release, s.releaseFetchedAt = found, checked
+	}
+	return s.release
+}
+
+// releaseLookup is the release cache as the Server status page shows it.
+func releaseLookup(app core.App) *object {
+	latestRelease(app)
+	s := stateOf(app)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	iso := func(at time.Time) string {
+		if at.IsZero() {
+			return ""
+		}
+		return at.UTC().Format(isoLayout)
+	}
+	version, _ := s.release["version"].(string)
+	publishedAt, _ := s.release["publishedAt"].(string)
+	return newObject().set("repository", repository()).set("checkedAt", iso(s.releaseAt)).set("fetchedAt", iso(s.releaseFetchedAt)).
+		set("error", s.releaseError).set("version", version).set("publishedAt", publishedAt)
 }
 
 func windowsRelease(e *core.RequestEvent) error {

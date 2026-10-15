@@ -3,6 +3,8 @@ package odyle
 import (
 	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -17,8 +19,8 @@ import (
 
 // The Odyle pages of the superuser dashboard (backend/admin): the Windows apps
 // connected right now, the requests the apps and the dashboard send as they arrive
-// ("packets"), the background jobs and the server-wide settings. Only superusers reach
-// these routes and the realtime topic.
+// ("packets"), the server's status with the last hour's traffic, the background jobs and
+// the server-wide settings. Only superusers reach these routes and the realtime topic.
 //
 // Packets are Odyle's own API requests, never game traffic. The newest 200 live in
 // memory only: nothing is written to the database, and a restart clears them.
@@ -43,6 +45,10 @@ var shown = map[string][]string{
 	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "remove"}, "discord-webhook": {"roomId", "language"},
 	"task": {"id:taskId", "done", "move", "remove"}, "profile": {"displayName"}, "desktop-code": {}, "forget-device": {"deviceId"}, "sign-out-everywhere": {}, "delete-account": {}, "delete-character": {"characterId"},
 }
+
+// Requests of the Windows app (source "app"); everything else comes from the dashboard
+// ("web"). Character saves come from both, and count as the app's.
+var appKinds = map[string]bool{"session": true, "report": true, "heartbeat": true, "invalidate": true, "character": true, "pair": true, "desktop-sign-in": true, "desktop-device": true, "unpair": true}
 
 func details(packet *object, kind string, b body) {
 	for _, f := range shown[kind] {
@@ -109,7 +115,11 @@ func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 	if e.Auth != nil {
 		user, account = e.Auth.Id, e.Auth.GetString("displayName")
 	}
-	packet := newObject().set("at", now()).set("kind", kind).set("user", user).set("account", account).set("ok", failure == nil).set("ms", ms)
+	source := "web"
+	if appKinds[kind] {
+		source = "app"
+	}
+	packet := newObject().set("at", now()).set("kind", kind).set("source", source).set("user", user).set("account", account).set("ok", failure == nil).set("ms", ms)
 	details(packet, kind, b)
 	if failure != nil {
 		text := message(failure)
@@ -143,27 +153,42 @@ func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 		}
 	}
 	broadcast(e.App, remember(e.App, packet))
+	stateOf(e.App).traffic.record(time.Now(), kind, source, ms, failure)
 }
 
-// observed wraps an Odyle route: the request is answered exactly as before, then listed,
-// accepted or rejected, for superusers. A monitor failure never fails the request.
-func observed(kind string, handle func(*core.RequestEvent) error) func(*core.RequestEvent) error {
-	if _, ok := shown[kind]; !ok {
-		return handle
-	}
+// measure runs a route's handler exactly as before and hands its outcome to done. A
+// monitor failure never fails the request.
+func measure(handle func(*core.RequestEvent) error, done func(e *core.RequestEvent, failure error, ms int64)) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		started := time.Now()
 		err := handle(e)
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					logf("Odyle packet monitor failed: %v", r)
+					logf("Odyle monitor failed: %v", r)
 				}
 			}()
-			publish(e, kind, err, time.Since(started).Milliseconds())
+			done(e, err, time.Since(started).Milliseconds())
 		}()
 		return err
 	}
+}
+
+// observed wraps an Odyle request (POST route): it is listed for superusers, accepted or
+// rejected, and counted.
+func observed(kind string, handle func(*core.RequestEvent) error) func(*core.RequestEvent) error {
+	if _, ok := shown[kind]; !ok {
+		return handle
+	}
+	return measure(handle, func(e *core.RequestEvent, failure error, ms int64) { publish(e, kind, failure, ms) })
+}
+
+// timed wraps an Odyle read (GET route): it is only counted for the Server status page,
+// never listed.
+func timed(name string, handle func(*core.RequestEvent) error) func(*core.RequestEvent) error {
+	return measure(handle, func(e *core.RequestEvent, failure error, ms int64) {
+		stateOf(e.App).traffic.record(time.Now(), "GET "+name, "read", ms, failure)
+	})
 }
 
 // apps has one row per reader session. A running Windows app keeps one and touches it
@@ -240,6 +265,86 @@ func monitor(e *core.RequestEvent) error {
 		return err
 	}
 	return e.JSON(200, map[string]any{"serverNow": now(), "latestVersion": latestVersion(e.App), "apps": rows, "packets": packets(e.App)})
+}
+
+// Server status: the database's size, what it holds, the Windows apps connected by
+// version, the release lookup and the last hour's traffic (traffic.go).
+func counts(app core.App) (*object, error) {
+	at, failed := time.Now(), error(nil)
+	since := func(d time.Duration) string { return stamp(at.Add(-d)) }
+	after := func(field string, d time.Duration) dbx.Expression {
+		return dbx.NewExp(field+" >= {:at}", dbx.Params{"at": since(d)})
+	}
+	open := dbx.NewExp("expiresAt > {:now}", dbx.Params{"now": since(0)})
+	count := func(name string, exprs ...dbx.Expression) int64 {
+		n, err := app.CountRecords(name, exprs...)
+		if err != nil && failed == nil {
+			failed = err
+		}
+		return n
+	}
+	day := 24 * time.Hour
+	out := newObject().
+		set("accounts", newObject().set("total", count("users")).set("active24h", count("users", after("lastActiveAt", day))).set("active7d", count("users", after("lastActiveAt", 7*day)))).
+		// A reading is live while its heartbeat is less than 45 seconds old, as on the dashboard.
+		set("characters", newObject().set("total", count("characters")).set("live", count("characters", dbx.HashExp{"valid": true}, after("lastSeenAt", 45*time.Second)))).
+		set("rooms", newObject().set("total", count("party_rooms")).set("discordReminders", count("party_rooms", dbx.NewExp("discordWebhook != ''")))).
+		set("pairedPcs", newObject().set("total", count("desktop_devices"))).
+		set("readerSessions", newObject().set("open", count("publisher_sessions", open)).set("connected", count("publisher_sessions", open, after("updated", 90*time.Second)))).
+		set("plannedRuns", newObject().set("total", count("room_runs")).set("upcoming", count("room_runs", after("startsAt", 0)))).
+		set("historyPoints", newObject().set("total", count("character_readings"))).
+		set("tasks", newObject().set("total", count("user_tasks")))
+	return out, failed
+}
+
+// size is the bytes of database files with their write-ahead logs; a missing file counts 0.
+func size(app core.App, names ...string) int64 {
+	var total int64
+	for _, name := range names {
+		if info, err := os.Stat(filepath.Join(app.DataDir(), name)); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
+// versions are the Windows apps in contact within the last 90 seconds (online or late),
+// by the version their session reported ("" when the app did not send one).
+func versions(app core.App) ([]*object, error) {
+	at := time.Now()
+	sessions, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now} && updated >= {:since}", "", 1000, 0, dbx.Params{"now": stamp(at), "since": stamp(at.Add(-90 * time.Second))})
+	if err != nil {
+		return nil, err
+	}
+	seen, out := map[string]*object{}, []*object{}
+	for _, s := range sessions {
+		version := s.GetString("appVersion")
+		if seen[version] == nil {
+			seen[version] = newObject().set("version", version).set("apps", 0)
+			out = append(out, seen[version])
+		}
+		seen[version].set("apps", seen[version].values["apps"].(int)+1)
+	}
+	return out, nil
+}
+
+func status(e *core.RequestEvent) error {
+	s := stateOf(e.App)
+	s.mu.Lock()
+	startedAt := s.startedAt
+	s.mu.Unlock()
+	out := newObject().set("serverNow", now()).set("startedAt", startedAt).
+		set("database", newObject().set("dataBytes", size(e.App, "data.db", "data.db-wal")).set("logsBytes", size(e.App, "auxiliary.db", "auxiliary.db-wal")))
+	stored, err := counts(e.App)
+	if err != nil {
+		return err
+	}
+	out.set("counts", stored).set("release", releaseLookup(e.App))
+	connected, err := versions(e.App)
+	if err != nil {
+		return err
+	}
+	return e.JSON(200, out.set("versions", connected).set("traffic", s.traffic.summary(time.Now())))
 }
 
 func jobsJSON(app core.App, extra map[string]any) map[string]any {

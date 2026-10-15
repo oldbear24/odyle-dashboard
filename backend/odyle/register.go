@@ -4,6 +4,8 @@
 package odyle
 
 import (
+	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/apis"
@@ -110,30 +112,35 @@ func routes(se *core.ServeEvent) {
 	for _, a := range publicActions {
 		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(small)
 	}
-	se.Router.GET("/api/odyle/rooms", rooms).Bind(signedIn)
-	se.Router.GET("/api/odyle/tasks", tasks).Bind(signedIn)
-	se.Router.GET("/api/odyle/snapshot/{id}", snapshot).Bind(signedIn)
-	se.Router.GET("/api/odyle/history/{id}", history).Bind(signedIn)
-	se.Router.GET("/api/odyle/upcoming", upcoming).Bind(signedIn)
-	se.Router.GET("/api/odyle/account", account).Bind(signedIn)
-	se.Router.GET("/api/odyle/export", exportData).Bind(signedIn)
+	// Reads are timed for the superuser dashboard's Server status page (traffic.go).
+	se.Router.GET("/api/odyle/rooms", timed("rooms", rooms)).Bind(signedIn)
+	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
+	se.Router.GET("/api/odyle/snapshot/{id}", timed("snapshot", snapshot)).Bind(signedIn)
+	se.Router.GET("/api/odyle/history/{id}", timed("history", history)).Bind(signedIn)
+	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
+	se.Router.GET("/api/odyle/account", timed("account", account)).Bind(signedIn)
+	se.Router.GET("/api/odyle/export", timed("export", exportData)).Bind(signedIn)
 	// Public: the newest Windows companion release, cached from GitHub (no account data involved).
-	se.Router.GET("/api/odyle/windows-release", windowsRelease)
+	se.Router.GET("/api/odyle/windows-release", timed("windows-release", windowsRelease))
 	// Public: the message superusers set under Server controls, for the dashboard (signed in or not).
-	se.Router.GET("/api/odyle/announcement", func(e *core.RequestEvent) error {
+	se.Router.GET("/api/odyle/announcement", timed("announcement", func(e *core.RequestEvent) error {
 		return e.JSON(200, map[string]any{"announcement": announcement(readSettings(e.App))})
-	})
-	// Superuser dashboard → Odyle: connected Windows apps, live requests, background jobs
-	// and the server-wide settings (monitor.go).
+	}))
+	// Superuser dashboard → Odyle: connected Windows apps, live requests, server status,
+	// background jobs and the server-wide settings (monitor.go).
 	superuser := apis.RequireSuperuserAuth()
 	se.Router.GET("/api/odyle/admin/ui", uiVersion)
 	se.Router.GET("/api/odyle/admin/monitor", monitor).Bind(superuser)
+	se.Router.GET("/api/odyle/admin/status", status).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/jobs", jobsRoute).Bind(superuser)
 	se.Router.POST("/api/odyle/admin/jobs/{name}", runJobRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/settings", settingsRoute).Bind(superuser)
 	// A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.
 	se.Router.POST("/api/odyle/admin/settings", saveSettingsRoute).Bind(superuser, apis.BodyLimit(65536))
 }
+
+// The cookie that marks browsers which dropped their cache of the superuser dashboard.
+var entryCookie = regexp.MustCompile(`(?:^|;\s*)odyle_entry=1(?:;|$)`)
 
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
@@ -146,6 +153,13 @@ func hardening(e *core.RequestEvent) error {
 	// for 14 days unless a header is already set, so a changed entry would miss them that long.
 	if path == "/_/extensions.js" {
 		headers.Set("Cache-Control", "no-cache")
+	} else if path == "/_/" && e.Request.Method == http.MethodGet && !entryCookie.MatchString(e.Request.Header.Get("Cookie")) {
+		// Browsers that opened the superuser dashboard before that header keep their old entry
+		// without asking again, the Odyle link out of sight on phones included. Their HTTP cache
+		// of this site is dropped once, on the next visit to the dashboard, so they fetch the
+		// current entry; the cookie marks browsers that have done it.
+		headers.Set("Clear-Site-Data", `"cache"`)
+		headers.Add("Set-Cookie", "odyle_entry=1; Path=/_/; Max-Age=31536000; SameSite=Lax; HttpOnly")
 	} else if !strings.HasPrefix(path, "/api/") && !strings.HasPrefix(path, "/_/") {
 		headers.Set("Content-Security-Policy", contentSecurityPolicy)
 		headers.Set("X-Frame-Options", "DENY")
