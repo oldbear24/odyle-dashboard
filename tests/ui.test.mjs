@@ -1,12 +1,13 @@
 // Browser checks of the built dashboard (npm run build first) against a disposable
-// PocketBase on port 18091. Accounts are issued by a test-only hook and put into the
+// backend on port 18091 (the test build, npm run backend:build). Accounts are issued by
+// a test-only route (backend/odyle/testing.go) and put into the
 // browser's localStorage as the SDK stores a Discord sign-in. Set ODYLE_UI_SHOTS to a
 // directory to keep a screenshot of every checked page, and ODYLE_UI_WIDTH to check
 // another viewport width (390 for a phone).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, cp, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -27,12 +28,7 @@ before(async () => {
   discord = createServer((req, res) => { discordPosts++; req.resume(); req.on('end', () => { res.writeHead(204); res.end(); }); });
   await new Promise(r => discord.listen(0, '127.0.0.1', r)); discordUrl = 'http://127.0.0.1:' + discord.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-ui-test-'));
-  await cp(resolve('backend/pb_hooks'), join(directory, 'hooks'), { recursive: true });
-  await cp(resolve('backend/pb_migrations'), join(directory, 'migrations'), { recursive: true });
-  await writeFile(join(directory, 'hooks', 'lib', 'protocols.cjs'), "module.exports = { verifiedAdapters: ['test-fixture-v1'] };");
-  // Test-only account issuance; production has no password or test sign-in.
-  await writeFile(join(directory, 'hooks', 'fixtures.pb.js'), `routerAdd('POST','/__test__/account',(e)=>{const name=e.requestInfo().body.name; const user=new Record(e.app.findCollectionByNameOrId('users'));user.set('email',$security.randomString(20)+'@test.invalid');user.setPassword($security.randomString(48));user.set('displayName',name);e.app.save(user);return e.json(200,{token:user.newAuthToken(),record:user});}); routerAdd('POST','/__test__/superuser',(e)=>{let su;try{su=e.app.findAuthRecordByEmail('_superusers','operator@test.invalid');}catch{su=new Record(e.app.findCollectionByNameOrId('_superusers'));su.setEmail('operator@test.invalid');}su.setPassword(e.requestInfo().body.password);e.app.save(su);return e.json(200,{token:su.newAuthToken()});});`);
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--hooksDir=' + join(directory, 'hooks'), '--migrationsDir=' + join(directory, 'migrations'), '--publicDir=' + resolve('dist'), '--automigrate=false'], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
   for (let i = 0; i < 50 && !(await fetch(url + '/api/health').then(r => r.ok, () => false)); i++) await delay(100);
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
   if (shots) await mkdir(shots, { recursive: true });

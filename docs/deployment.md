@@ -1,6 +1,6 @@
 # Deployment
 
-The simplest deployment serves both UI and API from one PocketBase instance. Keep one instance per SQLite data volume.
+The simplest deployment serves both UI and API from one backend instance: PocketBase with Odyle built in, one Go program. Keep one instance per SQLite data volume.
 
 ## Docker
 
@@ -8,7 +8,7 @@ The simplest deployment serves both UI and API from one PocketBase instance. Kee
 docker compose up --build -d
 ```
 
-Open `http://127.0.0.1:8090` for a local installation. The image verifies the PocketBase release checksum, runs as a non-root user, stores the database in a named volume and reports its health from `/api/health` (`docker compose ps` shows `healthy`).
+Open `http://127.0.0.1:8090` for a local installation. The image builds the backend from source with Go, runs as a non-root user, stores the database in a named volume and reports its health from `/api/health` (`docker compose ps` shows `healthy`).
 
 For internet access, put an HTTPS reverse proxy in front of port 8090 and change the Compose command to:
 
@@ -18,14 +18,14 @@ command: ["--origins=https://odyle.example.com"]
 
 Replace the example with your actual origin. Keep the port bound to loopback when the proxy runs on the host. Forward HTTP/1.1 connections and disable response buffering for `/api/realtime` so SSE arrives immediately. PocketBase checks collection permissions on realtime subscriptions; the additional message hook rechecks revoked/expired membership before delivery.
 
-If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker build argument or Vite build environment variable, and allow that exact frontend origin. Static hosting alone cannot run PocketBase.
+If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker build argument or Vite build environment variable, and allow that exact frontend origin. Static hosting alone cannot run the backend.
 
 ## Releases
 
 Every push to `main` runs the checks, then publishes:
 
 - the image `ghcr.io/oldbear24/odyle-dashboard` for `linux/amd64` and `linux/arm64`, tagged `latest`, `<version>.<run number>` (for example `0.4.0.12`) and `sha-<commit>`. It is built without `VITE_POCKETBASE_URL`, so the UI talks to the instance that serves it;
-- the GitHub release `v<version>.<run number>` with `odyle-dashboard-<version>.<run number>-pocketbase.zip` and its checksum. The ZIP holds `pb_hooks`, `pb_migrations` and `pb_public`; upload them to a PocketBase or PocketHost instance and restart it.
+- the GitHub release `v<version>.<run number>` with `odyle-dashboard-<version>.<run number>-<os>-<arch>.zip` for `linux-amd64`, `linux-arm64` and `windows-amd64` and their checksums. Each ZIP holds the server `odyle` (`odyle.exe` on Windows) and the dashboard in `pb_public`; run `odyle serve --http=127.0.0.1:8090` in that folder. Data is kept in `pb_data` next to it unless `--dir` says otherwise.
 
 The version comes from `package.json`; bump it to start a new line. To run the published image instead of building locally, replace `build: .` in `compose.yaml` with:
 
@@ -37,13 +37,13 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 
 - Bootstrap the first PocketBase operator account locally. Restrict the management path `/_/` at your proxy to operator access.
 - Application clients use the Discord-enabled `users` auth collection, never superusers. Configure the provider using [Discord setup](discord-setup.md).
-- The PocketBase dashboard's **Odyle** page (`/_/#/odyle`) shows the connected Windows apps and their live requests and edits the game settings. It is the UI extension in `pb_hooks/admin` and is deployed with `pb_hooks`; PocketBase 0.37 or newer is required. If a CDN caches `/_/`, bypass its cache for `/_/` itself (its first answer to each browser carries a one-time `Clear-Site-Data` header and cookie), `/_/extensions.js` and `/_/extensions/*`, or purge them after a deploy.
-- Back up the data volume before upgrading PocketBase or migrations. Keep the pinned binary and SDK versions together and run integration checks on upgrades.
+- The PocketBase dashboard's **Odyle** page (`/_/#/odyle`) shows the connected Windows apps and their live requests and edits the game settings. It is the UI extension in `backend/admin`, built into the backend. If a CDN caches `/_/`, bypass its cache for `/_/` itself (its first answer to each browser carries a one-time `Clear-Site-Data` header and cookie), `/_/extensions.js` and `/_/extensions/*`, or purge them after a deploy.
+- Back up the data volume before upgrading. PocketBase is pinned in `backend/go.mod` and upgraded like any Go module, its JavaScript SDK in `package.json`; keep both together and run the integration checks on upgrades.
 - Character pictures need outbound HTTPS from the backend to `api-search.plaync.com`, `profileimg.plaync.com` and `fizz-download.playnccdn.com` (the portrait host redirects there). Without it characters keep their initials. `PLAYNC_SEARCH_URL` and `PLAYNC_IMAGE_URL` override both hosts for tests.
 - The Windows app download link needs outbound HTTPS from the backend to `api.github.com` (one request every ten minutes at most, cached in memory). Without it the dashboard links GitHub's latest-release page without a version. `ODYLE_WINDOWS_REPOSITORY` points at a fork of the Windows app; `ODYLE_WINDOWS_RELEASE_URL` replaces the feed URL for tests.
 - Discord reminders of planned runs need outbound HTTPS from the backend to `discord.com` (a test post when a room owner connects a webhook, then one post per run; the `odyle-reminders` job runs every minute). Without it rooms simply have no Discord reminders. `ODYLE_DISCORD_WEBHOOK_BASE` replaces `https://discord.com` for tests.
 - The dashboard registers a service worker (`sw.js` next to `index.html`) that keeps the page and its built files for visits without a connection; it never caches `/api/` or `/_/`. Serve `sw.js` without a long cache lifetime at your CDN or proxy, so a deploy reaches browsers on their next visit.
-- Dashboard pages and files are served with `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` (`pb_hooks/main.pb.js`). `/api/` and `/_/` are excluded because the OAuth redirect page and the PocketBase UI use inline scripts. Add HSTS at your HTTPS proxy.
+- Dashboard pages and files are served with `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` (`backend/odyle/register.go`). `/api/` and `/_/` are excluded because the OAuth redirect page and the PocketBase UI use inline scripts. Add HSTS at your HTTPS proxy.
 - Request/IP logs are disabled by the migration. Configure proxy logs consistently with your privacy preference.
 - Rate limits are enabled for room creation and invite joins (30 a minute each), application routes under `/api/odyle/` (600 a minute), pairing and sign-in (10 a minute) and Windows app device sign-in and unpairing (30 a minute); all per client. Configure trusted proxy IP headers only for your own proxy; do not trust arbitrary forwarded client IP headers.
 - Accounts are capped at 30 characters, 20 owned rooms, 50 memberships, 40 tasks and 10 paired Windows PCs. Unused accounts are kept unless you set **Delete inactive accounts after (days)** on the Odyle page (30 days or more; a nightly job at 03:17 server time deletes up to 200 accounts per run and passes their rooms on). Deleting an account in the PocketBase dashboard passes its rooms on the same way.
@@ -52,4 +52,6 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 - Invites can be reused during their 30-minute lifetime. Rotate them to stop new joins; remove a member to revoke existing access. Rooms allow up to 50 members, including viewers.
 - Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
 
-Docker configuration is included but was not executed during the initial Windows development run. The Windows PocketBase binary, app API and static build were verified locally.
+## Upgrading from the JavaScript backend
+
+Releases before the Go backend ran the stock PocketBase binary with `pb_hooks` and `pb_migrations`. The Go backend uses the same data directory: keep the volume (or `pb_data`), replace the image (or the `pocketbase` binary with `odyle`) and remove `pb_hooks` and `pb_migrations`. Its migrations keep the names of the JavaScript ones, so a migrated database runs none of them again, and accounts, sign-ins, paired PCs, portraits and settings carry over. Command-line flags of the stock binary that are gone: `--hooksDir`, `--hooksWatch`, `--hooksPool`, `--migrationsDir` and `--automigrate`. A stock PocketBase or PocketHost instance cannot run the backend any more; deploy the image or a release archive.

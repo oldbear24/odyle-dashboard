@@ -15,10 +15,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
       - run: npm ci
       - run: npm run lint
+      - name: gofmt
+        run: test -z "$(gofmt -l backend)" || { gofmt -l backend; exit 1; }
       - run: npm test
-      - run: npm run backend:install
+      - run: npm run test:backend
+      - run: npm run backend:build
       - run: npm run test:integration
       - run: npm run build
       # Browser checks of the built dashboard (tests/ui.test.mjs).
