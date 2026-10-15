@@ -162,6 +162,23 @@ func TestOwnNewsReachOnlyTheAccount(t *testing.T) {
 	if _, data, ok := mine.next(); !ok || data["refresh"] != nil || len(data["characters"].([]any)) != 1 {
 		t.Fatalf("a reading: %v", data)
 	}
+	// The hourly activity mark is no news; a new display name is.
+	account, _ := app.FindRecordById("users", user.Id)
+	account.Set("lastActiveAt", now())
+	if err := app.Save(account); err != nil {
+		t.Fatal(err)
+	}
+	deliver(app)
+	mine.quiet()
+	account, _ = app.FindRecordById("users", user.Id)
+	account.Set("displayName", "Renamed")
+	if err := app.Save(account); err != nil {
+		t.Fatal(err)
+	}
+	deliver(app)
+	if _, data, ok := mine.next(); !ok || data["refresh"] != true {
+		t.Fatalf("a new display name: %v", data)
+	}
 }
 
 func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {

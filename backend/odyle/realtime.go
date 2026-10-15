@@ -365,8 +365,11 @@ func watchChanges(app core.App) {
 	app.OnRecordAfterCreateSuccess("user_tasks", "publisher_sessions", "desktop_devices").BindFunc(own)
 	app.OnRecordAfterUpdateSuccess("user_tasks", "desktop_devices").BindFunc(own)
 	app.OnRecordAfterDeleteSuccess("user_tasks", "publisher_sessions", "desktop_devices").BindFunc(own)
+	// A new display name; the hourly activity mark (touch) is no news.
 	app.OnRecordAfterUpdateSuccess("users").BindFunc(func(e *core.RecordEvent) error {
-		notifyUsers(e.App, e.Record.Id)
+		if e.Record.Original().GetString("displayName") != e.Record.GetString("displayName") {
+			notifyUsers(e.App, e.Record.Id)
+		}
 		return e.Next()
 	})
 }
