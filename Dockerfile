@@ -20,7 +20,7 @@ RUN go mod download
 COPY backend ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/odyle .
 
-FROM alpine:3.22
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates \
  && addgroup -g 10001 odyle && adduser -D -u 10001 -G odyle odyle \
  && mkdir -p /pb/pb_data && chown -R odyle:odyle /pb
