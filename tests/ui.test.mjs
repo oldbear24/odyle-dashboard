@@ -481,6 +481,12 @@ test('superusers search, open and export packets and read the server status', as
     assert.match(await reasons.innerText(), /report/);
     assert.match(await page.locator('tr', { hasText: 'GET rooms' }).innerText(), /Read/);
     assert.match(await page.locator('tr', { hasText: '0.6.0.12' }).innerText(), /0\.6\.0\.12\s+[1-9]/);
+    // The server's build and Go runtime, and a heap profile saved as a file.
+    assert.match(await page.locator('.odyle-stat', { hasText: 'Goroutines' }).innerText(), /Goroutines\s+[1-9][\d,]*\s+\d+ realtime connections/);
+    assert.match(await page.locator('.odyle-stat', { hasText: 'Version' }).innerText(), /Version\s+\S+/);
+    const [heap] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Heap' }).click()]);
+    assert.match(heap.suggestedFilename(), /^odyle-heap-.*\.pb\.gz$/);
+    assert.deepEqual([...(await (await import('node:fs/promises')).readFile(await heap.path())).subarray(0, 2)], [0x1f, 0x8b]);
     await shot(page, 'admin-status');
     // A route links to its packets, the rejected ones from a reason.
     await reasons.getByRole('link', { name: 'Show packets' }).click();

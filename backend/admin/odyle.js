@@ -267,9 +267,9 @@ const packets = (kind, extra = '') => '#/odyle?kind=' + encodeURIComponent(kind)
 
 export function statusPage() {
   app.store.title = 'Server status';
-  const empty = { serverNow: '', startedAt: '', database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [] } };
+  const empty = { serverNow: '', startedAt: '', build: {}, runtime: {}, database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [] } };
   // hover is the minute (its time) the chart's tooltip shows.
-  const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '' });
+  const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '', profiling: '' });
   const now = () => state.now + state.offset;
   let poll = 0, tick = 0;
   async function load() {
@@ -350,6 +350,20 @@ export function statusPage() {
     t.td({ className: 'txt-right' }, number(v.apps)),
     t.td(null, !v.version || !latest() ? null : older(v.version, latest()) ? t.span({ className: 'label sm warning' }, 'update available') : t.span({ className: 'txt-hint txt-sm' }, 'newest')));
   const release = () => state.data.release;
+  const build = () => state.data.build, run = () => state.data.runtime;
+  const size = bytes => typeof bytes === 'number' ? app.utils.formattedFileSize(bytes) : '—';
+  // Go's profiles of the running server, saved as files for go tool pprof.
+  async function profile(name, query = '') {
+    state.profiling = name;
+    try {
+      const res = await fetch(app.pb.buildURL('/api/odyle/admin/pprof/' + name + query), { headers: { Authorization: app.pb.authStore.token } });
+      if (!res.ok) throw new Error('The ' + name + ' profile could not be taken (' + res.status + ').');
+      const link = t.a({ href: URL.createObjectURL(await res.blob()), download: 'odyle-' + name + '-' + new Date().toISOString().slice(0, 19).replace(/:/g, '') + '.pb.gz' });
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    } catch (error) { state.failed = error.message; }
+    state.profiling = '';
+  }
+  const profileButton = (name, label, query) => t.button({ type: 'button', className: 'btn sm secondary', disabled: () => Boolean(state.profiling), onclick: () => profile(name, query) }, () => state.profiling === name ? 'Taking…' : label);
 
   return layout('#/odyle/status', app.components.refreshButton({ onclick: load }),
     t.div({ onmount: () => { load(); poll = setInterval(load, 10000); tick = setInterval(() => state.now = Date.now(), 1000); }, onunmount: () => { clearInterval(poll); clearInterval(tick); } },
@@ -381,6 +395,15 @@ export function statusPage() {
         stat('Planned runs', () => number(counts('plannedRuns').total), () => number(counts('plannedRuns').upcoming) + ' still to start'),
         stat('Odyle history', () => number(counts('historyPoints').total), 'changes of the last 30 days'),
         stat('Checklist tasks', () => number(counts('tasks').total), 'daily and weekly')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Server'), t.span({ className: 'txt-hint txt-sm' }, () => [build().go, build().pocketbase ? 'PocketBase ' + build().pocketbase : '', build().platform].filter(Boolean).join(' · '))),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Version', () => build().version || '—', () => build().commit ? 'commit ' + build().commit.slice(0, 12) + (build().modified ? ' (modified)' : '') + (build().builtAt ? ' · ' + when(build().builtAt) : '') : ''),
+        stat('Goroutines', () => number(run().goroutines), () => number(run().realtimeClients) + ' realtime connections'),
+        stat('Memory', () => size(run().heapBytes), () => number(run().heapObjects) + ' objects · ' + size(run().systemBytes) + ' from the system'),
+        stat('Garbage collection', () => number(run().gcCycles), () => typeof run().lastPauseMs === 'number' ? 'cycles · last pause ' + millis(run().lastPauseMs) + ' · ' + millis(run().pauseTotalMs) + ' in all' : ''),
+        stat('Processors', () => number(run().maxProcs), () => typeof run().cpus === 'number' ? 'in use of ' + number(run().cpus) + ' CPUs' : '')),
+      t.div({ className: 'flex m-b-base odyle-profiles' }, t.span({ className: 'txt-hint txt-sm' }, 'Profiles for go tool pprof:'),
+        profileButton('profile', 'CPU, 30 s', '?seconds=30'), profileButton('heap', 'Heap'), profileButton('allocs', 'Allocations'), profileButton('goroutine', 'Goroutines')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
@@ -400,7 +423,7 @@ export function statusPage() {
 // What each background job does; the backend's odyle/jobs.go holds the schedules and the records.
 const jobInfo = {
   'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes expired invites, pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
-  'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run get their official portrait from PLAYNC: new ones at once, missing ones hourly, the rest daily.' },
+  'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones saved while portraits were paused, missing ones hourly, the rest daily. New characters are looked up as soon as they are saved.' },
   'odyle-reminders': { label: 'Discord reminders', schedule: () => 'Every minute', unit: 'reminders posted', about: 'Posts planned runs to their room\'s Discord channel 15 minutes before they start.' },
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
 };

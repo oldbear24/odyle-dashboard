@@ -110,6 +110,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/admin/ui", uiVersion)
 	se.Router.GET("/api/odyle/admin/monitor", monitor).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/status", status).Bind(superuser)
+	se.Router.GET("/api/odyle/admin/pprof/{name}", pprofRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/jobs", jobsRoute).Bind(superuser)
 	se.Router.POST("/api/odyle/admin/jobs/{name}", runJobRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/settings", settingsRoute).Bind(superuser)

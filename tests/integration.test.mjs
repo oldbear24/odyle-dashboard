@@ -445,6 +445,14 @@ test('superusers read the server status: stored data, connected app versions, th
   assert.ok(Date.parse(data.release.fetchedAt) <= Date.parse(data.release.checkedAt));
   // Nothing an account keeps secret reaches the page.
   assert.equal(JSON.stringify(data).includes(member.token), false); assert.equal(JSON.stringify(data).includes('Counted member'), false);
+  // The build and the Go runtime; Go's profiles for superusers only.
+  assert.equal(typeof data.build.version, 'string'); assert.match(data.build.go, /^go1\./); assert.match(data.build.pocketbase, /^v0\./);
+  for (const key of ['goroutines', 'heapBytes', 'systemBytes', 'gcCycles', 'cpus', 'maxProcs', 'realtimeClients']) assert.equal(typeof data.runtime[key], 'number', key);
+  assert.ok(data.runtime.goroutines > 0);
+  const profile = (name, auth) => fetch(url + '/api/odyle/admin/pprof/' + name, { headers: auth ? { Authorization: auth.token } : {} });
+  const heap = await profile('heap', operator); assert.equal(heap.status, 200);
+  assert.deepEqual([...new Uint8Array(await heap.arrayBuffer()).slice(0, 2)], [0x1f, 0x8b]);
+  assert.equal((await profile('heap')).status, 401); assert.equal((await profile('heap', member)).status, 403); assert.equal((await profile('nothing', operator)).status, 404);
 });
 test('accounts see their history, delete characters, export their data, sign out everywhere and delete themselves', async () => {
   const [holder, heir, watcher, loner, stranger] = await Promise.all(['Life holder', 'Life heir', 'Life watcher', 'Life loner', 'Life stranger'].map(async name => (await request('/__test__/account', { name })).data));

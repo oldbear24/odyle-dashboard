@@ -14,11 +14,14 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS server
 ARG TARGETOS
 ARG TARGETARCH
+# The release names the build (the Server status page shows it); a local build reads "dev".
+ARG VERSION=""
+ARG COMMIT=""
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend ./
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/odyle .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/oldbear24/odyle-dashboard/backend/odyle.Version=$VERSION -X github.com/oldbear24/odyle-dashboard/backend/odyle.Commit=$COMMIT" -o /out/odyle .
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates \

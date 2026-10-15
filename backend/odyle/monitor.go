@@ -329,7 +329,7 @@ func status(e *core.RequestEvent) error {
 	s.mu.Lock()
 	startedAt := s.startedAt
 	s.mu.Unlock()
-	out := newObject().set("serverNow", now()).set("startedAt", startedAt).
+	out := newObject().set("serverNow", now()).set("startedAt", startedAt).set("build", build()).set("runtime", runtimeStatus(e.App)).
 		set("database", newObject().set("dataBytes", size(e.App, "data.db", "data.db-wal")).set("logsBytes", size(e.App, "auxiliary.db", "auxiliary.db-wal")))
 	stored, err := counts(e.App)
 	if err != nil {
