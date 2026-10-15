@@ -397,6 +397,16 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
     assert.deepEqual([saved.dungeons, saved.inactiveAccountDays], [['Fire Temple', 'Udas Temple'], 365]);
+    // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto(url + '/_/#/collections'); await page.locator('.page-header').first().waitFor();
+    const header = await page.locator('.app-main-nav').evaluate(nav => ({ fits: nav.scrollWidth <= nav.clientWidth, odyle: [...nav.querySelectorAll('.header-link')].some(a => a.textContent.trim() === 'Odyle' && a.getBoundingClientRect().right <= nav.getBoundingClientRect().right) }));
+    assert.deepEqual(header, { fits: true, odyle: true }, 'every header link fits a phone');
+    await page.locator('.app-header').getByRole('link', { name: 'Odyle', exact: true }).click();
+    await page.getByText('Connected apps').waitFor();
+    await shot(page, 'admin-phone-header');
+    // A changed extension entry reaches browsers on their next load, not after 14 days.
+    assert.equal((await fetch(url + '/_/extensions.js')).headers.get('cache-control'), 'no-cache');
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
   } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0 }, operator); }
 });

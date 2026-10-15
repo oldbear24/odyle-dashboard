@@ -217,7 +217,7 @@ Server controls: `announcement` is one line of up to 300 characters (spaces and 
 
 `jobs` lists each scheduled job with `name`, `manual` (can run by hand), `state` (`active`, `paused` or `off` while inactive accounts are kept), `running`, and since the server started (`startedAt`): `lastRunAt`, `ms`, `byHand`, the last run's `done`, `failed`, `error` or `skipped` (`paused`, `off`), and `runs`, `failedRuns`, `totalDone`, `lastFailureAt`, `lastError`. Records live in server memory like packets. Saving creates the `odyle_settings` record if it was deleted. Rooms, room snapshots and the checklist report the new values on their next request.
 
-PocketBase serves extension files with a 14-day browser cache. The extension's entry (`main.js`) therefore stays unchanged and imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload.
+PocketBase serves extension files with a 14-day browser cache. The backend sends the combined entry `/_/extensions.js` (the extension's `main.js`) with `Cache-Control: no-cache`, so browsers fetch it on every load, and the entry imports the page (`odyle.js`, `odyle.css`) under the `version` hash, so a deploy reaches open dashboards on their next reload.
 
 ## Realtime
 
