@@ -434,6 +434,20 @@ test('an open room checks no health while live, waits while hidden and draws its
     await page.locator('[data-wish="Fire Temple"][data-wanted="false"]').waitFor();
     assert.match(await page.locator('.wishlist .wish-row').first().innerText(), /2 members need it/);
     await page.unroute('**/api/odyle/snapshot/**');
+    // An answer that arrives after leaving the room is not drawn over the next page.
+    let answered; const answer = new Promise(r => { answered = r; });
+    await page.route('**/api/odyle/rename', async route => { await delay(1500); await route.continue(); setTimeout(answered, 300); });
+    await page.locator('[data-action="room-settings"]').click();
+    await page.locator('#rename-form [name=name]').fill('Late name');
+    await page.locator('#rename-form [type=submit]').click();
+    await page.keyboard.press('Escape');
+    await navigate(page, 'library');
+    await page.locator('.heading-actions [data-action="desktop"]').waitFor();
+    await answer; await delay(300);
+    assert.equal(new URL(page.url()).hash, '#/'); assert.equal(await page.getByRole('heading', { name: 'Party overview.' }).count(), 0);
+    assert.equal(await page.locator('#modal[open] #rename-form').count(), 0);
+    await page.locator('.heading-actions [data-action="desktop"]').waitFor();
+    await page.unroute('**/api/odyle/rename');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -739,7 +753,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
-    assert.deepEqual([saved.dungeons, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
+    assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(url + '/_/#/collections'); await page.locator('.page-header').first().waitFor();

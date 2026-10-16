@@ -580,14 +580,14 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'dungeons'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
   // The dungeon catalog, one row per dungeon: cost 0 means Odyle per cube, party size 0 not
   // set. Names match regardless of case and spacing, as the server matches them.
   const sizes = [0, 4, 5, 10, 20], key = name => String(name).trim().replace(/\s+/g, ' ').toLowerCase();
-  const dungeons = () => state.form.dungeons;
+  const dungeons = () => state.form.catalog;
   function addDungeon() {
     dungeons().push({ name: '', cost: 0, partySize: 0, category: '', unconfirmed: false });
     const at = dungeons().length - 1;

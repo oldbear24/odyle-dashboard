@@ -58,7 +58,9 @@ func TestRoutesOverHTTP(t *testing.T) {
 }
 
 // Packet readers paused under Server controls: apps hear of it from rooms, sessions and
-// heartbeats, readings are refused with 503 and the rest keeps working.
+// heartbeats, readings are refused with 503 (400 for apps released before the switch,
+// which then wait a minute instead of reconnecting), heartbeats no longer keep a
+// reading live and the rest keeps working.
 func TestPausedReadersAreToldAndTheirReadingsRefused(t *testing.T) {
 	app := newTestApp(t)
 	if _, err := writeSettings(app, body{"portraitsPaused": true}); err != nil {
@@ -72,9 +74,10 @@ func TestPausedReadersAreToldAndTheirReadingsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	auth := map[string]string{"Authorization": raw}
-	reading := func(sequence int) *strings.Reader {
-		return strings.NewReader(`{"sessionId":"` + session.Id + `","sequence":` + strconv.Itoa(sequence) + `,"characterId":"` + character.Id + `","characterName":"Paused","server":"Lumiel","region":"GLOBAL_EU","value":140,"source":"packet","parserVersion":"global-reference-v2","confirmed":true}`)
+	readingBy := func(sequence int, adapter string) *strings.Reader {
+		return strings.NewReader(`{"sessionId":"` + session.Id + `","sequence":` + strconv.Itoa(sequence) + `,"characterId":"` + character.Id + `","characterName":"Paused","server":"Lumiel","region":"GLOBAL_EU","value":140,"source":"packet","parserVersion":"` + adapter + `","confirmed":true}`)
 	}
+	reading := func(sequence int) *strings.Reader { return readingBy(sequence, "global-reference-v2") }
 	pause := func(paused bool) func(testing.TB, *tests.TestApp, *core.ServeEvent) {
 		return func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			if _, err := writeSettings(app, body{"readerPaused": paused}); err != nil {
@@ -89,7 +92,18 @@ func TestPausedReadersAreToldAndTheirReadingsRefused(t *testing.T) {
 		{Name: "a new session tells the app", Method: http.MethodPost, URL: "/api/odyle/session", Headers: auth, Body: strings.NewReader(`{}`),
 			ExpectedStatus: 200, ExpectedContent: []string{`"sessionId":`, `"readerPaused":true`}},
 		{Name: "heartbeats keep working and tell the app", Method: http.MethodPost, URL: "/api/odyle/heartbeat", Headers: auth,
-			Body: strings.NewReader(`{"sessionId":"` + session.Id + `","characterId":"` + character.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"serverNow":`, `"readerPaused":true`}},
+			Body: strings.NewReader(`{"sessionId":"` + session.Id + `","characterId":"` + character.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"serverNow":`, `"readerPaused":true`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, _ *http.Response) {
+				c, err := findAs[Character](app, "characters", character.Id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, seen := seenAt(app, c); seen {
+					t.Fatal("a paused reader's heartbeat kept its reading live")
+				}
+			}},
+		{Name: "readings of apps released before the switch are refused with 400", Method: http.MethodPost, URL: "/api/odyle/report", Headers: auth, Body: readingBy(1, "global-reference-v1"),
+			ExpectedStatus: 400, ExpectedContent: []string{`"message":"Packet readers are paused by the server operators."`}},
 		{Name: "readings are refused", Method: http.MethodPost, URL: "/api/odyle/report", Headers: auth, Body: reading(1),
 			ExpectedStatus: 503, ExpectedContent: []string{`"message":"Packet readers are paused by the server operators."`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, _ *http.Response) {

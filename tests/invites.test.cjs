@@ -19,6 +19,25 @@ test('the owner\'s list shows a link\'s code only where this browser made it, an
   assert.deepEqual(savedInvites(storage, 'room1', Date.parse('2026-10-16T12:31:00Z')), []);
   assert.deepEqual(withCodes({ getItem: () => '{not json', setItem() { throw new Error('blocked'); } }, 'room1', listed, now).map(r => r.code), ['', '', '']);
 });
+test('without site data the page keeps the codes it made, and a listing asked for earlier never forgets a newer one', async () => {
+  const { withCodes, rememberInvites, rememberInvite, savedInvites } = await import('../src/invites.js');
+  // Storage that keeps nothing (main.js stands it in when localStorage is blocked).
+  const blocked = { getItem: () => null, setItem() {}, removeItem() {} };
+  const made = [link('p1', 'reporter', '2026-10-17 12:00:00.000Z', { code: 'PLAYERCODE23' }), link('v1', 'viewer', '2026-10-17 12:00:00.000Z', { code: 'VIEWERCODE23' })];
+  rememberInvites(blocked, 'room1', made, now);
+  assert.deepEqual(withCodes(blocked, 'room1', made, now).map(r => r.code), ['PLAYERCODE23', 'VIEWERCODE23']);
+  rememberInvite(blocked, 'room1', { id: 'n1', code: 'NEWLINKCODE2', role: 'reporter', expiresAt: '2026-10-17 12:00:00.000Z' }, now);
+  const listing = [...made.map(l => ({ ...l, code: undefined })), link('n1', 'reporter', '2026-10-17 12:00:00.000Z')];
+  assert.deepEqual(withCodes(blocked, 'room1', listing, now).map(r => r.code), ['PLAYERCODE23', 'VIEWERCODE23', 'NEWLINKCODE2']);
+  assert.deepEqual(withCodes(memory(), 'room1', listing, now).map(r => r.code), ['', '', ''], 'another storage has its own codes');
+  // A listing asked for before a link was made does not list it: its code stays for the next one.
+  const storage = memory(), askedAt = Date.now();
+  rememberInvite(storage, 'room2', { id: 'late', code: 'LATELINKCODE', role: 'viewer', expiresAt: '2026-10-17 12:00:00.000Z' }, now);
+  assert.deepEqual(withCodes(storage, 'room2', [], now, askedAt), []);
+  assert.deepEqual(withCodes(storage, 'room2', [link('late', 'viewer', '2026-10-17 12:00:00.000Z')], now).map(r => r.code), ['LATELINKCODE']);
+  // A listing asked for after it was made, without it, means the link closed.
+  assert.deepEqual(withCodes(storage, 'room2', [], now, Date.now() + 1), []); assert.deepEqual(savedInvites(storage, 'room2', now), []);
+});
 test('the invite dialog lists open links with what is left of them and makes new ones', async () => {
   const { inviteList, inviteDialogBody, expiresLabel, usesLabel } = await import('../src/invites.js');
   const page = 'https://odyle.example/#/room/abc';

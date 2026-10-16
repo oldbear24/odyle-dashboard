@@ -13,11 +13,12 @@ import (
 // Rate limits count requests per client address, the one PocketBase's RealIP answers.
 // Behind a reverse proxy every request comes from the proxy, so every player would share
 // one budget (600 Odyle requests and 10 sign-ins a minute) unless PocketBase trusts the
-// header in which the proxy names the client. ODYLE_TRUSTED_PROXY_HEADERS (for example
-// X-Real-IP, or several separated by commas) sets Settings → Application → Trusted proxy
-// at every start, and ODYLE_TRUSTED_PROXY_IP picks the rightmost (default) or leftmost
+// header in which the proxy names the client. ODYLE_TRUSTED_PROXY_HEADERS (one header,
+// for example X-Real-IP) sets Settings → Application → Trusted proxy at every start, and ODYLE_TRUSTED_PROXY_IP picks the rightmost (default) or leftmost
 // address of a list. Trust only a header your own proxy replaces: one a client can send
-// itself lets it choose its address. Set but empty, it clears the trusted headers;
+// itself lets it choose its address. PocketBase takes the first trusted header a request
+// carries, so a second one the proxy only passes through would let every client choose
+// it too: a list of headers is refused. Set but empty, it clears the trusted headers;
 // unset, the setting stays as superusers saved it. The Server status page warns when
 // most requests come from private or loopback addresses (tally).
 
@@ -42,6 +43,9 @@ func configureProxy(app core.App) string {
 		if !slices.ContainsFunc(headers, func(h string) bool { return strings.EqualFold(h, name) }) {
 			headers = append(headers, name)
 		}
+	}
+	if len(headers) > 1 {
+		return "ODYLE_TRUSTED_PROXY_HEADERS names more than one header; name only the one your proxy replaces. The trusted proxy settings stay as they were."
 	}
 	leftmost := false
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("ODYLE_TRUSTED_PROXY_IP"))) {

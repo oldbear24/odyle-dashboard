@@ -311,18 +311,23 @@ const signInPrompt = text => modal(t('Sign in to continue'), `<p>${text}</p><but
 function ask(title, text, button, data, back = 'close-dialog') { modal(title, `<p>${text}</p><button class="button danger" ${Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${button}</button><button class="button secondary" data-action="${back}">${t('Keep it')}</button>`); }
 // The owner's invite dialog: the room's open links as the server lists them (or as an
 // answer just carried them), each with its link where this browser made it, and the form
-// for a new one (invites.js). Anyone else is told who can invite (invitePicker).
+// for a new one (invites.js). Anyone else is told who can invite (invitePicker). Each
+// listing drawn counts, so a slower one asked for before a link was made or revoked
+// does not draw over that change.
+let inviteDraws = 0;
 async function inviteDialog(listed) {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to create a persistent room.'));
   if (!pb.authStore.isValid) return signInPrompt(t('Sign in with Discord to create a room and invite your friends.'));
   if (!room || !owner()) return invitePicker();
-  const id = room.id, now = Date.now() + serverOffset;
+  const id = room.id, now = Date.now() + serverOffset, draw = ++inviteDraws, askedAt = Date.now();
   modal(t('Invite another Discord account'), inviteDialogBody(listed ? withCodes(storage, id, listed, now) : null, location.href, now));
-  if (!listed) drawInvites(id, (await pb.send('/api/odyle/invites/' + id)).invites);
+  if (listed) return;
+  const answer = (await pb.send('/api/odyle/invites/' + id)).invites;
+  if (draw === inviteDraws) drawInvites(id, answer, askedAt);
 }
-function drawInvites(id, listed) {
-  const slot = document.querySelector('#modal[open] .invite-list'), now = Date.now() + serverOffset;
-  if (slot && room?.id === id) slot.innerHTML = inviteList(withCodes(storage, id, listed, now), location.href, now);
+function drawInvites(id, listed, since) {
+  const slot = document.querySelector('#modal[open] .invite-list'), now = Date.now() + serverOffset; inviteDraws++;
+  if (slot && room?.id === id) slot.innerHTML = inviteList(withCodes(storage, id, listed, now, since), location.href, now);
 }
 // Invitations outside a room you lead: the rooms you lead to choose from (the only one
 // opens at once), or who can invite instead of a dead end.
@@ -382,7 +387,8 @@ async function desktopDialog(another = false) {
   // A link used since this browser asked for it: the PC it paired.
   if (paired) { forgetPairing(storage); Object.assign(p, { step: 'paired', device: paired.id }); }
   else if (online && !another) Object.assign(p, { step: 'online', reader: online });
-  modal(t('Connect your packet reader'), `<div class="pairing-slot">${pairingSlot(pairingView(p))}</div>${downloadPanel()}<div class="info-panel"><h3>${t('How it works')}</h3><p>${t('Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.')}</p></div>${scopeNote()}`);
+  const view = pairingView(p);
+  modal(t('Connect your packet reader'), `<div class="pairing-slot" data-shown="${esc(pairingShown(view))}">${pairingSlot(view)}</div>${downloadPanel()}<div class="info-panel"><h3>${t('How it works')}</h3><p>${t('Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.')}</p></div>${scopeNote()}`);
   clearInterval(pairingTimer); pairingTimer = setInterval(pairingTick, 1000);
   if (p.step === 'loading') await openLink(p);
 }
@@ -412,7 +418,16 @@ function pairingView(p) {
   if (p.step === 'online') return { step: 'online', pc: p.reader.name, character: p.reader.character };
   return { step: p.step };
 }
-function renderPairing() { const el = document.querySelector('#modal[open] .pairing-slot'); if (el && pairing) el.innerHTML = pairingSlot(pairingView(pairing)); }
+// What the slot shows, without the countdown that pairingTick keeps current in place.
+const pairingShown = v => JSON.stringify({ ...v, left: undefined });
+// A check that finds nothing new (`changed` only) leaves the slot alone, so focus, a
+// selected link and a screen reader's last announcement stay.
+function renderPairing(changed = false) {
+  const el = document.querySelector('#modal[open] .pairing-slot'); if (!el || !pairing) return;
+  const view = pairingView(pairing), shown = pairingShown(view);
+  if (changed && el.dataset.shown === shown) return;
+  el.dataset.shown = shown; el.innerHTML = pairingSlot(view);
+}
 function stopPairing() { clearInterval(pairingTimer); pairingTimer = 0; pairing = null; }
 // Waiting for the PC to pair, or for its first character.
 const pairingWaits = p => p.step === 'link' || p.step === 'expired' || (p.step === 'paired' && !pairingReading(p));
@@ -437,7 +452,7 @@ async function checkPairing() {
       p.account = data;
       const paired = p.step !== 'paired' && p.pair && pairedWith(data.devices, p.pair);
       if (paired) { forgetPairing(storage); Object.assign(p, { step: 'paired', device: paired.id }); }
-      renderPairing();
+      renderPairing(true);
     } while (p.again);
   } catch (error) { if (error?.status === 401) { stopPairing(); expired(); } }
   finally { p.checking = false; }
@@ -469,10 +484,13 @@ async function loadRoom() {
 }
 // A change this page made in the room: the route's answer carries the new state, which
 // is drawn at once instead of fetching the snapshot again (realtime still tells the
-// room's members, this tab too, which then fetches it once).
-function changedRoom(update) {
+// room's members, this tab too, which then fetches it once). An answer for a room no
+// longer open (the page moved on while it was on its way) is not applied: false.
+function changedRoom(id, update) {
+  if (!room || room.id !== id) return false;
   roomEdits++; update(); characters = me()?.characters || characters;
   if (!document.querySelector('#modal')?.open) renderDashboard();
+  return true;
 }
 // News that needs a fetch waits in a hidden tab, which fetches once when it is shown again (tick).
 function later() { if (!document.hidden) return false; lastPulse = 0; return true; }
@@ -740,7 +758,7 @@ app.addEventListener('submit', async e => {
   e.preventDefault(); if (busy) return; busy = true;
   const form = e.target, data = Object.fromEntries(new FormData(form)), button = form.querySelector('[type="submit"]'); button.disabled = true; form.querySelector('.form-error')?.remove();
   try {
-    if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
+    if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites, Date.now() + serverOffset); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
     else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); toast(joinedMessage(result)); await go('/room/' + result.room.id); }
     else if (form.id === 'invite-form') {
       const result = await send('invite-create', { roomId: room.id, role: data.role, expiresIn: Number(data.expiresIn), maxUses: Number(data.maxUses), label: data.label });
@@ -750,23 +768,23 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'wish-form') {
       if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to keep a dungeon wishlist in your own room.'));
       const problem = wishProblem(data.dungeon, { catalog: dungeons, wishlist, myId: pb.authStore.record?.id }); if (problem) return formError(form, problem);
-      const result = await send('wishlist', { roomId: room.id, dungeon: data.dungeon, wanted: true }); form.reset(); changedRoom(() => { wishlist = result.wishlist; });
+      const id = room.id, result = await send('wishlist', { roomId: id, dungeon: data.dungeon, wanted: true }); form.reset(); changedRoom(id, () => { wishlist = result.wishlist; });
     }
     else if (form.id === 'run-form') {
       if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to plan runs with your party.'));
       const problem = runProblem(data, { now: Date.now() + serverOffset, catalog: dungeons, runs }); if (problem) return formError(form, problem);
-      const result = await send('plan', { roomId: room.id, dungeon: data.dungeon, startsAt: new Date(data.startsAt).toISOString(), note: data.note }); form.reset(); changedRoom(() => { runs = result.runs; });
+      const id = room.id, result = await send('plan', { roomId: id, dungeon: data.dungeon, startsAt: new Date(data.startsAt).toISOString(), note: data.note }); form.reset(); changedRoom(id, () => { runs = result.runs; });
     }
     else if (form.id === 'run-edit-form') {
       const run = runs.find(r => r.id === data.runId); if (!run) return formError(form, t('This run is no longer planned.'));
       const problem = runProblem(data, { now: Date.now() + serverOffset, catalog: dungeons, run }); if (problem) return formError(form, problem);
       // An unchanged start is not sent: the form shows whole minutes, and a run that started over an hour ago keeps its time.
       const changes = { roomId: room.id, id: run.id, dungeon: data.dungeon, note: data.note, ...(moved(run, data.startsAt) ? { startsAt: new Date(data.startsAt).toISOString() } : {}) };
-      const result = await send('plan', changes); closeModal(); changedRoom(() => { runs = result.runs; }); toast(t('Run updated.'));
+      const result = await send('plan', changes); closeModal(); changedRoom(changes.roomId, () => { runs = result.runs; }); toast(t('Run updated.'));
     }
-    else if (form.id === 'discord-form') { const result = await send('discord-webhook', { roomId: room.id, webhook: data.webhook, language: language() }); changedRoom(() => { room = result.room; }); roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
+    else if (form.id === 'discord-form') { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language() }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
-    else if (form.id === 'rename-form') { const result = await send('rename', { roomId: room.id, name: data.name }); changedRoom(() => { room = result.room; }); roomSettings(); toast(t('Room renamed.')); }
+    else if (form.id === 'rename-form') { const id = room.id, result = await send('rename', { roomId: id, name: data.name }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Room renamed.')); }
     else if (form.id === 'profile-form') {
       const result = await send('profile', { displayName: data.displayName });
       pb.authStore.save(pb.authStore.token, result.record); account.account.displayName = result.record.displayName; accountRender(); toast(t('Display name saved.'));
@@ -788,7 +806,7 @@ app.addEventListener('click', async e => {
       const roomId = el.dataset.roomId || room.id; el.disabled = true;
       const enabled = el.dataset.enabled === 'true', name = el.dataset.name;
       let result; try { result = await send('sharing', { roomId, characterId: el.dataset.share, enabled }); } finally { el.disabled = false; }
-      if (room) { changedRoom(() => applyShared(me(), result.sharedCharacters)); if (!enabled && name) toast(t('{name} was removed from this room. Its saved values stay on your account.', { name })); return; }
+      if (room) { changedRoom(roomId, () => applyShared(me(), result.sharedCharacters)); if (!enabled && name) toast(t('{name} was removed from this room. Its saved values stay on your account.', { name })); return; }
       rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: result.sharedCharacters.length > 0 } : r);
       return renderSharing();
     }
@@ -801,16 +819,16 @@ app.addEventListener('click', async e => {
     if (el.dataset.removeTask) return ask(esc(t('Remove {task}?', { task: el.dataset.name })), t('It leaves your checklist for good. You can add it again at any time.'), t('Remove task'), { 'confirm-remove-task': el.dataset.removeTask });
     if (el.dataset.confirmRemoveTask) { applyTasks(await send('task', { id: el.dataset.confirmRemoveTask, remove: true })); closeModal(); return tasksView(); }
     if (el.dataset.wish) {
-      let result; el.disabled = true; try { result = await send('wishlist', { roomId: room.id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
-      return changedRoom(() => { wishlist = result.wishlist; });
+      const id = room.id; let result; el.disabled = true; try { result = await send('wishlist', { roomId: id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
+      return changedRoom(id, () => { wishlist = result.wishlist; });
     }
     if (el.dataset.planWish) {
       const form = document.querySelector('#run-form'); if (!form) return;
       form.elements.dungeon.value = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
     }
     if (el.dataset.run) {
-      let result; el.disabled = true; try { result = await send('plan', { roomId: room.id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
-      return changedRoom(() => { runs = result.runs; });
+      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
+      return changedRoom(id, () => { runs = result.runs; });
     }
     if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
     if (el.dataset.calendarRun) {
@@ -819,13 +837,16 @@ app.addEventListener('click', async e => {
       return download(calendarFile(r, { room: room.name, going, now: Date.now() + serverOffset }), `odyle-${r.dungeon.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'run'}.ics`, 'text/calendar');
     }
     if (el.dataset.cancelRun) return ask(esc(t('Cancel {dungeon}?', { dungeon: el.dataset.name })), t('The run disappears for everyone who planned to go.'), t('Cancel run'), { 'confirm-cancel-run': el.dataset.cancelRun });
-    if (el.dataset.confirmCancelRun) { const result = await send('plan', { roomId: room.id, id: el.dataset.confirmCancelRun, remove: true }); closeModal(); return changedRoom(() => { runs = result.runs; }); }
+    if (el.dataset.confirmCancelRun) { const id = room.id, result = await send('plan', { roomId: id, id: el.dataset.confirmCancelRun, remove: true }); closeModal(); return changedRoom(id, () => { runs = result.runs; }); }
     if (el.dataset.clearWish) return ask(t('Clear from the wishlist?'), t('This takes <strong>{dungeon}</strong> off the wishlist for every member, for example after the party ran it. Anyone can add it again.', { dungeon: esc(el.dataset.clearWish) }), t('Clear for everyone'), { 'confirm-clear': el.dataset.clearWish });
-    if (el.dataset.confirmClear) { const result = await send('wishlist', { roomId: room.id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); closeModal(); return changedRoom(() => { wishlist = result.wishlist; }); }
+    if (el.dataset.confirmClear) { const id = room.id, result = await send('wishlist', { roomId: id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); closeModal(); return changedRoom(id, () => { wishlist = result.wishlist; }); }
     if (el.dataset.confirmRemove) { await send('revoke', { roomId: room.id, memberId: el.dataset.confirmRemove }); closeModal(); return await refreshRoom(); }
     if (el.dataset.confirmRole) {
-      const { membership } = await send('role', { roomId: room.id, memberId: el.dataset.confirmRole, role: el.dataset.newRole });
-      changedRoom(() => applyMembership(members, membership)); roomSettings(); return toast(t('Role changed.'));
+      const id = room.id, { membership } = await send('role', { roomId: id, memberId: el.dataset.confirmRole, role: el.dataset.newRole });
+      // A member this page does not list yet (joined since the last snapshot) comes with the room fetched again.
+      let listed = true;
+      if (changedRoom(id, () => { listed = applyMembership(members, membership); })) { if (!listed) await refreshRoom(); roomSettings(); }
+      return toast(t('Role changed.'));
     }
     // A link already sent stops working when revoked, so revoking asks first; Keep it goes back to the links.
     if (el.dataset.revokeInvite) return ask(t('Revoke this invite link?'), t('It stops working at once, also for anyone you already sent it to. Members who joined with it stay in the room.'), t('Revoke link'), { 'confirm-revoke-invite': el.dataset.revokeInvite }, 'invite');
@@ -840,7 +861,7 @@ app.addEventListener('click', async e => {
       case 'retry': await authenticated(); break;
       case 'cancel-task-edit': editingTask = ''; tasksView(); break;
       case 'discord-off': ask(t('Stop Discord reminders?'), t('Planned runs are no longer posted to your Discord channel. Odyle forgets the webhook URL; to turn reminders on again, paste one from Discord.'), t('Stop reminders'), { action: 'confirm-discord-off' }); break;
-      case 'confirm-discord-off': { const result = await send('discord-webhook', { roomId: room.id, webhook: '' }); changedRoom(() => { room = result.room; }); roomSettings(); toast(t('Discord reminders are off.')); break; }
+      case 'confirm-discord-off': { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: '' }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are off.')); break; }
       case 'open-elsewhere': signInElsewhere(embedded() ? 'app' : ''); break;
       case 'reminders': await toggleReminders(); accountRender(); break;
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
@@ -855,7 +876,7 @@ app.addEventListener('click', async e => {
       case 'reading': await desktopDialog(); break;
       case 'pair-another': if (pairing) await openLink(pairing); break;
       case 'new-pairing': if (pairing) { forgetPairing(storage); await openLink(pairing); } break;
-      case 'add-all': { const result = await send('sharing', { roomId: room.id, enabled: true }); changedRoom(() => applyShared(me(), result.sharedCharacters)); break; }
+      case 'add-all': { const id = room.id, result = await send('sharing', { roomId: id, enabled: true }); changedRoom(id, () => applyShared(me(), result.sharedCharacters)); break; }
       case 'desktop': await desktopDialog(true); break;
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [

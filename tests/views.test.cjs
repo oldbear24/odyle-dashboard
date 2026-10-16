@@ -7,7 +7,7 @@ test('invite links carry the code in the fragment and the owner\'s browser remem
   assert.equal(joinCode('/join/abcd-efgh-2345'), 'ABCDEFGH2345'); assert.equal(joinCode('/room/abc'), ''); assert.equal(joinCode('/join/<x>'), '');
   const storage = memory(), now = Date.parse('2026-10-14T12:00:00Z');
   rememberInvites(storage, 'room1', [{ code: 'AAAA', role: 'reporter', expiresAt: '2026-10-14T12:30:00Z', extra: 'dropped' }, { code: 'BBBB', role: 'viewer', expiresAt: '2026-10-14T11:59:00Z' }], now);
-  assert.deepEqual(savedInvites(storage, 'room1', now), [{ code: 'AAAA', role: 'reporter', expiresAt: '2026-10-14T12:30:00Z' }]);
+  assert.deepEqual(savedInvites(storage, 'room1', now).map(({ savedAt, ...s }) => (assert.equal(typeof savedAt, 'number'), s)), [{ code: 'AAAA', role: 'reporter', expiresAt: '2026-10-14T12:30:00Z' }]);
   assert.deepEqual(savedInvites(storage, 'room1', now + 3600000), []); assert.deepEqual(savedInvites(storage, 'other', now), []);
   forgetInvites(storage, 'room1', now); assert.deepEqual(savedInvites(storage, 'room1', now), []);
   // Broken or blocked storage never breaks the dialog.
@@ -17,9 +17,9 @@ test('invite links carry the code in the fragment and the owner\'s browser remem
 test('sign-in names browsers built into apps and its way out keeps the invite', async () => {
   const { inAppBrowser, signInLink } = await import('../src/signin.js');
   const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)';
-  const browsers = [iphone + ' Version/17.5 Mobile/15E148 Safari/604.1', iphone + ' CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'];
+  const browsers = [iphone + ' Version/17.5 Mobile/15E148 Safari/604.1', iphone + ' CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36', 'Mozilla/5.0 (Linux; Android 14; Pixel 8; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile DuckDuckGo/5 Safari/537.36'];
   const apps = [iphone + ' Mobile/15E148', iphone + ' Mobile/15E148 Instagram 312.0.0.32.112 (iPhone15,2; iOS 17_5; en_GB)', iphone + ' Mobile/15E148 [FBAN/FBIOS;FBAV/450.0.0.38.108]', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A.240505.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36', 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Line/14.5.0'];
-  assert.deepEqual(browsers.map(ua => inAppBrowser(ua)), [false, false, false, false]);
+  assert.deepEqual(browsers.map(ua => inAppBrowser(ua)), [false, false, false, false, false]);
   assert.deepEqual(apps.map(ua => inAppBrowser(ua)), [true, true, true, true, true]);
   // The installed web app on iOS has no Safari mark either.
   assert.equal(inAppBrowser(apps[0], true), false); assert.equal(inAppBrowser(), false);

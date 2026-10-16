@@ -17,13 +17,19 @@ func TestTrustedProxyHeadersComeFromTheEnvironment(t *testing.T) {
 	if problem := configureProxy(app); problem != "" || len(proxy().Headers) != 0 {
 		t.Fatalf("unset: %q, %+v", problem, proxy())
 	}
-	t.Setenv("ODYLE_TRUSTED_PROXY_HEADERS", " X-Real-IP, x-real-ip ,,X-Forwarded-For ")
+	t.Setenv("ODYLE_TRUSTED_PROXY_HEADERS", " X-Real-IP, x-real-ip ,, ")
 	if problem := configureProxy(app); problem != "" {
 		t.Fatal(problem)
 	}
-	if got := proxy(); strings.Join(got.Headers, "|") != "X-Real-IP|X-Forwarded-For" || got.UseLeftmostIP {
+	if got := proxy(); strings.Join(got.Headers, "|") != "X-Real-IP" || got.UseLeftmostIP {
 		t.Fatalf("headers = %+v", got)
 	}
+	// Two headers: a client could pick its address through the one the proxy passes on.
+	t.Setenv("ODYLE_TRUSTED_PROXY_HEADERS", "X-Real-IP,X-Forwarded-For")
+	if problem := configureProxy(app); !strings.Contains(problem, "more than one header") || strings.Join(proxy().Headers, "|") != "X-Real-IP" {
+		t.Fatalf("two headers: %q, %+v", problem, proxy())
+	}
+	t.Setenv("ODYLE_TRUSTED_PROXY_HEADERS", "X-Real-IP")
 	t.Setenv("ODYLE_TRUSTED_PROXY_IP", "Leftmost")
 	if problem := configureProxy(app); problem != "" || !proxy().UseLeftmostIP {
 		t.Fatalf("leftmost: %q, %+v", problem, proxy())
@@ -35,7 +41,7 @@ func TestTrustedProxyHeadersComeFromTheEnvironment(t *testing.T) {
 	}
 	t.Setenv("ODYLE_TRUSTED_PROXY_IP", "")
 	t.Setenv("ODYLE_TRUSTED_PROXY_HEADERS", "X-Real-IP, Bad Header")
-	if problem := configureProxy(app); !strings.Contains(problem, `"Bad Header"`) || len(proxy().Headers) != 2 {
+	if problem := configureProxy(app); !strings.Contains(problem, `"Bad Header"`) || len(proxy().Headers) != 1 {
 		t.Fatalf("wrong header: %q, %+v", problem, proxy())
 	}
 	// Set but empty, it stops trusting any header.

@@ -5,30 +5,38 @@ import { icon } from './icons.js';
 // reaches a server log. The server keeps only digests of codes and cannot show them
 // again: it lists a room's open links to its owner by their details (role, label,
 // expiry and joins), and the browser that made a link remembers its code until it
-// expires, so only that browser offers the link to copy.
-const key = 'odyle.invites';
+// expires, so only that browser offers the link to copy. Where the browser keeps no site
+// data (blocked storage, some in-app browsers) the codes live in this page's memory.
+const key = 'odyle.invites', unsaved = new WeakMap();
 export function inviteLink(page, code) { const url = new URL(page); url.search = ''; url.hash = '/join/' + code; return url.href; }
 // The code of a #/join/<code> path, normalized like the join form does; '' for anything else.
 export function joinCode(path) { const match = /^\/join\/([A-Za-z0-9-]{4,24})$/.exec(path); return match ? match[1].replace(/-/g, '').toUpperCase() : ''; }
-function read(storage) { try { const saved = JSON.parse(storage.getItem(key)); return saved && typeof saved === 'object' ? saved : {}; } catch { return {}; } }
+function read(storage) { try { const saved = JSON.parse(storage.getItem(key)); if (saved && typeof saved === 'object') return saved; } catch { /* unreadable: the page's own copy */ } return unsaved.get(storage) || {}; }
 function write(storage, rooms, now) {
   const kept = {};
   for (const id in rooms) { const live = (rooms[id] || []).filter(i => timestamp(i.expiresAt) > now); if (live.length) kept[id] = live; }
-  try { storage.setItem(key, JSON.stringify(kept)); } catch { /* private mode: codes just are not remembered */ }
+  unsaved.delete(storage);
+  try { storage.setItem(key, JSON.stringify(kept)); if (storage.getItem(key) === null) unsaved.set(storage, kept); } catch { unsaved.set(storage, kept); }
 }
 export function savedInvites(storage, roomId, now = Date.now()) { return (read(storage)[roomId] || []).filter(i => timestamp(i.expiresAt) > now); }
-export function rememberInvites(storage, roomId, invites, now = Date.now()) { write(storage, { ...read(storage), [roomId]: invites.map(({ id, code, role, expiresAt }) => ({ id, code, role, expiresAt })) }, now); }
+// Each code keeps when this browser learned it (savedAt, its own clock), so a listing
+// asked for before then cannot make it forget the code (withCodes).
+export function rememberInvites(storage, roomId, invites, now = Date.now()) { write(storage, { ...read(storage), [roomId]: invites.map(({ id, code, role, expiresAt, savedAt = Date.now() }) => ({ id, code, role, expiresAt, savedAt })) }, now); }
 export function rememberInvite(storage, roomId, invite, now = Date.now()) { rememberInvites(storage, roomId, [...savedInvites(storage, roomId, now).filter(i => i.id !== invite.id), invite], now); }
 export function forgetInvite(storage, roomId, id, now = Date.now()) { rememberInvites(storage, roomId, savedInvites(storage, roomId, now).filter(i => i.id !== id), now); }
 export function forgetInvites(storage, roomId, now = Date.now()) { const rooms = read(storage); delete rooms[roomId]; write(storage, rooms, now); }
-export function forgetAllInvites(storage) { try { storage.removeItem(key); } catch { /* storage blocked */ } }
+export function forgetAllInvites(storage) { unsaved.delete(storage); try { storage.removeItem(key); } catch { /* storage blocked */ } }
 // The room's open links as the server lists them, each with the code this browser
 // remembers for it: by id, or for a code remembered before links had ids, by role and
-// expiry. Codes of links no longer open (revoked or used up, here or elsewhere) are forgotten.
-export function withCodes(storage, roomId, listed, now = Date.now()) {
-  const saved = savedInvites(storage, roomId, now);
-  const rows = listed.map(l => ({ ...l, code: saved.find(s => s.id ? s.id === l.id : s.role === l.role && s.expiresAt === l.expiresAt)?.code || '' }));
-  rememberInvites(storage, roomId, rows.filter(r => r.code), now);
+// expiry, or the code an answer that made the link still carries. Codes of links no longer
+// open (revoked or used up, here or elsewhere) are forgotten, except those learned at or
+// after `since` (this browser's clock), when the listing was asked for: a link made
+// meanwhile, here or in another tab, is just not in it yet.
+export function withCodes(storage, roomId, listed, now = Date.now(), since = Infinity) {
+  const saved = savedInvites(storage, roomId, now), match = l => s => s.id ? s.id === l.id : s.role === l.role && s.expiresAt === l.expiresAt;
+  const rows = listed.map(l => ({ ...l, code: l.code || saved.find(match(l))?.code || '' }));
+  const kept = rows.filter(r => r.code).map(r => ({ ...r, savedAt: saved.find(match(r))?.savedAt }));
+  rememberInvites(storage, roomId, [...kept, ...saved.filter(s => s.savedAt >= since && !rows.some(r => match(r)(s)))], now);
   return rows;
 }
 // "Expires 21:30" today, "Expires 18 Oct, 21:30" on a later day.

@@ -120,6 +120,37 @@ func TestTheDungeonCatalogKeepsCostsPartySizesAndCategories(t *testing.T) {
 	}
 }
 
+// The superuser answer keeps `dungeons` the list of names admin pages opened before
+// catalog entries read and send back with every save: those names keep their saved
+// details, while `catalog` carries and saves the entries.
+func TestAdminPagesFromBeforeCatalogEntriesKeepTheCosts(t *testing.T) {
+	app := newTestApp(t)
+	type entry = map[string]any
+	saved, err := writeSettings(app, body{"catalog": []any{entry{"name": "Fire Temple", "cost": float64(60), "partySize": float64(5), "category": "Lower", "unconfirmed": true}, "Udas Temple"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := asJSON(t, saved); !strings.Contains(got, `"dungeons":["Fire Temple","Udas Temple"]`) || !strings.Contains(got, `"catalog":[{"name":"Fire Temple","cost":60,"partySize":5,"category":"Lower","unconfirmed":true},{"name":"Udas Temple","cost":0,"partySize":0,"category":"","unconfirmed":false}]`) {
+		t.Fatalf("answer %s", got)
+	}
+	if got := asJSON(t, defaultSettings()); !strings.Contains(got, `"dungeons":[]`) || !strings.Contains(got, `"catalog":[]`) {
+		t.Fatalf("defaults %s", got)
+	}
+	// An old page saves its game settings with the names it read, one dungeon added.
+	saved, err = writeSettings(app, body{"odylePerCube": float64(45), "dungeons": []any{"fire temple", "Udas Temple", "Krao Cave"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []dungeonEntry{{Name: "fire temple", Cost: 60, PartySize: 5, Category: "Lower", Unconfirmed: true}, {Name: "Udas Temple"}, {Name: "Krao Cave"}}
+	if !slices.Equal(saved.Dungeons, want) {
+		t.Fatalf("names saved as %+v", saved.Dungeons)
+	}
+	// The catalog itself is saved as given: a name alone costs Odyle per cube.
+	if saved, err = writeSettings(app, body{"catalog": []any{"Fire Temple"}, "dungeons": []any{"Ignored"}}); err != nil || !slices.Equal(saved.Dungeons, []dungeonEntry{{Name: "Fire Temple"}}) {
+		t.Fatalf("catalog saved as %+v, %v", saved.Dungeons, err)
+	}
+}
+
 func TestTheCatalogMigrationTurnsNamesIntoEntries(t *testing.T) {
 	app := newTestApp(t)
 	var migration *core.Migration

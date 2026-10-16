@@ -973,12 +973,21 @@ func sameCharacter(app core.App, userId string, data identity) ([]*Character, er
 	return charactersWhere(app, "user = {:user} && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }
 
+// Adapters of the Windows releases from before the reader pause. Those apps take any
+// 5xx answer to a reading for a lost connection and open a new session for it every 20
+// seconds, so while readers are paused their readings are refused with 400 instead,
+// which makes them wait a minute before sending again.
+var pauseUnawareAdapters = []string{"global-reference-v1"}
+
 // report saves a reading of the Windows app. While superusers pause packet readers
 // (Server controls) every reading is refused with 503; apps that know the switch stop
-// capturing until it is off, older ones keep sending and are refused.
+// capturing until it is off, older ones keep sending and are refused (400, above).
 func report(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		if readSettings(app).ReaderPaused {
+			if contains(pauseUnawareAdapters, b.str("parserVersion")) {
+				return nil, badRequest("Packet readers are paused by the server operators.")
+			}
 			return nil, unavailable("Packet readers are paused by the server operators.")
 		}
 		session, err := ownSession(app, user.Id, b.str("sessionId"))
@@ -1086,7 +1095,9 @@ func sharing(e *core.RequestEvent) error {
 // heartbeat is presence only: the session is in contact and the character it reads is
 // seen. Both are kept in memory and written every ten seconds (presence.go); the
 // character's rooms and its owner hear of it over realtime, without a snapshot. The
-// answer tells the app whether packet readers are paused; heartbeats work either way.
+// answer tells the app whether packet readers are paused; heartbeats work either way,
+// but while they are paused a heartbeat no longer keeps a reading live, so the
+// readings of apps that keep capturing turn stale.
 func heartbeat(e *core.RequestEvent) error {
 	return run(e, func() error {
 		b, err := requestBody(e)
@@ -1104,7 +1115,7 @@ func heartbeat(e *core.RequestEvent) error {
 				if err != nil {
 					return err
 				}
-				if c.ReadingSession() == session.Id {
+				if c.ReadingSession() == session.Id && !readSettings(e.App).ReaderPaused {
 					read = c
 				}
 			}
@@ -1302,19 +1313,14 @@ func invitePreview(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		// Links made before their maker was kept, or whose maker deleted the account, name the owner.
-		accounts := []string{room.Owner()}
-		if link.CreatedBy() != "" {
-			accounts = append(accounts, link.CreatedBy())
-		}
-		names, err := displayNames(e.App, accounts)
+		// Only owners make links, so the inviter is the room's owner: the link's maker while
+		// they own the room, the new owner after a hand-over (the maker may have left), and
+		// the owner for links made before makers were kept or whose maker deleted the account.
+		names, err := displayNames(e.App, []string{room.Owner()})
 		if err != nil {
 			return err
 		}
-		inviter := names[link.CreatedBy()]
-		if inviter == "" {
-			inviter = names[room.Owner()]
-		}
+		inviter := names[room.Owner()]
 		return e.JSON(200, map[string]any{"state": "valid", "room": room.Name(), "inviter": inviter, "role": link.Role(), "members": members})
 	})
 }

@@ -137,7 +137,7 @@ test('catalog upgrade turns saved dungeon names into entries that cost Odyle per
   const operator = (await request('/__test__/superuser', {})).data, settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
   const entries = ['Fire Temple', 'Udas Temple'].map(name => ({ name, cost: 0, partySize: 0, category: '', unconfirmed: false }));
   try {
-    assert.deepEqual((await settings()).data.settings.dungeons, entries);
+    const saved = (await settings()).data.settings; assert.deepEqual([saved.dungeons, saved.catalog], [['Fire Temple', 'Udas Temple'], entries]);
     // Rooms keep the names under `dungeons`, which open dashboards read, and get the entries as `catalog`.
     const room = await snapshot2(legacyRoomId, outsider); assert.deepEqual([room.dungeons, room.catalog, room.room.cost], [['Fire Temple', 'Udas Temple'], entries, 40]);
     assert.equal((await action('wishlist', { roomId: legacyRoomId, dungeon: 'Old Cave', wanted: true }, outsider)).status, 400);
@@ -410,7 +410,7 @@ test('superusers watch connected apps and their packets live and edit the server
   } finally { await stream.close(); }
   // Server-wide settings: validated, partial changes keep the rest, and every client follows.
   const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
-  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, adapters: { extra: [], disabled: [] } };
+  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, adapters: { extra: [], disabled: [] } };
   assert.deepEqual((await settings()).data.settings, initial);
   assert.equal((await settings({ odylePerCube: 50 }, reader)).status, 403); assert.equal((await settings(undefined, reader)).status, 403);
   for (const bad of [{ odylePerCube: 0 }, { odylePerCube: 1001 }, { odylePerCube: '50' }, { dailyResetHour: 24 }, { dailyResetHour: 1.5 }, { weeklyResetDay: 'someday' }, { inactiveAccountDays: 10 }, { inactiveAccountDays: -1 }, { dungeons: 'Fire Temple' }, { dungeons: [''] }, { dungeons: ['x'.repeat(61)] }, { dungeons: [{ cost: 20 }] }, { dungeons: [{ name: 'Krao Cave', cost: 1001 }] }, { dungeons: [{ name: 'Krao Cave', partySize: 6 }] }, { dungeons: [{ name: 'Krao Cave', category: 'c'.repeat(31) }] }, { dungeons: [{ name: 'Krao Cave', unconfirmed: 'yes' }] }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
@@ -420,8 +420,11 @@ test('superusers watch connected apps and their packets live and edit the server
     assert.deepEqual((await request('/api/odyle/tasks', undefined, reader, 'GET')).data.resets, { dailyResetHour: 0, weeklyResetDay: 'monday' });
     assert.deepEqual((await settings({ odylePerCube: 45 })).data.settings, { ...initial, odylePerCube: 45, dailyResetHour: 0, weeklyResetDay: 'monday' });
     // The dungeon catalog keeps the first entry and spelling of each name; a name alone costs Odyle per cube.
-    assert.deepEqual((await settings({ dungeons: [' Fire   Temple ', { name: 'fire temple', cost: 60 }, { name: 'Udas  Temple', cost: 80, partySize: 10, category: ' Sanctuary ', unconfirmed: true }] })).data.settings.dungeons,
+    assert.deepEqual((await settings({ catalog: [' Fire   Temple ', { name: 'fire temple', cost: 60 }, { name: 'Udas  Temple', cost: 80, partySize: 10, category: ' Sanctuary ', unconfirmed: true }] })).data.settings.catalog,
       [{ name: 'Fire Temple', cost: 0, partySize: 0, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }]);
+    // Admin pages opened before catalog entries read `dungeons` as names and send them back: the costs stay.
+    const older = (await settings({ odylePerCube: 45, dungeons: ['Fire Temple', 'Udas Temple', 'Krao Cave'] })).data.settings;
+    assert.deepEqual([older.dungeons, older.catalog.map(d => [d.name, d.cost, d.partySize])], [['Fire Temple', 'Udas Temple', 'Krao Cave'], [['Fire Temple', 0, 0], ['Udas Temple', 80, 10], ['Krao Cave', 0, 0]]]);
   } finally { assert.equal((await settings({ odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', dungeons: [] })).status, 200); }
   // The dashboard extension: a stable entry that imports the page under its content hash.
   assert.match(await (await fetch(url + '/_/extensions.js')).text(), /extensions\/odyle\/odyle\.js\?v=/);
@@ -468,6 +471,8 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     const beat = await action('heartbeat', { sessionId: reader.sessionId }, member); assert.equal(beat.status, 200); assert.equal(beat.data.readerPaused, true);
     const held = { sessionId: reader.sessionId, sequence: 1, characterName: 'Held back', server: 'Lumiel', region: 'GLOBAL_EU', value: 25, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
     const paused = await action('report', held, member); assert.equal(paused.status, 503); assert.equal(paused.data.message, 'Packet readers are paused by the server operators.');
+    // Apps released before the switch (adapter global-reference-v1) get a 400, so they wait instead of reconnecting.
+    const older = await action('report', { ...held, parserVersion: 'global-reference-v1' }, member); assert.equal(older.status, 400); assert.equal(older.data.message, 'Packet readers are paused by the server operators.');
     assert.equal((await settings({ readerPaused: false })).status, 200);
     assert.equal((await action('heartbeat', { sessionId: reader.sessionId }, member)).data.readerPaused, false);
     assert.equal((await action('report', held, member)).status, 200);
@@ -854,7 +859,7 @@ test('owners save a full dungeon catalog and closed rooms answer plainly', async
   // 200 entries with the longest names and categories still fit the request and the stored field.
   const operator = (await request('/__test__/superuser', {})).data, names = Array.from({ length: 200 }, (_, i) => ({ name: `Dungeon number ${String(i).padStart(3, '0')} of the long expedition list`.padEnd(60, '.').slice(0, 60), cost: 1000, partySize: 20, category: 'C'.repeat(30), unconfirmed: true }));
   const saved = await fetch(url + '/api/odyle/admin/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: operator.token }, body: JSON.stringify({ dungeons: names }) });
-  assert.equal(saved.status, 200, await saved.clone().text()); assert.deepEqual((await saved.json()).settings.dungeons, names);
+  assert.equal(saved.status, 200, await saved.clone().text()); assert.deepEqual((await saved.json()).settings.catalog, names);
   const cleared = await fetch(url + '/api/odyle/admin/settings', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: operator.token }, body: JSON.stringify({ dungeons: [] }) }); assert.equal(cleared.status, 200);
   const host = (await request('/__test__/account', { name: 'Closing host' })).data, roomId = (await action('create', { name: 'Short-lived' }, host)).data.room.id;
   assert.equal((await action('close', { roomId }, host)).status, 200);

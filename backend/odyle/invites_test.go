@@ -167,7 +167,8 @@ func TestInviteLinkChoicesAreChecked(t *testing.T) {
 	}
 }
 
-// Links from before makers were kept still join and name the room owner as the inviter.
+// Links from before makers were kept still join and name the room owner as the inviter,
+// and so do links whose maker no longer owns the room or deleted the account.
 func TestOlderInviteLinksNameTheOwner(t *testing.T) {
 	app := newTestApp(t)
 	lead := newUser(t, app, "OldLead")
@@ -182,13 +183,26 @@ func TestOlderInviteLinksNameTheOwner(t *testing.T) {
 	if joined := ask(t, app, http.MethodPost, "/api/odyle/join", tokenOf(t, newUser(t, app, "Guest")), `{"code":"`+code+`"}`, 200); joined["membership"].(map[string]any)["role"] != "viewer" {
 		t.Fatalf("joined %v", joined)
 	}
-	// A link whose maker deleted the account names the owner too, and keeps working.
+	// A link made by the owner names them while they own the room.
 	maker := newUser(t, app, "Maker")
 	made := "MADEBY234567"
 	saved(t, app, "room_invites", map[string]any{"room": room.Id, "role": "reporter", "digest": security.SHA256(made), "expiresAt": expiry(600), "createdBy": maker.Id})
+	room.Set("owner", maker.Id)
+	if err := app.Save(room); err != nil {
+		t.Fatal(err)
+	}
 	if shown := ask(t, app, http.MethodPost, "/api/odyle/invite-preview", nil, `{"code":"`+made+`"}`, 200); shown["inviter"] != "Maker" {
 		t.Fatalf("preview %v", shown)
 	}
+	// Handed over, the link keeps working and names the new owner, not its maker.
+	room.Set("owner", lead.Id)
+	if err := app.Save(room); err != nil {
+		t.Fatal(err)
+	}
+	if shown := ask(t, app, http.MethodPost, "/api/odyle/invite-preview", nil, `{"code":"`+made+`"}`, 200); shown["state"] != "valid" || shown["inviter"] != "OldLead" {
+		t.Fatalf("preview after the hand-over %v", shown)
+	}
+	// A link whose maker deleted the account names the owner too, and keeps working.
 	if err := app.Delete(maker); err != nil {
 		t.Fatal(err)
 	}

@@ -5,13 +5,15 @@
 
 // Browsers built into apps, by the marks they leave in the user agent: Facebook,
 // Messenger, Instagram, LINE, WeChat, Snapchat, TikTok and Discord, Android's WebView
-// (wv) and iOS web views without Safari's mark. An installed web app (standalone) has no
-// Safari mark either, but is no in-app browser. Apps that open links in the system's
-// own browser view (Discord does on some phones) cannot be told apart; the help under
-// the sign-in button covers them.
-const marks = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|\bLine\/|MicroMessenger|Snapchat|BytedanceWebview|musical_ly|TikTok|\b[Dd]iscord\/|; ?wv\)/;
+// (wv; except browsers of their own built on it, such as DuckDuckGo) and iOS web views
+// without Safari's mark. An installed web app (standalone) has no Safari mark either,
+// but is no in-app browser. Apps that open links in the system's own browser view
+// (Discord does on some phones) cannot be told apart; the help under the sign-in button
+// covers them.
+const marks = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|\bLine\/|MicroMessenger|Snapchat|BytedanceWebview|musical_ly|TikTok|\b[Dd]iscord\//;
+const webView = /; ?wv\)/, webViewBrowsers = /\bDuckDuckGo\//;
 export function inAppBrowser(userAgent = '', standalone = false) {
-  if (marks.test(userAgent)) return true;
+  if (marks.test(userAgent) || (webView.test(userAgent) && !webViewBrowsers.test(userAgent))) return true;
   return !standalone && /\b(iPhone|iPad|iPod)\b/.test(userAgent) && /AppleWebKit/.test(userAgent) && !/Safari\//.test(userAgent);
 }
 // The link to open elsewhere: this page with its route, so an invite link (#/join/<code>)

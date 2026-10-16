@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"encoding/json"
 	"errors"
 	"regexp"
 	"slices"
@@ -45,7 +46,7 @@ type settings struct {
 	DailyResetHour      int64          `json:"dailyResetHour"`
 	WeeklyResetDay      string         `json:"weeklyResetDay"`
 	InactiveAccountDays int64          `json:"inactiveAccountDays"`
-	Dungeons            []dungeonEntry `json:"dungeons"`
+	Dungeons            []dungeonEntry `json:"catalog"`
 	Announcement        string         `json:"announcement"`
 	AnnouncementLevel   string         `json:"announcementLevel"`
 	PortraitsPaused     bool           `json:"portraitsPaused"`
@@ -53,6 +54,17 @@ type settings struct {
 	PairingPaused       bool           `json:"pairingPaused"`
 	ReaderPaused        bool           `json:"readerPaused"`
 	Adapters            adapterLists   `json:"adapters"`
+}
+
+// The superuser settings answer lists the catalog's entries as `catalog` and keeps
+// `dungeons` the list of names it always was, which admin pages opened before catalog
+// entries still read and send back (writeSettings).
+func (s settings) MarshalJSON() ([]byte, error) {
+	type entries settings
+	return json.Marshal(struct {
+		entries
+		Names []string `json:"dungeons"`
+	}{entries(s), dungeonNames(s.Dungeons)})
 }
 
 func defaultSettings() settings {
@@ -203,8 +215,9 @@ func catalogEntry(item any) (dungeonEntry, error) {
 }
 
 // catalog checks a dungeon catalog to save, up to 200 dungeons. A dungeon listed twice,
-// regardless of case and spacing, keeps its first entry and spelling.
-func catalog(value any) ([]dungeonEntry, error) {
+// regardless of case and spacing, keeps its first entry and spelling. A name alone takes
+// the details `kept` holds for that dungeon (none: it costs Odyle per cube).
+func catalog(value any, kept []dungeonEntry) ([]dungeonEntry, error) {
 	items, ok := value.([]any)
 	if !ok {
 		return nil, errors.New("Dungeons must be a list of names.")
@@ -214,6 +227,11 @@ func catalog(value any) ([]dungeonEntry, error) {
 		entry, err := catalogEntry(item)
 		if err != nil {
 			return nil, err
+		}
+		if _, named := item.(string); named {
+			if at := slices.IndexFunc(kept, func(k dungeonEntry) bool { return strings.EqualFold(k.Name, entry.Name) }); at >= 0 {
+				entry = dungeonEntry{Name: entry.Name, Cost: kept[at].Cost, PartySize: kept[at].PartySize, Category: kept[at].Category, Unconfirmed: kept[at].Unconfirmed}
+			}
 		}
 		if key := strings.ToLower(entry.Name); !seen[key] {
 			seen[key] = true
@@ -360,8 +378,15 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
-	if b.has("dungeons") {
-		if next.Dungeons, err = catalog(b["dungeons"]); err != nil {
+	// `catalog` saves the entries as given. `dungeons`, which admin pages from before catalog
+	// entries send with every save of their game settings, is a list of names: each keeps
+	// the details saved for that dungeon, so such a page never wipes the costs.
+	if b.has("catalog") {
+		if next.Dungeons, err = catalog(b["catalog"], nil); err != nil {
+			return settings{}, err
+		}
+	} else if b.has("dungeons") {
+		if next.Dungeons, err = catalog(b["dungeons"], next.Dungeons); err != nil {
 			return settings{}, err
 		}
 	}

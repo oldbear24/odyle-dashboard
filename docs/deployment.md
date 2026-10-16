@@ -27,13 +27,13 @@ If you use a separate static host, provide `VITE_POCKETBASE_URL` as a Docker bui
 
 ## Reverse proxy
 
-Rate limits count requests per client address: 600 Odyle requests and 10 sign-ins a minute each. Behind a reverse proxy every request arrives from the proxy, so unless the backend knows the client's address, all players share one budget: from about 180 running Windows apps everyone gets *Too Many Requests*, and only 10 people a minute can sign in. Name the header in which your proxy writes the client's address in `.env.backend`:
+Rate limits count requests per client address: 600 Odyle requests and 10 sign-ins a minute each. Behind a reverse proxy every request arrives from the proxy, so unless the backend knows the client's address, all players share one budget: from about 180 running Windows apps everyone gets *Too Many Requests*, and only 10 people a minute can sign in. Name the one header in which your proxy writes the client's address in `.env.backend`:
 
 ```sh
 ODYLE_TRUSTED_PROXY_HEADERS=X-Real-IP
 ```
 
-The backend writes it into **Settings → Application → Trusted proxy** at every start. When the header holds a list, the rightmost address is used (the one your proxy added); `ODYLE_TRUSTED_PROXY_IP=leftmost` takes the first instead, only for a chain of proxies that all replace the header. Trust only a header that your proxy *replaces* with the address it sees: a header a client can send itself lets that client pick its address and slip past the limits. Never set it while clients can reach port 8090 directly. Without the variable the setting stays as saved under Settings; set to an empty value, it trusts no header. A wrong value is logged and shown on **Server status**, which also warns when most of the last hour's requests came from private or loopback addresses: then no header is trusted, or the proxy does not set the trusted one.
+The backend writes it into **Settings → Application → Trusted proxy** at every start. When the header holds a list, the rightmost address is used (the one your proxy added); `ODYLE_TRUSTED_PROXY_IP=leftmost` takes the first instead, only for a chain of proxies that all replace the header. Trust only a header that your proxy *replaces* with the address it sees: a header a client can send itself lets that client pick its address and slip past the limits. A list of headers is refused, because a request is counted under the first trusted header it carries; pair each sample proxy below with exactly the header it replaces. Never set it while clients can reach port 8090 directly. Without the variable the setting stays as saved under Settings; set to an empty value, it trusts no header. A wrong value is logged and shown on **Server status**, which also warns when most of the last hour's requests came from private or loopback addresses: then no header is trusted, or the proxy does not set the trusted one.
 
 Caddy replaces `X-Forwarded-For` with the address it sees (unless you list `trusted_proxies`) and passes SSE through without buffering:
 
@@ -207,7 +207,7 @@ The status answer's `counts` (accounts, characters, rooms, history) should match
 
 When the packet reader has to stop for everyone at once, for example because NCSOFT objects to it, stop it from the server first; no release is needed:
 
-1. **Pause the readers.** On the PocketBase dashboard's **Odyle → Server controls**, switch on **Pause packet readers** and save. Within about 20 seconds every paired Windows app that knows the switch stops capturing, closes Npcap and says so on its card. Readings that still arrive, from apps released before the switch, are refused (503). Heartbeats continue and characters turn stale; saved values and history stay.
+1. **Pause the readers.** On the PocketBase dashboard's **Odyle → Server controls**, switch on **Pause packet readers** and save. Within about 20 seconds every paired Windows app that knows the switch stops capturing, closes Npcap and says so on its card. Apps released before the switch keep capturing; their readings are refused (400, so they retry once a minute instead of reconnecting) and their cards show the message as a refused reading. Heartbeats continue but no longer keep readings live, so every character turns stale within 45 seconds; saved values and history stay.
 2. **Tell the players.** On the same page, post a **Warning** announcement: what happened, that reading is paused and what comes next. It shows above every dashboard page and on the Windows app card.
 3. **For a lasting stop**, ship a Windows release without packet capture (it still pairs, lists the party and ticks tasks), and keep the pause on until **Server status** shows the apps in contact on that version.
 4. **Never fall back to typed values.** Odyle comes only from game packets: no manual entry, imports or overrides to keep rooms going. Rooms keep showing the last saved values with their age.
