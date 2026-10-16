@@ -304,6 +304,7 @@ export function statusPage() {
   const reached = () => state.data.activation?.now || {}, days = () => state.data.activation?.days || [];
   const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
   const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
+  const clock = () => readers().clock || { checked: 0, matched: 0, checkedToday: 0, missedToday: 0 };
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -398,6 +399,7 @@ export function statusPage() {
         proxy().headers.length ? ' although ' + proxy().headers.join(', ') + ' is trusted. Check that your reverse proxy sets it with the client\'s address.'
           : ' and no proxy header is trusted, so rate limits count everyone behind your reverse proxy as one client. Set ODYLE_TRUSTED_PROXY_HEADERS to the header your proxy writes (docs/deployment.md).') : null,
       () => readers().stuck ? t.div({ className: 'alert warning m-b-sm' }, number(readers().stuck) + ' of ' + number(readers().connected) + (readers().connected === 1 ? ' app' : ' apps') + ' connected to the game have read no Odyle for 10 minutes' + (readers().games.length ? ' (' + readers().games.map(g => g.game).join(', ') + ')' : '') + '. After a game patch, pause the readers or switch the adapter off under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ', then follow the patch-day runbook in the Windows app\'s docs/packet-reader.md.') : null,
+      () => clock().checkedToday >= 5 && clock().missedToday * 2 > clock().checkedToday ? t.div({ className: 'alert warning m-b-sm' }, number(clock().missedToday) + ' of ' + number(clock().checkedToday) + ' login readings in the last 24 hours did not match the Odyle clock. A game patch may have changed the regeneration: check its rules under ', t.a({ href: '#/odyle/settings' }, 'Game settings'), ', or hide the Odyle clock there until they are right.') : null,
       () => readers().refusedAdapters.length ? t.div({ className: 'alert warning m-b-sm' }, 'Readings arrive under ' + readers().refusedAdapters.join(', ') + ', which this backend refuses, so they are not saved. Accept it under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ' or deploy the backend that lists it.') : null,
       () => [backups().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
       t.div({ className: 'odyle-stats m-b-base' },
@@ -469,6 +471,7 @@ export function statusPage() {
         stat('Reporting', () => number(readers().reporting), () => Object.entries(readers().statuses).map(([s, n]) => number(n) + ' ' + (readerLabels[s] || s)).join(' · ') || 'no reports yet; apps send them from the next Windows release on'),
         stat('Listening without Odyle', () => number(readers().stuck), () => 'for 10 minutes, of ' + number(readers().connected) + ' connected to the game'),
         stat('Game builds', () => readers().games.length ? readers().games.map(g => g.game.replace(/^Steam build /, '')).join(', ') : '—', () => readers().games.length ? readers().games.map(g => number(g.apps) + ' on ' + g.game).join(' · ') : 'Steam builds the apps read'),
+        stat('Odyle clock', () => clock().checked ? Math.round(clock().matched / clock().checked * 100) + '%' : '—', () => clock().checked ? number(clock().matched) + ' of ' + number(clock().checked) + ' login readings of the last 7 days matched its projection' : 'login readings after a tick, compared with its projection'),
         stat('Operator alerts', () => readers().alerts ? 'on' : 'off', () => readers().alerts ? 'Discord, by the Reader health job every 5 minutes' : 'set ODYLE_ALERT_WEBHOOK to a Discord webhook')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
@@ -494,9 +497,11 @@ const jobInfo = {
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
   'odyle-stats': { label: 'Daily numbers', schedule: () => 'Daily at 23:55 UTC (' + localHour(23, 55) + ' here)', unit: 'days stored', about: 'Stores the day\'s activation and feature-use totals shown under Server status, so their trend survives restarts; a run by hand replaces today\'s. Totals only, no account is recorded.' },
   'odyle-health': { label: 'Reader health', schedule: () => 'Every 5 minutes', unit: 'alerts posted', about: 'Posts to the Discord webhook in ODYLE_ALERT_WEBHOOK when most apps connected to the game have read no Odyle for 10 minutes (a game patch, most likely) or readings arrive under a refused adapter, once when it starts and once when it clears. Without the variable it only keeps the readers\' reports, which Server status shows.' },
+  'odyle-cap-alerts': { label: 'Cap alerts', schedule: () => 'Hourly at :05', unit: 'alerts sent', about: 'Tells players who turned cap alerts on when a character\'s natural pool, as the Odyle clock projects it, is about to reach its cap or is full: in their Windows app, open dashboards and by Web Push, outside their quiet hours. Never to rooms or Discord.' },
+  'odyle-push': { label: 'Push reminders', schedule: () => 'Every minute', unit: 'notifications sent', about: 'Sends planned-run reminders by Web Push to players going to a run who turned push on, at their reminder times and outside their quiet hours. Devices whose push service forgot them are removed.' },
   'odyle-release': { label: 'Release check', schedule: () => 'Every 2 minutes', unit: 'lookups', about: 'Asks GitHub for the newest Windows release. A newer one is news for every open dashboard and running app at once, so run it by hand right after publishing a release.' },
 };
-const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account' };
+const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account', clock: 'Skipped, the Odyle clock is hidden under Game settings' };
 
 export function jobsPage() {
   app.store.title = 'Background jobs';
@@ -594,7 +599,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog', 'clock'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
@@ -602,6 +607,10 @@ export function settingsPage() {
   // set. Names match regardless of case and spacing, as the server matches them.
   const sizes = [0, 4, 5, 10, 20], key = name => String(name).trim().replace(/\s+/g, ' ').toLowerCase();
   const dungeons = () => state.form.catalog;
+  // The Odyle clock: lists of whole numbers typed as "1, 4, 7".
+  const clock = () => state.form.clock || {};
+  const numbers = value => String(value).split(/[\s,;]+/).filter(Boolean).map(part => integer(part)).filter(n => n !== null);
+  const listed = list => (list || []).join(', ');
   function addDungeon() {
     dungeons().push({ name: '', cost: 0, partySize: 0, category: '', unconfirmed: false });
     const at = dungeons().length - 1;
@@ -654,9 +663,20 @@ export function settingsPage() {
           t.div({ className: 'field' }, t.label({ htmlFor: 'odyle-dungeons' }, 'One dungeon per line'), t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'Krao Cave | 20 | 5 | Exploration | unconfirmed', value: () => paste.text, oninput: e => paste.text = e.target.value })),
           t.div({ className: 'field-help' }, 'Name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and columns copied from a spreadsheet work too. A dungeon already in the table takes the values of its line. docs/deployment.md suggests a list for Global.'),
           t.button({ type: 'button', className: 'btn sm m-t-sm', disabled: () => !lines(paste.text).length, onclick: addLines }, t.span({ className: 'txt' }, 'Add to the catalog'))) : null),
+      section('Odyle clock', 'The natural pool regenerates at fixed UTC hours up to a cap. Dashboards and the Windows app show from these rules when the next tick comes, when the pool is full and an estimate for characters not read right now; they never store it. Each character\'s own readings refine it: the size of its last regeneration tick, and the cap its fullest natural pool of the last 30 days fits under.'),
+      field('odyle-clock-hours', 'Regeneration hours (UTC)', t.input({ id: 'odyle-clock-hours', type: 'text', required: true, value: () => listed(clock().tickHours), onchange: e => state.form.clock = { ...clock(), tickHours: numbers(e.target.value) } }),
+        () => (clock().tickHours || []).length ? 'Ticks at ' + clock().tickHours.map(h => String(h).padStart(2, '0') + ':00').join(', ') + ' UTC; the first is ' + localHour(clock().tickHours[0]) + ' in your time zone.' : 'Whole UTC hours, separated by commas.'),
+      field('odyle-clock-tick', 'Odyle per tick', t.input({ id: 'odyle-clock-tick', type: 'number', min: 1, max: 1000, step: 1, required: true, value: () => clock().tick ?? '', oninput: e => state.form.clock = { ...clock(), tick: integer(e.target.value) } }),
+        'Used until a character\'s own regeneration ticks show another size.'),
+      field('odyle-clock-caps', 'Natural pool caps', t.input({ id: 'odyle-clock-caps', type: 'text', required: true, value: () => listed(clock().caps), onchange: e => state.form.clock = { ...clock(), caps: numbers(e.target.value) } }),
+        'Smallest first, for example 560 without the membership and 840 with it. A character counts under the smallest cap its fullest natural pool fits under.'),
+      t.div({ className: 'col-lg-12' }, t.div({ className: 'field form-field-toggle' },
+        t.input({ id: 'odyle-clock-paused', type: 'checkbox', checked: () => Boolean(clock().paused), onchange: e => state.form.clock = { ...clock(), paused: e.target.checked } }),
+        t.label({ htmlFor: 'odyle-clock-paused' }, 'Hide the Odyle clock')),
+        t.div({ className: 'field-help' }, 'Turns off every estimate (next tick, full at, projected values) on dashboards and in the Windows app, for example after a game patch moved the schedule.')),
       t.div({ className: 'col-lg-12' }, t.hr()),
       // Resets the game rules only; the retention period and the dungeon catalog stay.
-      buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay } },
+      buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay, clock: { ...defaults().clock } } },
         t.span({ className: 'txt' }, () => 'Use defaults (' + number(defaults()?.odylePerCube) + ' · ' + String(defaults()?.dailyResetHour ?? '').padStart(2, '0') + ':00 UTC · ' + capital(defaults()?.weeklyResetDay || '') + ')')))));
 }
 

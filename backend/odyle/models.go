@@ -174,6 +174,9 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 		c.Set("lastReadingAt", now())
 	}
 	c.Set("value", r.value)
+	// The game's two numbers, or none when this reading did not send them.
+	c.Set("parts", r.partsValue())
+	c.learn(r)
 	c.Set("confirmed", true)
 	c.SetValid(true)
 	c.Set("source", "packet")
@@ -181,6 +184,23 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 	c.Set("lastSeenAt", now())
 	c.Set("readingSession", session)
 	return changed
+}
+
+// learn keeps what the character's readings showed about its natural pool, for the Odyle
+// clock: the size of its last regeneration tick, and its fullest natural pool of the last
+// 30 days (an older one gives way to the next reading), which tells clients its cap.
+func (c *Character) learn(r reading) {
+	if r.kind == "regen" && r.delta > 0 && r.delta <= 1000 {
+		c.Set("regenTick", r.delta)
+	}
+	base, ok := r.parts["base"].(int64)
+	if !ok {
+		return
+	}
+	if base > c.GetInt64("naturalMax") || c.GetDateTime("naturalMaxAt").Time().Before(time.Now().Add(-30*24*time.Hour)) {
+		c.Set("naturalMax", base)
+		c.Set("naturalMaxAt", now())
+	}
 }
 
 // HistoryPoint is one change of a character's Odyle (character_readings), with the
@@ -191,12 +211,24 @@ func (p *HistoryPoint) Character() string { return p.GetString("character") }
 func (p *HistoryPoint) Value() int64      { return p.GetInt64("value") }
 func (p *HistoryPoint) Adapter() string   { return p.GetString("adapter") }
 func (p *HistoryPoint) At() string        { return p.GetString("created") }
+func (p *HistoryPoint) Kind() string      { return p.GetString("kind") }
+func (p *HistoryPoint) Delta() int64      { return p.GetInt64("delta") }
+func (p *HistoryPoint) Parts() string     { return p.GetString("parts") }
 
 // JSON is the point as history answers and the data export carry it.
-func (p *HistoryPoint) JSON() map[string]any { return historyJSON(p.Value(), p.At(), p.Adapter()) }
+func (p *HistoryPoint) JSON() map[string]any {
+	return historyJSON(p.Value(), p.At(), p.Adapter(), p.Kind(), p.Delta(), p.Parts())
+}
 
-func historyJSON(value int64, at, adapter string) map[string]any {
-	return map[string]any{"value": value, "at": at, "adapter": adapter}
+// historyJSON is a history point: its total, time and adapter, and from newer Windows apps
+// the game's two numbers (parts, or null), what changed (kind, "" when not known) and the
+// change of the total (delta, for a regen, spend or item; null otherwise).
+func historyJSON(value int64, at, adapter, kind string, delta int64, parts string) map[string]any {
+	var change any
+	if kind == "regen" || kind == "spend" || kind == "item" {
+		change = delta
+	}
+	return map[string]any{"value": value, "at": at, "adapter": adapter, "kind": kind, "delta": change, "parts": parseJSON(parts, "null")}
 }
 
 // Member is an account's membership of a room (room_members): its role and the

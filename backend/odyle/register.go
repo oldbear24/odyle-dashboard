@@ -26,7 +26,8 @@ var accountActions = []action{
 	{"invite-create", inviteCreate}, {"invite-revoke", inviteRevoke},
 	{"rename", rename}, {"role", role}, {"transfer", transfer}, {"plan", plan}, {"discord-webhook", discordWebhook}, {"profile", profile},
 	{"desktop-code", desktopCode}, {"desktop-device", desktopDevice}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},
-	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter},
+	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
+	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its

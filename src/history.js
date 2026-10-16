@@ -31,10 +31,12 @@ export function historyChart(readings, { now, cost }) {
 // Newest first, each with the change from the value before it. With hourlyBefore (a
 // character with more than 1,000 changes) the points before that time are each hour's
 // last change, so the changes left out are at least as many as the points.
+// What a change was, when the Windows app said (newer apps send it with each reading).
+const kinds = { regen: 'regeneration', spend: 'spent', item: 'item' };
 export function historyList(readings, limit = 12, hourlyBefore = null) {
   const rows = readings.map((r, i) => ({ ...r, delta: i ? r.value - readings[i - 1].value : null })).reverse().slice(0, limit);
   const more = readings.length - rows.length, left = hourlyBefore ? tn(more, 'At least {n} earlier change not listed', 'At least {n} earlier changes not listed') : tn(more, '{n} earlier change not listed', '{n} earlier changes not listed');
-  return `<table class="history-table"><thead><tr><th>${t('Changed')}</th><th>${t('Odyle')}</th><th>${t('Change')}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(new Date(timestamp(r.at)).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${r.value.toLocaleString(locale())}</td><td>${r.delta === null ? '—' : (r.delta > 0 ? '+' : r.delta < 0 ? '−' : '±') + Math.abs(r.delta).toLocaleString(locale())}</td></tr>`).join('')}</tbody></table>${more > 0 ? `<p class="history-more">${esc(left)}</p>` : ''}`;
+  return `<table class="history-table"><thead><tr><th>${t('Changed')}</th><th>${t('Odyle')}</th><th>${t('Change')}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(new Date(timestamp(r.at)).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${r.value.toLocaleString(locale())}</td><td>${r.delta === null ? '—' : (r.delta > 0 ? '+' : r.delta < 0 ? '−' : '±') + Math.abs(r.delta).toLocaleString(locale())}${kinds[r.kind] ? ` <span class="history-kind">${esc(t(kinds[r.kind]))}</span>` : ''}</td></tr>`).join('')}</tbody></table>${more > 0 ? `<p class="history-more">${esc(left)}</p>` : ''}`;
 }
 // Crosshair and tooltip: the pointer picks the nearest change on the time axis.
 export function bindHistoryChart(figure) {

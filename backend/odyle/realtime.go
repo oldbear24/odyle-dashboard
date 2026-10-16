@@ -54,6 +54,10 @@ type userNews struct {
 	characters map[string]*Character
 	seen       map[string]time.Time // its characters' heartbeats
 	contact    map[string]time.Time // its reader sessions' heartbeats
+	// notification settings saved meanwhile (notifications.go)
+	notifications *notificationSettings
+	// cap alerts of its characters (capalerts.go)
+	capAlerts []capAlert
 }
 
 // outbox collects news until its delivery.
@@ -242,6 +246,12 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 		}
 		message["characters"] = changed
 	}
+	if n.notifications != nil {
+		message["notifications"] = n.notifications
+	}
+	if len(n.capAlerts) > 0 {
+		message["capAlerts"] = n.capAlerts
+	}
 	for _, kind := range []struct {
 		key   string
 		times map[string]time.Time
@@ -310,7 +320,7 @@ func characterChanged(app core.App, c *Character) {
 
 // characterFields are the fields of a character clients show; a change to any other
 // (the portrait job's portraitCheckedAt, say) is not news.
-var characterFields = []string{"characterName", "server", "region", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait"}
+var characterFields = []string{"characterName", "server", "region", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait", "parts", "regenTick", "naturalMax"}
 
 func visiblyChanged(c *core.Record) bool {
 	before := c.Original()

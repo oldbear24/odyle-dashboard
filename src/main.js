@@ -1,3 +1,5 @@
+import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
+import { defaultClock, clockOf, clockLine } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp } from './model.js';
 import { connectionLink } from './connection.js';
@@ -28,7 +30,7 @@ const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.p
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
 let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog = [], rooms = [], characters = [], demo = false, online = false;
-let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40;
+let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40, clockRules = defaultClock;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
@@ -223,11 +225,18 @@ function plannedRuns(now) {
   const suggestions = [...new Set(wishlist.map(w => w.dungeon))];
   return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: room?.cost || perCube, facts: dungeonInfo(now), demo, discord: room?.discordReminders });
 }
-// Full redraws keep a half-typed form entry or a picked dungeon (wishlist, run, task forms) and its focus.
+// Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
+// changed checkbox, and the focus; what the user did not change shows what the redraw brings.
 function keepingDrafts(render) {
-  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name]')].filter(i => i.value || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]`, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
+  const ticked = i => i.type === 'checkbox' || i.type === 'radio';
+  const changed = i => ticked(i) ? i.checked !== i.defaultChecked : Boolean(i.value) && i.value !== (i.defaultValue ?? '');
+  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name]')].filter(i => changed(i) || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]` + (ticked(i) ? `[value="${CSS.escape(i.value)}"]` : ''), ticked: ticked(i), checked: i.checked, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
   render();
-  for (const d of drafts) { const input = document.querySelector(d.selector); if (!input || (input.options && ![...input.options].some(o => o.value === d.value))) continue; input.value = d.value; if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } } }
+  for (const d of drafts) {
+    const input = document.querySelector(d.selector); if (!input || (input.options && ![...input.options].some(o => o.value === d.value))) continue;
+    if (d.ticked) input.checked = d.checked; else input.value = d.value;
+    if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } }
+  }
 }
 // Personal daily and weekly checklists. A task counts as done while it was checked
 // after the current reset (07:00 UTC and Wednesday by default; the server names
@@ -268,11 +277,12 @@ async function tasksPage(ticket) {
 // The account page redraws when its apps change or go online, late or offline; ages tick in place.
 const contactState = at => { const quiet = Date.now() + serverOffset - timestamp(at); return quiet < 45000 ? 'online' : quiet < 90000 ? 'late' : 'offline'; };
 const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device, contactState(a.lastContactAt)]), account?.devices?.map(d => [d.id, d.name])]);
-function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, reminders: reminderState(), now: Date.now() + serverOffset }), 'account')); }
+function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset }), 'account')); }
 async function refreshAccount() {
   const data = await pb.send('/api/odyle/account');
   if (shown !== '/account') return;
   account = data; serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
+  await checkPush().catch(() => { pushHere = 'unsupported'; });
 }
 async function accountPage(ticket) {
   await leaveRoomTopic(); clearRoom();
@@ -295,7 +305,7 @@ function card(c, index) {
     : self && !room ? `<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}`
       : owner() && c.membershipId && c.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(c.membershipId)}" data-name="${esc(c.displayName)}">${t('Remove member')}</button>` : '';
   const source = demo ? t('Sample') : c.source === 'packet' ? t('Packet') : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
-  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div><div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
+  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}${known && clockOf(c, now, clockRules) ? `<div class="energy-clock">${esc(clockLine(clockOf(c, now, clockRules), now, fresh))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
 }
 let toastTimer;
 function toast(message) { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 6000); }
@@ -478,7 +488,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -499,7 +509,7 @@ async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
   if (ticket !== navigation) return;
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -569,6 +579,10 @@ async function ownNews(data) {
     if (data.refresh) { if (!room && !later()) await refreshPage(); }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
     if (data.seen) applySeen(data.seen, characters);
+    // Cap alerts of the account's characters (the job checked the quiet hours).
+    if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
+    // Notification settings saved in another tab or app.
+    if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
     if (data.contact) {
       applyContact(data.contact, account?.apps); applyContact(data.contact, readers);
       // A reader started since the room was fetched: the snapshot names its PC (other pages hear of it as news).
@@ -587,7 +601,7 @@ async function refreshPage() {
   else if (shown === '/account') await refreshAccount();
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
@@ -789,6 +803,12 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'discord-form') { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language() }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
     else if (form.id === 'rename-form') { const id = room.id, result = await send('rename', { roomId: id, name: data.name }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Room renamed.')); }
+    else if (form.id === 'notifications-form') {
+      const leads = new FormData(form).getAll('lead').map(Number);
+      if (!leads.length || leads.length > 3) { formError(form, t('Choose one to three reminder times.')); return; }
+      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
+      account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
+    }
     else if (form.id === 'profile-form') {
       const result = await send('profile', { displayName: data.displayName });
       pb.authStore.save(pb.authStore.token, result.record); account.account.displayName = result.record.displayName; accountRender(); toast(t('Display name saved.'));
@@ -868,6 +888,9 @@ app.addEventListener('click', async e => {
       case 'confirm-discord-off': { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: '' }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are off.')); break; }
       case 'open-elsewhere': signInElsewhere(embedded() ? 'app' : ''); break;
       case 'reminders': await toggleReminders(); accountRender(); break;
+      case 'push-on': await pushOn(); accountRender(); break;
+      case 'push-off': await pushOff(); accountRender(); break;
+      case 'push-test': { const result = await send('push-test', {}); account.push = result.push; toast(tn(result.sent, 'Sent a test to {n} device.', 'Sent a test to {n} devices.')); break; }
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
       case 'tasks': await go('/tasks'); break;
@@ -923,30 +946,77 @@ function download(text, name, type) {
   const url = URL.createObjectURL(new Blob([text], { type })), link = document.createElement('a');
   link.href = url; link.download = name; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-// Browser reminders of the runs this account is going to: a notification 15 minutes
-// before each one starts while a dashboard tab is open. The choice belongs to this browser.
-const remindersKey = 'odyle.reminders', remindedKey = 'odyle.reminded';
+// Browser reminders of the runs this account is going to, at the account's reminder times
+// (Account & data → Notifications) while a dashboard tab is open and this browser may show
+// notifications; none in the quiet hours.
+const remindedKey = 'odyle.reminded';
 const notifications = () => 'Notification' in window;
-function reminderState() { if (!notifications()) return 'unsupported'; if (Notification.permission === 'denied') return 'blocked'; return storage.getItem(remindersKey) === 'on' && Notification.permission === 'granted' ? 'on' : 'off'; }
+function reminderState() { if (!notifications()) return 'unsupported'; if (Notification.permission === 'denied') return 'blocked'; return Notification.permission === 'granted' ? 'on' : 'off'; }
 async function toggleReminders() {
-  if (reminderState() === 'on') { storage.setItem(remindersKey, 'off'); return toast(t('Run reminders are off in this browser.')); }
   if (!notifications()) return toast(t('This browser cannot show notifications.'));
   if (await Notification.requestPermission() !== 'granted') return toast(t('Notifications are blocked for this site. Allow them in the browser settings.'));
-  storage.setItem(remindersKey, 'on'); upcomingAt = 0; toast(t('Run reminders are on in this browser.'));
+  upcomingAt = 0; toast(t('This browser shows your notifications now.'));
 }
-let upcomingAt = 0;
+// A notification in this browser, through the service worker when there is one.
+async function notice(title, options) {
+  try { const worker = await navigator.serviceWorker?.getRegistration(); if (worker) await worker.showNotification(title, options); else new Notification(title, options); } catch { /* permission withdrawn meanwhile */ }
+}
+// Cap alerts show where the account wants them in browsers, once per alert across its open tabs.
+async function showCapAlerts(alerts) {
+  const settings = account?.notifications || notificationsSeen || defaultNotifications;
+  if (!settings.kinds.cap || !settings.channels.browser || reminderState() !== 'on') return;
+  for (const alert of alerts) { const { title, body } = capAlertText(alert); await notice(title, { body, tag: 'cap-' + alert.characterId + '-' + alert.state, icon: 'icon-192.png' }); }
+}
+let upcomingAt = 0, notificationsSeen = null;
+// Web Push on this device (backend push.go): the browser subscribes at its push service with
+// the server's key, and the server keeps the subscription for the account. pushHere is
+// unsupported, unavailable (no key or no service worker), blocked, on or off.
+let pushHere = 'unsupported';
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && notifications();
+async function checkPush() {
+  if (!pushSupported()) return (pushHere = 'unsupported');
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!account?.push?.publicKey || !registration) return (pushHere = 'unavailable');
+  if (Notification.permission === 'denied') return (pushHere = 'blocked');
+  return (pushHere = await registration.pushManager.getSubscription() ? 'on' : 'off');
+}
+// "Edge on Windows", "Chrome on Android": how the account page names this device.
+function deviceName() {
+  const ua = navigator.userAgent, browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const system = /Android/.test(ua) ? 'Android' : /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+  return system ? browser + ' on ' + system : browser;
+}
+async function pushSubscribed(subscription) {
+  const json = subscription.toJSON(), result = await send('push-subscribe', { endpoint: json.endpoint, keys: json.keys, language: language(), device: deviceName() });
+  account.push = result.push;
+}
+async function pushOn() {
+  if (await Notification.requestPermission() !== 'granted') { pushHere = 'blocked'; return toast(t('Notifications are blocked for this site. Allow them in the browser settings.')); }
+  const registration = await navigator.serviceWorker.ready, key = Uint8Array.from(atob(account.push.publicKey.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  let subscription = await registration.pushManager.getSubscription();
+  // A subscription made with another server key is renewed.
+  try { subscription ||= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); }
+  catch { await subscription?.unsubscribe(); subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); }
+  await pushSubscribed(subscription); pushHere = 'on'; toast(t('Push notifications are on for this device.'));
+}
+async function pushOff() {
+  const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription();
+  if (subscription) { account.push = (await send('push-unsubscribe', { endpoint: subscription.endpoint })).push; await subscription.unsubscribe(); }
+  pushHere = 'off'; toast(t('Push notifications are off for this device.'));
+}
 async function remindRuns() {
   if (reminderState() !== 'on' || demo || !pb.authStore.isValid || Date.now() - upcomingAt < 60000) return;
   upcomingAt = Date.now();
-  const data = await pb.send('/api/odyle/upcoming'), now = Date.parse(data.serverNow) || Date.now();
+  const data = await pb.send('/api/odyle/upcoming'), now = Date.parse(data.serverNow) || Date.now(), settings = data.notifications || defaultNotifications;
+  notificationsSeen = settings;
+  if (!settings.kinds.runs || !settings.channels.browser) return;
   let done; try { done = JSON.parse(storage.getItem(remindedKey)) || {}; } catch { done = {}; }
-  for (const r of data.runs) {
-    // One notification per run and start time, also across tabs and reloads.
-    const at = timestamp(r.startsAt), key = r.id + '@' + r.startsAt;
-    if (done[key] || at <= now || at - now > 15 * 60000) continue;
-    done[key] = at;
+  for (const { run: r, at, key, marks } of dueReminders(data.runs, now, settings.leadMinutes, done)) {
+    // One notification per run, start time and reminder time, also across tabs and reloads.
+    for (const key of marks) done[key] = at;
+    if (quietAt(settings, now)) continue;
     const title = t('{dungeon} starts {time}', { dungeon: r.dungeon, time: startsIn(at, now) }), options = { body: [r.room, r.note].filter(Boolean).join(' · '), tag: key, icon: 'icon-192.png' };
-    try { const worker = await navigator.serviceWorker?.getRegistration(); if (worker) await worker.showNotification(title, options); else new Notification(title, options); } catch { /* permission withdrawn meanwhile */ }
+    await notice(title, options);
   }
   for (const key in done) if (done[key] < now - 86400000) delete done[key];
   try { storage.setItem(remindedKey, JSON.stringify(done)); } catch { /* storage full or blocked */ }
@@ -955,7 +1025,10 @@ app.addEventListener('change', async e => {
   const el = e.target;
   if (el.id === 'language-select') {
     try { await useLanguage(el.value); } catch (error) { return failure(error); }
-    document.documentElement.lang = language(); document.title = t('Odyle — Party command'); storage.setItem(languageKey, language()); return rerender();
+    document.documentElement.lang = language(); document.title = t('Odyle — Party command'); storage.setItem(languageKey, language());
+    // Push messages are written in the language of the device that asked for them.
+    if (pushHere === 'on') (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription().then(s => s && pushSubscribed(s)).catch(() => { /* kept in the old language */ });
+    return rerender();
   }
   // A role change asks first; keeping the role closes the dialog with nothing changed.
   if (el.matches?.('select[data-role]')) {

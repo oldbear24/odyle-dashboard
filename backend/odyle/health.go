@@ -43,6 +43,7 @@ type health struct {
 	mu      sync.Mutex
 	readers map[string]readerReport // by reader session
 	alerted map[string]string       // problems the operator was told about, with the message
+	clock   []clockCheck            // login readings compared with the Odyle clock (clock.go)
 }
 
 func newHealth() *health {
@@ -139,8 +140,12 @@ func readerHealth(app core.App, at time.Time) (*object, map[string]string) {
 	for _, g := range sortedKeys(games) {
 		builds = append(builds, newObject().set("game", g).set("apps", games[g]))
 	}
+	clock, missed := clockHealth(app, at)
+	for key, message := range missed {
+		problems[key] = message
+	}
 	return newObject().set("reporting", reporting).set("connected", connected).set("stuck", stuck).set("statuses", statuses).
-		set("games", builds).set("refusedAdapters", refused).set("problems", len(problems)).set("alerts", alertWebhook() != ""), problems
+		set("games", builds).set("refusedAdapters", refused).set("clock", clock).set("problems", len(problems)).set("alerts", alertWebhook() != ""), problems
 }
 
 func buildsNote(games map[string]int) string {

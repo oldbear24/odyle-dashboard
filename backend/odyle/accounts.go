@@ -458,7 +458,7 @@ func rooms(e *core.RequestEvent) error {
 			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
 	})
 }
 
@@ -529,7 +529,7 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock})
 	})
 }
 
@@ -1017,9 +1017,12 @@ func report(e *core.RequestEvent) error {
 			// keeps the identity the game gave it.
 			character.SetIdentity(data.identity)
 		}
+		// A login reading checks the Odyle clock against the reading before it.
+		before, prevAt := viewOf[Character](character.Original()), character.GetDateTime("lastReadingAt").Time()
 		// Every change (the first reading included) is also kept in the character's history,
 		// with the adapter that decoded it.
 		changed := character.Read(data, session.Id)
+		checkClock(app, before, prevAt, data, time.Now())
 		if err := app.Save(character); err != nil {
 			return nil, err
 		}
@@ -1031,6 +1034,9 @@ func report(e *core.RequestEvent) error {
 			point.Set("character", character.Id)
 			point.Set("value", data.value)
 			point.Set("adapter", data.parserVersion)
+			point.Set("parts", data.partsValue())
+			point.Set("kind", data.kind)
+			point.Set("delta", data.delta)
 			if err := app.Save(point); err != nil {
 				return nil, err
 			}
@@ -2113,7 +2119,7 @@ func upcoming(e *core.RequestEvent) error {
 		}
 		out := []upcomingRun{}
 		if len(roomIds) == 0 {
-			return e.JSON(200, map[string]any{"runs": out, "serverNow": now()})
+			return e.JSON(200, map[string]any{"runs": out, "notifications": notificationsOf(e.Auth), "serverNow": now()})
 		}
 		rooms, err := roomsByID(e.App, roomIds)
 		if err != nil {
@@ -2135,7 +2141,7 @@ func upcoming(e *core.RequestEvent) error {
 			out = append(out, upcomingRun{Id: r.Id, RoomId: r.Room(), Room: name, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note()})
 		}
 		sort.SliceStable(out, func(a, b int) bool { return out[a].StartsAt < out[b].StartsAt })
-		return e.JSON(200, map[string]any{"runs": out, "serverNow": now()})
+		return e.JSON(200, map[string]any{"runs": out, "notifications": notificationsOf(e.Auth), "serverNow": now()})
 	})
 }
 
@@ -2221,12 +2227,14 @@ func account(e *core.RequestEvent) error {
 			paired[i] = map[string]any{"id": d.Id, "name": d.Name(), "pairedAt": d.PairedAt(), "lastSignInAt": d.LastUsedAt()}
 		}
 		return e.JSON(200, map[string]any{
-			"account":    map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
-			"limits":     limits,
-			"serverNow":  now(),
-			"characters": characters,
-			"apps":       apps,
-			"devices":    paired,
+			"account":       map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
+			"notifications": notificationsOf(user.Record),
+			"push":          pushState(e.App, user.Id),
+			"limits":        limits,
+			"serverNow":     now(),
+			"characters":    characters,
+			"apps":          apps,
+			"devices":       paired,
 		})
 	})
 }
@@ -2355,6 +2363,8 @@ func exportData(e *core.RequestEvent) error {
 		}
 		return e.JSON(200, map[string]any{
 			"exportedAt":        now(),
+			"notifications":     notificationsOf(user.Record),
+			"pushSubscriptions": pushExport(e.App, user.Id),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
 			"characters":        exportedCharacters,
 			"rooms":             joined,
@@ -2508,14 +2518,17 @@ func historyOf(app core.App, id string) ([]any, string, error) {
 		var hours []struct {
 			Value   int64  `db:"value"`
 			Adapter string `db:"adapter"`
+			Kind    string `db:"kind"`
+			Delta   int64  `db:"delta"`
+			Parts   string `db:"parts"`
 			At      string `db:"at"`
 		}
-		if err := app.DB().NewQuery("SELECT value, adapter, MAX(created) AS at FROM character_readings WHERE character = {:id} AND created >= {:since} AND created < {:before} GROUP BY substr(created, 1, 13) ORDER BY at").
+		if err := app.DB().NewQuery("SELECT value, adapter, kind, delta, COALESCE(parts, 'null') AS parts, MAX(created) AS at FROM character_readings WHERE character = {:id} AND created >= {:since} AND created < {:before} GROUP BY substr(created, 1, 13) ORDER BY at").
 			Bind(dbx.Params{"id": id, "since": since, "before": hourlyBefore}).All(&hours); err != nil {
 			return nil, "", err
 		}
 		for _, h := range hours {
-			readings = append(readings, historyJSON(h.Value, h.At, h.Adapter))
+			readings = append(readings, historyJSON(h.Value, h.At, h.Adapter, h.Kind, h.Delta, h.Parts))
 		}
 	}
 	for i := len(points) - 1; i >= 0; i-- {

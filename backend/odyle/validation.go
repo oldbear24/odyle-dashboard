@@ -147,6 +147,44 @@ type reading struct {
 	value         int64
 	parserVersion string
 	sequence      int64
+	parts         map[string]any // the game's two numbers {base, bonus}, nil when not sent
+	kind          string         // what changed (readingKinds), "" when not sent
+	delta         int64          // the change of the total for a regen, spend or item
+}
+
+// partsValue is the parts for a JSON field: null when the reading sent none (a nil map would be
+// stored as {}).
+func (r reading) partsValue() any {
+	if r.parts == nil {
+		return nil
+	}
+	return r.parts
+}
+
+// readingKinds say what a reading changed: the whole value (snapshot), nothing known before it
+// (update), the natural pool's three-hourly tick (regen), a spend, or an item.
+var readingKinds = []string{"snapshot", "update", "regen", "spend", "item"}
+
+// readingParts reads what newer Windows apps send beside the total: the natural pool (base)
+// and what items added (bonus), and the kind of change with its delta. Anything malformed,
+// or parts that do not add up to the value, is left out rather than refused: the total is
+// what counts.
+func readingParts(b body, value int64) (map[string]any, string, int64) {
+	var parts map[string]any
+	base, baseErr := integer(b["base"], "Base", 0, 1000000)
+	bonus, bonusErr := integer(b["bonus"], "Bonus", 0, 1000000)
+	if baseErr == nil && bonusErr == nil && base+bonus == value {
+		parts = map[string]any{"base": base, "bonus": bonus}
+	}
+	kind, _ := b.text("kind")
+	if !contains(readingKinds, kind) {
+		return parts, "", 0
+	}
+	delta, err := integer(b["delta"], "Delta", -1000000, 1000000)
+	if err != nil || kind == "snapshot" {
+		delta = 0
+	}
+	return parts, kind, delta
 }
 
 // validReading checks a reading of the Windows app against its reader session.
@@ -190,5 +228,6 @@ func validReading(b body, sessionId string, sequence int64, adapters []string) (
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{identity: identity{characterName: name, server: server, region: region}, value: value, sequence: seq, parserVersion: parserVersion}, nil
+	parts, kind, delta := readingParts(b, value)
+	return reading{identity: identity{characterName: name, server: server, region: region}, value: value, sequence: seq, parserVersion: parserVersion, parts: parts, kind: kind, delta: delta}, nil
 }

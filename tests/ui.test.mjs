@@ -4,6 +4,7 @@
 // browser's localStorage as the SDK stores a Discord sign-in. Set ODYLE_UI_SHOTS to a
 // directory to keep a screenshot of every checked page, and ODYLE_UI_WIDTH to check
 // another viewport width (390 for a phone).
+import { pushService } from './push-service.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -232,12 +233,17 @@ test('rooms plan, change and export runs, and members see each character history
   const session = (await request('/api/odyle/session', {}, lead)).data;
   const reading = { sessionId: session.sessionId, characterName: 'Charted', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
   const c = (await request('/api/odyle/report', { ...reading, sequence: 1, value: 20 }, lead)).data.character;
-  for (const [sequence, value] of [[2, 55], [3, 30], [4, 90]]) await request('/api/odyle/report', { ...reading, sequence, value, characterId: c.id }, lead);
+  for (const [sequence, value] of [[2, 55], [3, 30]]) await request('/api/odyle/report', { ...reading, sequence, value, characterId: c.id }, lead);
+  // A newer Windows app sends the game's two numbers and what the change was.
+  await request('/api/odyle/report', { ...reading, sequence: 4, value: 90, characterId: c.id, base: 60, bonus: 30, kind: 'item', delta: 60 }, lead);
   await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead);
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    // The card splits the value and says when the natural pool regenerates and is full.
+    assert.equal(await page.locator('.member-card .energy-split').innerText(), 'natural 60 · items 30');
+    assert.match(await page.locator('.member-card .energy-clock').innerText(), /^\+15 in (\d+h )?(\d+m|under a minute) · full ≈ /);
     await page.locator('[data-plan-wish="Fire Temple"]').click();
     assert.equal(await page.locator('#run-form [name=dungeon]').inputValue(), 'Fire Temple');
     // The start takes only what the server accepts; where a browser ignores the bounds, the form says why before sending.
@@ -253,7 +259,8 @@ test('rooms plan, change and export runs, and members see each character history
     await page.locator('#run-form [type=submit]').click();
     await page.locator('.runs .wish-row').waitFor();
     assert.match(await page.locator('.runs .wish-row').innerText(), /Fire Temple[\s\S]*Bring potions[\s\S]*You/);
-    assert.match(await page.locator('.runs [data-starts]').innerText(), /^in /);
+    // The default start is the next full hour, which right before it is under a minute away.
+    assert.match(await page.locator('.runs [data-starts]').innerText(), /^(in |starting now)/);
     // The planner changes the run in a dialog and anyone can put it in their calendar.
     await page.locator('.runs [data-edit-run]').click();
     await page.locator('#run-edit-form [name=note]').fill('Bring food');
@@ -265,6 +272,7 @@ test('rooms plan, change and export runs, and members see each character history
     await page.locator(`[data-history="${c.id}"]`).click();
     await page.locator('#modal .history-line').waitFor();
     assert.deepEqual(await page.locator('#modal .history-table tbody td:nth-child(2)').allInnerTexts(), ['90', '30', '55', '20']);
+    assert.deepEqual(await page.locator('#modal .history-kind').allInnerTexts(), ['item']);
     await shot(page, 'room-history');
     await page.keyboard.press('Escape');
     // Cancelling a run asks first.
@@ -517,6 +525,88 @@ test('the account page lists paired PCs, removes one and signs out everywhere', 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('notifications are kept for the account, reach its other tabs and time the browser run reminders', async () => {
+  const lead = await account('Reminded lead');
+  const roomId = (await request('/api/odyle/create', { name: 'Reminder room' }, lead)).data.room.id;
+  // A run in 100 minutes, which its planner goes to: the default 15 minutes do not remind yet.
+  assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() + 100 * 60000).toISOString() }, lead)).status, 200);
+  const { page, errors, close } = await open(lead, '#/account'), other = await open(lead, '#/account');
+  try {
+    await page.context().grantPermissions(['notifications'], { origin: url });
+    // This browser's push service is one on this machine (test backends may post there).
+    const service = await pushService();
+    await page.context().addInitScript(([endpoint, keys]) => {
+      if (!window.PushManager) return;
+      let current = null;
+      const subscription = { endpoint, toJSON: () => ({ endpoint, keys }), unsubscribe: async () => { current = null; return true; } };
+      PushManager.prototype.getSubscription = async () => current;
+      PushManager.prototype.subscribe = async () => (current = subscription);
+    }, [service.endpoint, service.keys]);
+    await page.reload(); await page.getByRole('heading', { name: 'Account & data.' }).waitFor();
+    await page.evaluate(() => {
+      window.shown = [];
+      const record = title => { window.shown.push(title); return Promise.resolve(); };
+      if (window.ServiceWorkerRegistration) ServiceWorkerRegistration.prototype.showNotification = record;
+      window.Notification = class extends window.Notification { constructor(title, options) { super(title, options); record(title); } };
+    });
+    assert.match(await page.locator('#notifications-form').innerText(), /This browser may show them\./);
+    await other.page.getByRole('heading', { name: 'Account & data.' }).waitFor();
+    // Two hours instead of 15 minutes, no Windows tray, quiet hours at night.
+    const form = page.locator('#notifications-form');
+    const chip = minutes => form.locator(`.chip-check:has(input[value="${minutes}"])`);
+    await chip(15).click(); await chip(120).click();
+    await form.locator('[name=tray]').uncheck();
+    // Quiet hours later today, so they never silence this test.
+    const [quietFrom, quietTo] = await page.evaluate(() => [2, 3].map(hours => new Date(Date.now() + hours * 3600000).toTimeString().slice(0, 5)));
+    await form.locator('[name=quietFrom]').fill(quietFrom); await form.locator('[name=quietTo]').fill(quietTo);
+    await form.locator('[type=submit]').click();
+    await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
+    const saved = (await request('/api/odyle/account', undefined, lead, 'GET')).data.notifications;
+    assert.deepEqual([saved.leadMinutes, saved.channels.tray, saved.quiet.from, saved.quiet.to, saved.saved], [[120], false, quietFrom, quietTo, true]);
+    assert.equal(saved.quiet.timeZone, await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone));
+    // The other tab hears of it at once, and this one reminds of the run within the 2 hours.
+    await other.page.locator('#notifications-form .chip-check input[value="120"]:checked').waitFor({ state: 'attached' });
+    assert.equal(await other.page.locator('#notifications-form [name=tray]').isChecked(), false);
+    await page.waitForFunction(() => window.shown.length > 0, null, { timeout: 15000 });
+    const shown = await page.evaluate(() => window.shown); assert.equal(shown.length, 1); assert.match(shown[0], /^Fire Temple starts in 1h (39|40)m$/);
+    // Push on this device: the browser subscribes, the server keeps it and a test arrives, encrypted for it.
+    await form.locator('[data-action="push-on"]').click();
+    await toast(page).filter({ hasText: 'Push notifications are on for this device.' }).waitFor();
+    assert.match(await form.innerText(), /This device takes push notifications\.[\s\S]*Push is on for 1 device: Edge on Windows/);
+    await form.locator('[data-action="push-test"]').click();
+    await toast(page).filter({ hasText: 'Sent a test to 1 device.' }).waitFor();
+    assert.equal(service.received.at(-1).message.title, 'Odyle notifications work');
+    // The service worker shows what a push service brings, and its click opens the page it names.
+    const worker = page.context().serviceWorkers()[0] || await page.context().waitForEvent('serviceworker');
+    const titles = await worker.evaluate(async () => {
+      self.dispatchEvent(new globalThis.PushEvent('push', { data: JSON.stringify({ title: 'Fire Temple starts in 15 min', body: 'Evening', tag: 'push-check', page: '#/tasks' }) }));
+      for (let i = 0; i < 20; i++) { const shown = await self.registration.getNotifications({ tag: 'push-check' }); if (shown.length) return shown.map(n => [n.title, n.body, n.data.page]); await new Promise(r => setTimeout(r, 100)); }
+      return [];
+    });
+    assert.deepEqual(titles, [['Fire Temple starts in 15 min', 'Evening', '#/tasks']]);
+    // Cap alerts: on in the card, a character 15 Odyle below the cap is told of when the job runs.
+    await form.locator('[name=cap]').check(); await form.locator('[name=capTicks]').selectOption('1');
+    await form.locator('[type=submit]').click(); await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
+    const session = (await request('/api/odyle/session', {}, lead)).data;
+    assert.equal((await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Nearly', server: 'Lumiel', region: 'GLOBAL_EU', value: 645, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, base: 545, bonus: 100, kind: 'snapshot' }, lead)).status, 200);
+    const operator = (await request('/__test__/superuser', { password: 'ui-test-cap-' + Date.now() })).data;
+    assert.equal((await request('/api/odyle/admin/jobs/odyle-cap-alerts', {}, operator)).status, 200);
+    await page.waitForFunction(() => window.shown.length > 1, null, { timeout: 15000 });
+    assert.equal((await page.evaluate(() => window.shown))[1], 'Nearly caps soon');
+    assert.equal(service.received.at(-1).message.title, 'Nearly caps soon', 'and by push');
+    // Push off on this device.
+    await form.locator('[data-action="push-off"]').click();
+    await toast(page).filter({ hasText: 'Push notifications are off for this device.' }).waitFor();
+    await form.locator('[data-action="push-on"]').waitFor();
+    service.server.close();
+    // More than three reminder times are refused in the form.
+    for (const minutes of [5, 30, 60]) await chip(minutes).click();
+    await form.locator('[type=submit]').click();
+    assert.match(await form.locator('.form-error').innerText(), /Choose one to three reminder times\./);
+    await shot(page, 'account-notifications');
+    assert.deepEqual([...errors, ...other.errors], []);
+  } finally { await close(); await other.close(); }
+});
 test('the account page renames, switches to Czech, exports data, deletes characters and the account', async () => {
   const user = await account('Account owner');
   await request('/api/odyle/character', { characterName: 'Doomed', server: 'Lumiel', region: 'GLOBAL_EU' }, user);
@@ -763,10 +853,18 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.match(await page.locator('#odyle-inactive').locator('xpath=../..').innerText(), /365 days/);
     // Before saving, the page counts the accounts the next clean-up would delete with that period.
     await page.locator('#odyle-inactive').locator('xpath=../..').getByText(/With this period the next run at 03:17 UTC \(.+ here\) would delete/).waitFor();
+    // The Odyle clock's rules: hours typed in any order, a tick size and the caps.
+    assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '1, 4, 7, 10, 13, 16, 19, 22');
+    await page.locator('#odyle-clock-hours').fill('22, 2, 5'); await page.locator('#odyle-clock-hours').blur();
+    assert.match(await page.locator('#odyle-clock-hours').locator('xpath=../..').innerText(), /Ticks at 22:00, 02:00, 05:00 UTC/);
+    await page.locator('#odyle-clock-tick').fill('20');
+    await page.locator('#odyle-clock-caps').fill('600, 900'); await page.locator('#odyle-clock-caps').blur();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
+    assert.deepEqual(saved.clock, { tickHours: [2, 5, 22], tick: 20, caps: [600, 900], paused: false });
+    assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '2, 5, 22');
     assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
@@ -783,7 +881,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.equal(visit.headers.get('clear-site-data'), '"cache"'); assert.match(visit.headers.get('set-cookie'), /^odyle_entry=1; Path=\/_\/;/);
     assert.equal(again.headers.get('clear-site-data'), null);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
-  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0 }, operator); }
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false } }, operator); }
 });
 test('superusers search, open and export packets and read the server status', async () => {
   const reader = await account('Status reader');

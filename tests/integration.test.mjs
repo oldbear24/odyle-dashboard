@@ -8,6 +8,7 @@ import { resolve, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { connect } from './sse.mjs';
 import { createServer } from 'node:http';
+import { pushService } from './push-service.mjs';
 const url = 'http://127.0.0.1:18090';
 let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId, legacyInvites;
 let releaseServer, releaseUrl, releaseHits = 0, releaseDown = false;
@@ -132,6 +133,45 @@ test('invite links from before the upgrade keep working, name the room owner and
   const listed = (await request('/api/odyle/invites/' + legacyRoomId, undefined, outsider, 'GET')).data.invites;
   assert.deepEqual(listed.map(l => [l.role, l.label, l.maxUses, l.uses]), [['reporter', '', 0, 0], ['viewer', '', 0, 0]]);
   assert.equal(JSON.stringify(listed).includes(legacyCode), false);
+});
+test('Web Push sends a test, run reminders and cap alerts that only the browser can read', async () => {
+  const user = (await request('/__test__/account', { name: 'Pushed player' })).data, operator = (await request('/__test__/superuser', {})).data;
+  const service = await pushService();
+  try {
+    const on = await request('/api/odyle/push-subscribe', { endpoint: service.endpoint, keys: service.keys, language: 'cs', device: 'Firefox on Android' }, user);
+    assert.equal(on.status, 200, JSON.stringify(on.data)); assert.match(on.data.push.publicKey, /^B[A-Za-z0-9_-]{86}$/); assert.deepEqual(on.data.push.devices.map(d => d.device), ['Firefox on Android']);
+    const tested = await request('/api/odyle/push-test', {}, user);
+    assert.equal(tested.status, 200); assert.equal(tested.data.sent, 1);
+    assert.deepEqual(service.received.at(-1).message, { title: 'Oznámení Odyle fungují', body: 'Toto zařízení ukáže připomínky runů a upozornění na strop i se zavřeným dashboardem.', tag: 'test', page: '#/account' });
+    const headers = service.received.at(-1).headers;
+    assert.equal(headers['content-encoding'], 'aes128gcm'); assert.match(headers.authorization, /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=B[\w-]{86}$/);
+    // A run in 10 minutes, which the planner goes to: one reminder at the default 15 minutes.
+    const roomId = (await request('/api/odyle/create', { name: 'Push room' }, user)).data.room.id;
+    assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() + 10 * 60000).toISOString() }, user)).status, 200);
+    const reminded = await request('/api/odyle/admin/jobs/odyle-push', {}, operator);
+    assert.equal(reminded.status, 200, JSON.stringify(reminded.data)); assert.equal(reminded.data.result.done, 1);
+    assert.match(service.received.at(-1).message.title, /^Fire Temple začíná za (9|10) min$/); assert.equal(service.received.at(-1).message.page, '#/room/' + roomId);
+    assert.equal((await request('/api/odyle/admin/jobs/odyle-push', {}, operator)).data.result.done, 0, 'reminded once');
+    // A cap alert: cap alerts on, a character 15 Odyle below the cap.
+    assert.equal((await request('/api/odyle/notifications', { channels: { tray: true, browser: true, push: true }, leadMinutes: [15], kinds: { runs: true, cap: true }, capTicks: 1, quiet: { from: '', to: '', timeZone: '' } }, user)).status, 200);
+    const session = (await request('/api/odyle/session', {}, user)).data;
+    assert.equal((await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Pushcap', server: 'Lumiel', region: 'GLOBAL_EU', value: 645, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, base: 545, bonus: 100, kind: 'snapshot' }, user)).status, 200);
+    assert.equal((await request('/api/odyle/admin/jobs/odyle-cap-alerts', {}, operator)).data.result.done, 1);
+    assert.equal(service.received.at(-1).message.title, 'Pushcap brzy dosáhne stropu');
+    // The export lists the device; a push service that forgot it removes it.
+    assert.equal((await request('/api/odyle/export', undefined, user, 'GET')).data.pushSubscriptions[0].device, 'Firefox on Android');
+    service.status = 410;
+    assert.equal((await request('/api/odyle/push-test', {}, user)).status, 400);
+    assert.deepEqual((await request('/api/odyle/account', undefined, user, 'GET')).data.push.devices, []);
+    // Turned off, nothing is sent.
+    service.status = 201;
+    assert.equal((await request('/api/odyle/push-subscribe', { endpoint: service.endpoint, keys: service.keys, language: 'en', device: 'Firefox on Android' }, user)).status, 200);
+    assert.equal((await request('/api/odyle/push-unsubscribe', { endpoint: service.endpoint }, user)).status, 200);
+    const count = service.received.length;
+    assert.equal((await request('/api/odyle/push-test', {}, user)).status, 400); assert.equal(service.received.length, count);
+    // Push services other than the known ones are refused.
+    assert.equal((await request('/api/odyle/push-subscribe', { endpoint: 'https://10.0.0.1/push', keys: service.keys }, user)).status, 400);
+  } finally { service.server.close(); }
 });
 test('catalog upgrade turns saved dungeon names into entries that cost Odyle per cube', async () => {
   const operator = (await request('/__test__/superuser', {})).data, settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
@@ -410,7 +450,7 @@ test('superusers watch connected apps and their packets live and edit the server
   } finally { await stream.close(); }
   // Server-wide settings: validated, partial changes keep the rest, and every client follows.
   const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
-  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, adapters: { extra: [], disabled: [] } };
+  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, adapters: { extra: [], disabled: [] }, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false } };
   assert.deepEqual((await settings()).data.settings, initial);
   assert.equal((await settings({ odylePerCube: 50 }, reader)).status, 403); assert.equal((await settings(undefined, reader)).status, 403);
   for (const bad of [{ odylePerCube: 0 }, { odylePerCube: 1001 }, { odylePerCube: '50' }, { dailyResetHour: 24 }, { dailyResetHour: 1.5 }, { weeklyResetDay: 'someday' }, { inactiveAccountDays: 10 }, { inactiveAccountDays: -1 }, { dungeons: 'Fire Temple' }, { dungeons: [''] }, { dungeons: ['x'.repeat(61)] }, { dungeons: [{ cost: 20 }] }, { dungeons: [{ name: 'Krao Cave', cost: 1001 }] }, { dungeons: [{ name: 'Krao Cave', partySize: 6 }] }, { dungeons: [{ name: 'Krao Cave', category: 'c'.repeat(31) }] }, { dungeons: [{ name: 'Krao Cave', unconfirmed: 'yes' }] }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
@@ -437,7 +477,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
   assert.equal((await jobs(null)).status, 401); assert.equal((await jobs(member)).status, 403); assert.equal((await run('odyle-expiry', member)).status, 403);
   const listed = (await jobs(operator)).data;
-  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active']]);
+  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active']]);
   assert.ok(Date.parse(listed.startedAt) <= Date.now());
   // A run by hand is recorded with its result; the account clean-up only runs on its schedule.
   const ran = await run('odyle-expiry'); assert.equal(ran.status, 200, JSON.stringify(ran.data));
@@ -493,7 +533,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
   assert.equal(await snapshotNotice(), null);
-  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active']);
+  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active']);
   // A body id never replaces a packet's own number.
   const added = (await action('task', { title: 'Watched task', cadence: 'daily' }, member)).data.tasks.find(x => x.title === 'Watched task');
   assert.equal((await action('task', { id: added.id, done: true }, member)).status, 200);
