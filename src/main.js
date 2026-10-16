@@ -6,7 +6,7 @@ import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp, classOf } from './model.js';
 import { connectionLink } from './connection.js';
 import { windowsApp } from './release.js';
-import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour } from './tasks.js';
+import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour, scopes, inScope, left, templatesForm } from './tasks.js';
 import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
@@ -40,7 +40,7 @@ let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog 
 let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40, clockRules = defaultClock;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
-let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
+let tasks = [], resets = { ...resetDefaults }, renderedTasks = '', taskCharacters = [], taskTemplates = [], taskLimit = 40, tasksKnown = false;
 let account = null, renderedAccount = '';
 // The account's own Windows readers (readers in GET /rooms and the snapshot), kept current
 // by the heartbeats on its own topic: buttons name the PC that reads instead of asking to
@@ -78,7 +78,7 @@ function navHref(action) {
   return { library: '#/', tasks: signedIn ? '#/tasks' : '#/', armory: '#/armory', account: signedIn ? '#/account' : '#/' }[action] || '';
 }
 // On phones a bar at the bottom holds the pages; Invitations and Reader & privacy sit in the avatar menu.
-const bottomNav = active => `<nav class="bottom-nav" aria-label="${esc(t('Pages'))}">${[['overview', 'grid', t('Overview')], ['library', 'people', t('Rooms')], ['tasks', 'check', t('Daily')], ['armory', 'search', t('Armory')], ['account', 'user', t('Account')]].map(([action, name, label]) => `<a href="${navHref(action)}" data-action="${action}" class="${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span>${label}</span></a>`).join('')}</nav>`;
+const bottomNav = active => `<nav class="bottom-nav" aria-label="${esc(t('Pages'))}">${[['overview', 'grid', t('Overview')], ['library', 'people', t('Rooms')], ['tasks', 'check', t('Daily')], ['armory', 'search', t('Armory')], ['account', 'user', t('Account')]].map(([action, name, label]) => `<a href="${navHref(action)}" data-action="${action}" class="${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span>${label}</span>${action === 'tasks' ? taskBadge() : ''}</a>`).join('')}</nav>`;
 const connectionLabel = () => `<i></i>${demo ? t('Demo workspace') : online ? t('Connected') : t('Not connected')}`;
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
@@ -106,7 +106,7 @@ function renderConnection() { const el = document.querySelector('.topbar .connec
 function shell(content, active = 'overview', crumb = '') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent;
-  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb"><a href="#/">${t('Workspace')}</a> <span>/</span> <a href="#${esc(currentPath())}" aria-current="page"><strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></a></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · ${t('Live packet readings')}</span></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
+  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'), taskBadge())}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb"><a href="#/">${t('Workspace')}</a> <span>/</span> <a href="#${esc(currentPath())}" aria-current="page"><strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></a></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · ${t('Live packet readings')}</span></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -288,8 +288,11 @@ function keepingDrafts(render) {
 // after the current reset (07:00 UTC and Wednesday by default; the server names
 // both from odyle_settings), so the lists clear by themselves and nothing is deleted.
 let editingTask = '';
+// The list shown (the account's, or a character's), kept per browser.
+const taskScopeKey = 'odyle.taskScope';
+function taskScope() { let id = ''; try { id = storage.getItem(taskScopeKey) || ''; } catch { /* storage blocked */ } return taskCharacters.some(c => c.id === id) ? id : ''; }
 function taskPanel(cadence, now) {
-  const list = tasks.filter(task => task.cadence === cadence), done = list.filter(task => isDone(task, now, resets)), at = nextReset(cadence, now, resets), label = cadence === 'daily' ? t('Daily') : t('Weekly');
+  const scope = taskScope(), list = tasks.filter(task => task.cadence === cadence && inScope(task, scope)), done = list.filter(task => isDone(task, now, resets)), at = nextReset(cadence, now, resets), label = cadence === 'daily' ? t('Daily') : t('Weekly');
   const when = new Date(at).toLocaleString(locale(), cadence === 'weekly' ? { weekday: 'long', hour: '2-digit', minute: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
   const rows = list.map((task, index) => {
     const checked = isDone(task, now, resets), name = esc(task.title);
@@ -301,15 +304,35 @@ function taskPanel(cadence, now) {
   const empty = cadence === 'daily' ? t('No daily tasks yet. Add what you run every day; it unchecks itself at the daily reset.') : t('No weekly tasks yet. Add what you clear once a week; it unchecks itself at the weekly reset.');
   return `<section class="party-section task-panel"><div class="section-heading"><h2>${label} <span>${done.length} / ${list.length}</span></h2><span class="refresh-label">${t('Resets in')} <span data-reset="${cadence}">${remaining(at - now)}</span> · ${esc(when)}</span></div><div class="wish-panel"><div class="task-progress"><i style="width:${list.length ? done.length / list.length * 100 : 0}%"></i></div>${rows ? `<div class="task-list">${rows}</div>` : `<p class="wish-empty">${empty}</p>`}<form id="task-form-${cadence}" class="wish-form"><input name="title" maxlength="60" autocomplete="off" placeholder="${esc(cadence === 'daily' ? t('Add a daily task') : t('Add a weekly task'))}" aria-label="${esc(cadence === 'daily' ? t('Daily task') : t('Weekly task'))}" required><button class="button primary" type="submit">${icon('plus')} ${t('Add')}</button></form></div></section>`;
 }
-function tasksSignature() { const now = Date.now() + serverOffset; return canonical([tasks.map(task => [task.id, task.title, task.cadence, isDone(task, now, resets)]), resets, editingTask]); }
+function tasksSignature() { const now = Date.now() + serverOffset; return canonical([tasks.map(task => [task.id, task.title, task.cadence, task.character || '', isDone(task, now, resets)]), resets, editingTask, taskCharacters.map(c => [c.id, c.characterName]), taskTemplates, taskScope()]); }
+// The lists to switch between, each with what is left in it, the size of the shown one and the Global list.
+function taskScopes(now) {
+  const scope = taskScope(), shown = tasks.filter(task => inScope(task, scope)).length;
+  const tabs = taskCharacters.length ? `<div class="task-scopes" role="group" aria-label="${esc(t('Lists'))}">${scopes(taskCharacters).map(s => { const n = left(tasks, now, resets, s.id); return `<button class="chip-toggle" data-task-scope="${esc(s.id)}" aria-pressed="${s.id === scope}">${esc(s.name)}${n ? ` <span class="scope-left">${esc(t('{n} left', { n }))}</span>` : ''}</button>`; }).join('')}</div>` : '';
+  const global = taskTemplates.length ? `<button class="button secondary small" data-action="task-templates">${icon('plus')} ${t('Add from the Global list')}</button>` : '';
+  return `<div class="task-toolbar">${tabs}<span class="task-size">${esc(t('{n} of {limit} tasks in this list', { n: shown, limit: taskLimit }))}</span>${global}</div>`;
+}
 function tasksView() {
   renderedTasks = tasksSignature(); const now = Date.now() + serverOffset;
   const local = new Date(nextReset('daily', now, resets)).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
-  keepingDrafts(() => shell(`<main class="dashboard tasks-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('EVERY RESET, READY')}</div><h1>${t('Daily & weekly')}<span class="mint">.</span></h1><p>${esc(t('Your own checklist, saved to your account. Tasks uncheck themselves at the daily reset, {hour}:00 UTC ({local} your time), and at the weekly reset on {day}.', { hour: String(resetHour(resets)).padStart(2, '0'), local, day: t(dayName(resets)) }))}</p></div><span class="refresh-label"><i></i>${t('Private to you')}</span></section><div class="task-grid">${taskPanel('daily', now)}${taskPanel('weekly', now)}</div></main>`, 'tasks'));
+  keepingDrafts(() => shell(`<main class="dashboard tasks-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('EVERY RESET, READY')}</div><h1>${t('Daily & weekly')}<span class="mint">.</span></h1><p>${esc(t('Your own checklist, saved to your account. Tasks uncheck themselves at the daily reset, {hour}:00 UTC ({local} your time), and at the weekly reset on {day}.', { hour: String(resetHour(resets)).padStart(2, '0'), local, day: t(dayName(resets)) }))}</p></div><span class="refresh-label"><i></i>${t('Private to you')}</span></section>${taskScopes(now)}<div class="task-grid">${taskPanel('daily', now)}${taskPanel('weekly', now)}</div></main>`, 'tasks'));
 }
 function updateResets() { const now = Date.now() + serverOffset; document.querySelectorAll('[data-reset]').forEach(el => { el.textContent = remaining(nextReset(el.dataset.reset, now, resets) - now); }); }
 function renderTasks() { if (tasksSignature() === renderedTasks) { updateAges(); updateResets(); } else tasksView(); }
-function applyTasks(data) { tasks = data.tasks || []; if (data.resets) resets = data.resets; }
+function applyTasks(data) {
+  tasks = data.tasks || []; if (data.resets) resets = data.resets;
+  if (Array.isArray(data.characters)) taskCharacters = data.characters;
+  if (Array.isArray(data.templates)) taskTemplates = data.templates;
+  if (data.limit) taskLimit = data.limit;
+  tasksKnown = true; renderTaskBadge();
+}
+// The navigation says how many tasks are left in all lists, once the checklist was fetched.
+const taskBadge = () => { const n = tasksKnown && !demo ? left(tasks, Date.now() + serverOffset, resets) : 0; return n ? `<span class="nav-badge" aria-hidden="true">${n}</span><span class="sr-only"> (${esc(t('{n} left', { n }))})</span>` : ''; };
+function renderTaskBadge() {
+  document.querySelectorAll('[data-action="tasks"]').forEach(el => { el.querySelectorAll('.nav-badge, .nav-badge + .sr-only').forEach(x => x.remove()); el.insertAdjacentHTML('beforeend', taskBadge()); });
+}
+// Fetched once a session, for the badge, without opening the page.
+async function primeTasks() { try { applyTasks(await pb.send('/api/odyle/tasks', { requestKey: 'prime-tasks' })); } catch { /* the badge waits */ } }
 async function refreshTasks() {
   const data = await pb.send('/api/odyle/tasks');
   if (shown !== '/tasks') return; // navigated elsewhere while loading
@@ -680,6 +703,7 @@ async function watchOwnTopic() {
       if (connects++ > 0 && !later()) refreshPage().then(renderPage, () => { online = false; renderConnection(); });
     });
     ownTopic = await pb.realtime.subscribe('odyle.user.' + id, data => ownNews(data));
+    primeTasks();
     if (pb.realtime.isConnected) live = true;
   } catch { ownTopicUser = ''; live = false; }
 }
@@ -702,7 +726,7 @@ async function ownNews(data) {
     // On My rooms & characters, a character saved meanwhile (by the reader) is offered to the rooms
     // that do not show it yet, after fetching again: rooms that share new characters have it now.
     const known = new Set(characters.map(c => c.id)), offer = async () => { if (library && known.size + rooms.length) for (const c of characters.filter(c => !known.has(c.id) && c.characterName)) await newCharacterPrompt(c); };
-    if (data.refresh) { if (!room && !later()) { await refreshPage(); await offer(); } }
+    if (data.refresh) { if (shown !== '/tasks') primeTasks(); if (!room && !later()) { await refreshPage(); await offer(); } }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) { await refreshPage(); await offer(); }
     if (data.seen) applySeen(data.seen, characters);
     // Cap alerts of the account's characters (the job checked the quiet hours).
@@ -962,7 +986,13 @@ app.addEventListener('submit', async e => {
       const result = await send('profile', { displayName: data.displayName });
       pb.authStore.save(pb.authStore.token, result.record); account.account.displayName = result.record.displayName; accountRender(); toast(t('Display name saved.'));
     }
-    else if (form.id.startsWith('task-form-')) { applyTasks(await send('task', { title: data.title, cadence: form.id.slice(10) })); form.reset(); tasksView(); }
+    else if (form.id.startsWith('task-form-')) { const scope = taskScope(); applyTasks(await send('task', { title: data.title, cadence: form.id.slice(10), ...(scope ? { characterId: scope } : {}) })); form.reset(); tasksView(); }
+    else if (form.id === 'task-templates-form') {
+      const titles = [...form.querySelectorAll('input[name="template"]:checked:not(:disabled)')].map(input => input.value), scope = taskScope();
+      if (!titles.length) { formError(form, t('Choose tasks from the Global list.')); return; }
+      applyTasks(await send('task', { templates: titles, ...(scope ? { characterId: scope } : {}) })); closeModal(); tasksView();
+      toast(tn(titles.length, '{n} task added.', '{n} tasks added.'));
+    }
   } catch (error) { if (error?.status === 401 && pb.authStore.token) expired(); else if (form.isConnected) formError(form, t(error?.message || 'Request could not be completed.')); else failed(error); }
   finally { busy = false; if (button.isConnected) button.disabled = false; }
 });
@@ -1003,6 +1033,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.confirmForgetDevice) { await send('forget-device', { deviceId: el.dataset.confirmForgetDevice }); closeModal(); await refreshAccount(); accountRender(); return toast(t('The PC was unpaired.')); }
     if (el.dataset.deleteCharacter) return ask(esc(t('Delete {name}?', { name: el.dataset.name })), t('Its saved Odyle, history and portrait are deleted and every room stops listing it. If the Windows app sees it in game again, it saves it as a new character.'), t('Delete character'), { 'confirm-delete-character': el.dataset.deleteCharacter });
     if (el.dataset.confirmDeleteCharacter) { await send('delete-character', { characterId: el.dataset.confirmDeleteCharacter }); closeModal(); toast(t('Character deleted.')); return await show(true); }
+    if (el.dataset.taskScope !== undefined) { try { storage.setItem(taskScopeKey, el.dataset.taskScope); } catch { /* storage blocked */ } editingTask = ''; tasksView(); return document.querySelector(`[data-task-scope="${el.dataset.taskScope}"]`)?.focus(); }
     if (el.dataset.editTask) { editingTask = el.dataset.editTask; tasksView(); return document.querySelector('#task-edit-form input')?.select(); }
     if (el.dataset.moveTask) { el.disabled = true; applyTasks(await send('task', { id: el.dataset.moveTask, move: el.dataset.move })); tasksView(); return document.querySelector(`[data-move-task="${el.dataset.moveTask}"][data-move="${el.dataset.move}"]:not(:disabled)`)?.focus(); }
     if (el.dataset.removeTask) return ask(esc(t('Remove {task}?', { task: el.dataset.name })), t('It leaves your checklist for good. You can add it again at any time.'), t('Remove task'), { 'confirm-remove-task': el.dataset.removeTask });
@@ -1075,6 +1106,7 @@ app.addEventListener('click', async e => {
       case 'discord': await discordLogin(); break;
       case 'retry': await authenticated(); break;
       case 'cancel-task-edit': editingTask = ''; tasksView(); break;
+      case 'task-templates': { const scope = taskScope(), name = scopes(taskCharacters).find(s => s.id === scope)?.name || t('Account'); modal(esc(t('Add to {list}', { list: name })), `<p>${t('Tasks of the game the server keeps for everyone. Each is added once; you can rename or remove it later.')}</p>${templatesForm(taskTemplates, tasks, scope)}`); break; }
       case 'discord-off': ask(t('Stop Discord reminders?'), t('Planned runs are no longer posted to your Discord channel. Odyle forgets the webhook URL; to turn reminders on again, paste one from Discord.'), t('Stop reminders'), { action: 'confirm-discord-off' }); break;
       case 'confirm-discord-off': { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: '' }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are off.')); break; }
       case 'open-elsewhere': signInElsewhere(embedded() ? 'app' : ''); break;

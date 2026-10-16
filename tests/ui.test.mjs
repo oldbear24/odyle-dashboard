@@ -806,6 +806,47 @@ test('the daily and weekly checklist adds, ticks, renames, orders and removes ta
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('each character keeps its own checklist, filled from the Global list, and the navigation says what is left (#38)', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, user = await account('Alt keeper');
+  const session = (await request('/api/odyle/session', {}, user)).data;
+  await request('/api/odyle/report', { sessionId: session.sessionId, characterName: 'Altie', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, sequence: 1, value: 10 }, user);
+  assert.equal((await request('/api/odyle/admin/settings', { taskTemplates: [{ title: 'Nightmare', cadence: 'weekly' }, { title: 'Daily dungeon', cadence: 'daily' }] }, operator)).status, 200);
+  const { page, errors, close } = await open(user, '#/tasks');
+  try {
+    await page.getByRole('heading', { name: 'Daily & weekly.' }).waitFor();
+    // The account's list first; a task added there stays there.
+    assert.equal(await page.locator('[data-task-scope=""]').getAttribute('aria-pressed'), 'true');
+    await page.locator('#task-form-daily [name=title]').fill('Arena'); await page.locator('#task-form-daily [type=submit]').click();
+    await page.locator('.task-panel .task-row', { hasText: 'Arena' }).waitFor();
+    // The character's list: empty, filled from the Global list in one go.
+    await page.locator('.task-scopes button', { hasText: 'Altie' }).click();
+    await page.waitForFunction(() => document.querySelector('.task-scopes [aria-pressed="true"]')?.textContent.startsWith('Altie'));
+    assert.equal(await page.locator('.task-panel .task-row').count(), 0);
+    assert.match(await page.locator('.task-size').innerText(), /^0 of 40 tasks in this list$/);
+    await page.locator('[data-action="task-templates"]').click();
+    assert.match(await page.locator('#modal h2, #modal h3, #modal-title').first().innerText(), /Add to Altie/);
+    await page.locator('#task-templates-form [type=submit]').click();
+    assert.match(await page.locator('#task-templates-form .form-error[role=alert]').innerText(), /Choose tasks from the Global list\./);
+    for (const title of ['Nightmare', 'Daily dungeon']) await page.locator('#task-templates-form .check-row', { hasText: title }).locator('input').check();
+    await page.locator('#task-templates-form [type=submit]').click();
+    await toast(page).filter({ hasText: '2 tasks added.' }).waitFor();
+    assert.deepEqual(await page.locator('.task-panel .task-text strong').allInnerTexts(), ['Daily dungeon', 'Nightmare']);
+    // What is left: per list on its button, in all lists on the navigation.
+    assert.match(await page.locator('.task-scopes button', { hasText: 'Account' }).innerText(), /1 left/);
+    assert.match(await page.locator('.task-scopes button', { hasText: 'Altie' }).innerText(), /2 left/);
+    assert.equal(await page.locator('.sidebar [data-action="tasks"] .nav-badge').innerText(), '3');
+    await page.locator('.task-panel .task-main', { hasText: 'Nightmare' }).click();
+    await page.waitForFunction(() => document.querySelector('.sidebar [data-action="tasks"] .nav-badge')?.textContent === '2');
+    await shot(page, 'tasks-character');
+    // Added again: the list keeps one of each.
+    await page.locator('[data-action="task-templates"]').click();
+    assert.equal(await page.locator('#task-templates-form input:checked:disabled').count(), 2);
+    await page.keyboard.press('Escape');
+    const saved = (await request('/api/odyle/tasks', undefined, user, 'GET')).data.tasks.map(t => [t.title, t.characterName]);
+    assert.deepEqual(saved.sort(), [['Arena', ''], ['Daily dungeon', 'Altie'], ['Nightmare', 'Altie']]);
+    assert.deepEqual(errors, []);
+  } finally { await close(); await request('/api/odyle/admin/settings', { taskTemplates: [] }, operator); }
+});
 
 test('the account page lists paired PCs, removes one and signs out everywhere', async () => {
   const user = await account('PC owner');

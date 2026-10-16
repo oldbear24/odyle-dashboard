@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.15.0 · 2026-10-17
+
+### New
+- **A checklist per character**: Daily & weekly keeps a list for your account and one for each of your characters, so alts track their own dailies and weeklies. Each list holds up to 40 tasks.
+- **Add from the Global list**: the server's operators keep a list of the game's daily and weekly tasks, and you add the ones you want to a list in one go.
+- The navigation shows how many tasks are left, and each list says how many it has left.
+
 ## 0.14.0 · 2026-10-17
 
 ### New

@@ -608,7 +608,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog', 'clock'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog', 'clock', 'taskTemplates'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
@@ -640,6 +640,17 @@ export function settingsPage() {
     Object.assign(paste, { open: false, text: '' });
   }
   const cell = (className, ...content) => t.td({ className }, t.div({ className: 'field' }, ...content));
+  // The Global task list (#38): daily and weekly tasks players add to their checklists in one go.
+  const templates = () => state.form.taskTemplates || (state.form.taskTemplates = []);
+  function addTemplate() {
+    templates().push({ title: '', cadence: 'daily' });
+    const at = templates().length - 1;
+    setTimeout(() => document.getElementById('odyle-template-' + at + '-title')?.focus());
+  }
+  const templateRow = (task, i) => t.tr({ className: 'rate-limit-row' },
+    cell('col-label', t.input({ id: 'odyle-template-' + i + '-title', type: 'text', required: true, maxLength: 60, placeholder: 'Task', ariaLabel: 'Task', value: () => task.title, oninput: e => task.title = e.target.value })),
+    cell('odyle-col-cadence', t.select({ id: 'odyle-template-' + i + '-cadence', ariaLabel: 'Cadence', onchange: e => task.cadence = e.target.value }, ['daily', 'weekly'].map(c => t.option({ value: c, selected: () => task.cadence === c }, capital(c))))),
+    t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (task.title.trim() || 'this task'), onclick: () => templates().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
   const dungeonRow = (d, i) => t.tr({ className: 'rate-limit-row' },
     cell('col-label', t.input({ id: 'odyle-dungeon-' + i + '-name', type: 'text', required: true, maxLength: 60, placeholder: 'Dungeon name', ariaLabel: 'Dungeon name', value: () => d.name, oninput: e => d.name = e.target.value })),
     cell('odyle-col-cost', t.input({ id: 'odyle-dungeon-' + i + '-cost', type: 'number', min: 0, max: 1000, step: 1, ariaLabel: 'Odyle per cube', placeholder: () => 'Default ' + (state.form.odylePerCube ?? ''), value: () => d.cost || '', oninput: e => d.cost = integer(e.target.value) ?? 0 })),
@@ -672,6 +683,13 @@ export function settingsPage() {
           t.div({ className: 'field' }, t.label({ htmlFor: 'odyle-dungeons' }, 'One dungeon per line'), t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'Krao Cave | 20 | 5 | Exploration | unconfirmed', value: () => paste.text, oninput: e => paste.text = e.target.value })),
           t.div({ className: 'field-help' }, 'Name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and columns copied from a spreadsheet work too. A dungeon already in the table takes the values of its line. docs/deployment.md suggests a list for Global.'),
           t.button({ type: 'button', className: 'btn sm m-t-sm', disabled: () => !lines(paste.text).length, onclick: addLines }, t.span({ className: 'txt' }, 'Add to the catalog'))) : null),
+      section('Global task list', 'Daily and weekly tasks of the game that players add to their checklists in one go, for their account or one of their characters. Players can still add their own.'),
+      t.div({ className: 'col-lg-12' },
+        t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-templates' },
+          t.thead({ hidden: () => !templates().length }, t.tr(null, t.th({ className: 'col-label' }, 'Task'), t.th(null, 'Cadence'), t.th({ className: 'col-action' }))),
+          t.tbody(null, () => templates().map(templateRow),
+            t.tr({ className: 'rate-limit-row' }, t.td({ colSpan: 99, className: 'col-new-btn' }, t.button({ type: 'button', className: 'btn secondary sm full-width', disabled: () => templates().length >= 100, onclick: addTemplate }, t.i({ className: 'ri-add-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Add task'))))))),
+        t.div({ className: 'field-help' }, () => templates().length ? number(templates().length) + (templates().length === 1 ? ' task' : ' tasks') + ' on the Global list. It applies to tasks added from now on; tasks players added stay as they are.' : 'Empty: players add their own tasks only. Up to 100 tasks, each title once.')),
       section('Odyle clock', 'The natural pool regenerates at fixed UTC hours up to a cap. Dashboards and the Windows app show from these rules when the next tick comes, when the pool is full and an estimate for characters not read right now; they never store it. Each character\'s own readings refine it: the size of its last regeneration tick, and the cap its fullest natural pool of the last 30 days fits under.'),
       field('odyle-clock-hours', 'Regeneration hours (UTC)', t.input({ id: 'odyle-clock-hours', type: 'text', required: true, value: () => listed(clock().tickHours), onchange: e => state.form.clock = { ...clock(), tickHours: numbers(e.target.value) } }),
         () => (clock().tickHours || []).length ? 'Ticks at ' + clock().tickHours.map(h => String(h).padStart(2, '0') + ':00').join(', ') + ' UTC; the first is ' + localHour(clock().tickHours[0]) + ' in your time zone.' : 'Whole UTC hours, separated by commas.'),
