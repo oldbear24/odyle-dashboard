@@ -19,6 +19,7 @@ import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, o
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder } from './partyview.js';
 import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
+import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, waiting } from './armory.js';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -77,10 +78,10 @@ function announced(data) { if (data && 'announcement' in data) { announcementAt 
 function showAnnouncement(next) { if (JSON.stringify(next) !== JSON.stringify(announcement)) { announcement = next; renderAnnouncement(); } }
 // The topbar's connection state follows every refresh, not only full redraws.
 function renderConnection() { const el = document.querySelector('.topbar .connection'); if (!el) return; el.classList.toggle('connected', online || demo); el.innerHTML = connectionLabel(); }
-function shell(content, active = 'overview') {
+function shell(content, active = 'overview', crumb = '') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent;
-  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ ${esc(__APP_VERSION__)} · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
+  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ ${esc(__APP_VERSION__)} · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -93,7 +94,7 @@ const scopeText = () => t("Odyle is an unofficial fan project, not affiliated wi
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 // The welcome page; an invite link (code) adds its card, filled in from the preview.
 function welcome(code = '') {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p>${scopeNote()}</main>`);
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p>${scopeNote()}</main>`);
   if (code && !previewed(code)) previewInvite(code);
 }
 // What the invite link on screen opens (invites.js inviteLanding), asked once per code:
@@ -290,6 +291,48 @@ async function refreshTasks() {
   applyTasks(data); if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
 }
 function clearRoom() { room = null; members = []; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; }
+// The armory (armory.js): public, signed in or not. The servers come from the backend once;
+// the region and server last searched are kept per browser. A profile still waiting for
+// PLAYNC asks again when the backend says to, while it stays on screen.
+let armoryServers = null, armoryAnswer = null, armoryResults = null, armoryChosen = null, armoryTimer = 0;
+const armoryKey = 'odyle.armory';
+function armoryChoice() { try { return JSON.parse(storage.getItem(armoryKey)) || {}; } catch { return {}; } }
+const armoryRefreshable = () => armoryAnswer?.state === 'fresh' && armoryAnswer.fetchedAt && Date.now() + serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
+function armoryRender(searching = false) {
+  const chosen = armoryChosen || armoryChoice();
+  shell(armoryAnswer ? armoryProfile(armoryAnswer, Date.now() + serverOffset, armoryRefreshable()) : armorySearch(armoryServers || [], chosen, armoryResults, searching), 'armory', armoryAnswer?.profile?.name || t('Armory'));
+}
+async function armoryPage(path, ticket, refresh = false) {
+  clearTimeout(armoryTimer);
+  if (!armoryServers) armoryServers = (await pb.send('/api/odyle/armory/servers')).regions;
+  if (ticket !== navigation) return;
+  const target = armoryTarget(path);
+  if (target.profile) {
+    const { region, serverId, characterId } = target.profile;
+    let answer;
+    try { answer = await pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`, refresh ? { query: { refresh: 1 } } : {}); }
+    catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryAnswer = armoryResults = null; armoryRender(); return toast(t(error.message)); }
+    if (ticket !== navigation) return;
+    online = true; armoryAnswer = answer; armoryRender();
+    if (waiting(answer) || answer.state === 'failed') armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, answer.retryAfter || 5) * 1000);
+    return;
+  }
+  armoryAnswer = armoryResults = null;
+  if (!target.find) { armoryChosen = null; return armoryRender(); }
+  const { region, server, name } = target.find;
+  armoryChosen = target.find;
+  try { storage.setItem(armoryKey, JSON.stringify({ region, server })); } catch { /* storage full or blocked */ }
+  armoryRender(true);
+  let results;
+  try { results = (await pb.send('/api/odyle/armory/search', { query: { name, server, region } })).results; }
+  catch (error) { if (ticket !== navigation) return; armoryRender(); throw error; }
+  if (ticket !== navigation) return;
+  online = true;
+  // Exactly one character of that very name: its profile, in place of the search.
+  const exact = results.filter(hit => hit.name.toLowerCase() === name.toLowerCase());
+  if (exact.length === 1) return go(profilePath(exact[0]), true);
+  armoryResults = results; armoryRender();
+}
 async function tasksPage(ticket) {
   await leaveRoomTopic(); clearRoom(); editingTask = '';
   await refreshTasks(); if (ticket !== navigation) return; tasksView();
@@ -330,8 +373,9 @@ function card(c, index, counted = null) {
   const action = self && room && c.id ? `<button class="remove" data-share="${esc(c.id)}" data-enabled="false" data-name="${esc(c.characterName)}" ${c.role === 'viewer' ? 'disabled' : ''} title="${esc(t('Hide {name} from this room. Its saved values stay on your account.', { name: c.characterName }))}">${t('Remove from room')}</button>`
     : self && !room ? `<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}`
       : owner() && c.membershipId && c.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(c.membershipId)}" data-name="${esc(c.displayName)}">${t('Remove member')}</button>` : '';
+  const armory = !demo && c.characterName && /^[A-Za-z]{2,20}$/.test(c.server || '') && /^GLOBAL_(NA|EU|SA|ASIA)$/.test(c.region || '') ? `<a class="card-link" href="#${esc(findPath(c.region, c.server, c.characterName))}" title="${esc(t('Gear and stats of {name} on PLAYNC', { name: c.characterName }))}">${t('Armory')}</a>` : '';
   const source = demo ? t('Sample') : c.source === 'packet' ? t('Packet') : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
-  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div>${counted?.has(c.id) ? `<div class="counts-for">${icon('diamond')} ${esc(t('Counts for {name}', { name: c.displayName }))}</div>` : ''}${room && c.characterName && !fresh ? `<div class="status-why">${esc(statusReason(c, now))}</div>` : ''}<div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}${known && clockOf(c, now, clockRules) ? `<div class="energy-clock">${esc(clockLine(clockOf(c, now, clockRules), now, fresh))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
+  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div>${counted?.has(c.id) ? `<div class="counts-for">${icon('diamond')} ${esc(t('Counts for {name}', { name: c.displayName }))}</div>` : ''}${room && c.characterName && !fresh ? `<div class="status-why">${esc(statusReason(c, now))}</div>` : ''}<div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}${known && clockOf(c, now, clockRules) ? `<div class="energy-clock">${esc(clockLine(clockOf(c, now, clockRules), now, fresh))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${armory}${history}${action}</span></div></article>`;
 }
 let toastTimer;
 function toast(message) { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 6000); }
@@ -630,6 +674,7 @@ async function refreshPage() {
   if (room) await refreshRoom();
   else if (shown === '/tasks') await refreshTasks();
   else if (shown === '/account') await refreshAccount();
+  else if (shown?.startsWith('/armory')) await pb.health.check(); // the armory asks for its own lookups
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
     if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
@@ -648,6 +693,7 @@ function renderPage() {
 // Redraws the current page, for example after the language changed.
 function rerender() {
   if (demo) return demoSession();
+  if (shown?.startsWith('/armory')) return armoryRender();
   if (room) return dashboard();
   if (shown === '/tasks') return tasksView();
   if (shown === '/account' && account) return accountRender();
@@ -664,12 +710,14 @@ const memoryKey = 'odyle.location';
 function remembered() { try { return JSON.parse(storage.getItem(memoryKey)) || {}; } catch { return {}; } }
 function remember(path) { try { storage.setItem(memoryKey, JSON.stringify({ path, room: path.startsWith('/room/') ? path.slice(6) : remembered().room })); } catch { /* storage full or blocked */ } }
 function forget(id) { try { if (!id) storage.removeItem(memoryKey); else if (remembered().room === id) storage.setItem(memoryKey, JSON.stringify({ path: '/' })); } catch { /* storage blocked */ } }
-function currentPath() { const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account)?)$/); return match ? match[1] : '/'; }
+function currentPath() { const armory = location.hash.slice(1); if (armoryRoute.test(armory)) return armory; const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account)?)$/); return match ? match[1] : '/'; }
 async function show(force = false) {
   const path = currentPath();
   if (path === shown && !force) return;
   shown = path; const ticket = ++navigation;
   if (path === '/demo') { await leaveRoomTopic(); return demoSession(); }
+  if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
+  clearTimeout(armoryTimer);
   const code = joinCode(path);
   if (!pb.authStore.isValid) { await leaveRoomTopic(); clearRoom(); return welcome(code); }
   if (code) {
@@ -808,6 +856,7 @@ app.addEventListener('submit', async e => {
   const form = e.target, data = Object.fromEntries(new FormData(form)), button = form.querySelector('[type="submit"]'); button.disabled = true; form.querySelector('.form-error')?.remove();
   try {
     if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites, Date.now() + serverOffset); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
+    else if (form.id === 'armory-form') await go(findPath(data.region, data.server, data.name.trim()));
     else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); toast(joinedMessage(result)); await go('/room/' + result.room.id); }
     else if (form.id === 'invite-form') {
       const result = await send('invite-create', { roomId: room.id, role: data.role, expiresIn: Number(data.expiresIn), maxUses: Number(data.maxUses), label: data.label });
@@ -961,6 +1010,8 @@ app.addEventListener('click', async e => {
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
       case 'tasks': await go('/tasks'); break;
+      case 'armory': closeModal(); await go('/armory'); break;
+      case 'armory-refresh': await armoryPage(shown, navigation, true); break;
       case 'account': if (!pb.authStore.isValid || demo) await go('/'); else await go('/account'); break;
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;
@@ -983,7 +1034,7 @@ app.addEventListener('click', async e => {
         t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
         scopeText(),
       ].map(p => `<p>${p}</p>`).join('')); break;
-      case 'session': if (!pb.authStore.isValid || demo) await go('/'); else modal(t('Your Discord account'), `<p>${esc(pb.authStore.record.displayName)} · ${t('Rooms and characters remain saved after sign-out.')}</p><div class="modal-actions"><button class="button secondary" data-action="account">${t('Account & data')}</button><button class="button secondary" data-action="library">${t('My rooms & characters')}</button><button class="button secondary" data-action="tasks">${t('Daily & weekly tasks')}</button><button class="button secondary" data-action="desktop">${t('Pair Windows app')}</button></div><button class="text-button" data-action="logout">${t('Sign out of this browser')}</button>`); break;
+      case 'session': if (!pb.authStore.isValid || demo) await go('/'); else modal(t('Your Discord account'), `<p>${esc(pb.authStore.record.displayName)} · ${t('Rooms and characters remain saved after sign-out.')}</p><div class="modal-actions"><button class="button secondary" data-action="account">${t('Account & data')}</button><button class="button secondary" data-action="library">${t('My rooms & characters')}</button><button class="button secondary" data-action="tasks">${t('Daily & weekly tasks')}</button><button class="button secondary" data-action="armory">${t('Armory')}</button><button class="button secondary" data-action="desktop">${t('Pair Windows app')}</button></div><button class="text-button" data-action="logout">${t('Sign out of this browser')}</button>`); break;
       case 'leave-room': ask(esc(t('Leave {room}?', { room: room.name })), t('You lose access to this room, your wishlist entries and your place on planned runs. Your characters stay on your account; you need a new invite to come back.'), t('Leave room'), { action: 'confirm-leave' }); break;
       case 'close-room': ask(esc(t('Close {room}?', { room: room.name })), t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.'), t('Close room for everyone'), { action: 'confirm-close' }); break;
       case 'confirm-leave': case 'confirm-close': { const id = room.id, closing = el.dataset.action === 'confirm-close'; await send(closing ? 'close' : 'leave', { roomId: id }); closeModal(); forget(id); if (closing) forgetInvites(storage, id); await go('/'); toast(closing ? t('Room closed. Your saved characters are retained.') : t('You left the room. Your saved characters are retained.')); break; }

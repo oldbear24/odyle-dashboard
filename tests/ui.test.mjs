@@ -16,25 +16,40 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18091';
-let child, directory, browser, discord, discordUrl, discordPosts = 0;
+let child, directory, browser, discord, discordUrl, discordPosts = 0, plaync, playncUrl;
 const shots = process.env.ODYLE_UI_SHOTS;
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   return { status: res.status, data: await res.json() };
 }
 const account = async name => (await request('/__test__/account', { name })).data;
+// The PLAYNC stand-in's characters: id, name as the search lists it, level.
+const armorer = ['QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>', 45], armorerAlt = ['QXJtb3Jlcnhfa2QwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>x', 12];
 before(async () => {
   assert.ok(existsSync(resolve('dist/index.html')), 'Build the dashboard first: npm run build');
   // Stands in for Discord's webhook API.
   discord = createServer((req, res) => { discordPosts++; req.resume(); req.on('end', () => { res.writeHead(204); res.end(); }); });
   await new Promise(r => discord.listen(0, '127.0.0.1', r)); discordUrl = 'http://127.0.0.1:' + discord.address().port;
+  // Stands in for PLAYNC: the character search lists two characters for "Armorer" (and
+  // nobody else, so other characters get no portrait), with their official pages.
+  plaync = createServer((req, res) => {
+    const at = new URL(req.url, 'http://plaync'), q = at.searchParams, json = body => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    if (at.pathname === '/search') return json({ list: /^armorer$/i.test(q.get('keyword')) ? [armorer, armorerAlt].map(([characterId, name, level]) => ({ characterId: encodeURIComponent(characterId), name, level, race: 2, serverId: Number(q.get('serverId')), region: q.get('region') })) : [] });
+    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', raceName: 'Asmodians', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique' },
+      stat: { statList: [{ type: 'STR', name: 'Might', value: 45 }, { type: 'WIS', name: 'Willpower', value: 8 }, { type: 'Justice', name: 'Justice [Nezekan]', value: 41 }, { type: 'ItemLevel', name: 'ItemLevel', value: 1671 }] },
+      daevanion: { boardList: [{ name: 'Nezekan', openNodeCount: 12, totalNodeCount: 40 }] } });
+    if (at.pathname === '/api/character/equipment') return json({ equipment: { equipmentList: [{ slotPos: 5, slotPosName: 'Torso', name: 'Vakron Breastplate', grade: 'Unique', enchantLevel: 10, exceedLevel: 0 }, { slotPos: 1, slotPosName: 'MainHand', name: 'Enraged Kromede Rod', grade: 'Unique', enchantLevel: 15, exceedLevel: 3 }] },
+      petwing: { pet: { name: 'Pagati', level: 3 }, wing: { name: 'Forest Spirit Wings', grade: 'Unique', enchantLevel: 0 } } });
+    res.writeHead(404); res.end();
+  });
+  await new Promise(r => plaync.listen(0, '127.0.0.1', r)); playncUrl = 'http://127.0.0.1:' + plaync.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-ui-test-'));
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
   for (let i = 0; i < 50 && !(await fetch(url + '/api/health').then(r => r.ok, () => false)); i++) await delay(100);
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
   if (shots) await mkdir(shots, { recursive: true });
 });
-after(async () => { await browser?.close(); discord?.close(); if (child && child.exitCode === null) { const closed = new Promise(r => child.once('exit', r)); child.kill(); await closed; } if (directory) await rm(directory, { recursive: true, force: true }); });
+after(async () => { await browser?.close(); discord?.close(); plaync?.close(); if (child && child.exitCode === null) { const closed = new Promise(r => child.once('exit', r)); child.kill(); await closed; } if (directory) await rm(directory, { recursive: true, force: true }); });
 // A browser tab signed in as `auth` (or signed out), in the given language, failing on page errors.
 async function open(auth, path = '#/', language = 'en') {
   const context = await browser.newContext({ viewport: { width: Number(process.env.ODYLE_UI_WIDTH) || 1280, height: 900 }, acceptDownloads: true, locale: language === 'cs' ? 'cs-CZ' : 'en-GB' });
@@ -488,6 +503,52 @@ test('a started run is planned again next week, then marked done, which clears t
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('the armory looks a character up for anyone, waits for PLAYNC and opens from character cards', async () => {
+  const { page, errors, close } = await open(null, '#/');
+  try {
+    await page.locator('.welcome [data-action="armory"]').click();
+    await page.getByRole('heading', { name: 'Look up a character' }).waitFor();
+    await page.locator('#armory-form select[name="region"]').selectOption('GLOBAL_EU');
+    await page.locator('#armory-form select[name="server"]').selectOption('Lumiel');
+    await page.locator('#armory-form input[name="name"]').fill('Armorer');
+    await page.locator('#armory-form [type="submit"]').click();
+    // The one character of that very name opens. Nobody looked it up before, so the page
+    // waits for PLAYNC and fills in by itself.
+    await page.waitForURL(/#\/armory\/eu\/2304\/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor({ timeout: 15000 });
+    assert.match(await page.locator('.armory-power').innerText(), /107,458[\s\S]*1,671/);
+    assert.equal(await page.locator('.armory-item').count(), 4);
+    assert.match(await page.locator('.armory-item').first().innerText(), /Main hand\s+Enraged Kromede Rod\s+Unique · \+15 · exceed 3/i);
+    assert.match(await page.locator('.armory-item').last().innerText(), /Pet\s+Pagati/i);
+    assert.match(await page.locator('.armory-stats').first().innerText(), /Might\s+45/);
+    assert.match(await page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+s ago$/);
+    await shot(page, 'armory-profile');
+    // Back to the search, which keeps the region and server; a name PLAYNC does not list.
+    await page.locator('.armory-back').click();
+    assert.equal(await page.locator('#armory-form select[name="server"]').inputValue(), 'Lumiel');
+    await page.locator('#armory-form input[name="name"]').fill('Nobody');
+    await page.locator('#armory-form [type="submit"]').click();
+    await page.locator('.armory-empty', { hasText: 'PLAYNC lists no character of that name on this server.' }).waitFor();
+    await shot(page, 'armory-search');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+  // A character card links its armory search, which opens the kept profile at once.
+  const player = await account('Armory player');
+  const created = (await request('/api/odyle/create', { name: 'Armory room' }, player)).data;
+  const session = (await request('/api/odyle/session', {}, player)).data;
+  const c = (await request('/api/odyle/report', { sessionId: session.sessionId, characterName: 'Armorer', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, sequence: 1, value: 120 }, player)).data.character;
+  assert.equal((await request('/api/odyle/sharing', { roomId: created.room.id, characterId: c.id, enabled: true }, player)).status, 200);
+  const room = await open(player, '#/room/' + created.room.id);
+  try {
+    await room.page.locator('.member-card', { hasText: 'Armorer' }).waitFor();
+    await shot(room.page, 'armory-card');
+    await room.page.locator('.member-card', { hasText: 'Armorer' }).locator('a.card-link', { hasText: 'Armory' }).click();
+    await room.page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
+    assert.match(await room.page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+[sm] ago$/);
+    assert.deepEqual(room.errors, []);
+  } finally { await room.close(); }
+});
+
 test('a changed announcement shows on an open page at once, without asking the server', async () => {
   const operator = (await request('/__test__/superuser', {})).data, viewer = await account('News viewer');
   const { page, errors, close } = await open(viewer, '#/tasks');
