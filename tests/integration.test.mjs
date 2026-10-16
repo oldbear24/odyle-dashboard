@@ -171,7 +171,7 @@ test('Web Push sends a test, run reminders and cap alerts that only the browser 
     assert.equal((await request('/api/odyle/push-test', {}, user)).status, 400); assert.equal(service.received.length, count);
     // Push services other than the known ones are refused.
     assert.equal((await request('/api/odyle/push-subscribe', { endpoint: 'https://10.0.0.1/push', keys: service.keys }, user)).status, 400);
-  } finally { service.server.close(); }
+  } finally { service.close(); }
 });
 test('catalog upgrade turns saved dungeon names into entries that cost Odyle per cube', async () => {
   const operator = (await request('/__test__/superuser', {})).data, settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');

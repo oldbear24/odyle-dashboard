@@ -40,6 +40,7 @@ jobs:
       - run: dotnet build odyle-windows/tests/Odyle.Core.Checks -c Release
       - run: dotnet build odyle-windows/tests/Odyle.Reader.Checks -c Release
       - run: npm run test:integration
+        timeout-minutes: 15
         env:
           ODYLE_WINDOWS_CHECKS: odyle-windows/tests/Odyle.Core.Checks
           ODYLE_WINDOWS_UI_CHECKS: odyle-windows/tests/Odyle.Reader.Checks

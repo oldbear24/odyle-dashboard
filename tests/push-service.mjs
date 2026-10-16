@@ -24,6 +24,9 @@ export async function pushService() {
     req.on('end', () => { service.received.push({ headers: req.headers, message: decrypt(Buffer.concat(chunks)) }); res.writeHead(service.status); res.end(); });
   });
   await new Promise(done => service.server.listen(0, '127.0.0.1', done));
+  // Never what keeps a test process running, even when a test fails before closing it.
+  service.server.unref();
+  service.close = () => { service.server.closeAllConnections(); service.server.close(); };
   service.endpoint = 'http://127.0.0.1:' + service.server.address().port + '/push/' + randomBytes(6).toString('hex');
   service.keys = { p256dh: service.publicKey.toString('base64url'), auth: service.secret.toString('base64url') };
   return service;
