@@ -81,10 +81,12 @@ Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:
 
 | Body | Who | Effect |
 | --- | --- | --- |
-| `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room |
+| `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room still ahead (started runs do not count) |
 | `{ roomId, id, going, character? }` | owner, players | `true` joins the run, `false` leaves it. With `character` (one of the caller's own characters shared in this room, else 400) the caller brings that character; joining again changes or drops the pick and keeps the caller's place |
 | `{ roomId, id, dungeon?, startsAt?, note? }` | planner, owner | Changes the run with the same rules as planning; a dungeon that only differs in case or spacing keeps its name, an empty or blank `note` removes the note, a new `startsAt` announces the run on Discord again |
-| `{ roomId, id, remove: true }` | planner, owner | Cancels the run |
+| `{ roomId, id, remove: true }` | planner, owner; after the start also attendees | Cancels the run (after its start: it did not happen) |
+| `{ roomId, id, done: true }` | planner, attendees, owner; after the start | Wraps the run up: its attendees' wishes for that dungeon are deleted, then the run (400 before the start) |
+| `{ roomId, id, again: true, startsAt? }` | owner, players | Plans the same dungeon and note a week later with the caller going: `startsAt` (the browser sends the same local time, which keeps it across a daylight saving change) or the start plus 7 × 24 hours |
 
 The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run), and `picks` maps an attendee's account id to the character they bring, while they still go and still share it in the room (unsharing or deleting the character drops the pick):
 

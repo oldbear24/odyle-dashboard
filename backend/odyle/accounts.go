@@ -1762,6 +1762,19 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 	return out, nil
 }
 
+// runRoom refuses a new run when the room already has 20 still ahead; runs that started
+// do not count (they stay listed for three hours and are deleted after a day).
+func runRoom(app core.App, roomId string) error {
+	ahead, err := app.CountRecords("room_runs", dbx.HashExp{"room": roomId}, dbx.NewExp("startsAt >= {:now}", dbx.Params{"now": stamp(time.Now())}))
+	if err != nil {
+		return err
+	}
+	if ahead >= 20 {
+		return badRequest("A room can plan up to 20 runs at a time.")
+	}
+	return nil
+}
+
 // plannedRun is a run as rooms list it; planner and attendees are account ids, and picks
 // maps an attendee's account id to the character they bring (when they picked one).
 type plannedRun struct {
@@ -1775,7 +1788,9 @@ type plannedRun struct {
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
-// planner going, { roomId, id, going, character? } joins (with the character it brings) or leaves it, { roomId, id, dungeon?,
+// planner going, { roomId, id, going, character? } joins (with the character it brings) or leaves it,
+// { roomId, id, done: true } wraps a started run up (its attendees' wishes for the dungeon go),
+// { roomId, id, again: true, startsAt? } plans it again a week later, { roomId, id, dungeon?,
 // startsAt?, note? } changes it and { roomId, id, remove: true } cancels it (changes
 // and cancelling: its planner or the room owner). Owners and players plan and join;
 // viewers read.
@@ -1792,9 +1807,67 @@ func plan(e *core.RequestEvent) error {
 				return nil, notFound("This run is no longer planned.")
 			}
 			going, isGoing := b.boolean("going")
+			// After the start, its attendees wrap the run up too: done, or it did not happen.
+			started, attending := !timeOf(r.StartsAt()).After(time.Now()), contains(r.Attendees(), m.Id)
 			switch {
+			case b.isTrue("done"):
+				if !started {
+					return nil, badRequest("A run can be marked done once it has started.")
+				}
+				if r.PlannedBy() != m.Id && !isOwner && !attending {
+					return nil, forbidden("Only its planner, an attendee or the room owner can mark this run done.")
+				}
+				// The dungeon leaves the wishlist of everyone who went.
+				ran, err := dungeon(r.Dungeon())
+				if err != nil {
+					return nil, err
+				}
+				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": ran.key})
+				if err != nil {
+					return nil, err
+				}
+				for _, w := range wishes {
+					if contains(r.Attendees(), w.GetString("member")) {
+						if err := app.Delete(w); err != nil {
+							return nil, err
+						}
+					}
+				}
+				if err := app.Delete(r); err != nil {
+					return nil, err
+				}
+			case b.isTrue("again"):
+				if viewer {
+					return nil, forbidden("Viewers cannot plan runs.")
+				}
+				// The same dungeon, note and local time a week later (the browser sends that time,
+				// which keeps it across a daylight saving change), with the caller going.
+				next := timeOf(r.StartsAt()).Add(7 * 24 * time.Hour).UTC().Format(isoLayout)
+				if b.has("startsAt") {
+					if next, err = runStart(b["startsAt"], time.Now()); err != nil {
+						return nil, err
+					}
+				} else if next, err = runStart(next, time.Now()); err != nil {
+					return nil, err
+				}
+				if err := runRoom(app, roomId); err != nil {
+					return nil, err
+				}
+				again, err := newAs[Run](app, "room_runs")
+				if err != nil {
+					return nil, err
+				}
+				again.Set("room", roomId)
+				again.Set("plannedBy", m.Id)
+				again.SetDungeon(r.Dungeon())
+				again.SetStart(next)
+				again.SetNote(r.Note())
+				again.SetAttendees([]string{m.Id})
+				if err := app.Save(again); err != nil {
+					return nil, err
+				}
 			case b.isTrue("remove"):
-				if r.PlannedBy() != m.Id && !isOwner {
+				if r.PlannedBy() != m.Id && !isOwner && !(started && attending) {
 					return nil, forbidden("Only its planner or the room owner can cancel this run.")
 				}
 				if err := app.Delete(r); err != nil {
@@ -1886,7 +1959,7 @@ func plan(e *core.RequestEvent) error {
 					return nil, err
 				}
 			default:
-				return nil, badRequest("Send going (true or false), the changes to the run or remove: true.")
+				return nil, badRequest("Send going (true or false), the changes to the run, done, again or remove: true.")
 			}
 		} else {
 			if viewer {
@@ -1907,12 +1980,8 @@ func plan(e *core.RequestEvent) error {
 			if err != nil {
 				return nil, err
 			}
-			count, err := app.CountRecords("room_runs", dbx.HashExp{"room": roomId})
-			if err != nil {
+			if err := runRoom(app, roomId); err != nil {
 				return nil, err
-			}
-			if count >= 20 {
-				return nil, badRequest("A room can plan up to 20 runs at a time.")
 			}
 			r, err := newAs[Run](app, "room_runs")
 			if err != nil {

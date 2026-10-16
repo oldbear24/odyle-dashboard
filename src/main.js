@@ -913,7 +913,20 @@ app.addEventListener('click', async e => {
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
       return download(calendarFile(r, { room: room.name, going, now: Date.now() + serverOffset }), `odyle-${r.dungeon.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'run'}.ics`, 'text/calendar');
     }
+    if (el.dataset.cancelRun && el.dataset.missed) return ask(esc(t('{dungeon} did not happen?', { dungeon: el.dataset.name })), t('The run disappears for everyone. The wishlist stays as it is.'), t('Didn’t happen'), { 'confirm-cancel-run': el.dataset.cancelRun });
     if (el.dataset.cancelRun) return ask(esc(t('Cancel {dungeon}?', { dungeon: el.dataset.name })), t('The run disappears for everyone who planned to go.'), t('Cancel run'), { 'confirm-cancel-run': el.dataset.cancelRun });
+    if (el.dataset.runDone) {
+      const id = room.id; el.disabled = true; let result; try { result = await send('plan', { roomId: id, id: el.dataset.runDone, done: true }); } finally { el.disabled = false; }
+      changedRoom(id, () => { runs = result.runs; });
+      return toast(t('{dungeon} done: it left the wishlist of everyone who went.', { dungeon: el.dataset.name }));
+    }
+    if (el.dataset.runAgain) {
+      // The same local time a week later, also across a daylight saving change.
+      const next = new Date(timestamp(el.dataset.at)); next.setDate(next.getDate() + 7);
+      const id = room.id; el.disabled = true; let result; try { result = await send('plan', { roomId: id, id: el.dataset.runAgain, again: true, startsAt: next.toISOString() }); } finally { el.disabled = false; }
+      changedRoom(id, () => { runs = result.runs; });
+      return toast(t('{dungeon} is planned again for {when}, with you going.', { dungeon: el.dataset.name, when: next.toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }));
+    }
     if (el.dataset.confirmCancelRun) { const id = room.id, result = await send('plan', { roomId: id, id: el.dataset.confirmCancelRun, remove: true }); closeModal(); return changedRoom(id, () => { runs = result.runs; }); }
     if (el.dataset.clearWish) return ask(t('Clear from the wishlist?'), t('This takes <strong>{dungeon}</strong> off the wishlist for every member, for example after the party ran it. Anyone can add it again.', { dungeon: esc(el.dataset.clearWish) }), t('Clear for everyone'), { 'confirm-clear': el.dataset.clearWish });
     if (el.dataset.confirmClear) { const id = room.id, result = await send('wishlist', { roomId: id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); closeModal(); return changedRoom(id, () => { wishlist = result.wishlist; }); }

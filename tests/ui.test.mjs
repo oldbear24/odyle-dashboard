@@ -468,6 +468,26 @@ test('new characters reach the rooms that ask for them, and a prompt offers the 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('a started run is planned again next week, then marked done, which clears the wishlist', async () => {
+  const lead = await account('Wrap lead'), roomId = (await request('/api/odyle/create', { name: 'Wrap room' }, lead)).data.room.id;
+  await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
+  assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() - 30 * 60000).toISOString(), note: 'Weekly' }, lead)).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    const started = page.locator('.runs .wish-row', { has: page.locator('[data-run-done]') });
+    await started.waitFor();
+    assert.match(await started.innerText(), /Fire Temple[\s\S]*Done[\s\S]*Plan again next week[\s\S]*Didn’t happen/);
+    await started.locator('[data-run-again]').click();
+    await toast(page).filter({ hasText: 'Fire Temple is planned again for' }).waitFor();
+    assert.equal(await page.locator('.runs .wish-row').count(), 2);
+    assert.match(await page.locator('.runs .wish-row').nth(1).innerText(), /Weekly/);
+    await started.locator('[data-run-done]').click();
+    await toast(page).filter({ hasText: 'Fire Temple done: it left the wishlist of everyone who went.' }).waitFor();
+    await page.locator('.wishlist:not(.runs) .wish-empty').waitFor();
+    assert.equal(await page.locator('.runs .wish-row').count(), 1, 'the run next week stays');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 test('a changed announcement shows on an open page at once, without asking the server', async () => {
   const operator = (await request('/__test__/superuser', {})).data, viewer = await account('News viewer');
   const { page, errors, close } = await open(viewer, '#/tasks');
