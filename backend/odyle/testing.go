@@ -254,7 +254,8 @@ func fixtures(se *core.ServeEvent) {
 		if err != nil {
 			return nil, err
 		}
-		invite.Set("expiresAt", time.Now().Add(-time.Minute).UTC().Format(isoLayout))
+		// A minute ago, or the given number of days and a minute ago.
+		invite.Set("expiresAt", time.Now().Add(-time.Minute-time.Duration(count(b["days"]))*24*time.Hour).UTC().Format(isoLayout))
 		return map[string]any{}, e.App.Save(invite)
 	})
 	fixture(se, "age", func(e *core.RequestEvent, b body) (any, error) {

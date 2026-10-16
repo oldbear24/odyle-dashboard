@@ -72,6 +72,9 @@ function describe(p) {
     case 'leave': return 'Left ' + room(p);
     case 'close': return 'Closed ' + room(p);
     case 'invites': return 'New invites for ' + room(p);
+    case 'invite-create': return 'New ' + (p.role === 'viewer' ? 'viewer' : 'player') + ' invite link for ' + room(p);
+    case 'invite-revoke': return 'Revoked an invite link of ' + room(p);
+    case 'invite-preview': return 'Invite link opened';
     case 'revoke': return 'Removed a member from ' + room(p);
     case 'role': return 'Made a member ' + (p.role === 'viewer' ? 'viewer' : 'player') + ' in ' + room(p);
     case 'transfer': return 'Handed ' + room(p) + ' to another member';
@@ -473,7 +476,7 @@ export function statusPage() {
 
 // What each background job does; the backend's odyle/jobs.go holds the schedules and the records.
 const jobInfo = {
-  'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes expired invites, pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
+  'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes invite links three days after they expired, expired pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
   'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones not looked up yet, the others daily. A character the search does not list is tried again after an hour, six hours and a day, then weekly; characters no reader has seen for 60 days wait until one does. New characters are looked up as soon as they are saved, up to ten at a time.' },
   'odyle-reminders': { label: 'Discord reminders', schedule: () => 'Every minute', unit: 'reminders posted', about: 'Posts planned runs to their room\'s Discord channel 15 minutes before they start.' },
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },

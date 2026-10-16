@@ -34,9 +34,11 @@ func TestCleanupPurgesWhatExpired(t *testing.T) {
 		saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(starts), "plannedBy": member.Id, "attendees": []string{member.Id}})
 	}
 	for i, expires := range []time.Time{at.Add(-time.Minute), at.Add(-time.Hour), at.Add(time.Hour)} {
-		saved(t, app, "room_invites", map[string]any{"room": room.Id, "digest": "invite" + string(rune('a'+i)), "role": "reporter", "expiresAt": stamp(expires)})
+		// Invite links stay three days past their expiry, so an old link still names its room.
+		saved(t, app, "room_invites", map[string]any{"room": room.Id, "digest": "invite" + string(rune('a'+i)), "role": "reporter", "expiresAt": stamp(expires.Add(-inviteGrace))})
 		saved(t, app, "desktop_codes", map[string]any{"user": user.Id, "digest": "code" + string(rune('a'+i)), "expiresAt": stamp(expires)})
 	}
+	saved(t, app, "room_invites", map[string]any{"room": room.Id, "digest": "invite-expired-today", "role": "reporter", "expiresAt": stamp(at.Add(-time.Hour))})
 	// Two rows a statement and two statements a run: a backlog takes more than one run.
 	purgeBatch, purgeBatches = 2, 2
 	t.Cleanup(func() { purgeBatch, purgeBatches = 1000, 50 })
@@ -58,7 +60,7 @@ func TestCleanupPurgesWhatExpired(t *testing.T) {
 	if second.Done != 1 {
 		t.Fatalf("second run did %v", second.Done)
 	}
-	for collection, kept := range map[string]int64{"character_readings": 2, "room_runs": 1, "room_invites": 1, "desktop_codes": 1, "characters": 1, "room_members": 1} {
+	for collection, kept := range map[string]int64{"character_readings": 2, "room_runs": 1, "room_invites": 2, "desktop_codes": 1, "characters": 1, "room_members": 1} {
 		if n := countOf(t, app, collection); n != kept {
 			t.Errorf("%s: %d kept, want %d", collection, n, kept)
 		}

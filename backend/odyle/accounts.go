@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -194,20 +195,66 @@ func mutate(e *core.RequestEvent, fn change) error {
 	})
 }
 
-func invite(app core.App, room *Room, role string) (map[string]any, error) {
+// Invite links last 30 minutes, a day (the default) or a week, and may be limited to a
+// number of joins. A room has up to 20 open links. An expired link is kept three more
+// days, so opening it still names its room (invitePreview) instead of saying nothing.
+var inviteLifetimes = []int{1800, 86400, 604800}
+
+const defaultInviteLifetime, openInviteLimit, inviteGrace = 86400, 20, 72 * time.Hour
+
+type inviteOptions struct {
+	role     string
+	lifetime int
+	maxUses  int64
+	label    string
+}
+
+// invite makes a link to the room: its code goes to the owner's browser once, the server
+// keeps the digest and the link's details (JSON).
+func invite(app core.App, room *Room, userId string, o inviteOptions) (map[string]any, error) {
 	code := security.RandomStringWithAlphabet(12, codeAlphabet)
-	record, err := newRecord(app, "room_invites")
+	made, err := newAs[Invite](app, "room_invites")
 	if err != nil {
 		return nil, err
 	}
-	record.Set("room", room.Id)
-	record.Set("role", role)
-	record.Set("digest", security.SHA256(code))
-	record.Set("expiresAt", expiry(1800))
-	if err := app.Save(record); err != nil {
+	made.Set("room", room.Id)
+	made.Set("role", o.role)
+	made.Set("digest", security.SHA256(code))
+	made.Set("expiresAt", expiry(o.lifetime))
+	made.Set("createdBy", userId)
+	made.Set("label", o.label)
+	made.Set("maxUses", o.maxUses)
+	if err := app.Save(made); err != nil {
 		return nil, err
 	}
-	return map[string]any{"code": code, "role": role, "expiresAt": record.GetString("expiresAt")}, nil
+	out := made.JSON()
+	out["code"] = code
+	return out, nil
+}
+
+// openInvites lists the room's links that still let someone join, player links first,
+// then the newest.
+func openInvites(app core.App, roomId string) ([]map[string]any, error) {
+	found, err := whereAs[Invite](app, "room_invites", "room = {:room} && expiresAt > {:now}", dbx.Params{"room": roomId, "now": stamp(time.Now())})
+	if err != nil {
+		return nil, err
+	}
+	at, open := time.Now(), []*Invite{}
+	for _, i := range found {
+		if i.Open(at) {
+			open = append(open, i)
+		}
+	}
+	sort.SliceStable(open, func(a, b int) bool {
+		if open[a].Role() != open[b].Role() {
+			return open[a].Role() == "reporter"
+		}
+		if open[a].Created() != open[b].Created() {
+			return open[a].Created() > open[b].Created()
+		}
+		return open[a].GetString("expiresAt") > open[b].GetString("expiresAt")
+	})
+	return pluck(open, (*Invite).JSON), nil
 }
 
 func addMember(app core.App, roomId, userId, role string) (*Member, error) {
@@ -233,12 +280,14 @@ func joinable(app core.App, userId string) error {
 	return nil
 }
 
-func roomInvites(app core.App, room *Room) ([]any, error) {
-	reporter, err := invite(app, room, "reporter")
+// roomInvites makes a player and a viewer link with the default lifetime: for a new room,
+// and for dashboards from before links were made one by one (invites).
+func roomInvites(app core.App, room *Room, userId string) ([]any, error) {
+	reporter, err := invite(app, room, userId, inviteOptions{role: "reporter", lifetime: defaultInviteLifetime})
 	if err != nil {
 		return nil, err
 	}
-	viewer, err := invite(app, room, "viewer")
+	viewer, err := invite(app, room, userId, inviteOptions{role: "viewer", lifetime: defaultInviteLifetime})
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +325,7 @@ func create(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		invites, err := roomInvites(app, room)
+		invites, err := roomInvites(app, room, user.Id)
 		if err != nil {
 			return nil, err
 		}
@@ -298,7 +347,7 @@ func join(e *core.RequestEvent) error {
 			return nil, err
 		}
 		invitation, err := firstAs[Invite](app, "room_invites", "digest", security.SHA256(normalizeCode(typed)))
-		if err != nil || !invitation.ExpiresAt().After(time.Now()) {
+		if err != nil {
 			return nil, badRequest("Invite is invalid or expired.")
 		}
 		room, err := findAs[Room](app, "party_rooms", invitation.Room())
@@ -310,8 +359,13 @@ func join(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
+		// A member opening the link again, even once it expired or was used up, lands in the
+		// room and uses none of its joins.
 		if len(existing) > 0 {
-			return map[string]any{"room": roomJSON(room, cost), "membership": existing[0]}, nil
+			return map[string]any{"room": roomJSON(room, cost), "membership": existing[0], "alreadyMember": true}, nil
+		}
+		if !invitation.Open(time.Now()) {
+			return nil, badRequest("Invite is invalid or expired.")
 		}
 		members, err := app.CountRecords("room_members", dbx.HashExp{"room": room.Id})
 		if err != nil {
@@ -325,6 +379,10 @@ func join(e *core.RequestEvent) error {
 		}
 		member, err := addMember(app, room.Id, user.Id, invitation.Role())
 		if err != nil {
+			return nil, err
+		}
+		invitation.Set("uses", invitation.Uses()+1)
+		if err := app.Save(invitation); err != nil {
 			return nil, err
 		}
 		*affected = append(*affected, room.Id)
@@ -1095,6 +1153,8 @@ func closeRoom(e *core.RequestEvent) error {
 	})
 }
 
+// invites replaces every link of the room with a new player and viewer link, for
+// dashboards from before links were made and revoked one by one.
 func invites(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
@@ -1110,11 +1170,152 @@ func invites(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
-		fresh, err := roomInvites(app, room)
+		fresh, err := roomInvites(app, room, user.Id)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"invites": fresh}, nil
+	})
+}
+
+// inviteCreate makes one invite link for the owner: a role (player by default), a
+// lifetime (a day by default), an optional use limit and label. The answer carries the
+// code once, and the room's open links.
+func inviteCreate(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		room, err := owner(app, user.Id, b.str("roomId"))
+		if err != nil {
+			return nil, err
+		}
+		o := inviteOptions{role: "reporter", lifetime: defaultInviteLifetime}
+		if b.has("role") {
+			if o.role, _ = b.text("role"); o.role != "reporter" && o.role != "viewer" {
+				return nil, badRequest("Choose player or viewer.")
+			}
+		}
+		if b.has("expiresIn") {
+			seconds, err := integer(b["expiresIn"], "expiresIn", 0, maxSafeInteger)
+			if o.lifetime = int(seconds); err != nil || !slices.Contains(inviteLifetimes, o.lifetime) {
+				return nil, badRequest("An invite link lasts 30 minutes, 24 hours or 7 days.")
+			}
+		}
+		if b.has("maxUses") {
+			if o.maxUses, err = integer(b["maxUses"], "maxUses", 0, 50); err != nil {
+				return nil, badRequest("A use limit is a whole number up to 50, or 0 for none.")
+			}
+		}
+		if b.set("label") {
+			label, ok := b.text("label")
+			if o.label = trim(label); !ok || length(o.label) > 40 {
+				return nil, badRequest("A link label has up to 40 characters.")
+			}
+		}
+		open, err := openInvites(app, room.Id)
+		if err != nil {
+			return nil, err
+		}
+		if len(open) >= openInviteLimit {
+			return nil, badRequest("A room can have up to 20 open invite links. Revoke one first.")
+		}
+		made, err := invite(app, room, user.Id, o)
+		if err != nil {
+			return nil, err
+		}
+		listed, err := openInvites(app, room.Id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"invite": made, "invites": listed}, nil
+	})
+}
+
+// inviteRevoke deletes one link of the owner's room, so it stops working at once;
+// members who joined with it stay. A link already gone changes nothing. The answer
+// carries the room's open links.
+func inviteRevoke(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		room, err := owner(app, user.Id, b.str("roomId"))
+		if err != nil {
+			return nil, err
+		}
+		if link, err := findAs[Invite](app, "room_invites", b.str("inviteId")); err == nil && link.Room() == room.Id {
+			if err := app.Delete(link); err != nil {
+				return nil, err
+			}
+		}
+		listed, err := openInvites(app, room.Id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"invites": listed}, nil
+	})
+}
+
+// inviteList is GET /api/odyle/invites/{id}: the open links of the owner's room, from
+// any browser. Never their codes: only the browser that made a link can show it.
+func inviteList(e *core.RequestEvent) error {
+	return run(e, func() error {
+		room, err := owner(e.App, e.Auth.Id, e.Request.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		listed, err := openInvites(e.App, room.Id)
+		if err != nil {
+			return err
+		}
+		return e.JSON(200, map[string]any{"invites": listed})
+	})
+}
+
+// invitePreview tells whoever opens an invite link what it opens, before they sign in:
+// the room, who made the link, the role and how many members the room has. It is public
+// and rate limited per address; the code comes in the body, never in a URL, and is
+// found by its digest like a join. An expired or used-up link names only its room, a
+// code that matches no link nothing.
+func invitePreview(e *core.RequestEvent) error {
+	return run(e, func() error {
+		b, err := requestBody(e)
+		if err != nil {
+			return err
+		}
+		unknown := map[string]any{"state": "unknown"}
+		typed, _ := b.text("code")
+		code := normalizeCode(typed)
+		if code == "" || length(code) > 20 {
+			return e.JSON(200, unknown)
+		}
+		link, err := firstAs[Invite](e.App, "room_invites", "digest", security.SHA256(code))
+		if err != nil {
+			if isNoRows(err) {
+				return e.JSON(200, unknown)
+			}
+			return err
+		}
+		room, err := findAs[Room](e.App, "party_rooms", link.Room())
+		if err != nil {
+			return e.JSON(200, unknown)
+		}
+		if !link.Open(time.Now()) {
+			return e.JSON(200, map[string]any{"state": "expired", "room": room.Name()})
+		}
+		members, err := e.App.CountRecords("room_members", dbx.HashExp{"room": room.Id})
+		if err != nil {
+			return err
+		}
+		// Links made before their maker was kept, or whose maker deleted the account, name the owner.
+		accounts := []string{room.Owner()}
+		if link.CreatedBy() != "" {
+			accounts = append(accounts, link.CreatedBy())
+		}
+		names, err := displayNames(e.App, accounts)
+		if err != nil {
+			return err
+		}
+		inviter := names[link.CreatedBy()]
+		if inviter == "" {
+			inviter = names[room.Owner()]
+		}
+		return e.JSON(200, map[string]any{"state": "valid", "room": room.Name(), "inviter": inviter, "role": link.Role(), "members": members})
 	})
 }
 
@@ -1383,11 +1584,12 @@ func forgetDevice(e *core.RequestEvent) error {
 	})
 }
 
-// cleanup is the expiry job: expired invites, pairing codes and reader sessions,
-// history older than 30 days and planned runs a day after they started.
+// cleanup is the expiry job: invite links three days after they expired (inviteGrace),
+// expired pairing codes and reader sessions, history older than 30 days and planned
+// runs a day after they started.
 func cleanup(app core.App) (result, error) {
 	at := time.Now()
-	done, err := purge(app, "room_invites", "expiresAt <= {:cutoff}", stamp(at))
+	done, err := purge(app, "room_invites", "expiresAt <= {:cutoff}", stamp(at.Add(-inviteGrace)))
 	if err != nil {
 		return result{}, err
 	}
@@ -2125,6 +2327,25 @@ func exportData(e *core.RequestEvent) error {
 		for i, d := range devices {
 			paired[i] = map[string]any{"name": d.Name(), "pairedAt": d.PairedAt(), "lastSignInAt": d.LastUsedAt()}
 		}
+		// The invite links the account made that are still kept, without their codes.
+		links, err := allAs[Invite](app, "room_invites", "createdBy = {:user}", mine)
+		if err != nil {
+			return err
+		}
+		linkRooms, err := roomsByID(app, pluck(links, (*Invite).Room))
+		if err != nil {
+			return err
+		}
+		inviteLinks := make([]any, len(links))
+		for i, l := range links {
+			j := l.JSON()
+			delete(j, "id")
+			j["room"] = l.Room()
+			if room := linkRooms[l.Room()]; room != nil {
+				j["name"] = room.Name()
+			}
+			inviteLinks[i] = j
+		}
 		return e.JSON(200, map[string]any{
 			"exportedAt":        now(),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
@@ -2133,6 +2354,7 @@ func exportData(e *core.RequestEvent) error {
 			"tasks":             checklist,
 			"readerSessions":    readerSessions,
 			"pairedWindowsApps": paired,
+			"inviteLinks":       inviteLinks,
 		})
 	})
 }

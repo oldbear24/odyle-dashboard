@@ -5,7 +5,7 @@ import { windowsApp } from './release.js';
 import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour } from './tasks.js';
 import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
-import { inviteLink, joinCode, savedInvites, rememberInvites, forgetInvites, forgetAllInvites } from './invites.js';
+import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
 import { historyChart, historyList, bindHistoryChart } from './history.js';
 import { runsSection, startsIn, runEditForm, calendarFile } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
@@ -27,7 +27,7 @@ pb.autoCancellation(false);
 const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.probe'); return s; } catch { return { getItem: () => null, setItem() {}, removeItem() {} }; } })();
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
-let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog = [], rooms = [], characters = [], demo = false, online = false, invites = [];
+let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog = [], rooms = [], characters = [], demo = false, online = false;
 let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
@@ -87,8 +87,29 @@ const embedded = () => inAppBrowser(navigator.userAgent, standalone());
 // page, the pairing dialog and Reader & privacy.
 const scopeText = () => t("Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic, automates play or collects combat data. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.");
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
-function welcome(joining = false) {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${joining ? `<p class="join-note">${icon('link')} ${t('You were invited to a room. Sign in with Discord and you join it right away.')}</p>` : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p>${scopeNote()}</main>`);
+// The welcome page; an invite link (code) adds its card, filled in from the preview.
+function welcome(code = '') {
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p>${scopeNote()}</main>`);
+  if (code && !previewed(code)) previewInvite(code);
+}
+// What the invite link on screen opens (invites.js inviteLanding), asked once per code:
+// the public preview takes the code in the body, so it never lands in a server log.
+let preview = { code: '', answer: null };
+const previewed = code => preview.code === code ? preview.answer : null;
+async function previewInvite(code, again = false) {
+  if (!again && previewed(code)) return preview.answer;
+  try { preview = { code, answer: await send('invite-preview', { code }) }; } catch { return null; /* the general note stays */ }
+  const slot = document.querySelector('.invite-landing');
+  if (slot && joinCode(currentPath()) === code) slot.outerHTML = inviteLanding(preview.answer, pb.authStore.isValid);
+  return preview.answer;
+}
+// An invite link that did not join stays on screen: what it opens and why it failed, or
+// that it expired or does not work, instead of an empty library.
+async function inviteTrouble(code, error, ticket) {
+  await leaveRoomTopic(); clearRoom();
+  const answer = await previewInvite(code, true); if (ticket !== navigation) return;
+  const why = !answer || answer.state === 'valid' ? `<p class="invite-problem" role="alert">${esc(t(error?.message || 'Request could not be completed.'))}</p>` : '';
+  shell(`<main class="welcome invite-page"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('ROOM INVITE')}</div><h1>${t('This invite did not work')}<span class="mint">.</span></h1>${inviteLanding(answer, true)}${why}<div class="invite-page-actions"><button class="button primary" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></div></main>`, 'library');
 }
 function libraryView() {
   shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR ADVENTURE, SAVED')}</div><h1>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })}<span class="mint">.</span></h1><p>${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section><section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2>${readerButton(`${icon('plus')} ${t('Connect reader')}`)}</div><div class="member-grid">${characterCards()}</div></section></main>`, 'library');
@@ -239,7 +260,7 @@ async function refreshTasks() {
   if (shown !== '/tasks') return; // navigated elsewhere while loading
   applyTasks(data); if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
 }
-function clearRoom() { room = null; members = []; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; invites = []; }
+function clearRoom() { room = null; members = []; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; }
 async function tasksPage(ticket) {
   await leaveRoomTopic(); clearRoom(); editingTask = '';
   await refreshTasks(); if (ticket !== navigation) return; tasksView();
@@ -286,13 +307,36 @@ const failed = error => toast(t(error?.message || 'Request could not be complete
 function modal(title, body, wide = false) { const el = document.querySelector('#modal'); el.className = wide ? 'wide' : ''; el.innerHTML = `<div class="modal-head"><h2>${title}</h2><button data-action="close-dialog" class="close-button" aria-label="${esc(t('Close dialog'))}">×</button></div>${body}`; if (!el.open) el.showModal(); }
 const closeModal = () => document.querySelector('#modal')?.close();
 const signInPrompt = text => modal(t('Sign in to continue'), `<p>${text}</p><button class="button discord-button" data-action="exit-demo">${t('Sign in with Discord')}</button>`);
-function ask(title, text, button, data) { modal(title, `<p>${text}</p><button class="button danger" ${Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${button}</button><button class="button secondary" data-action="close-dialog">${t('Keep it')}</button>`); }
-function inviteDialog() {
+// Asks before a change; Keep it closes the dialog, or goes back to the one named.
+function ask(title, text, button, data, back = 'close-dialog') { modal(title, `<p>${text}</p><button class="button danger" ${Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${button}</button><button class="button secondary" data-action="${back}">${t('Keep it')}</button>`); }
+// The owner's invite dialog: the room's open links as the server lists them (or as an
+// answer just carried them), each with its link where this browser made it, and the form
+// for a new one (invites.js). Anyone else is told who can invite (invitePicker).
+async function inviteDialog(listed) {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to create a persistent room.'));
-  if (!room || !owner()) return toast(t('Open a room you own to invite friends.'));
-  if (!invites.length) invites = savedInvites(storage, room.id);
-  modal(t('Invite another Discord account'), `<p>${t('Send a friend the invite link, or the code to enter under Join your friends. Codes expire after 30 minutes; membership remains until they leave or you remove them.')}</p>${invites.map(i => `<div class="invite-row"><div><span>${i.role === 'reporter' ? t('PLAYER INVITE') : t('VIEWER INVITE')}</span><strong>${esc(i.code.match(/.{1,4}/g).join(' '))}</strong><small>${esc(t('Expires {time}', { time: new Date(i.expiresAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }))}</small></div><div class="invite-actions"><button class="invite-link" data-copy="${esc(inviteLink(location.href, i.code))}" data-copied="${esc(t('Invite link copied.'))}">${icon('link')} ${t('Copy link')}</button><button class="icon-button" data-copy="${esc(i.code)}" aria-label="${esc(t('Copy code'))}" title="${esc(t('Copy code'))}">${icon('copy')}</button></div></div>`).join('')}<button class="button primary" data-action="generate-invites">${invites.length ? t('Revoke codes & generate new invites') : t('Generate invite codes')}</button>`);
+  if (!pb.authStore.isValid) return signInPrompt(t('Sign in with Discord to create a room and invite your friends.'));
+  if (!room || !owner()) return invitePicker();
+  const id = room.id, now = Date.now() + serverOffset;
+  modal(t('Invite another Discord account'), inviteDialogBody(listed ? withCodes(storage, id, listed, now) : null, location.href, now));
+  if (!listed) drawInvites(id, (await pb.send('/api/odyle/invites/' + id)).invites);
 }
+function drawInvites(id, listed) {
+  const slot = document.querySelector('#modal[open] .invite-list'), now = Date.now() + serverOffset;
+  if (slot && room?.id === id) slot.innerHTML = inviteList(withCodes(storage, id, listed, now), location.href, now);
+}
+// Invitations outside a room you lead: the rooms you lead to choose from (the only one
+// opens at once), or who can invite instead of a dead end.
+async function invitePicker() {
+  if (room) {
+    const leader = members.find(m => m.role === 'owner')?.displayName;
+    return modal(t('Invite friends'), `<p>${esc(leader ? t('Only the leader of {room}, {name}, can invite to it. Ask them for an invite link.', { room: room.name, name: leader }) : t('Only the room’s leader can invite to it. Ask them for an invite link.'))}</p><button class="button secondary" data-action="close-dialog">${t('Got it')}</button>`);
+  }
+  const listed = (await pb.send('/api/odyle/rooms')).rooms || [], led = listed.filter(r => r.role === 'owner');
+  if (led.length === 1) return openInvites(led[0].id);
+  if (!led.length) return modal(t('Invite friends'), `<p>${listed.length ? t('Only a room’s leader can invite to it. Ask the leader of your room for an invite link, or create a room of your own.') : t('Create a room first, then invite your friends to it.')}</p><button class="button primary" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button>`);
+  modal(t('Invite to which room?'), `<p>${t('Choose a room you lead. Friends you invite join only that room.')}</p><div class="room-list room-picker">${led.map(r => `<button class="room-item" data-invite-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))}</small></span>${icon('arrow')}</button>`).join('')}</div>`);
+}
+async function openInvites(id) { closeModal(); await go('/room/' + id); if (room?.id === id) await inviteDialog(); }
 // Owners rename the room, change roles, hand it over, remove members and close it;
 // other members can leave. Every change asks the server and redraws this dialog.
 function roomSettings() {
@@ -541,7 +585,7 @@ function rerender() {
   if (shown === '/tasks') return tasksView();
   if (shown === '/account' && account) return accountRender();
   if (pb.authStore.isValid) return libraryView();
-  welcome(Boolean(joinCode(shown || '')));
+  welcome(joinCode(shown || ''));
 }
 
 // Every page has its own URL: #/ (welcome or your rooms), #/room/<id>, #/tasks,
@@ -560,11 +604,15 @@ async function show(force = false) {
   shown = path; const ticket = ++navigation;
   if (path === '/demo') { await leaveRoomTopic(); return demoSession(); }
   const code = joinCode(path);
-  if (!pb.authStore.isValid) { await leaveRoomTopic(); clearRoom(); return welcome(Boolean(code)); }
+  if (!pb.authStore.isValid) { await leaveRoomTopic(); clearRoom(); return welcome(code); }
   if (code) {
-    // An invite link: join, then open the room in place of the link.
-    try { const result = await send('join', { code }); if (ticket !== navigation) return; toast(t('You are in {room}.', { room: result.room.name })); return await go('/room/' + result.room.id, true); }
-    catch (error) { if (ticket !== navigation) return; await go('/', true); return failed(error); }
+    // An invite link: join, then open the room in place of the link and say as what. A
+    // link that does not join stays, with what it opens and why (inviteTrouble).
+    let result;
+    try { result = await send('join', { code }); }
+    catch (error) { if (ticket !== navigation) return; if (error?.status === 401) throw error; return await inviteTrouble(code, error, ticket); }
+    if (ticket !== navigation) return;
+    await go('/room/' + result.room.id, true); return toast(joinedMessage(result));
   }
   remember(path);
   watchOwnTopic().catch(() => { /* without realtime pages fetch every 15 seconds */ });
@@ -672,7 +720,7 @@ async function discordLogin() {
   await authenticated();
 }
 async function logout() {
-  // Invite codes stay usable for 30 minutes and pairing codes for five; a shared computer must not keep them.
+  // Invite codes stay usable for up to a week and pairing codes for five minutes; a shared computer must not keep them.
   await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); stopPairing(); pb.authStore.clear(); forget(); forgetAllInvites(storage); forgetPairing(storage); clearRoom(); rooms = []; characters = []; readers = []; tasks = []; account = null; online = false;
   await go('/', true);
 }
@@ -692,8 +740,13 @@ app.addEventListener('submit', async e => {
   e.preventDefault(); if (busy) return; busy = true;
   const form = e.target, data = Object.fromEntries(new FormData(form)), button = form.querySelector('[type="submit"]'); button.disabled = true; form.querySelector('.form-error')?.remove();
   try {
-    if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites); await go('/room/' + result.room.id); invites = result.invites; inviteDialog(); }
-    else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); await go('/room/' + result.room.id); }
+    if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
+    else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); toast(joinedMessage(result)); await go('/room/' + result.room.id); }
+    else if (form.id === 'invite-form') {
+      const result = await send('invite-create', { roomId: room.id, role: data.role, expiresIn: Number(data.expiresIn), maxUses: Number(data.maxUses), label: data.label });
+      rememberInvite(storage, room.id, result.invite, Date.now() + serverOffset); form.elements.label.value = '';
+      drawInvites(room.id, result.invites); document.querySelector(`#modal [data-invite="${CSS.escape(result.invite.id)}"] .invite-link`)?.focus(); toast(t('Invite link made. Copy it and send it to your friend.'));
+    }
     else if (form.id === 'wish-form') {
       if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to keep a dungeon wishlist in your own room.'));
       const problem = wishProblem(data.dungeon, { catalog: dungeons, wishlist, myId: pb.authStore.record?.id }); if (problem) return formError(form, problem);
@@ -774,6 +827,13 @@ app.addEventListener('click', async e => {
       const { membership } = await send('role', { roomId: room.id, memberId: el.dataset.confirmRole, role: el.dataset.newRole });
       changedRoom(() => applyMembership(members, membership)); roomSettings(); return toast(t('Role changed.'));
     }
+    // A link already sent stops working when revoked, so revoking asks first; Keep it goes back to the links.
+    if (el.dataset.revokeInvite) return ask(t('Revoke this invite link?'), t('It stops working at once, also for anyone you already sent it to. Members who joined with it stay in the room.'), t('Revoke link'), { 'confirm-revoke-invite': el.dataset.revokeInvite }, 'invite');
+    if (el.dataset.confirmRevokeInvite) {
+      const id = el.dataset.confirmRevokeInvite, result = await send('invite-revoke', { roomId: room.id, inviteId: id });
+      forgetInvite(storage, room.id, id); await inviteDialog(result.invites); return toast(t('Invite link revoked.'));
+    }
+    if (el.dataset.inviteRoom) return await openInvites(el.dataset.inviteRoom);
     if (el.dataset.confirmTransfer) { await send('transfer', { roomId: room.id, memberId: el.dataset.confirmTransfer }); closeModal(); await refreshRoom(); return toast(t('You handed the room over. You are now a player in it.')); }
     switch (el.dataset.action) {
       case 'discord': await discordLogin(); break;
@@ -790,15 +850,12 @@ app.addEventListener('click', async e => {
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;
       case 'close-dialog': closeModal(); break;
-      case 'invite': inviteDialog(); break;
+      case 'invite': await inviteDialog(); break;
       case 'room-settings': roomSettings(); break;
       case 'reading': await desktopDialog(); break;
       case 'pair-another': if (pairing) await openLink(pairing); break;
       case 'new-pairing': if (pairing) { forgetPairing(storage); await openLink(pairing); } break;
       case 'add-all': { const result = await send('sharing', { roomId: room.id, enabled: true }); changedRoom(() => applyShared(me(), result.sharedCharacters)); break; }
-      // Codes already sent stop working, so replacing them asks first.
-      case 'generate-invites': if (invites.length) { ask(t('Revoke the current codes?'), t('Invite links and codes already sent stop working at once, and new ones replace them. Members already in the room stay.'), t('Revoke & generate'), { action: 'confirm-generate-invites' }); break; } // falls through
-      case 'confirm-generate-invites': invites = (await send('invites', { roomId: room.id })).invites; rememberInvites(storage, room.id, invites); inviteDialog(); break;
       case 'desktop': await desktopDialog(true); break;
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [

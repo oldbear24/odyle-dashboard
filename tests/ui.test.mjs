@@ -83,6 +83,8 @@ test('owners invite with a link, manage the room and close it only after confirm
     await page.locator('#create-form [name=name]').fill('UI room');
     await page.locator('#create-form [type=submit]').click();
     await page.locator('#modal .invite-row').first().waitFor();
+    // A new room starts with a player link (first) and a viewer link for a day.
+    assert.match(await page.locator('#modal .invite-row').first().innerText(), /PLAYER INVITE[\s\S]*No use limit/);
     const link = await page.locator('#modal [data-copied]').first().getAttribute('data-copy');
     assert.match(link, /#\/join\/[A-Z2-9]{12}$/);
     await shot(page, 'invite');
@@ -91,26 +93,55 @@ test('owners invite with a link, manage the room and close it only after confirm
     assert.equal(await page.locator('#modal [data-copied]').first().getAttribute('data-copy'), link);
     await page.keyboard.press('Escape');
 
-    // A friend who is not signed in opens the link, signs in and lands in the room.
+    // A friend who is not signed in opens the link, sees who invited them where, signs in and lands in the room.
     const guest = await open(null, link.slice(link.indexOf('#')));
     try {
-      await guest.page.locator('.join-note').waitFor();
+      await guest.page.locator('.invite-landing.valid').waitFor();
+      assert.match(await guest.page.locator('.invite-landing').innerText(), /UI lead invited you to UI room[\s\S]*as a player · 1 member/);
+      await shot(guest.page, 'invite-landing');
       await guest.page.evaluate(session => localStorage.setItem('odyle.account', session), JSON.stringify({ token: friend.token, record: friend.record }));
       await guest.page.reload();
       await guest.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+      await toast(guest.page).filter({ hasText: 'You joined UI room as a player.' }).waitFor();
       assert.match(guest.page.url(), /#\/room\/[a-z0-9]+$/);
       assert.equal(await guest.page.locator('[data-action="invite"].button').count(), 0);
+      // Only the leader invites; the others are told whom to ask.
+      await guest.page.locator('.empty-card[data-action="invite"]').click();
+      assert.match(await guest.page.locator('#modal').innerText(), /Only the leader of UI room, UI lead, can invite/);
       assert.deepEqual(guest.errors, []);
     } finally { await guest.close(); }
 
-    // Replacing codes already sent asks first.
+    // Revoking a link asks first; Keep it goes back to the links.
     await page.reload(); await page.locator('[data-action="invite"]:visible').first().click();
-    await page.locator('#modal [data-action="generate-invites"]').click();
-    assert.match(await page.locator('#modal').innerText(), /Revoke the current codes\?[\s\S]*stop working/);
-    await page.locator('#modal [data-action="confirm-generate-invites"]').click();
-    await page.locator('#modal .invite-row').first().waitFor();
-    assert.notEqual(await page.locator('#modal [data-copied]').first().getAttribute('data-copy'), link);
+    await page.locator('#modal .invite-row').nth(1).waitFor();
+    await page.locator('#modal .invite-row').nth(1).locator('[data-revoke-invite]').click();
+    assert.match(await page.locator('#modal').innerText(), /Revoke this invite link\?[\s\S]*stops working at once/);
+    await page.locator('#modal [data-action="invite"]').click();
+    await page.locator('#modal .invite-row').nth(1).locator('[data-revoke-invite]').click();
+    await page.locator('#modal [data-confirm-revoke-invite]').click();
+    await toast(page).filter({ hasText: 'Invite link revoked.' }).waitFor();
+    assert.equal(await page.locator('#modal .invite-row').count(), 1);
+    // A new link: a viewer link for 30 minutes that one person can use, with a label.
+    await page.locator('#invite-form [name=role]').selectOption('viewer');
+    await page.locator('#invite-form [name=expiresIn]').selectOption('1800');
+    await page.locator('#invite-form [name=maxUses]').selectOption('1');
+    await page.locator('#invite-form [name=label]').fill('Raid night');
+    await page.locator('#invite-form [type=submit]').click();
+    await toast(page).filter({ hasText: 'Invite link made.' }).waitFor();
+    assert.match(await page.locator('#modal .invite-row').nth(1).innerText(), /VIEWER INVITE · Raid night[\s\S]*1 use left/);
+    assert.equal(await page.locator('#invite-form [name=label]').inputValue(), '');
+    await shot(page, 'invite-links');
     await page.keyboard.press('Escape');
+    // Another browser lists the same links, but only the browser that made a link can copy it.
+    const elsewhere = await open(lead, new URL(page.url()).hash);
+    try {
+      await elsewhere.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+      await elsewhere.page.locator('[data-action="invite"]:visible').first().click();
+      await elsewhere.page.locator('#modal .invite-row').nth(1).waitFor();
+      assert.equal(await elsewhere.page.locator('#modal [data-copied]').count(), 0);
+      assert.match(await elsewhere.page.locator('#modal .invite-row').first().innerText(), /shows only in the browser that made it/);
+      assert.deepEqual(elsewhere.errors, []);
+    } finally { await elsewhere.close(); }
 
     // Room settings: rename, make the friend a viewer, then hand the room over.
     await page.locator('[data-action="room-settings"]').click();
@@ -143,6 +174,55 @@ test('owners invite with a link, manage the room and close it only after confirm
     assert.equal((await request('/api/odyle/rooms', undefined, lead, 'GET')).data.rooms.length, 0);
     assert.deepEqual(owner.errors, []);
   } finally { await owner.close(); }
+});
+
+test('an invite link that no longer works says why, and Invitations finds the room to invite to', async () => {
+  const [lead, friend] = await Promise.all([account('Link lead'), account('Link friend')]);
+  const first = (await request('/api/odyle/create', { name: 'First link room' }, lead)).data;
+  await request('/api/odyle/create', { name: 'Second link room' }, lead);
+  const expired = first.invites[1].code;
+  assert.equal((await request('/__test__/expire-invite', { code: expired })).status, 200);
+  // Before signing in, an expired link names its room only.
+  const guest = await open(null, '#/join/' + expired);
+  try {
+    await guest.page.locator('.invite-landing.problem').waitFor();
+    assert.match(await guest.page.locator('.invite-landing').innerText(), /This invite to First link room expired or was used up/);
+    assert.doesNotMatch(await guest.page.locator('.invite-landing').innerText(), /Link lead/);
+    assert.deepEqual(guest.errors, []);
+  } finally { await guest.close(); }
+  // Signed in, a link that does not join stays on screen instead of an empty library.
+  const { page, errors, close } = await open(friend, '#/join/' + expired);
+  try {
+    await page.getByRole('heading', { name: 'This invite did not work.' }).waitFor();
+    assert.match(page.url(), /#\/join\//);
+    assert.match(await page.locator('.invite-landing').innerText(), /First link room expired/);
+    await shot(page, 'invite-expired');
+    await page.goto(url + '/#/join/ZZZZ-ZZZZ-ZZZZ');
+    await page.locator('.invite-landing.problem').filter({ hasText: 'does not work' }).waitFor();
+    await page.locator('.invite-page-actions [data-action="library"]').click();
+    await page.getByRole('heading', { name: 'Welcome, Link friend.' }).waitFor();
+    // Invitations without a room you lead says what to do instead of a dead end.
+    if (await page.locator('.sidebar [data-action="invite"]').isVisible()) {
+      await page.locator('.sidebar [data-action="invite"]').click();
+      await page.locator('#modal').filter({ hasText: 'Create a room first' }).waitFor();
+    }
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+  // A leader of two rooms picks the room, which opens with its invite links.
+  const leader = await open(lead, '#/');
+  try {
+    await leader.page.getByRole('heading', { name: 'Welcome, Link lead.' }).waitFor();
+    if (await leader.page.locator('.sidebar [data-action="invite"]').isVisible()) {
+      await leader.page.locator('.sidebar [data-action="invite"]').click();
+      await leader.page.locator('#modal [data-invite-room]').first().waitFor();
+      assert.match(await leader.page.locator('#modal').innerText(), /Invite to which room\?[\s\S]*First link room[\s\S]*Second link room|Invite to which room\?[\s\S]*Second link room[\s\S]*First link room/);
+      await leader.page.locator('#modal [data-invite-room]').filter({ hasText: 'First link room' }).click();
+      await leader.page.locator('#modal .invite-row').first().waitFor();
+      assert.match(await leader.page.locator('.topbar .breadcrumb').innerText(), /First link room/);
+      assert.match(leader.page.url(), new RegExp('#/room/' + first.room.id + '$'));
+    }
+    assert.deepEqual(leader.errors, []);
+  } finally { await leader.close(); }
 });
 
 test('rooms plan, change and export runs, and members see each character history', async () => {

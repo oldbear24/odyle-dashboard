@@ -6,10 +6,14 @@
 package web
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"html"
 	"io/fs"
+	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
@@ -65,6 +69,7 @@ func Serve(dashboard fs.FS, indexFallback bool) (func(*core.RequestEvent) error,
 		return nil, err
 	}
 	static := apis.Static(dashboard, indexFallback)
+	page, _ := fs.ReadFile(dashboard, "index.html")
 	return func(e *core.RequestEvent) error {
 		// The file apis.Static answers with: the one asked for, a folder's index.html or,
 		// for any other path, the page.
@@ -73,6 +78,11 @@ func Serve(dashboard fs.FS, indexFallback bool) (func(*core.RequestEvent) error,
 			name = path.Join(name, "index.html")
 			if _, ok := tags[name]; !ok && indexFallback {
 				name = "index.html"
+			}
+		}
+		if name == "index.html" && e.App != nil {
+			if named := withPreviewImage(page, publicURL(e.App.Settings().Meta.AppURL)); named != nil {
+				return servePage(e, named)
 			}
 		}
 		if tag, ok := tags[name]; ok {
@@ -86,4 +96,48 @@ func Serve(dashboard fs.FS, indexFallback bool) (func(*core.RequestEvent) error,
 		}
 		return static(e)
 	}, nil
+}
+
+// The page names its link-preview picture (og:image) relative to itself, as a page
+// served from any address must. Link previews (Discord, chat apps) want an absolute
+// address, so the page served here names it under the Application URL set in the
+// superuser dashboard (Settings → Application) when that is a public address.
+var previewImage = []byte(`property="og:image" content="./icon-512.png"`)
+
+// publicURL is the Application URL without its trailing slash, or "" while it is unset,
+// PocketBase's default (localhost) or not a web address.
+func publicURL(appURL string) string {
+	u, err := url.Parse(strings.TrimRight(appURL, "/"))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return ""
+	}
+	return u.String()
+}
+
+// withPreviewImage is the page with its preview picture under base, or nil when there is
+// no base or the page names no relative picture.
+func withPreviewImage(page []byte, base string) []byte {
+	if base == "" || !bytes.Contains(page, previewImage) {
+		return nil
+	}
+	absolute := `property="og:image" content="` + html.EscapeString(base+"/icon-512.png") + `"`
+	return bytes.Replace(page, previewImage, []byte(absolute), 1)
+}
+
+// servePage answers with a page built here, revalidated by its content hash like the
+// files apis.Static serves.
+func servePage(e *core.RequestEvent, page []byte) error {
+	sum := sha256.Sum256(page)
+	tag := `"` + hex.EncodeToString(sum[:12]) + `"`
+	header := e.Response.Header()
+	header.Set("ETag", tag)
+	header.Set("Cache-Control", "no-cache")
+	if strings.Contains(e.Request.Header.Get("If-None-Match"), tag) {
+		return e.NoContent(http.StatusNotModified)
+	}
+	return e.Blob(http.StatusOK, "text/html; charset=utf-8", page)
 }

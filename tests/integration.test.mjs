@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { connect } from './sse.mjs';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18090';
-let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId;
+let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId, legacyInvites;
 let releaseServer, releaseUrl, releaseHits = 0, releaseDown = false;
 // Stands in for Discord's webhook API; `discordAnswer` is the status it answers with.
 let discordServer, discordUrl, discordPosts = [], discordAnswer = 204;
@@ -18,7 +18,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 let portraitVersion = 1;
 // The first start leaves these migrations out, so the legacy data the upgrade tests
 // check is written to an older database; every later start applies them.
-const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js', '1791763229_catalog_entries.go'];
+const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js', '1791763229_catalog_entries.go', '1791763230_invite_links.go'];
 let upgraded = false;
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
@@ -105,6 +105,8 @@ before(async () => {
   const legacy = await request('/__test__/legacy', { user: outsider.record.id }); assert.equal(legacy.status, 200); legacyId = legacy.data.id;
   const legacyRoom = await request('/__test__/legacy-room', { user: outsider.record.id }); assert.equal(legacyRoom.status, 200, JSON.stringify(legacyRoom.data)); legacyRoomId = legacyRoom.data.id;
   assert.equal((await request('/__test__/legacy-catalog', {})).status, 200);
+  // Invite links made before links had a maker, a label or a use limit.
+  const made = await action('invites', { roomId: legacyRoomId }, outsider); assert.equal(made.status, 200, JSON.stringify(made.data)); legacyInvites = made.data.invites;
   await stop(); upgraded = true;
   await start();
 });
@@ -119,6 +121,14 @@ test('per-character upgrade keeps every character of a sharing membership shared
   assert.deepEqual(listed.sharedCharacters, [legacyId]); assert.equal(listed.sharing, true);
   const own = (await request('/api/odyle/snapshot/' + legacyRoomId, undefined, outsider, 'GET')).data.members[0];
   assert.equal(own.characters[0].shared, true); assert.equal(own.sharing, true);
+});
+test('invite links from before the upgrade keep working, name the room owner and are listed', async () => {
+  const legacyCode = legacyInvites.find(i => i.role === 'reporter').code;
+  const shown = await action('invite-preview', { code: legacyCode });
+  assert.deepEqual(shown.data, { state: 'valid', room: 'Legacy room', inviter: 'Outsider', role: 'reporter', members: 1 });
+  const listed = (await request('/api/odyle/invites/' + legacyRoomId, undefined, outsider, 'GET')).data.invites;
+  assert.deepEqual(listed.map(l => [l.role, l.label, l.maxUses, l.uses]), [['reporter', '', 0, 0], ['viewer', '', 0, 0]]);
+  assert.equal(JSON.stringify(listed).includes(legacyCode), false);
 });
 test('catalog upgrade turns saved dungeon names into entries that cost Odyle per cube', async () => {
   const operator = (await request('/__test__/superuser', {})).data, settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
@@ -224,19 +234,72 @@ test('characters get their official portrait from the game; players cannot chang
   assert.equal((await fetch(url + '/api/collections/characters/records/' + c.id, { method: 'PATCH', headers: { Authorization: author.token }, body: form() })).status, 403);
   assert.equal((await own()).portrait, updated.portrait);
 });
-test('expiry cron removes expired invites but keeps fresh invites and pairing codes', async () => {
+test('expiry cron keeps invites three days past their expiry, so they still name their room, and keeps pairing codes', async () => {
   // Stored dates read '2026-10-13 21:40:00.000Z'; comparing them with an ISO 'T' timestamp
   // treated anything later on the same UTC day as expired, so fresh codes died at the next tick.
   const [author, guest] = await Promise.all(['Expiry owner', 'Expiry guest'].map(async name => (await request('/__test__/account', { name })).data));
   const made = (await action('create', { name: 'Expiry room' }, author)).data;
   const [fresh, stale] = ['reporter', 'viewer'].map(role => made.invites.find(i => i.role === role).code);
+  const old = (await action('invite-create', { roomId: made.room.id, expiresIn: 1800 }, author)).data.invite.code;
   const pairing = (await action('desktop-code', {}, author)).data;
   assert.equal((await request('/__test__/expire-invite', { code: stale })).status, 200);
-  const swept = await request('/__test__/cleanup', { codes: [fresh, stale] });
-  assert.equal(swept.status, 200, JSON.stringify(swept.data)); assert.deepEqual(swept.data.kept, [fresh]);
-  const joined = await action('join', { code: fresh }, guest); assert.equal(joined.status, 200, JSON.stringify(joined.data));
+  assert.equal((await request('/__test__/expire-invite', { code: old, days: 3 })).status, 200);
+  const swept = await request('/__test__/cleanup', { codes: [fresh, stale, old] });
+  assert.equal(swept.status, 200, JSON.stringify(swept.data)); assert.deepEqual(swept.data.kept, [fresh, stale]);
   assert.equal((await action('join', { code: stale }, guest)).status, 400);
+  const joined = await action('join', { code: fresh }, guest); assert.equal(joined.status, 200, JSON.stringify(joined.data));
+  // A member opening an expired link of the room lands in it.
+  assert.equal((await action('join', { code: stale }, guest)).data.alreadyMember, true);
+  // The expired link names only its room; the purged one nothing.
+  assert.deepEqual((await action('invite-preview', { code: stale })).data, { state: 'expired', room: 'Expiry room' });
+  assert.deepEqual((await action('invite-preview', { code: old })).data, { state: 'unknown' });
   const paired = await action('pair', { code: pairing.code }); assert.equal(paired.status, 200, JSON.stringify(paired.data));
+});
+test('owners make invite links one by one, list them from any browser and revoke one; previews name the room', async () => {
+  const [lead, guest, second, stranger] = await Promise.all(['Link lead', 'Link guest', 'Link second', 'Link stranger'].map(async name => (await request('/__test__/account', { name })).data));
+  const made = (await action('create', { name: 'Link room' }, lead)).data, roomId = made.room.id;
+  // A new room starts with a player and a viewer link for a day, player first, each with its id.
+  assert.deepEqual(made.invites.map(i => [i.role, typeof i.id, i.maxUses]), [['reporter', 'string', 0], ['viewer', 'string', 0]]);
+  assert.ok(Date.parse(made.invites[0].expiresAt.replace(' ', 'T')) - Date.now() > 23 * 3600000);
+  const created = await action('invite-create', { roomId, role: 'viewer', expiresIn: 604800, maxUses: 1, label: 'Discord' }, lead);
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  const { invite } = created.data; assert.match(invite.code, /^[A-Z2-9]{12}$/);
+  // The list never carries codes; player links come first.
+  const listed = (await request('/api/odyle/invites/' + roomId, undefined, lead, 'GET')).data.invites;
+  assert.deepEqual(listed.map(l => [l.role, l.label, l.maxUses, l.uses]), [['reporter', '', 0, 0], ['viewer', 'Discord', 1, 0], ['viewer', '', 0, 0]]);
+  assert.equal(JSON.stringify(listed).includes(invite.code), false); assert.equal('code' in listed[1], false);
+  assert.equal((await request('/api/odyle/invites/' + roomId, undefined, stranger, 'GET')).status, 403);
+  assert.equal((await action('invite-create', { roomId, expiresIn: 3600 }, lead)).data.message, 'An invite link lasts 30 minutes, 24 hours or 7 days.');
+  // Before signing in: the room, who made the link, the role and the members.
+  assert.deepEqual((await action('invite-preview', { code: invite.code.toLowerCase().match(/.{4}/g).join('-') })).data, { state: 'valid', room: 'Link room', inviter: 'Link lead', role: 'viewer', members: 1 });
+  // Its one join, then it is used up for everyone else; its joiner may open it again.
+  const joined = await action('join', { code: invite.code }, guest); assert.equal(joined.data.membership.role, 'viewer'); assert.equal(joined.data.alreadyMember, undefined);
+  assert.equal((await action('join', { code: invite.code }, guest)).data.alreadyMember, true);
+  assert.equal((await action('join', { code: invite.code }, second)).status, 400);
+  assert.deepEqual((await action('invite-preview', { code: invite.code })).data, { state: 'expired', room: 'Link room' });
+  // Revoking one link leaves the others working.
+  const revoked = await action('invite-revoke', { roomId, inviteId: made.invites[1].id }, lead);
+  assert.deepEqual(revoked.data.invites.map(l => l.id), [made.invites[0].id]);
+  assert.equal((await action('invite-revoke', { roomId, inviteId: made.invites[0].id }, guest)).status, 403);
+  assert.equal((await action('join', { code: made.invites[1].code }, second)).status, 400);
+  assert.deepEqual((await action('invite-preview', { code: made.invites[1].code })).data, { state: 'unknown' });
+  assert.equal((await action('join', { code: made.invites[0].code }, second)).status, 200);
+  // The export lists the links the account made, without codes.
+  const exported = (await request('/api/odyle/export', undefined, lead, 'GET')).data.inviteLinks;
+  assert.deepEqual(exported.map(l => [l.name, l.role, l.uses]).sort(), [['Link room', 'reporter', 1], ['Link room', 'viewer', 1]]);
+  assert.equal(JSON.stringify(exported).includes(invite.code), false);
+});
+test('invite links unfurl with the general page tags, the icon under a public Application URL', async () => {
+  const page = async (headers = {}) => { const res = await fetch(url + '/', { headers }); return { status: res.status, etag: res.headers.get('etag'), text: await res.text() }; };
+  const plain = await page(); assert.equal(plain.status, 200);
+  assert.ok(plain.text.includes('<meta property="og:title" content="Odyle — Party command"/>')); assert.ok(plain.text.includes('<meta property="og:image" content="./icon-512.png"/>'));
+  const operator = (await request('/__test__/superuser', {})).data, appURL = value => request('/api/settings', { meta: { appURL: value } }, operator, 'PATCH');
+  assert.equal((await appURL('https://odyle.example')).status, 200);
+  try {
+    const named = await page(); assert.ok(named.text.includes('<meta property="og:image" content="https://odyle.example/icon-512.png"/>'), named.text);
+    assert.notEqual(named.etag, plain.etag); assert.equal((await page({ 'If-None-Match': named.etag })).status, 304);
+  } finally { assert.equal((await appURL('http://localhost:8090')).status, 200); }
+  assert.equal((await page()).etag, plain.etag);
 });
 test('room members keep a shared dungeon wishlist', async () => {
   const [author, mate, watcher, stranger] = await Promise.all(['Wish owner', 'Wish mate', 'Wish viewer', 'Wish stranger'].map(async name => (await request('/__test__/account', { name })).data));
@@ -986,9 +1049,12 @@ test('the dashboard offers the newest Windows release through the backend, cache
   } finally { releaseDown = false; }
 });
 // Last: it spends this client's pairing budget for the minute.
-test('pairing and device sign-in are rate limited', async () => {
+test('pairing, device sign-in and invite previews are rate limited', async () => {
   const statuses = []; for (let i = 0; i < 12; i++) statuses.push((await action('pair', { code: 'ZZZZZZZZZZZZZZZZ' })).status);
   assert.ok(statuses.includes(429), statuses.join());
   const signIns = []; for (let i = 0; i < 32; i++) signIns.push((await action('desktop-sign-in', { deviceKey: 'y'.repeat(48) })).status);
   assert.ok(signIns.includes(429), signIns.join());
+  // Invite previews answer whether a code works, so each address gets 30 a minute.
+  const previews = []; for (let i = 0; i < 32; i++) previews.push((await action('invite-preview', { code: 'ZZZZZZZZZZZZ' })).status);
+  assert.ok(previews.includes(429), previews.join());
 });

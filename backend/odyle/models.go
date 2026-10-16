@@ -232,12 +232,29 @@ func (r *Room) SetDiscord(webhook, language string) {
 	}
 }
 
-// Invite is a room's invite code for a role (room_invites); only its digest is stored.
+// Invite is a room's invite link for a role (room_invites); only its code's digest is
+// stored. Links made before 1791763230 have no maker, label or use limit.
 type Invite struct{ core.BaseRecordProxy }
 
 func (i *Invite) Room() string         { return i.GetString("room") }
 func (i *Invite) Role() string         { return i.GetString("role") }
 func (i *Invite) ExpiresAt() time.Time { return i.GetDateTime("expiresAt").Time() }
+func (i *Invite) CreatedBy() string    { return i.GetString("createdBy") }
+func (i *Invite) Label() string        { return i.GetString("label") }
+func (i *Invite) MaxUses() int64       { return i.GetInt64("maxUses") }
+func (i *Invite) Uses() int64          { return i.GetInt64("uses") }
+func (i *Invite) Created() string      { return i.GetString("created") }
+
+// Open reports whether the link still lets someone join: not expired and, when it has
+// a use limit, not used up.
+func (i *Invite) Open(at time.Time) bool {
+	return i.ExpiresAt().After(at) && (i.MaxUses() == 0 || i.Uses() < i.MaxUses())
+}
+
+// JSON is a link as its room owner's list shows it: never its code or digest.
+func (i *Invite) JSON() map[string]any {
+	return map[string]any{"id": i.Id, "role": i.Role(), "label": i.Label(), "expiresAt": i.GetString("expiresAt"), "maxUses": i.MaxUses(), "uses": i.Uses(), "created": i.Created()}
+}
 
 // PairingCode is a short-lived code that pairs a Windows app with an account
 // (desktop_codes); only its digest is stored.

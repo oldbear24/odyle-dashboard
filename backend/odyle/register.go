@@ -23,13 +23,15 @@ type action struct {
 var accountActions = []action{
 	{"create", create}, {"join", join}, {"character", character}, {"report", report}, {"heartbeat", heartbeat}, {"sharing", sharing}, {"wishlist", wishlist},
 	{"task", checklistTask}, {"session", session}, {"invalidate", invalidate}, {"leave", leave}, {"close", closeRoom}, {"invites", invites}, {"revoke", revoke},
+	{"invite-create", inviteCreate}, {"invite-revoke", inviteRevoke},
 	{"rename", rename}, {"role", role}, {"transfer", transfer}, {"plan", plan}, {"discord-webhook", discordWebhook}, {"profile", profile},
 	{"desktop-code", desktopCode}, {"desktop-device", desktopDevice}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter},
 }
 
-// Public like pairing: a paired Windows app signs in, or forgets its pairing, with its device key.
-var publicActions = []action{{"pair", pair}, {"desktop-sign-in", desktopSignIn}, {"unpair", unpair}}
+// Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
+// device key, and whoever opens an invite link learns which room it opens.
+var publicActions = []action{{"pair", pair}, {"desktop-sign-in", desktopSignIn}, {"unpair", unpair}, {"invite-preview", invitePreview}}
 
 // testFixtures adds the routes of the disposable test backend (build tag odyletest).
 var testFixtures func(se *core.ServeEvent)
@@ -111,6 +113,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
 	se.Router.GET("/api/odyle/snapshot/{id}", timed("snapshot", snapshot)).Bind(signedIn)
 	se.Router.GET("/api/odyle/history/{id}", timed("history", history)).Bind(signedIn)
+	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
 	se.Router.GET("/api/odyle/account", timed("account", account)).Bind(signedIn)
 	se.Router.GET("/api/odyle/export", timed("export", exportData)).Bind(signedIn)
