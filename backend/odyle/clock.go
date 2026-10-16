@@ -67,11 +67,17 @@ type storedParts struct {
 
 // naturalPool is the natural pool of the character's last reading, if that reading sent it.
 func (c *Character) naturalPool() (int64, bool) {
+	base, _, ok := c.naturalParts()
+	return base, ok
+}
+
+// naturalParts are the game's two numbers of the character's last reading, if it sent them.
+func (c *Character) naturalParts() (int64, int64, bool) {
 	var p storedParts
 	if json.Unmarshal([]byte(c.GetString("parts")), &p) != nil || p.Base == nil || p.Bonus == nil {
-		return 0, false
+		return 0, 0, false
 	}
-	return *p.Base, true
+	return *p.Base, *p.Bonus, true
 }
 
 // clockCheck is one login reading compared with the clock's projection.

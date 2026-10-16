@@ -497,9 +497,10 @@ const jobInfo = {
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
   'odyle-stats': { label: 'Daily numbers', schedule: () => 'Daily at 23:55 UTC (' + localHour(23, 55) + ' here)', unit: 'days stored', about: 'Stores the day\'s activation and feature-use totals shown under Server status, so their trend survives restarts; a run by hand replaces today\'s. Totals only, no account is recorded.' },
   'odyle-health': { label: 'Reader health', schedule: () => 'Every 5 minutes', unit: 'alerts posted', about: 'Posts to the Discord webhook in ODYLE_ALERT_WEBHOOK when most apps connected to the game have read no Odyle for 10 minutes (a game patch, most likely) or readings arrive under a refused adapter, once when it starts and once when it clears. Without the variable it only keeps the readers\' reports, which Server status shows.' },
+  'odyle-cap-alerts': { label: 'Cap alerts', schedule: () => 'Hourly at :05', unit: 'alerts sent', about: 'Tells players who turned cap alerts on when a character\'s natural pool, as the Odyle clock projects it, is about to reach its cap or is full: in their Windows app, open dashboards and by Web Push, outside their quiet hours. Never to rooms or Discord.' },
   'odyle-release': { label: 'Release check', schedule: () => 'Every 2 minutes', unit: 'lookups', about: 'Asks GitHub for the newest Windows release. A newer one is news for every open dashboard and running app at once, so run it by hand right after publishing a release.' },
 };
-const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account' };
+const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account', clock: 'Skipped, the Odyle clock is hidden under Game settings' };
 
 export function jobsPage() {
   app.store.title = 'Background jobs';

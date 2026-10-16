@@ -258,7 +258,8 @@ test('rooms plan, change and export runs, and members see each character history
     await page.locator('#run-form [type=submit]').click();
     await page.locator('.runs .wish-row').waitFor();
     assert.match(await page.locator('.runs .wish-row').innerText(), /Fire Temple[\s\S]*Bring potions[\s\S]*You/);
-    assert.match(await page.locator('.runs [data-starts]').innerText(), /^in /);
+    // The default start is the next full hour, which right before it is under a minute away.
+    assert.match(await page.locator('.runs [data-starts]').innerText(), /^(in |starting now)/);
     // The planner changes the run in a dialog and anyone can put it in their calendar.
     await page.locator('.runs [data-edit-run]').click();
     await page.locator('#run-edit-form [name=note]').fill('Bring food');
@@ -545,17 +546,28 @@ test('notifications are kept for the account, reach its other tabs and time the 
     const chip = minutes => form.locator(`.chip-check:has(input[value="${minutes}"])`);
     await chip(15).click(); await chip(120).click();
     await form.locator('[name=tray]').uncheck();
-    await form.locator('[name=quietFrom]').fill('03:00'); await form.locator('[name=quietTo]').fill('03:30');
+    // Quiet hours later today, so they never silence this test.
+    const [quietFrom, quietTo] = await page.evaluate(() => [2, 3].map(hours => new Date(Date.now() + hours * 3600000).toTimeString().slice(0, 5)));
+    await form.locator('[name=quietFrom]').fill(quietFrom); await form.locator('[name=quietTo]').fill(quietTo);
     await form.locator('[type=submit]').click();
     await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
     const saved = (await request('/api/odyle/account', undefined, lead, 'GET')).data.notifications;
-    assert.deepEqual([saved.leadMinutes, saved.channels.tray, saved.quiet.from, saved.quiet.to, saved.saved], [[120], false, '03:00', '03:30', true]);
+    assert.deepEqual([saved.leadMinutes, saved.channels.tray, saved.quiet.from, saved.quiet.to, saved.saved], [[120], false, quietFrom, quietTo, true]);
     assert.equal(saved.quiet.timeZone, await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone));
     // The other tab hears of it at once, and this one reminds of the run within the 2 hours.
     await other.page.locator('#notifications-form .chip-check input[value="120"]:checked').waitFor({ state: 'attached' });
     assert.equal(await other.page.locator('#notifications-form [name=tray]').isChecked(), false);
     await page.waitForFunction(() => window.shown.length > 0, null, { timeout: 15000 });
     const shown = await page.evaluate(() => window.shown); assert.equal(shown.length, 1); assert.match(shown[0], /^Fire Temple starts in 1h (39|40)m$/);
+    // Cap alerts: on in the card, a character 15 Odyle below the cap is told of when the job runs.
+    await form.locator('[name=cap]').check(); await form.locator('[name=capTicks]').selectOption('1');
+    await form.locator('[type=submit]').click(); await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
+    const session = (await request('/api/odyle/session', {}, lead)).data;
+    assert.equal((await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Nearly', server: 'Lumiel', region: 'GLOBAL_EU', value: 645, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, base: 545, bonus: 100, kind: 'snapshot' }, lead)).status, 200);
+    const operator = (await request('/__test__/superuser', { password: 'ui-test-cap-' + Date.now() })).data;
+    assert.equal((await request('/api/odyle/admin/jobs/odyle-cap-alerts', {}, operator)).status, 200);
+    await page.waitForFunction(() => window.shown.length > 1, null, { timeout: 15000 });
+    assert.equal((await page.evaluate(() => window.shown))[1], 'Nearly caps soon');
     // More than three reminder times are refused in the form.
     for (const minutes of [5, 30, 60]) await chip(minutes).click();
     await form.locator('[type=submit]').click();

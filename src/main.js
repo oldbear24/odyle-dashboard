@@ -1,4 +1,4 @@
-import { defaultNotifications, dueReminders, quietAt } from './notify.js';
+import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
 import { defaultClock, clockOf, clockLine } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp } from './model.js';
@@ -508,7 +508,7 @@ async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
   if (ticket !== navigation) return;
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -578,8 +578,10 @@ async function ownNews(data) {
     if (data.refresh) { if (!room && !later()) await refreshPage(); }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
     if (data.seen) applySeen(data.seen, characters);
+    // Cap alerts of the account's characters (the job checked the quiet hours).
+    if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
     // Notification settings saved in another tab or app.
-    if (data.notifications) { upcomingAt = 0; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
+    if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
     if (data.contact) {
       applyContact(data.contact, account?.apps); applyContact(data.contact, readers);
       // A reader started since the room was fetched: the snapshot names its PC (other pages hear of it as news).
@@ -598,7 +600,7 @@ async function refreshPage() {
   else if (shown === '/account') await refreshAccount();
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
@@ -803,7 +805,7 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'notifications-form') {
       const leads = new FormData(form).getAll('lead').map(Number);
       if (!leads.length || leads.length > 3) { formError(form, t('Choose one to three reminder times.')); return; }
-      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: (account.notifications || defaultNotifications).channels.push }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs) }, quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
+      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: (account.notifications || defaultNotifications).channels.push }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
       account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
     }
     else if (form.id === 'profile-form') {
@@ -951,11 +953,22 @@ async function toggleReminders() {
   if (await Notification.requestPermission() !== 'granted') return toast(t('Notifications are blocked for this site. Allow them in the browser settings.'));
   upcomingAt = 0; toast(t('This browser shows your notifications now.'));
 }
-let upcomingAt = 0;
+// A notification in this browser, through the service worker when there is one.
+async function notice(title, options) {
+  try { const worker = await navigator.serviceWorker?.getRegistration(); if (worker) await worker.showNotification(title, options); else new Notification(title, options); } catch { /* permission withdrawn meanwhile */ }
+}
+// Cap alerts show where the account wants them in browsers, once per alert across its open tabs.
+async function showCapAlerts(alerts) {
+  const settings = account?.notifications || notificationsSeen || defaultNotifications;
+  if (!settings.kinds.cap || !settings.channels.browser || reminderState() !== 'on') return;
+  for (const alert of alerts) { const { title, body } = capAlertText(alert); await notice(title, { body, tag: 'cap-' + alert.characterId + '-' + alert.state, icon: 'icon-192.png' }); }
+}
+let upcomingAt = 0, notificationsSeen = null;
 async function remindRuns() {
   if (reminderState() !== 'on' || demo || !pb.authStore.isValid || Date.now() - upcomingAt < 60000) return;
   upcomingAt = Date.now();
   const data = await pb.send('/api/odyle/upcoming'), now = Date.parse(data.serverNow) || Date.now(), settings = data.notifications || defaultNotifications;
+  notificationsSeen = settings;
   if (!settings.kinds.runs || !settings.channels.browser) return;
   let done; try { done = JSON.parse(storage.getItem(remindedKey)) || {}; } catch { done = {}; }
   for (const { run: r, at, key, marks } of dueReminders(data.runs, now, settings.leadMinutes, done)) {
@@ -963,7 +976,7 @@ async function remindRuns() {
     for (const key of marks) done[key] = at;
     if (quietAt(settings, now)) continue;
     const title = t('{dungeon} starts {time}', { dungeon: r.dungeon, time: startsIn(at, now) }), options = { body: [r.room, r.note].filter(Boolean).join(' · '), tag: key, icon: 'icon-192.png' };
-    try { const worker = await navigator.serviceWorker?.getRegistration(); if (worker) await worker.showNotification(title, options); else new Notification(title, options); } catch { /* permission withdrawn meanwhile */ }
+    await notice(title, options);
   }
   for (const key in done) if (done[key] < now - 86400000) delete done[key];
   try { storage.setItem(remindedKey, JSON.stringify(done)); } catch { /* storage full or blocked */ }

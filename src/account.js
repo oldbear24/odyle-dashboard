@@ -1,7 +1,7 @@
 import { t, tn, languages, language } from './i18n.js';
 import { escape as esc, age } from './model.js';
 import { icon } from './icons.js';
-import { defaultNotifications, leadChoices, leadLabel, browserZone } from './notify.js';
+import { defaultNotifications, leadChoices, leadLabel, browserZone, capTickChoices } from './notify.js';
 // The account page (#/account): profile, language, the paired Windows PCs and the apps
 // reading for the account, and the account's data: download it, sign out everywhere or delete it.
 // The account's notifications: what, where and quiet hours, saved for every browser and
@@ -13,6 +13,7 @@ function notificationsCard(n, reminders) {
   const zone = n.quiet.from ? n.quiet.timeZone : browserZone();
   return `<form id="notifications-form" class="setup-card notifications-card"><h2>${t('Notifications')}</h2><p>${t('For this account in every browser and Windows app. Room owners can also post runs to Discord under Room settings.')}</p>
 <fieldset><legend>${t('Planned runs')}</legend>${check('runs', n.kinds.runs, t('Remind me of runs I am going to'))}<div class="lead-choices" role="group" aria-label="${esc(t('Reminder times'))}">${leads.map(m => `<label class="chip-check"><input type="checkbox" name="lead" value="${m}" ${n.leadMinutes.includes(m) ? 'checked' : ''}><span>${esc(leadLabel(m))}</span></label>`).join('')}</div><small class="account-note">${t('Up to three times before each run.')}</small></fieldset>
+<fieldset><legend>${t('Odyle cap alerts')}</legend>${check('cap', n.kinds.cap, t('Tell me before a character\'s natural pool is full'))}<label>${t('When')}<select name="capTicks">${capTickChoices.map(([ticks, label]) => `<option value="${ticks}" ${(n.capTicks ?? 1) === ticks ? 'selected' : ''}>${esc(t(label))}</option>`).join('')}</select></label><small class="account-note">${t('Estimated by the Odyle clock from each character\'s last reading; a spend on a PC without the reader is not seen.')}</small></fieldset>
 <fieldset><legend>${t('Where')}</legend>${check('tray', n.channels.tray, t('Windows app (tray)'))}${check('browser', n.channels.browser, t('Browsers with the dashboard open'))}${here ? `<small class="account-note">${here}</small>` : reminders === 'off' ? `<button class="button secondary small" type="button" data-action="reminders">${t('Allow in this browser')}</button>` : ''}</fieldset>
 <fieldset><legend>${t('Quiet hours')}</legend><div class="quiet-hours"><label>${t('From')}<input type="time" name="quietFrom" value="${esc(n.quiet.from)}"></label><label>${t('To')}<input type="time" name="quietTo" value="${esc(n.quiet.to)}"></label></div><input type="hidden" name="timeZone" value="${esc(zone)}"><small class="account-note">${esc(t('No notifications in this span, in {zone}. Leave both empty for none.', { zone }))}</small></fieldset>
 <button class="button primary" type="submit">${t('Save notifications')}</button></form>`;

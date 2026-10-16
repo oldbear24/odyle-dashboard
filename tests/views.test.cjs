@@ -83,10 +83,22 @@ test('the account page lists paired PCs with their reader and keeps the notifica
   assert.match(html, /id="notifications-form"/); assert.match(html, /data-action="reminders"/);
   assert.deepEqual([...html.matchAll(/name="lead" value="(\d+)" ?(checked)?/g)].map(m => [m[1], Boolean(m[2])]), [['5', false], ['15', true], ['30', false], ['60', false], ['120', false], ['1440', false]]);
   assert.match(html, /name="tray" checked/); assert.match(html, /name="quietFrom" value=""/);
+  assert.match(html, /name="cap"\s+>/); assert.match(html, /<option value="1" selected>one tick before/);
   const saved = accountView({ account: { displayName: 'L' }, characters: 0, limits: { characters: 30 }, reminders: 'blocked', now, devices: [], apps: [],
     notifications: { channels: { tray: false, browser: true, push: true }, leadMinutes: [45, 15], kinds: { runs: true, cap: false }, quiet: { from: '23:00', to: '07:00', timeZone: 'Europe/Prague' }, saved: true } });
   assert.match(saved, /blocked for this site/); assert.doesNotMatch(saved, /data-action="reminders"/);
   assert.match(saved, /name="tray"\s+>/); assert.match(saved, /value="45" checked><span>45 min/); assert.match(saved, /name="quietFrom" value="23:00"/); assert.match(saved, /in Europe\/Prague/);
+});
+test('cap alerts say when the natural pool is full, or that it loses each tick', async () => {
+  const { capAlertText } = await import('../src/notify.js'), { useLanguage } = await import('../src/i18n.js');
+  await useLanguage('en');
+  const soon = { characterId: 'c', characterName: 'Lumina', state: 'soon', base: 545, cap: 840, settled: true, tick: 15, at: '2026-10-15T19:00:00.000Z' };
+  assert.equal(capAlertText(soon).title, 'Lumina caps soon'); assert.match(capAlertText(soon).body, /^Its natural pool is full ≈ .+; each tick of 15 after that is lost\.$/);
+  assert.match(capAlertText({ ...soon, settled: false, cap: 560 }).body, /^Its natural pool reaches 560 ≈ .+, full if that is its cap\.$/);
+  assert.deepEqual(capAlertText({ ...soon, state: 'full', at: '' }), { title: 'Lumina is losing Odyle', body: 'Its natural pool is full: each tick of 15 is lost until you spend some.' });
+  await useLanguage('cs');
+  assert.equal(capAlertText({ ...soon, state: 'full', settled: false, cap: 560 }).body, 'Přirozená zásoba je na 560: pokud je to její strop, každých 15 propadá.');
+  await useLanguage('en');
 });
 test('run reminders come once, at the smallest reminder time a run is within, and never in quiet hours', async () => {
   const { dueReminders, quietAt, leadLabel } = await import('../src/notify.js'), now = Date.parse('2026-10-15T18:00:00Z');

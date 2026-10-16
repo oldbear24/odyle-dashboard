@@ -19,6 +19,7 @@ func TestNotificationSettingsAreCheckedAndQuietHoursWrapMidnight(t *testing.T) {
 		return checked
 	}
 	base := defaultNotifications()
+	nine := int64(9)
 	if got := ok(notificationSettings{LeadMinutes: []int64{15, 1440, 120}}).LeadMinutes; asJSON(t, got) != "[1440,120,15]" {
 		t.Fatalf("leads %v", got)
 	}
@@ -29,6 +30,7 @@ func TestNotificationSettingsAreCheckedAndQuietHoursWrapMidnight(t *testing.T) {
 		{LeadMinutes: []int64{15}, Quiet: quietHours{From: "22:00", To: "22:00", TimeZone: "Europe/Prague"}},
 		{LeadMinutes: []int64{15}, Quiet: quietHours{From: "22:00", To: "07:00", TimeZone: "Mars/Olympus"}},
 		{LeadMinutes: []int64{15}, Quiet: quietHours{From: "22:00", To: "07:00"}},
+		{LeadMinutes: []int64{15}, CapTicks: &nine},
 	} {
 		if _, err := checkNotifications(bad); err == nil {
 			t.Errorf("accepted %+v", bad)
@@ -67,9 +69,9 @@ func TestAccountsKeepTheirNotificationSettings(t *testing.T) {
 	}
 	auth := map[string]string{"Authorization": raw}
 	reuse := func(testing.TB) *tests.TestApp { return app }
-	defaults := `"notifications":{"channels":{"tray":true,"browser":true,"push":true},"leadMinutes":[15],"kinds":{"runs":true,"cap":false},"quiet":{"from":"","to":"","timeZone":""},"saved":false}`
-	saved := `{"channels":{"tray":false,"browser":true,"push":false},"leadMinutes":[15,120],"kinds":{"runs":true,"cap":true},"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":false}`
-	stored := `"notifications":{"channels":{"tray":false,"browser":true,"push":false},"leadMinutes":[120,15],"kinds":{"runs":true,"cap":true},"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":true}`
+	defaults := `"notifications":{"channels":{"tray":true,"browser":true,"push":true},"leadMinutes":[15],"kinds":{"runs":true,"cap":false},"capTicks":1,"quiet":{"from":"","to":"","timeZone":""},"saved":false}`
+	saved := `{"channels":{"tray":false,"browser":true,"push":false},"leadMinutes":[15,120],"kinds":{"runs":true,"cap":true},"capTicks":2,"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":false}`
+	stored := `"notifications":{"channels":{"tray":false,"browser":true,"push":false},"leadMinutes":[120,15],"kinds":{"runs":true,"cap":true},"capTicks":2,"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":true}`
 	for _, s := range []tests.ApiScenario{
 		{Name: "an account that saved none has the defaults", Method: http.MethodGet, URL: "/api/odyle/account", Headers: auth, ExpectedStatus: 200, ExpectedContent: []string{defaults}},
 		{Name: "the rooms answer carries them for the Windows app", Method: http.MethodGet, URL: "/api/odyle/rooms", Headers: auth, ExpectedStatus: 200, ExpectedContent: []string{defaults}},

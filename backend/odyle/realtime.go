@@ -56,6 +56,8 @@ type userNews struct {
 	contact    map[string]time.Time // its reader sessions' heartbeats
 	// notification settings saved meanwhile (notifications.go)
 	notifications *notificationSettings
+	// cap alerts of its characters (capalerts.go)
+	capAlerts []capAlert
 }
 
 // outbox collects news until its delivery.
@@ -246,6 +248,9 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 	}
 	if n.notifications != nil {
 		message["notifications"] = n.notifications
+	}
+	if len(n.capAlerts) > 0 {
+		message["capAlerts"] = n.capAlerts
 	}
 	for _, kind := range []struct {
 		key   string

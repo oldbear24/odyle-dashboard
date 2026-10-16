@@ -14,9 +14,10 @@ import (
 
 // An account's notification settings, kept on the dashboard (Account & data) and followed by
 // every client: which notifications (planned runs at up to three lead times, Odyle cap alerts),
-// where (the Windows app's tray, browser tabs with the permission, Web Push) and quiet hours,
-// a daily span in the account's time zone in which none is shown. Accounts that never saved
-// any get the defaults: runs 15 minutes ahead everywhere, no cap alerts, no quiet hours.
+// where (the Windows app's tray, browser tabs with the permission, Web Push), how many ticks
+// before the natural pool's cap a cap alert comes (0: when it is full) and quiet hours, a daily
+// span in the account's time zone in which none is shown. Accounts that never saved any get the
+// defaults: runs 15 minutes ahead everywhere, no cap alerts (one tick ahead once on), no quiet hours.
 type notificationChannels struct {
 	Tray    bool `json:"tray"`
 	Browser bool `json:"browser"`
@@ -39,12 +40,14 @@ type notificationSettings struct {
 	Channels    notificationChannels `json:"channels"`
 	LeadMinutes []int64              `json:"leadMinutes"`
 	Kinds       notificationKinds    `json:"kinds"`
+	CapTicks    *int64               `json:"capTicks"` // left out by older clients: 1
 	Quiet       quietHours           `json:"quiet"`
 	Saved       bool                 `json:"saved"` // false: the defaults, never saved
 }
 
 func defaultNotifications() notificationSettings {
-	return notificationSettings{Channels: notificationChannels{Tray: true, Browser: true, Push: true}, LeadMinutes: []int64{15}, Kinds: notificationKinds{Runs: true}}
+	one := int64(1)
+	return notificationSettings{Channels: notificationChannels{Tray: true, Browser: true, Push: true}, LeadMinutes: []int64{15}, Kinds: notificationKinds{Runs: true}, CapTicks: &one}
 }
 
 var clockTime = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
@@ -66,6 +69,14 @@ func checkNotifications(n notificationSettings) (notificationSettings, error) {
 	n.LeadMinutes = slices.Clone(n.LeadMinutes)
 	slices.Sort(n.LeadMinutes)
 	slices.Reverse(n.LeadMinutes)
+	ticks := int64(1)
+	if n.CapTicks != nil {
+		ticks = *n.CapTicks
+	}
+	if ticks < 0 || ticks > 8 {
+		return n, errors.New("Cap alerts come 0 to 8 ticks before the cap.")
+	}
+	n.CapTicks = &ticks
 	q := n.Quiet
 	switch {
 	case q.From == "" && q.To == "":
@@ -133,7 +144,7 @@ func notifications(e *core.RequestEvent) error {
 		}
 		var sent notificationSettings
 		if json.Unmarshal(raw, &sent) != nil {
-			return nil, errors.New("Notification settings must be an object of channels, leadMinutes, kinds and quiet.")
+			return nil, errors.New("Notification settings must be an object of channels, leadMinutes, kinds, capTicks and quiet.")
 		}
 		checked, err := checkNotifications(sent)
 		if err != nil {
