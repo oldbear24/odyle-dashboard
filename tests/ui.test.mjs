@@ -444,6 +444,8 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
   assert.equal((await request('/api/odyle/sharing', { roomId: created.room.id, characterId: c.id, enabled: true }, reader)).status, 200);
   // The reader went quiet a minute ago.
   assert.equal((await request('/__test__/age-seen', { id: c.id, seconds: 60 })).status, 200);
+  // The room news of the join and the sharing is out before the page subscribes (see below).
+  await delay(1000);
   const { page, errors, close } = await open(lead, '#/room/' + created.room.id);
   try {
     const card = page.locator('.member-card', { hasText: 'Pulse' });
@@ -735,6 +737,9 @@ test('an open room checks no health while live, waits while hidden and draws its
   const [lead, mate] = await Promise.all([account('Quiet lead'), account('Quiet mate')]);
   const created = (await request('/api/odyle/create', { name: 'Quiet room' }, lead)).data, roomId = created.room.id;
   assert.equal((await request('/api/odyle/join', { code: created.invites[0].code }, mate)).status, 200);
+  // The join's room news (sent 150 ms later) is out before the page subscribes; on a slow
+  // machine it could otherwise arrive after, and the page would rightly fetch the room once.
+  await delay(1000);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
