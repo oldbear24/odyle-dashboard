@@ -517,6 +517,12 @@ func writeSettings(app core.App, b body) (settings, error) {
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}
+	// Answered caps follow changed caps (membership.go).
+	if b.has("clock") {
+		if err := settleCaps(app, next.Clock.Caps); err != nil {
+			return settings{}, err
+		}
+	}
 	return readSettings(app), nil
 }
 

@@ -582,6 +582,35 @@ test('the armory keeps bookmarked characters in this browser, without an account
   } finally { await close(); }
 });
 
+test('the membership answer settles the clock\'s cap, and a reading that contradicts it is pointed out', async () => {
+  const me = await account('Member');
+  const session = (await request('/api/odyle/session', {}, me)).data;
+  assert.equal((await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Pool', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, value: 700, base: 700, bonus: 0, kind: 'snapshot' }, me)).status, 200);
+  const { page, errors, close } = await open(me, '#/account');
+  try {
+    const form = page.locator('#membership-form');
+    assert.equal(await form.locator('input[name="membership"]:checked').getAttribute('value'), '', 'not sure until answered');
+    await form.locator('input[value="no"]').check();
+    await form.locator('[type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: the Odyle clock counts with the cap without the membership.' }).waitFor();
+    await shot(page, 'account-membership');
+    // The character's pool held 700, more than the 560 without the membership: its card says so.
+    await navigate(page, 'library');
+    const card = page.locator('.member-card', { hasText: 'Pool' });
+    await card.locator('.cap-mismatch', { hasText: 'Its natural pool held 700, more than 560: has the membership started?' }).waitFor();
+    // With the membership the readings fit, and the hint goes.
+    await navigate(page, 'account');
+    assert.equal(await form.locator('input[name="membership"]:checked').getAttribute('value'), 'no');
+    await form.locator('input[value="yes"]').check();
+    await form.locator('[type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: the Odyle clock counts with the membership cap.' }).waitFor();
+    await navigate(page, 'library');
+    await card.waitFor();
+    assert.equal(await card.locator('.cap-mismatch').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('a changed announcement shows on an open page at once, without asking the server', async () => {
   const operator = (await request('/__test__/superuser', {})).data, viewer = await account('News viewer');
   const { page, errors, close } = await open(viewer, '#/tasks');

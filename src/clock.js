@@ -16,12 +16,17 @@ export function ticksAfter(from, until, hours, limit = Infinity) {
   for (let at = Math.floor(from / hour) * hour + hour; at <= until && out.length < limit; at += hour) if (hours.includes(new Date(at).getUTCHours())) out.push(at);
   return out;
 }
-// The caps a character may have, smallest first: those its fullest natural pool of the last
-// 30 days fits under. One once its readings settled it (it held more than 560, so 840).
+// The caps a character may have, smallest first: the one its account's membership answer
+// settled (answeredCap: 840 with it, 560 without), else those its fullest natural pool of the
+// last 30 days fits under, one once its readings settled it (it held more than 560, so 840).
 export function capsOf(c, rules) {
+  if (c.answeredCap > 0) return [c.answeredCap];
   const fit = rules.caps.filter(cap => cap >= (c.naturalMax || 0));
   return fit.length ? fit : rules.caps.slice(-1);
 }
+// Readings that contradict the answer: the natural pool held more than the answered cap (the
+// membership started, most likely). They stay as read; the owner's card says so.
+export const capMismatch = c => c.answeredCap > 0 && (c.naturalMax || 0) > c.answeredCap;
 // The size of its last regeneration tick, else the server's.
 export const tickOf = (c, rules) => c.regenTick > 0 ? c.regenTick : rules.tick;
 

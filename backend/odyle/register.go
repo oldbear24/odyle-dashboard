@@ -28,6 +28,7 @@ var accountActions = []action{
 	{"desktop-code", desktopCode}, {"desktop-device", desktopDevice}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
+	{"membership", membershipAnswer},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
@@ -98,6 +99,7 @@ func Register(app core.App) {
 
 	watchSettings(app)
 	watchCharacters(app)
+	watchMembership(app)
 	scheduleJobs(app)
 }
 
