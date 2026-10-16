@@ -1031,6 +1031,9 @@ func report(e *core.RequestEvent) error {
 			point.Set("character", character.Id)
 			point.Set("value", data.value)
 			point.Set("adapter", data.parserVersion)
+			point.Set("parts", data.partsValue())
+			point.Set("kind", data.kind)
+			point.Set("delta", data.delta)
 			if err := app.Save(point); err != nil {
 				return nil, err
 			}
@@ -2508,14 +2511,17 @@ func historyOf(app core.App, id string) ([]any, string, error) {
 		var hours []struct {
 			Value   int64  `db:"value"`
 			Adapter string `db:"adapter"`
+			Kind    string `db:"kind"`
+			Delta   int64  `db:"delta"`
+			Parts   string `db:"parts"`
 			At      string `db:"at"`
 		}
-		if err := app.DB().NewQuery("SELECT value, adapter, MAX(created) AS at FROM character_readings WHERE character = {:id} AND created >= {:since} AND created < {:before} GROUP BY substr(created, 1, 13) ORDER BY at").
+		if err := app.DB().NewQuery("SELECT value, adapter, kind, delta, COALESCE(parts, 'null') AS parts, MAX(created) AS at FROM character_readings WHERE character = {:id} AND created >= {:since} AND created < {:before} GROUP BY substr(created, 1, 13) ORDER BY at").
 			Bind(dbx.Params{"id": id, "since": since, "before": hourlyBefore}).All(&hours); err != nil {
 			return nil, "", err
 		}
 		for _, h := range hours {
-			readings = append(readings, historyJSON(h.Value, h.At, h.Adapter))
+			readings = append(readings, historyJSON(h.Value, h.At, h.Adapter, h.Kind, h.Delta, h.Parts))
 		}
 	}
 	for i := len(points) - 1; i >= 0; i-- {

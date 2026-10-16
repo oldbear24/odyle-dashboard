@@ -138,10 +138,10 @@ Own characters can be read with the normal PocketBase `characters` collection AP
 
 ### Odyle history
 
-Every reading that changes a character's value (the first one included) is also stored in `character_readings` for 30 days, with `adapter`, the `parserVersion` of the reading (points saved before adapters were recorded carry their character's latest adapter, `global-reference-v1` on the hosted backend). `GET /api/odyle/history/{characterId}` returns the changes of those 30 days, oldest first, to the character's owner and to members of rooms it is shared in (others get 403, unknown ids 404):
+Every reading that changes a character's value (the first one included) is also stored in `character_readings` for 30 days, with `adapter`, the `parserVersion` of the reading (points saved before adapters were recorded carry their character's latest adapter, `global-reference-v1` on the hosted backend), and from newer Windows apps `parts` (`{ base, bonus }` or `null`), `kind` (`""` when not sent) and `delta` (the change of the total for a `regen`, `spend` or `item`, else `null`). `GET /api/odyle/history/{characterId}` returns the changes of those 30 days, oldest first, to the character's owner and to members of rooms it is shared in (others get 403, unknown ids 404):
 
 ```json
-{ "character": { "id": "character-id", "characterName": "Lumina", "value": 140, "confirmed": true }, "readings": [{ "value": 100, "at": "2026-10-13 18:00:00.000Z", "adapter": "global-reference-v1" }, { "value": 140, "at": "2026-10-14 09:12:00.000Z", "adapter": "global-reference-v2" }], "hourlyBefore": null, "serverNow": "2026-10-14T12:00:00.000Z" }
+{ "character": { "id": "character-id", "characterName": "Lumina", "value": 140, "confirmed": true }, "readings": [{ "value": 100, "at": "2026-10-13 18:00:00.000Z", "adapter": "global-reference-v1", "kind": "", "delta": null, "parts": null }, { "value": 140, "at": "2026-10-14 09:12:00.000Z", "adapter": "global-reference-v2", "kind": "item", "delta": 40, "parts": { "base": 0, "bonus": 140 } }], "hourlyBefore": null, "serverNow": "2026-10-14T12:00:00.000Z" }
 ```
 
 The answer always reaches back to the start of the 30 days and holds at most 1,721 points. Up to 1,000 changes are all listed and `hourlyBefore` is `null`. A character with more lists its newest 1,000 one by one and, before the oldest of them, the last change of each hour; `hourlyBefore` is then the time of that oldest change, so clients know the points before it are hourly. A value holds until the next point either way, so a step chart stays correct to the hour. The `character_readings` collection has no API rules.
@@ -169,9 +169,15 @@ Each character record carries `portrait`, a file name or empty. Clients load the
   "value": 0,
   "source": "packet",
   "parserVersion": "global-reference-v1",
-  "confirmed": true
+  "confirmed": true,
+  "base": 0,
+  "bonus": 0,
+  "kind": "snapshot",
+  "delta": null
 }
 ```
+
+`base` (the natural pool, which regenerates up to a cap) and `bonus` (what items added) are optional and kept only when both are integers that add up to `value`; the character then carries them as `parts` (`{ base, bonus }`, `null` when the last reading did not send them). `kind` is optional too: `snapshot`, `update`, `regen` (the natural pool alone rose), `spend` or `item`, with `delta` the change of the total (ignored for a snapshot). Anything malformed in these four is left out rather than refused, and Windows apps from before them send none.
 
 Returns `{ character, serverNow }`. Existing `characterId` must belong to the authenticated account and keeps its saved name, server and region: the identity fields in the body are validated but never rewrite an existing character. Without an ID, the identity tuple `(user, region, server, characterName)` finds or creates a character. Value is an integer 0–1,000,000; sequence increases per device session. Supported regions: `GLOBAL_EU`, `GLOBAL_NA`, `GLOBAL_SA`, `GLOBAL_ASIA`. Only packet reports whose `parserVersion` is listed in the backend registry (`backend/odyle/protocols.go`) are accepted; it currently lists `global-reference-v1` and `global-reference-v2`, the Windows companion's Global stream decoders (v2 reads the stat records by Odyle's resource id). Superusers can switch a built-in adapter off or accept another one under [Server controls](#superuser-monitor-and-settings); any other adapter is refused with *This packet adapter has not been validated for Global. No reading was saved.*, a message the Windows app recognizes. Manual reports are always rejected. While packet readers are paused every report is refused (503, or 400 for apps still sending `global-reference-v1`), see [Reader pause](#reader-pause). The Windows app sends a value the first time it reads a character and afterwards only when the value changes, so `lastReadingAt` is the time of the last change (a value re-sent unchanged, for example after the reader paused, keeps that timestamp); its 20-second heartbeat keeps an unchanged value live. Client metadata is not cryptographic proof of a game observation. The synthetic `test-fixture-v1` adapter is approved only in disposable integration-test hooks.
 

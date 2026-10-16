@@ -47,6 +47,9 @@ test('planned runs count down in local time and history charts round their axis'
   // Points before hourlyBefore are each hour's last change, so the count left out is a floor.
   assert.match(historyList(readings, 2), /<p class="history-more">1 earlier change not listed<\/p>/);
   assert.match(historyList(readings, 1, '2026-10-13 18:00:00.000Z'), /<p class="history-more">At least 2 earlier changes not listed<\/p>/);
+  // Newer Windows apps say what each change was.
+  const kinds = historyList([{ value: 910, at: '2026-10-14 22:00:00.000Z', kind: 'regen' }, { value: 830, at: '2026-10-14 22:04:00.000Z', kind: 'spend' }, { value: 870, at: '2026-10-14 22:10:00.000Z', kind: 'item' }, { value: 870, at: '2026-10-14 23:00:00.000Z', kind: 'snapshot' }]);
+  assert.deepEqual([...kinds.matchAll(/<span class="history-kind">([^<]*)<\/span>/g)].map(m => m[1]), ['item', 'spent', 'regeneration']);
 });
 test('runs go to calendars with a reminder, can be changed and count down in Czech', async () => {
   const { calendarFile, runEditForm, localInput, runsSection } = await import('../src/runs.js'), { useLanguage } = await import('../src/i18n.js');

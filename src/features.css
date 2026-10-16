@@ -56,3 +56,4 @@ dialog .scope-note{margin:12px 0 0;font-size:10.5px;color:#87988c}
 .invite-landing.problem{border-color:#5b4f33;background:#28251a;color:#ecdcb4;line-height:1.5}.invite-landing.problem svg{color:#d2b87e}.invite-landing.problem span{flex:1;overflow-wrap:anywhere}
 .invite-problem{max-width:520px;margin-top:12px;color:#f0a8a8;font-size:12px;line-height:1.5}.invite-page-actions{margin-top:18px}
 @media(max-width:540px){.invite-options{grid-template-columns:1fr;gap:0}.invite-row{flex-wrap:wrap;gap:6px}.invite-actions{flex-direction:row;align-items:center;margin-left:auto}}
+.energy-split{margin-top:5px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}.history-kind{color:var(--muted);font-size:11px}
