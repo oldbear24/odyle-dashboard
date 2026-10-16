@@ -9,6 +9,9 @@ export function status(member, now = Date.now()) {
   if (member.valid === false || member.source === 'manual' || now - timestamp(member.lastSeenAt) >= 45000) return 'stale';
   return 'live';
 }
+// A character's class and level as PLAYNC's official search lists them (#25): "Chanter · Lv 45",
+// either alone, or "" while the daily lookup has not found the character yet.
+export const classOf = c => [c?.className || '', c?.level > 0 ? t('Lv {level}', { level: c.level }) : ''].filter(Boolean).join(' · ');
 export function age(date, now = Date.now()) {
   if (!date) return t('No reading yet');
   const seconds = Math.max(0, Math.floor((now - timestamp(date)) / 1000));

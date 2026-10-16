@@ -2646,7 +2646,7 @@ func history(e *core.RequestEvent) error {
 		if hourlyBefore != "" {
 			thinned = hourlyBefore
 		}
-		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed()}, "readings": readings, "hourlyBefore": thinned, "serverNow": now()})
+		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed(), "level": c.GetInt64("level"), "className": c.GetString("className")}, "readings": readings, "hourlyBefore": thinned, "serverNow": now()})
 	})
 }
 

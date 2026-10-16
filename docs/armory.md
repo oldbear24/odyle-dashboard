@@ -65,6 +65,8 @@ PLAYNC's Global site (`aion2.plaync.com/en-us/characters/…`) loads its charact
 - the gear by slot (name, grade, enchantment, exceed level), with wings and pet;
 - the Daevanion boards (name, open and total nodes).
 
+Each profile read also names its class id (`pcId`) in `game_classes`, so characters with that id show their class on cards ([class and level](api.md#class-and-level)).
+
 Left out: skills, skins, titles' effects, rankings and every image. The dashboard's content security policy allows images only from the Odyle server, so the armory shows no PLAYNC icons.
 
 ## How often PLAYNC is asked

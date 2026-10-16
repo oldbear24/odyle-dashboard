@@ -114,33 +114,41 @@ func number(v any) float64 {
 // page (by pagination.total; without it the first page is the last).
 const searchPageSize, searchPages = 20, 5
 
-// imageURL is the portrait link the search lists for the character, or "" when it does
-// not list it. A failed search returns its error only when no other search region
-// listed the character.
-func imageURL(name, server, region string) (string, error) {
+// officialHit is what the search lists for the character: its portrait link ("" without one),
+// and its official id with the search region and server id that find its armory profile, its
+// level and class id (pcId), all from PLAYNC (#25). id is "" when the search does not list it.
+type officialHit struct {
+	link, id, region string
+	serverId         int
+	level, classId   int64
+}
+
+// findOfficial is the character as the search lists it. A failed search returns its error only
+// when no other search region listed the character.
+func findOfficial(name, server, region string) (officialHit, error) {
 	var failure error
 	for _, s := range searches(server, region) {
-		link, err := searchServer(name, s)
-		if link != "" {
-			return link, nil
+		hit, err := searchServer(name, s)
+		if hit.id != "" {
+			return hit, nil
 		}
 		if err != nil && failure == nil {
 			failure = err
 		}
 	}
-	return "", failure
+	return officialHit{}, failure
 }
 
-func searchServer(name string, s search) (string, error) {
+func searchServer(name string, s search) (officialHit, error) {
 	for page := 1; page <= searchPages; page++ {
 		// encodeURIComponent: spaces as %20.
 		query := "keyword=" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20") + "&serverId=" + strconv.Itoa(s.serverId) + "&region=" + s.region + "&localeInfo=en-US&page=" + strconv.Itoa(page) + "&size=" + strconv.Itoa(searchPageSize)
 		res, err := send(call{method: "GET", url: searchURL() + "?" + query, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 1 << 20})
 		if err != nil {
-			return "", err
+			return officialHit{}, err
 		}
 		if res.status != 200 {
-			return "", errors.New("The official character search is unavailable (" + strconv.Itoa(res.status) + ").")
+			return officialHit{}, errors.New("The official character search is unavailable (" + strconv.Itoa(res.status) + ").")
 		}
 		found, _ := res.json().(map[string]any)
 		hits, _ := found["list"].([]any)
@@ -149,18 +157,25 @@ func searchServer(name string, s search) (string, error) {
 			if plainName(hit["name"]) != plainName(name) || number(hit["serverId"]) != float64(s.serverId) {
 				continue
 			}
+			found := officialHit{region: s.region, serverId: s.serverId, level: max(0, int64(number(hit["level"]))), classId: max(0, int64(number(hit["pcId"])))}
+			// The search lists the id URL-encoded; ids that cannot be PLAYNC's are left out.
+			if id, err := url.QueryUnescape(textOf(hit["characterId"])); err == nil && armoryIds.MatchString(id) {
+				found.id = id
+			} else {
+				found.id = "-"
+			}
 			// Only ever fetch from the portrait host: the search result supplies a path.
 			if path, ok := hit["profileImageUrl"].(string); ok && strings.HasPrefix(path, "/") {
-				return imageBase() + path, nil
+				found.link = imageBase() + path
 			}
-			return "", nil
+			return found, nil
 		}
 		pagination, _ := found["pagination"].(map[string]any)
 		if len(hits) < searchPageSize || float64(page*searchPageSize) >= number(pagination["total"]) {
 			break
 		}
 	}
-	return "", nil
+	return officialHit{}, nil
 }
 
 type portrait struct {
@@ -169,28 +184,30 @@ type portrait struct {
 }
 
 // fetchPortrait loads the character's official portrait, or nil when the search does
-// not list it (new, renamed or deleted characters, unknown servers).
-func fetchPortrait(name, server, region string) (*portrait, error) {
-	link, err := imageURL(name, server, region)
-	if err != nil || link == "" {
-		return nil, err
+// not list it (new, renamed or deleted characters, unknown servers), with what the search
+// lists for it.
+func fetchPortrait(name, server, region string) (*portrait, officialHit, error) {
+	hit, err := findOfficial(name, server, region)
+	if err != nil || hit.link == "" {
+		return nil, hit, err
 	}
+	link := hit.link
 	// The portrait host redirects to PLAYNC's download CDN (fizz-download.playnccdn.com).
 	// An image larger than the portrait field takes (512 KB) is refused while it is read.
 	res, err := send(call{method: "GET", url: link, headers: map[string]string{"user-agent": userAgent}, timeout: 15 * time.Second, limit: portraitLimit, redirects: []string{"*.plaync.com", "*.playnccdn.com"}})
 	if err != nil {
-		return nil, err
+		return nil, hit, err
 	}
 	kind := strings.TrimSpace(strings.Split(res.header.Get("Content-Type"), ";")[0])
 	ext, ok := imageTypes[kind]
 	if res.status != 200 || !ok {
-		return nil, errors.New("The official portrait could not be downloaded.")
+		return nil, hit, errors.New("The official portrait could not be downloaded.")
 	}
 	file, err := filesystem.NewFileFromBytes(res.body, "portrait."+ext)
 	if err != nil {
-		return nil, err
+		return nil, hit, err
 	}
-	return &portrait{file: file, hash: portraitHash(res.body)}, nil
+	return &portrait{file: file, hash: portraitHash(res.body)}, hit, nil
 }
 
 // portraitHash identifies an image by the SHA-256 of its bytes, as saved in portraitHash.
@@ -298,7 +315,7 @@ func gamePortrait(app core.App, id string) error {
 	if err != nil {
 		return err
 	}
-	found, failure := fetchPortrait(before.Name(), before.Server(), before.Region())
+	found, hit, failure := fetchPortrait(before.Name(), before.Server(), before.Region())
 	// Saved from a fresh copy in one transaction: a reading saved while PLAYNC answered,
 	// or saved meanwhile by another request, is kept. Rooms hear of a new picture from
 	// the character's record hooks (realtime.go).
@@ -313,6 +330,10 @@ func gamePortrait(app core.App, id string) error {
 		// A failed lookup says nothing about the listing, so it is retried as before.
 		if failure == nil {
 			c.PortraitListed(found != nil)
+		}
+		// What the search lists besides the picture: the official id, level and class (#25).
+		if hit.id != "" {
+			setOfficial(tx, c, hit)
 		}
 		c.PortraitChecked()
 		return tx.Save(c)

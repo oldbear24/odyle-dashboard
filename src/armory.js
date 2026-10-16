@@ -12,6 +12,11 @@ export const regionNames = () => ({ GLOBAL_NA: t('North America'), GLOBAL_EU: t(
 // PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes.
 export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NA|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2})?$/;
 export const profilePath = hit => `/armory/${hit.region}/${hit.serverId}/${hit.characterId}`;
+// A character's own profile, once the daily lookup found it on PLAYNC (officialId), else "".
+export const officialPath = c => {
+  const path = c?.officialId && c.officialRegion && c.officialServerId ? profilePath({ region: c.officialRegion, serverId: c.officialServerId, characterId: c.officialId }) : '';
+  return path && armoryRoute.test(path) ? path : '';
+};
 export const findPath = (region, server, name) => `/armory/find/${region}/${server}/${encodeURIComponent(name)}`;
 // What a path asks for: { search } (the form), { find: { region, server, name } } or { profile: { region, serverId, characterId } }.
 export function armoryTarget(path) {

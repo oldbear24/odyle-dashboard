@@ -2,6 +2,12 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.12.0 · 2026-10-16
+
+### New
+- Character cards show the class and level PLAYNC lists for the character, such as **Chanter · Lv 45**, and run attendees show their class. They come from the daily portrait lookup, so a level can be a day old.
+- A card's **Armory** link opens the character's own profile once PLAYNC has listed it, instead of a search by name.
+
 ## 0.11.0 · 2026-10-16
 
 ### New
