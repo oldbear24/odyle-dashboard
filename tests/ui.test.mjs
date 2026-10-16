@@ -304,6 +304,13 @@ test('rooms plan, change and export runs, and members see each character history
     assert.match(await page.locator('.runs .wish-row').innerText(), /Bring food/);
     const calendar = page.waitForEvent('download'); await page.locator('.runs [data-calendar-run]').click();
     const ics = await calendar; assert.equal(ics.suggestedFilename(), 'odyle-fire-temple.ics');
+    // Anyone copies it as a Discord message with Discord timestamps and a link back to the room (#35).
+    await page.evaluate(() => { window.copied = []; navigator.clipboard.writeText = async text => { window.copied.push(text); }; });
+    await page.locator('.runs [data-copy-run]').click();
+    await toast(page).filter({ hasText: 'Copied for Discord: paste it in any channel.' }).waitFor();
+    await page.locator('.runs .wish-row').scrollIntoViewIfNeeded(); await shot(page, 'room-runs');
+    const copied = await page.evaluate(() => window.copied);
+    assert.equal(copied.length, 1); assert.match(copied[0], /^\*\*Fire Temple\*\* · <t:\d+:F> \(<t:\d+:R>\) · Going \(1(\/\d+)?\): .+ · Bring food · http:\/\/127\.0\.0\.1:18091\/#\/room\/\w+$/);
     await page.locator(`[data-history="${c.id}"]`).click();
     await page.locator('#modal .history-line').waitFor();
     assert.deepEqual(await page.locator('#modal .history-table tbody td:nth-child(2)').allInnerTexts(), ['90', '30', '55', '20']);

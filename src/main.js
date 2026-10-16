@@ -11,7 +11,7 @@ import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
 import { historyChart, historyList, bindHistoryChart } from './history.js';
-import { runsSection, startsIn, runEditForm, calendarFile } from './runs.js';
+import { runsSection, startsIn, runEditForm, calendarFile, discordText } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
@@ -1027,6 +1027,12 @@ app.addEventListener('click', async e => {
       return changedRoom(id, () => { runs = result.runs; });
     }
     if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
+    if (el.dataset.copyRun) {
+      const r = runs.find(x => x.id === el.dataset.copyRun); if (!r) return;
+      const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
+      const text = discordText(r, { going, partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: `${location.origin}${location.pathname}#/room/${room.id}` });
+      return toast(await copyText(text) ? t('Copied for Discord: paste it in any channel.') : t('Copying is blocked here. Select the text and copy it yourself.'));
+    }
     if (el.dataset.calendarRun) {
       const r = runs.find(x => x.id === el.dataset.calendarRun); if (!r) return;
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
