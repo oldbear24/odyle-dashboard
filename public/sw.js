@@ -1,6 +1,6 @@
 // The dashboard's service worker. It keeps the page and its built files so the
 // dashboard opens without a connection (it then says it cannot reach the server) and
-// shows run reminders. The API and the PocketBase dashboard are never cached: Odyle
+// shows run reminders and Web Push notifications. The API and the PocketBase dashboard are never cached: Odyle
 // readings are always fetched live.
 const cache = 'odyle-shell-v1';
 const scope = new URL(self.registration.scope);
@@ -30,8 +30,20 @@ self.addEventListener('fetch', event => {
     return fresh;
   })));
 });
-// A click on a run reminder opens the dashboard (or brings an open tab forward).
+// Web Push from the backend (backend/odyle/push.go): run reminders and cap alerts with the
+// dashboard closed, `{ title, body, tag, page }` (the tag is the one open tabs use, so one shows).
+self.addEventListener('push', event => {
+  let message;
+  try { message = event.data ? event.data.json() : {}; } catch { message = { body: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(message.title || 'Odyle', { body: message.body || '', tag: message.tag || undefined, icon: 'icon-192.png', data: { page: message.page || '' } }));
+});
+// A click on a notification opens the dashboard at its page (or brings an open tab forward there).
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => list.length ? list[0].focus() : self.clients.openWindow('./')));
+  const page = event.notification.data?.page || '', target = new URL('./' + page, scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async list => {
+    if (!list.length) return self.clients.openWindow(target);
+    const tab = await list[0].focus();
+    if (page && tab?.navigate) await tab.navigate(target).catch(() => { /* a tab this worker does not control keeps its page */ });
+  }));
 });

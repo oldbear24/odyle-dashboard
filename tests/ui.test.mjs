@@ -4,6 +4,7 @@
 // browser's localStorage as the SDK stores a Discord sign-in. Set ODYLE_UI_SHOTS to a
 // directory to keep a screenshot of every checked page, and ODYLE_UI_WIDTH to check
 // another viewport width (390 for a phone).
+import { pushService } from './push-service.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -532,6 +533,15 @@ test('notifications are kept for the account, reach its other tabs and time the 
   const { page, errors, close } = await open(lead, '#/account'), other = await open(lead, '#/account');
   try {
     await page.context().grantPermissions(['notifications'], { origin: url });
+    // This browser's push service is one on this machine (test backends may post there).
+    const service = await pushService();
+    await page.context().addInitScript(([endpoint, keys]) => {
+      if (!window.PushManager) return;
+      let current = null;
+      const subscription = { endpoint, toJSON: () => ({ endpoint, keys }), unsubscribe: async () => { current = null; return true; } };
+      PushManager.prototype.getSubscription = async () => current;
+      PushManager.prototype.subscribe = async () => (current = subscription);
+    }, [service.endpoint, service.keys]);
     await page.reload(); await page.getByRole('heading', { name: 'Account & data.' }).waitFor();
     await page.evaluate(() => {
       window.shown = [];
@@ -559,6 +569,21 @@ test('notifications are kept for the account, reach its other tabs and time the 
     assert.equal(await other.page.locator('#notifications-form [name=tray]').isChecked(), false);
     await page.waitForFunction(() => window.shown.length > 0, null, { timeout: 15000 });
     const shown = await page.evaluate(() => window.shown); assert.equal(shown.length, 1); assert.match(shown[0], /^Fire Temple starts in 1h (39|40)m$/);
+    // Push on this device: the browser subscribes, the server keeps it and a test arrives, encrypted for it.
+    await form.locator('[data-action="push-on"]').click();
+    await toast(page).filter({ hasText: 'Push notifications are on for this device.' }).waitFor();
+    assert.match(await form.innerText(), /This device takes push notifications\.[\s\S]*Push is on for 1 device: Edge on Windows/);
+    await form.locator('[data-action="push-test"]').click();
+    await toast(page).filter({ hasText: 'Sent a test to 1 device.' }).waitFor();
+    assert.equal(service.received.at(-1).message.title, 'Odyle notifications work');
+    // The service worker shows what a push service brings, and its click opens the page it names.
+    const worker = page.context().serviceWorkers()[0] || await page.context().waitForEvent('serviceworker');
+    const titles = await worker.evaluate(async () => {
+      self.dispatchEvent(new globalThis.PushEvent('push', { data: JSON.stringify({ title: 'Fire Temple starts in 15 min', body: 'Evening', tag: 'push-check', page: '#/tasks' }) }));
+      for (let i = 0; i < 20; i++) { const shown = await self.registration.getNotifications({ tag: 'push-check' }); if (shown.length) return shown.map(n => [n.title, n.body, n.data.page]); await new Promise(r => setTimeout(r, 100)); }
+      return [];
+    });
+    assert.deepEqual(titles, [['Fire Temple starts in 15 min', 'Evening', '#/tasks']]);
     // Cap alerts: on in the card, a character 15 Odyle below the cap is told of when the job runs.
     await form.locator('[name=cap]').check(); await form.locator('[name=capTicks]').selectOption('1');
     await form.locator('[type=submit]').click(); await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
@@ -568,6 +593,12 @@ test('notifications are kept for the account, reach its other tabs and time the 
     assert.equal((await request('/api/odyle/admin/jobs/odyle-cap-alerts', {}, operator)).status, 200);
     await page.waitForFunction(() => window.shown.length > 1, null, { timeout: 15000 });
     assert.equal((await page.evaluate(() => window.shown))[1], 'Nearly caps soon');
+    assert.equal(service.received.at(-1).message.title, 'Nearly caps soon', 'and by push');
+    // Push off on this device.
+    await form.locator('[data-action="push-off"]').click();
+    await toast(page).filter({ hasText: 'Push notifications are off for this device.' }).waitFor();
+    await form.locator('[data-action="push-on"]').waitFor();
+    service.server.close();
     // More than three reminder times are refused in the form.
     for (const minutes of [5, 30, 60]) await chip(minutes).click();
     await form.locator('[type=submit]').click();

@@ -277,11 +277,12 @@ async function tasksPage(ticket) {
 // The account page redraws when its apps change or go online, late or offline; ages tick in place.
 const contactState = at => { const quiet = Date.now() + serverOffset - timestamp(at); return quiet < 45000 ? 'online' : quiet < 90000 ? 'late' : 'offline'; };
 const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device, contactState(a.lastContactAt)]), account?.devices?.map(d => [d.id, d.name])]);
-function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), now: Date.now() + serverOffset }), 'account')); }
+function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset }), 'account')); }
 async function refreshAccount() {
   const data = await pb.send('/api/odyle/account');
   if (shown !== '/account') return;
   account = data; serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
+  await checkPush().catch(() => { pushHere = 'unsupported'; });
 }
 async function accountPage(ticket) {
   await leaveRoomTopic(); clearRoom();
@@ -805,7 +806,7 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'notifications-form') {
       const leads = new FormData(form).getAll('lead').map(Number);
       if (!leads.length || leads.length > 3) { formError(form, t('Choose one to three reminder times.')); return; }
-      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: (account.notifications || defaultNotifications).channels.push }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
+      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
       account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
     }
     else if (form.id === 'profile-form') {
@@ -887,6 +888,9 @@ app.addEventListener('click', async e => {
       case 'confirm-discord-off': { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: '' }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are off.')); break; }
       case 'open-elsewhere': signInElsewhere(embedded() ? 'app' : ''); break;
       case 'reminders': await toggleReminders(); accountRender(); break;
+      case 'push-on': await pushOn(); accountRender(); break;
+      case 'push-off': await pushOff(); accountRender(); break;
+      case 'push-test': { const result = await send('push-test', {}); account.push = result.push; toast(tn(result.sent, 'Sent a test to {n} device.', 'Sent a test to {n} devices.')); break; }
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
       case 'tasks': await go('/tasks'); break;
@@ -964,6 +968,42 @@ async function showCapAlerts(alerts) {
   for (const alert of alerts) { const { title, body } = capAlertText(alert); await notice(title, { body, tag: 'cap-' + alert.characterId + '-' + alert.state, icon: 'icon-192.png' }); }
 }
 let upcomingAt = 0, notificationsSeen = null;
+// Web Push on this device (backend push.go): the browser subscribes at its push service with
+// the server's key, and the server keeps the subscription for the account. pushHere is
+// unsupported, unavailable (no key or no service worker), blocked, on or off.
+let pushHere = 'unsupported';
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && notifications();
+async function checkPush() {
+  if (!pushSupported()) return (pushHere = 'unsupported');
+  const registration = await navigator.serviceWorker.getRegistration();
+  if (!account?.push?.publicKey || !registration) return (pushHere = 'unavailable');
+  if (Notification.permission === 'denied') return (pushHere = 'blocked');
+  return (pushHere = await registration.pushManager.getSubscription() ? 'on' : 'off');
+}
+// "Edge on Windows", "Chrome on Android": how the account page names this device.
+function deviceName() {
+  const ua = navigator.userAgent, browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const system = /Android/.test(ua) ? 'Android' : /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+  return system ? browser + ' on ' + system : browser;
+}
+async function pushSubscribed(subscription) {
+  const json = subscription.toJSON(), result = await send('push-subscribe', { endpoint: json.endpoint, keys: json.keys, language: language(), device: deviceName() });
+  account.push = result.push;
+}
+async function pushOn() {
+  if (await Notification.requestPermission() !== 'granted') { pushHere = 'blocked'; return toast(t('Notifications are blocked for this site. Allow them in the browser settings.')); }
+  const registration = await navigator.serviceWorker.ready, key = Uint8Array.from(atob(account.push.publicKey.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  let subscription = await registration.pushManager.getSubscription();
+  // A subscription made with another server key is renewed.
+  try { subscription ||= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); }
+  catch { await subscription?.unsubscribe(); subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }); }
+  await pushSubscribed(subscription); pushHere = 'on'; toast(t('Push notifications are on for this device.'));
+}
+async function pushOff() {
+  const subscription = await (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription();
+  if (subscription) { account.push = (await send('push-unsubscribe', { endpoint: subscription.endpoint })).push; await subscription.unsubscribe(); }
+  pushHere = 'off'; toast(t('Push notifications are off for this device.'));
+}
 async function remindRuns() {
   if (reminderState() !== 'on' || demo || !pb.authStore.isValid || Date.now() - upcomingAt < 60000) return;
   upcomingAt = Date.now();
@@ -985,7 +1025,10 @@ app.addEventListener('change', async e => {
   const el = e.target;
   if (el.id === 'language-select') {
     try { await useLanguage(el.value); } catch (error) { return failure(error); }
-    document.documentElement.lang = language(); document.title = t('Odyle — Party command'); storage.setItem(languageKey, language()); return rerender();
+    document.documentElement.lang = language(); document.title = t('Odyle — Party command'); storage.setItem(languageKey, language());
+    // Push messages are written in the language of the device that asked for them.
+    if (pushHere === 'on') (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription().then(s => s && pushSubscribed(s)).catch(() => { /* kept in the old language */ });
+    return rerender();
   }
   // A role change asks first; keeping the role closes the dialog with nothing changed.
   if (el.matches?.('select[data-role]')) {
