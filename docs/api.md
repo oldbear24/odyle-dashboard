@@ -144,24 +144,25 @@ Snapshots report the catalog twice: `dungeons` keeps the plain list of names tha
 
 ## Daily and weekly tasks
 
-Each account keeps a private checklist of daily and weekly tasks in its own order. Titles are free text (1–60 characters, inner whitespace collapsed) and an account can keep up to 40 tasks. Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit on the PocketBase dashboard's Odyle page or under *Collections*; the defaults are the Global service's 07:00 UTC and Wednesday.
+Each account keeps a private checklist of daily and weekly tasks in its own order: one list of its own and one for each of its characters (#38), so alts keep their own dailies and weeklies. A task's `character` is the character whose list it is on (with `characterName`), or `""` for the account's own; a character deleted from the account takes its list along. Titles are free text (1–60 characters, inner whitespace collapsed) and each list keeps up to 40 tasks (`limit`). Checking a task stores the time in `doneAt`; the server never unchecks it. Clients show a task as done while `doneAt` is on or after the start of the current period: daily periods begin at `resets.dailyResetHour` UTC, weekly periods on `resets.weeklyResetDay` at that hour (`src/tasks.js` is the reference implementation). Both values come from `odyle_settings` (`dailyResetHour` 0–23, `weeklyResetDay` `sunday`…`saturday`), which superusers edit on the PocketBase dashboard's Odyle page or under *Collections*; the defaults are the Global service's 07:00 UTC and Wednesday.
 
 | Method / route | Body | Result |
 | --- | --- | --- |
-| GET `/api/odyle/tasks` | — | `{ tasks, resets, serverNow }` of the signed-in account in the account's order (`position`, then oldest first); new tasks go to the end of their list |
-| POST `/api/odyle/task` | `{ title, cadence }` | Adds a task; `cadence` is `daily` or `weekly` |
+| GET `/api/odyle/tasks` | — | `{ tasks, resets, characters, templates, limit, serverNow }` of the signed-in account in the account's order (`position`, then oldest first); new tasks go to the end of their list. `characters` are the account's characters (`id`, `characterName`, `server`), the lists it can keep; `templates` the Global list |
+| POST `/api/odyle/task` | `{ title, cadence, characterId? }` | Adds a task to the account's list, or to the list of one of its characters; `cadence` is `daily` or `weekly` |
+| POST `/api/odyle/task` | `{ templates, characterId? }` | Adds tasks of the Global list by their titles (any case) to one list; a title the list has already is left out, so adding twice changes nothing |
 | POST `/api/odyle/task` | `{ id, done }` | `true` stores the current time in `doneAt`, `false` clears it |
 | POST `/api/odyle/task` | `{ id, title }` | Renames the task (same rules as adding) |
-| POST `/api/odyle/task` | `{ id, move }` | `up` or `down` swaps it with its neighbour in the same list; at either end nothing changes |
+| POST `/api/odyle/task` | `{ id, move }` | `up` or `down` swaps it with its neighbour in the same list (same cadence and the same account or character list); at either end nothing changes |
 | POST `/api/odyle/task` | `{ id, remove: true }` | Deletes the task |
 
-Every POST answers with the same `{ tasks, resets, serverNow }` as the GET:
+Every POST answers with the same checklist as the GET:
 
 ```json
 { "tasks": [{ "id": "task-id", "user": "user-id", "title": "Daily dungeon", "cadence": "daily", "doneAt": "2026-10-13 18:00:00.000Z", "created": "2026-10-13 09:00:00.000Z", "updated": "2026-10-13 18:00:00.000Z" }], "resets": { "dailyResetHour": 7, "weeklyResetDay": "wednesday" }, "serverNow": "2026-10-13T18:00:01.000Z" }
 ```
 
-A task of another account answers 403 and an unknown id 404. A change tells the account's own realtime topic (`odyle.user.<accountId>`, so the Windows app and other tabs follow); tasks are not part of room snapshots. The `user_tasks` collection has no API rules; use the routes above.
+The **Global list** is kept by superusers under Game settings (`taskTemplates`: up to 100 `{ title, cadence }`, each title once; empty until they fill it). It applies to tasks added from then on; tasks already on lists stay as they are. A task of another account, or another account's character, answers 403 and an unknown id 404. A change tells the account's own realtime topic (`odyle.user.<accountId>`, so the Windows app and other tabs follow); tasks are not part of room snapshots. The `user_tasks` collection has no API rules; use the routes above.
 
 ## Persistent characters and publisher sessions
 

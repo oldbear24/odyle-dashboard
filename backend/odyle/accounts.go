@@ -741,29 +741,45 @@ func resets(app core.App) map[string]any {
 // Personal daily and weekly checklists in the account's order. doneAt is the last time
 // the account checked a task; clients show it done while that is after the current
 // reset (src/tasks.js), so nothing has to uncheck tasks and nothing is deleted at reset.
-func tasksOf(app core.App, userId string) ([]any, error) {
+// A task on a character's list carries that character (its id, and its name as
+// characterName); one on the account's own list has character "".
+func tasksOf(app core.App, userId string, names map[string]string) ([]any, error) {
 	found, err := app.FindRecordsByFilter("user_tasks", "user = {:user}", "position,created", 0, 0, dbx.Params{"user": userId})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]any, len(found))
 	for i, t := range found {
-		out[i] = t.PublicExport()
+		j := t.PublicExport()
+		j["characterName"] = names[t.GetString("character")]
+		out[i] = j
 	}
 	return out, nil
 }
 
-func taskList(app core.App, userId, cadence string) ([]*Task, error) {
-	found, err := app.FindRecordsByFilter("user_tasks", "user = {:user} && cadence = {:cadence}", "position,created", 0, 0, dbx.Params{"user": userId, "cadence": cadence})
+// taskList is one list (the account's or a character's) of one cadence, in its order.
+func taskList(app core.App, userId, cadence, character string) ([]*Task, error) {
+	found, err := app.FindRecordsByFilter("user_tasks", "user = {:user} && cadence = {:cadence} && character = {:character}", "position,created", 0, 0, dbx.Params{"user": userId, "cadence": cadence, "character": character})
 	return views[Task](found), err
 }
 
+// checklist is the account's tasks with the resets, its characters (the lists it can keep),
+// the Global list and the limit of each list.
 func checklist(app core.App, userId string) (map[string]any, error) {
-	list, err := tasksOf(app, userId)
+	owned, err := charactersWhere(app, "user = {:user}", dbx.Params{"user": userId})
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"tasks": list, "resets": resets(app), "serverNow": now()}, nil
+	names, characters := map[string]string{}, make([]any, len(owned))
+	for i, c := range owned {
+		names[c.Id] = c.Name()
+		characters[i] = map[string]any{"id": c.Id, "characterName": c.Name(), "server": c.Server()}
+	}
+	list, err := tasksOf(app, userId, names)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"tasks": list, "resets": resets(app), "characters": characters, "templates": readSettings(app).TaskTemplates, "limit": taskLimit, "serverNow": now()}, nil
 }
 
 func tasks(e *core.RequestEvent) error {
@@ -776,10 +792,11 @@ func tasks(e *core.RequestEvent) error {
 	})
 }
 
-// One route for the checklist: { title, cadence } adds a task, { id, done } stores or
-// clears the time it was checked, { id, title } renames it, { id, move: 'up'|'down' }
-// moves it within its list and { id, remove: true } deletes it. Tasks are private to
-// the account and every answer carries the whole list.
+// One route for the checklist: { title, cadence, characterId? } adds a task to the account's
+// list or to one of its characters', { templates: [titles], characterId? } adds tasks of the
+// Global list, { id, done } stores or clears the time it was checked, { id, title } renames
+// it, { id, move: 'up'|'down' } moves it within its list and { id, remove: true } deletes it.
+// Tasks are private to the account and every answer carries the whole checklist.
 func checklistTask(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		if b.set("id") {
@@ -812,7 +829,7 @@ func checklistTask(e *core.RequestEvent) error {
 					return nil, err
 				}
 			case move == "up" || move == "down":
-				order, err := taskList(app, user.Id, t.Cadence())
+				order, err := taskList(app, user.Id, t.Cadence(), t.Character())
 				if err != nil {
 					return nil, err
 				}
@@ -841,34 +858,21 @@ func checklistTask(e *core.RequestEvent) error {
 				return nil, badRequest("Send done (true or false), a new title, move (up or down) or remove: true.")
 			}
 		} else {
+			character, err := taskScope(app, user.Id, b)
+			if err != nil {
+				return nil, err
+			}
+			if b.has("templates") {
+				if err := addTemplates(app, user.Id, character, b["templates"]); err != nil {
+					return nil, err
+				}
+				return checklist(app, user.Id)
+			}
 			title, cadence, err := task(b["title"], b["cadence"])
 			if err != nil {
 				return nil, err
 			}
-			count, err := app.CountRecords("user_tasks", dbx.HashExp{"user": user.Id})
-			if err != nil {
-				return nil, err
-			}
-			if count >= 40 {
-				return nil, badRequest("You can keep up to 40 tasks.")
-			}
-			order, err := taskList(app, user.Id, cadence)
-			if err != nil {
-				return nil, err
-			}
-			t, err := newAs[Task](app, "user_tasks")
-			if err != nil {
-				return nil, err
-			}
-			position := 1
-			if len(order) > 0 {
-				position = order[len(order)-1].Position() + 1
-			}
-			t.Set("user", user.Id)
-			t.Set("cadence", cadence)
-			t.SetTitle(title)
-			t.SetPosition(position)
-			if err := app.Save(t); err != nil {
+			if err := addTask(app, user.Id, character, title, cadence); err != nil {
 				return nil, err
 			}
 		}
@@ -2361,7 +2365,11 @@ func exportData(e *core.RequestEvent) error {
 			}
 			joined[i] = map[string]any{"room": m.Room(), "name": name, "role": m.Role(), "joined": m.Created(), "sharedCharacters": m.Shared(), "wishlist": pluck(wishes, (*Wish).Dungeon), "runs": planned}
 		}
-		checklist, err := tasksOf(app, user.Id)
+		names := map[string]string{}
+		for _, c := range characters {
+			names[c.Id] = c.Name()
+		}
+		checklist, err := tasksOf(app, user.Id, names)
 		if err != nil {
 			return err
 		}

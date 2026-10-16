@@ -381,6 +381,9 @@ func (t *Task) User() string    { return t.GetString("user") }
 func (t *Task) Cadence() string { return t.GetString("cadence") }
 func (t *Task) Position() int   { return t.GetInt("position") }
 
+// Character is the character whose list the task is on, or "" for the account's own.
+func (t *Task) Character() string { return t.GetString("character") }
+
 func (t *Task) SetTitle(title string)    { t.Set("title", title) }
 func (t *Task) SetPosition(position int) { t.Set("position", position) }
 

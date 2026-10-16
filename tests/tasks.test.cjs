@@ -38,3 +38,22 @@ test('a task stays done until the reset after it was checked', async () => {
   assert.equal(dayName(), 'Wednesday'); assert.equal(dayName({ weeklyResetDay: 'monday' }), 'Monday'); assert.equal(dayName({ weeklyResetDay: 'funday' }), 'Wednesday');
   assert.equal(resetHour({ dailyResetHour: 0 }), 0); assert.equal(resetHour({ dailyResetHour: 24 }), 7); assert.equal(resetHour(undefined), 7);
 });
+
+test('each character keeps its own lists and the Global list adds what a list lacks (#38)', async () => {
+  const { scopes, inScope, left, templatesForm } = await tasks();
+  const now = at('2026-10-13T12:00:00Z');
+  const list = [
+    { id: 'a', title: 'Daily dungeon', cadence: 'daily', character: '', doneAt: '' },
+    { id: 'b', title: 'Daily dungeon', cadence: 'daily', character: 'alt', doneAt: '2026-10-13 08:00:00.000Z' },
+    { id: 'c', title: 'Nightmare', cadence: 'weekly', character: 'alt', doneAt: '' },
+    { id: 'd', title: 'Older task', cadence: 'weekly', doneAt: '' },
+  ];
+  assert.deepEqual(scopes([{ id: 'alt', characterName: 'Alt', server: 'Lumiel' }]), [{ id: '', name: 'Account' }, { id: 'alt', name: 'Alt', server: 'Lumiel' }]);
+  assert.deepEqual(list.filter(task => inScope(task, '')).map(task => task.id), ['a', 'd']);
+  assert.deepEqual([left(list, now, undefined, ''), left(list, now, undefined, 'alt'), left(list, now)], [2, 1, 3]);
+  const form = templatesForm([{ title: 'Nightmare', cadence: 'weekly' }, { title: 'Daily <dungeon>', cadence: 'daily' }, { title: 'daily dungeon', cadence: 'daily' }], list, 'alt');
+  assert.match(form, /value="Nightmare" checked disabled/);
+  assert.match(form, /value="daily dungeon" checked disabled/);
+  assert.match(form, /value="Daily &lt;dungeon&gt;" >/);
+  assert.ok(form.indexOf('Daily <') < 0 && form.indexOf('<legend>Daily</legend>') < form.indexOf('<legend>Weekly</legend>'));
+});

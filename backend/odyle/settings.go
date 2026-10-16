@@ -108,6 +108,7 @@ type settings struct {
 	ArmoryPaused        bool           `json:"armoryPaused"`
 	Adapters            adapterLists   `json:"adapters"`
 	Clock               clockRules     `json:"clock"`
+	TaskTemplates       []taskTemplate `json:"taskTemplates"`
 }
 
 // The superuser settings answer lists the catalog's entries as `catalog` and keeps
@@ -122,7 +123,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock()}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock()}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -218,7 +219,7 @@ func loadSettings(app core.App) settings {
 		return defaultSettings()
 	}
 	out := settings{OdylePerCube: s.GetInt64("odylePerCube"), DailyResetHour: s.GetInt64("dailyResetHour"), WeeklyResetDay: s.GetString("weeklyResetDay"), InactiveAccountDays: s.GetInt64("inactiveAccountDays"),
-		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
+		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), TaskTemplates: storedTemplates(parseJSON(s.GetString("taskTemplates"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
@@ -500,6 +501,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("taskTemplates") {
+		if next.TaskTemplates, err = checkTemplates(b["taskTemplates"]); err != nil {
+			return settings{}, err
+		}
+	}
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
@@ -514,6 +520,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("armoryPaused", next.ArmoryPaused)
 	record.Set("adapters", map[string]any{"extra": next.Adapters.Extra, "disabled": next.Adapters.Disabled})
 	record.Set("clock", next.Clock)
+	record.Set("taskTemplates", next.TaskTemplates)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}
