@@ -9,7 +9,7 @@ import (
 
 // state is what the backend keeps in server memory only: the settings, the newest
 // packets, the last hour's traffic, the background jobs' records, the cached Windows
-// release and backup list, and what kept the environment's backup and proxy settings
+// release and backup list, the armory's queue and searches, and what kept the environment's backup and proxy settings
 // from applying. A restart clears it.
 type state struct {
 	mu        sync.Mutex
@@ -32,6 +32,9 @@ type state struct {
 
 	portraits *portraitWork // has its own lock
 
+	armory       *armoryWork     // has its own lock
+	armorySearch *armorySearches // has its own lock
+
 	webhooks webhookWaits // has its own lock
 
 	backups     backupList // has its own lock
@@ -50,7 +53,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, portraits: newPortraitWork(),
+		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(),
 			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence(), health: newHealth()}
 	}).(*state)
 }
