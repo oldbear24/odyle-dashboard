@@ -22,6 +22,9 @@ type notificationChannels struct {
 	Tray    bool `json:"tray"`
 	Browser bool `json:"browser"`
 	Push    bool `json:"push"`
+	// Discord: a mention in the room's Discord reminder of a run the account is going to (#34);
+	// off until turned on, and left out by older clients.
+	Discord bool `json:"discord"`
 }
 
 type notificationKinds struct {

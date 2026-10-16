@@ -1,15 +1,11 @@
 package odyle
 
 import (
-	"fmt"
-	"net/http"
 	"os"
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -1833,6 +1829,9 @@ func plan(e *core.RequestEvent) error {
 						}
 					}
 				}
+				if err := endPosts(app, r, "done"); err != nil {
+					return nil, err
+				}
 				if err := app.Delete(r); err != nil {
 					return nil, err
 				}
@@ -1869,6 +1868,9 @@ func plan(e *core.RequestEvent) error {
 			case b.isTrue("remove"):
 				if r.PlannedBy() != m.Id && !isOwner && !(started && attending) {
 					return nil, forbidden("Only its planner or the room owner can cancel this run.")
+				}
+				if err := endPosts(app, r, "cancelled"); err != nil {
+					return nil, err
 				}
 				if err := app.Delete(r); err != nil {
 					return nil, err
@@ -2086,9 +2088,10 @@ func transfer(e *core.RequestEvent) error {
 }
 
 // discordWebhook lets the room owner connect a Discord channel webhook ({ roomId,
-// webhook, language }) or disconnects it (an empty webhook). A test post proves the webhook
-// before it is saved; it runs outside a transaction because it waits on Discord. No
-// response carries the URL.
+// webhook, language }) or disconnects it (an empty webhook), and choose when runs are posted
+// ({ leads: one to three of 5, 10, 15, 30, 60 and 120 minutes, startPost }, with a webhook or
+// alone). A test post proves the webhook before it is saved and gives its name in Discord; it
+// runs outside a transaction because it waits on Discord. No response carries the URL.
 func discordWebhook(e *core.RequestEvent) error {
 	return run(e, func() error {
 		b, err := requestBody(e)
@@ -2099,160 +2102,42 @@ func discordWebhook(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		url, err := webhook(b["webhook"])
-		if err != nil {
-			return err
-		}
-		language := "en"
-		if l, _ := b.text("language"); l == "cs" {
-			language = "cs"
-		}
-		if url != "" {
-			if err := connectWebhook(url, room.Name(), language); err != nil {
+		if b.has("leads") {
+			leads, err := checkLeads(b["leads"])
+			if err != nil {
 				return err
 			}
+			room.Set("discordLeads", leads)
 		}
-		room.SetDiscord(url, language)
+		if start, ok := b.boolean("startPost"); ok {
+			room.Set("discordStartPost", start)
+		}
+		if b.has("webhook") {
+			url, err := webhook(b["webhook"])
+			if err != nil {
+				return err
+			}
+			language := "en"
+			if l, _ := b.text("language"); l == "cs" {
+				language = "cs"
+			}
+			name := ""
+			if url != "" {
+				if name, err = connectWebhook(url, room.Name(), language); err != nil {
+					return err
+				}
+				// A new webhook starts with a clean record.
+				room.Set("discordStatus", deliveryStatus{OkAt: now()})
+			}
+			room.SetDiscord(url, language)
+			room.Set("discordName", name)
+		}
 		if err := e.App.Save(room); err != nil {
 			return err
 		}
 		notify(e.App, []string{room.Id})
 		return e.JSON(200, map[string]any{"room": roomJSON(room, odylePerCube(e.App))})
 	})
-}
-
-// remindRuns is a job, every minute: it posts each run to its room's Discord channel 15
-// minutes before it starts, or at once when it was planned later than that. A run is
-// announced once and again after a new start time; a webhook Discord no longer knows is
-// dropped. Paused by superusers (Server controls), runs starting meanwhile are not
-// announced afterwards. Discord limits each webhook, so the runs of one webhook are
-// posted one after another; up to four webhooks post at the same time, so one slow
-// channel does not hold up the others.
-func remindRuns(app core.App) (result, error) {
-	if readSettings(app).RemindersPaused {
-		return result{Skipped: "paused"}, nil
-	}
-	var mu sync.Mutex
-	out := result{}
-	// text is the job's last error on the Background jobs page; the log line keeps the fields.
-	fail := func(text, event string, args ...any) {
-		mu.Lock()
-		out.fail(text)
-		mu.Unlock()
-		warn(app, event, args...)
-	}
-	at := time.Now()
-	found, err := app.FindRecordsByFilter("room_runs", "remindedAt = '' && room.discordWebhook != '' && startsAt > {:now} && startsAt <= {:soon}", "startsAt", 50, 0, dbx.Params{"now": stamp(at), "soon": stamp(at.Add(15 * time.Minute))})
-	if err != nil || len(found) == 0 {
-		return out, err
-	}
-	due := views[Run](found)
-	rooms, err := roomsByID(app, pluck(due, (*Run).Room))
-	if err != nil {
-		return result{}, err
-	}
-	groups, order := map[string][]*Run{}, []string{}
-	for _, r := range due {
-		link := ""
-		if room := rooms[r.Room()]; room != nil {
-			link = room.DiscordWebhook()
-		}
-		if groups[link] == nil {
-			order = append(order, link)
-		}
-		groups[link] = append(groups[link], r)
-	}
-	slots := make(chan struct{}, 4)
-	var wg sync.WaitGroup
-	for _, link := range order {
-		wg.Go(func() {
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			for _, r := range groups[link] {
-				reminded, err := safeRemind(app, r, fail)
-				if err != nil {
-					fail("Reminder for run "+r.Id+" failed: "+message(err), "Odyle run reminder failed", "run", r.Id, "error", message(err))
-				} else if reminded {
-					mu.Lock()
-					out.Done++
-					mu.Unlock()
-				}
-			}
-		})
-	}
-	wg.Wait()
-	return out, nil
-}
-
-// safeRemind is remindRun with a panic turned into its error.
-func safeRemind(app core.App, r *Run, fail func(text, event string, args ...any)) (reminded bool, err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			err = fmt.Errorf("the reminder failed: %v", p)
-		}
-	}()
-	return remindRun(app, r, fail)
-}
-
-// remindRun posts one run and reports whether Discord took it.
-func remindRun(app core.App, r *Run, fail func(text, event string, args ...any)) (bool, error) {
-	room, err := findAs[Room](app, "party_rooms", r.Room())
-	if err != nil {
-		return false, err
-	}
-	url, attendees, users := room.DiscordWebhook(), r.Attendees(), []string{}
-	// Dropped by an earlier run of this job (Discord no longer knew it), or disconnected meanwhile.
-	if url == "" {
-		return false, nil
-	}
-	if len(attendees) > 0 {
-		members, err := app.FindRecordsByIds("room_members", attendees)
-		if err != nil {
-			return false, err
-		}
-		users = pluck(views[Member](members), (*Member).User)
-	}
-	going := []string{}
-	if len(users) > 0 {
-		accounts, err := app.FindRecordsByIds("users", users)
-		if err != nil {
-			return false, err
-		}
-		going = pluck(views[Account](accounts), (*Account).DisplayName)
-	}
-	waits := &stateOf(app).webhooks
-	if waits.waiting(url, time.Now()) {
-		return false, nil
-	}
-	message := reminder(room.Name(), r.Dungeon(), r.StartsAt(), r.Note(), going, room.DiscordLanguage())
-	res, err := postWebhook(url, message)
-	// A short wait (a burst of runs in one room) is waited out once.
-	if wait := retryAfter(res); err == nil && res.status == http.StatusTooManyRequests && wait <= 2*time.Second {
-		time.Sleep(wait)
-		res, err = postWebhook(url, message)
-	}
-	if err != nil {
-		return false, err
-	}
-	status := res.status
-	switch {
-	case status == http.StatusTooManyRequests:
-		wait := waits.wait(url, res, time.Now())
-		fail("Reminder for run "+r.Id+" waits: Discord asked to wait "+wait.Round(time.Second).String(), "Odyle run reminder waits for Discord", "run", r.Id, "room", room.Id, "retryAfter", wait.String())
-	case status == 401 || status == 404:
-		room.SetDiscord("", "")
-		if err := app.Save(room); err != nil {
-			return false, err
-		}
-		notify(app, []string{room.Id})
-		fail("Dropped the Discord webhook of room "+room.Id+": Discord answered "+strconv.Itoa(status), "Odyle dropped a Discord webhook that Discord no longer knows", "room", room.Id, "status", status)
-	case status >= 200 && status < 300:
-		r.Reminded()
-		return true, app.Save(r)
-	default:
-		fail("Reminder for run "+r.Id+" failed: Discord answered "+strconv.Itoa(status), "Odyle run reminder failed", "run", r.Id, "status", status)
-	}
-	return false, nil
 }
 
 // upcoming lists the runs the account is going to in the next 24 hours across all its

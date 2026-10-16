@@ -226,7 +226,7 @@ func checkHealth(app core.App) (result, error) {
 	sort.Strings(cleared)
 	out := result{}
 	post := func(key, text string) {
-		if res, err := postWebhook(link, map[string]any{"content": text}); err != nil || res.status >= 300 {
+		if res, err := postWebhook(link, map[string]any{"content": text}, nil); err != nil || res.status >= 300 {
 			out.fail("Discord did not take the alert")
 			// Told again at the next run.
 			h.mu.Lock()

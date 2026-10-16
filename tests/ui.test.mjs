@@ -29,8 +29,11 @@ const account = async name => (await request('/__test__/account', { name })).dat
 const armorer = ['QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>', 45, 36], armorerAlt = ['QXJtb3Jlcnhfa2QwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>x', 12, 9];
 before(async () => {
   assert.ok(existsSync(resolve('dist/index.html')), 'Build the dashboard first: npm run build');
-  // Stands in for Discord's webhook API.
-  discord = createServer((req, res) => { discordPosts++; req.resume(); req.on('end', () => { res.writeHead(204); res.end(); }); });
+  // Stands in for Discord's webhook API: posts, and the webhook's name.
+  discord = createServer((req, res) => {
+    if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ name: 'Odyle hook', channel_id: '1' })); return; }
+    discordPosts++; req.resume(); req.on('end', () => { res.writeHead(204); res.end(); });
+  });
   await new Promise(r => discord.listen(0, '127.0.0.1', r)); discordUrl = 'http://127.0.0.1:' + discord.address().port;
   // Stands in for PLAYNC: the character search lists two characters for "Armorer" (and
   // nobody else, so other characters get no portrait), with their official pages.
@@ -1115,6 +1118,20 @@ test('room owners connect Discord reminders and a bad webhook says why in the fo
     await page.locator('#discord-form [type=submit]').click();
     await toast(page).filter({ hasText: 'Discord reminders are on' }).waitFor();
     assert.equal(discordPosts, before + 1);
+    // Connected: its name in Discord, and when runs are posted (15 minutes until chosen).
+    assert.match(await page.locator('#modal').innerText(), /Reminders are on: each planned run is posted to your Discord channel 15 min before it starts\. Posting as Odyle hook, in English\./);
+    assert.match(await page.locator('#modal .discord-status.ok').innerText(), /^Last post delivered /);
+    const options = page.locator('#discord-options-form'), chip = minutes => options.locator(`.chip-check:has(input[value="${minutes}"])`);
+    for (const minutes of [60, 30, 5]) await chip(minutes).click();
+    await options.locator('[type=submit]').click();
+    assert.match(await options.locator('.form-error[role=alert]').innerText(), /Choose one to three reminder times\./);
+    await chip(30).click(); await chip(5).click(); await options.locator('[name=startPost]').check();
+    await options.locator('[type=submit]').click();
+    await toast(page).filter({ hasText: 'Discord reminder times saved.' }).waitFor();
+    assert.match(await page.locator('#modal').innerText(), /posted to your Discord channel 1 h and 15 min before it starts, and as it starts\./);
+    const saved = (await request('/api/odyle/rooms', undefined, lead, 'GET')).data.rooms.find(r => r.id === roomId);
+    assert.deepEqual([saved.discordLeads, saved.discordStartPost, saved.discordReminders, 'discordWebhook' in saved], [[60, 15], true, true, false]);
+    await shot(page, 'room-discord-on');
     await page.locator('#modal [data-action="discord-off"]').click();
     assert.match(await page.locator('#modal').innerText(), /Stop Discord reminders\?/);
     await page.locator('#modal [data-action="confirm-discord-off"]').click();

@@ -1,5 +1,6 @@
 import { runReadiness, broughtBy, earliestClaim } from './runready.js';
 import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
+import { discordSettings as discordView, chosenTimes } from './discord.js';
 import { defaultClock, clockOf, clockLine, capMismatch } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp, classOf } from './model.js';
@@ -488,12 +489,8 @@ function roomSettings() {
     : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${esc(roleName(m.role))}</small></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
   modal(t('Room settings'), newOnes + `<form id="rename-form" class="rename-form"><label>${t('Room name')}<input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form><h3 class="modal-sub">${t('Members')}</h3><p>${t('Players share characters and plan runs; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>${discordSettings()}<div class="modal-actions"><button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button><button class="button danger" data-action="close-room">${t('Close this room')}</button></div>`);
 }
-// The owner connects a Discord channel: each planned run is posted there 15 minutes
-// before it starts. The webhook URL never comes back from the server.
-function discordSettings() {
-  const on = room.discordReminders;
-  return `<h3 class="modal-sub">${t('Discord reminders')}</h3><p>${on ? t('Reminders are on: each planned run is posted to your Discord channel 15 minutes before it starts.') : t('Post each planned run to a Discord channel 15 minutes before it starts. In Discord, open the channel settings → Integrations → Webhooks, create one and paste its URL here.')}</p><form id="discord-form" class="rename-form"><label>${on ? t('Replace the webhook URL') : t('Webhook URL')}<input name="webhook" type="url" autocomplete="off" required placeholder="https://discord.com/api/webhooks/…"></label><button class="button secondary" type="submit">${on ? t('Replace') : t('Connect')}</button></form>${on ? `<button class="text-button" data-action="discord-off">${t('Stop Discord reminders')}</button>` : ''}`;
-}
+// The owner connects a Discord channel and chooses when runs are posted there (discord.js).
+const discordSettings = () => discordView(room, Date.now() + serverOffset);
 // Demo characters get a made-up history so the chart can be tried without signing in.
 function demoHistory(id) {
   const c = members.flatMap(m => m.characters || []).find(x => x.id === id), now = Date.now(), readings = [];
@@ -936,13 +933,24 @@ app.addEventListener('submit', async e => {
       const changes = { roomId: room.id, id: run.id, dungeon: data.dungeon, note: data.note, ...(moved(run, data.startsAt) ? { startsAt: new Date(data.startsAt).toISOString() } : {}) };
       const result = await send('plan', changes); closeModal(); changedRoom(changes.roomId, () => { runs = result.runs; }); toast(t('Run updated.'));
     }
-    else if (form.id === 'discord-form') { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language() }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
+    else if (form.id === 'discord-options-form') {
+      const times = chosenTimes(form);
+      if (times.error) { formError(form, times.error); return; }
+      const id = room.id, result = await send('discord-webhook', { roomId: id, ...times });
+      if (changedRoom(id, () => { room = result.room; })) roomSettings();
+      toast(t('Discord reminder times saved.'));
+    }
+    else if (form.id === 'discord-form') {
+      // A new connection takes the times chosen above it.
+      const times = chosenTimes(document.getElementById('discord-options-form') || form);
+      if (times.error) { formError(form, times.error); return; }
+      const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language(), ...times }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
     else if (form.id === 'rename-form') { const id = room.id, result = await send('rename', { roomId: id, name: data.name }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Room renamed.')); }
     else if (form.id === 'notifications-form') {
       const leads = new FormData(form).getAll('lead').map(Number);
       if (!leads.length || leads.length > 3) { formError(form, t('Choose one to three reminder times.')); return; }
-      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
+      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push), discord: Boolean(data.discord) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
       account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
     }
     else if (form.id === 'membership-form') {

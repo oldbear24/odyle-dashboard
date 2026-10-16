@@ -94,7 +94,9 @@ before(async () => {
   releaseUrl = 'http://127.0.0.1:' + releaseServer.address().port + '/releases/latest';
   discordServer = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
-    discordPosts.push({ path: req.url, body: JSON.parse(body || '{}') }); res.writeHead(discordAnswer); res.end(discordAnswer === 204 ? '' : '{}');
+    // The webhook's name, read when it is connected.
+    if (req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ name: 'Raid hook', channel_id: '1' })); return; }
+    discordPosts.push({ method: req.method, path: req.url, body: JSON.parse(body || '{}') }); res.writeHead(discordAnswer); res.end(discordAnswer === 204 ? '' : '{}');
   });
   await new Promise(resolve => discordServer.listen(0, '127.0.0.1', resolve));
   discordUrl = 'http://127.0.0.1:' + discordServer.address().port;
