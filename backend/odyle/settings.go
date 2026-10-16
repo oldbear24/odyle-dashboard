@@ -3,6 +3,8 @@ package odyle
 import (
 	"errors"
 	"regexp"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -24,23 +26,37 @@ type adapterLists struct {
 	Disabled []string `json:"disabled"`
 }
 
+// A dungeon of the catalog: what opening one of its cubes costs (0: the server-wide Odyle
+// per cube), how many players its party has (4, 5, 10 or 20; 0 when not set), a category
+// to group it by and whether its cost is still unconfirmed for Global. Superusers keep
+// these game rules; they are never character data.
+type dungeonEntry struct {
+	Name        string `json:"name"`
+	Cost        int64  `json:"cost"`
+	PartySize   int64  `json:"partySize"`
+	Category    string `json:"category"`
+	Unconfirmed bool   `json:"unconfirmed"`
+}
+
+var partySizes = []int64{0, 4, 5, 10, 20}
+
 type settings struct {
-	OdylePerCube        int64        `json:"odylePerCube"`
-	DailyResetHour      int64        `json:"dailyResetHour"`
-	WeeklyResetDay      string       `json:"weeklyResetDay"`
-	InactiveAccountDays int64        `json:"inactiveAccountDays"`
-	Dungeons            []string     `json:"dungeons"`
-	Announcement        string       `json:"announcement"`
-	AnnouncementLevel   string       `json:"announcementLevel"`
-	PortraitsPaused     bool         `json:"portraitsPaused"`
-	RemindersPaused     bool         `json:"remindersPaused"`
-	PairingPaused       bool         `json:"pairingPaused"`
-	ReaderPaused        bool         `json:"readerPaused"`
-	Adapters            adapterLists `json:"adapters"`
+	OdylePerCube        int64          `json:"odylePerCube"`
+	DailyResetHour      int64          `json:"dailyResetHour"`
+	WeeklyResetDay      string         `json:"weeklyResetDay"`
+	InactiveAccountDays int64          `json:"inactiveAccountDays"`
+	Dungeons            []dungeonEntry `json:"dungeons"`
+	Announcement        string         `json:"announcement"`
+	AnnouncementLevel   string         `json:"announcementLevel"`
+	PortraitsPaused     bool           `json:"portraitsPaused"`
+	RemindersPaused     bool           `json:"remindersPaused"`
+	PairingPaused       bool           `json:"pairingPaused"`
+	ReaderPaused        bool           `json:"readerPaused"`
+	Adapters            adapterLists   `json:"adapters"`
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -126,7 +142,7 @@ func loadSettings(app core.App) settings {
 		return defaultSettings()
 	}
 	out := settings{OdylePerCube: s.GetInt64("odylePerCube"), DailyResetHour: s.GetInt64("dailyResetHour"), WeeklyResetDay: s.GetString("weeklyResetDay"), InactiveAccountDays: s.GetInt64("inactiveAccountDays"),
-		Dungeons: stringList(parseJSON(s.GetString("dungeons"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
+		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
@@ -142,27 +158,95 @@ func loadSettings(app core.App) settings {
 	return out
 }
 
-// catalog keeps the first spelling of each dungeon; names match regardless of case and spacing.
-func catalog(value any) ([]string, error) {
-	names, ok := value.([]any)
+// catalogEntry reads one dungeon of the catalog: a name alone, as the catalog was saved
+// before it had entries (it costs Odyle per cube), or { name, cost?, partySize?,
+// category?, unconfirmed? }.
+func catalogEntry(item any) (dungeonEntry, error) {
+	if name, ok := item.(string); ok {
+		d, err := dungeon(name)
+		return dungeonEntry{Name: d.dungeon}, err
+	}
+	v, ok := item.(map[string]any)
+	if !ok {
+		return dungeonEntry{}, errors.New("Dungeons must be a list of names.")
+	}
+	d, err := dungeon(v["name"])
+	if err != nil {
+		return dungeonEntry{}, err
+	}
+	entry := dungeonEntry{Name: d.dungeon}
+	if v["cost"] != nil {
+		if entry.Cost, err = integer(v["cost"], "Odyle cost", 0, 1000); err != nil {
+			return dungeonEntry{}, err
+		}
+	}
+	if v["partySize"] != nil {
+		size, err := integer(v["partySize"], "Party size", 0, 20)
+		if err != nil || !slices.Contains(partySizes, size) {
+			return dungeonEntry{}, errors.New("Party size must be 4, 5, 10 or 20, or 0 when not set.")
+		}
+		entry.PartySize = size
+	}
+	if v["category"] != nil {
+		category, ok := v["category"].(string)
+		entry.Category = collapse(trim(category))
+		if !ok || length(entry.Category) > 30 {
+			return dungeonEntry{}, errors.New("A dungeon category is text of up to 30 characters.")
+		}
+	}
+	if v["unconfirmed"] != nil {
+		if entry.Unconfirmed, ok = v["unconfirmed"].(bool); !ok {
+			return dungeonEntry{}, errors.New("Unconfirmed must be true or false.")
+		}
+	}
+	return entry, nil
+}
+
+// catalog checks a dungeon catalog to save, up to 200 dungeons. A dungeon listed twice,
+// regardless of case and spacing, keeps its first entry and spelling.
+func catalog(value any) ([]dungeonEntry, error) {
+	items, ok := value.([]any)
 	if !ok {
 		return nil, errors.New("Dungeons must be a list of names.")
 	}
-	seen, out := map[string]bool{}, []string{}
-	for _, name := range names {
-		d, err := dungeon(name)
+	seen, out := map[string]bool{}, []dungeonEntry{}
+	for _, item := range items {
+		entry, err := catalogEntry(item)
 		if err != nil {
 			return nil, err
 		}
-		if !seen[d.key] {
-			seen[d.key] = true
-			out = append(out, d.dungeon)
+		if key := strings.ToLower(entry.Name); !seen[key] {
+			seen[key] = true
+			out = append(out, entry)
 		}
 	}
 	if len(out) > 200 {
 		return nil, errors.New("The dungeon list can hold up to 200 names.")
 	}
 	return out, nil
+}
+
+// storedCatalog reads the saved catalog, plain names included (a record from before
+// 1791763229_catalog_entries.go, or edited under Collections); a dungeon it cannot read
+// is left out.
+func storedCatalog(value any) []dungeonEntry {
+	out := []dungeonEntry{}
+	items, _ := value.([]any)
+	for _, item := range items {
+		if entry, err := catalogEntry(item); err == nil {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// dungeonNames are the names of the catalog, the snapshot's `dungeons`.
+func dungeonNames(entries []dungeonEntry) []string {
+	out := make([]string, len(entries))
+	for i, entry := range entries {
+		out[i] = entry.Name
+	}
+	return out
 }
 
 // Built-in adapters (protocols.go) stay accepted unless disabled here, so an adapter a
@@ -341,17 +425,13 @@ func catalogName(app core.App, typed any) (*dungeonName, error) {
 	if err != nil {
 		return nil, err
 	}
-	names := readSettings(app).Dungeons
-	if len(names) == 0 {
+	entries := readSettings(app).Dungeons
+	if len(entries) == 0 {
 		return &d, nil
 	}
-	for _, name := range names {
-		listed, err := dungeon(name)
-		if err != nil {
-			return nil, err
-		}
-		if listed.key == d.key {
-			return &dungeonName{dungeon: name, key: d.key}, nil
+	for _, entry := range entries {
+		if strings.ToLower(entry.Name) == d.key {
+			return &dungeonName{dungeon: entry.Name, key: d.key}, nil
 		}
 	}
 	return nil, nil

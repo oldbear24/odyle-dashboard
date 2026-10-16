@@ -258,6 +258,52 @@ test('members keep the wishlist together, share characters and viewers only watc
     assert.deepEqual(viewer.errors, []);
   } finally { await viewer.close(); }
 });
+test('with a dungeon catalog rooms pick dungeons from it and show what a cube costs and how many the party can open', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, lead = await account('Catalog lead');
+  const roomId = (await request('/api/odyle/create', { name: 'Catalog room' }, lead)).data.room.id;
+  const session = (await request('/api/odyle/session', {}, lead)).data;
+  const c = (await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Priced', server: 'Lumiel', region: 'GLOBAL_EU', value: 170, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, lead)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead);
+  // A wish from before the catalog stays on the list.
+  await request('/api/odyle/wishlist', { roomId, dungeon: 'Old Cave', wanted: true }, lead);
+  const catalog = [{ name: 'Krao Cave', cost: 20, partySize: 5, category: 'Exploration', unconfirmed: true }, 'Fire Temple', { name: 'Abyssal Forge: Ludra', cost: 80, partySize: 10, category: 'Sanctuary' }];
+  assert.equal((await request('/api/odyle/admin/settings', { dungeons: catalog }, operator)).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    // The wishlist picks from the catalog, each dungeon with what a cube of it costs.
+    const wish = page.locator('#wish-form select[name=dungeon]');
+    assert.deepEqual(await wish.locator('option').allInnerTexts(), ['Choose a dungeon you still need to run', 'Krao Cave · 20 Odyle', 'Fire Temple · 40 Odyle', 'Abyssal Forge: Ludra · 80 Odyle']);
+    await wish.selectOption('Abyssal Forge: Ludra'); await page.locator('#wish-form [type=submit]').click();
+    const row = page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Abyssal Forge: Ludra' }); await row.waitFor();
+    // Priced holds 170 Odyle: two cubes at 80.
+    assert.equal(await row.locator('.dungeon-facts').innerText(), '80 Odyle per cube · 10 players · party can open 2 cubes');
+    assert.equal(await wish.locator('option', { hasText: 'Ludra' }).count(), 0);
+    // The older wish shows no cost and cannot be planned: runs need a listed dungeon.
+    const old = page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Old Cave' });
+    assert.deepEqual([await old.locator('.dungeon-facts').count(), await old.locator('[data-plan-wish]').count()], [0, 0]);
+    // Plan picks the dungeon in the run form's list.
+    await row.locator('[data-plan-wish]').click();
+    assert.equal(await page.locator('#run-form select[name=dungeon]').inputValue(), 'Abyssal Forge: Ludra');
+    await page.locator('#run-form [type=submit]').click();
+    const run = page.locator('.runs .wish-row', { hasText: 'Abyssal Forge: Ludra' }); await run.waitFor();
+    assert.match(await run.locator('.dungeon-facts').innerText(), /party can open 2 cubes/);
+    // Changing the run picks from the catalog too.
+    await run.locator('[data-edit-run]').click();
+    const change = page.locator('#run-edit-form select[name=dungeon]');
+    assert.equal(await change.inputValue(), 'Abyssal Forge: Ludra');
+    await change.selectOption('Krao Cave'); await page.locator('#run-edit-form [type=submit]').click();
+    const moved = page.locator('.runs .wish-row', { hasText: 'Krao Cave' }); await moved.waitFor();
+    assert.equal(await moved.locator('.dungeon-facts').innerText(), '20 Odyle per cube (unconfirmed) · 5 players · party can open 8 cubes');
+    await shot(page, 'room-catalog');
+    // Without a catalog the forms take any name again.
+    assert.equal((await request('/api/odyle/admin/settings', { dungeons: [] }, operator)).status, 200);
+    await page.reload(); await page.locator('#wish-form input[name=dungeon][list=wish-suggestions]').waitFor();
+    assert.equal(await page.locator('.dungeon-facts').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [] }, operator); }
+});
+
 test('a room follows heartbeats and readings as they arrive, without fetching the room again', async () => {
   const [lead, reader] = await Promise.all([account('Live lead'), account('Live reader')]);
   const created = (await request('/api/odyle/create', { name: 'Live room' }, lead)).data;
@@ -595,8 +641,17 @@ test('superusers keep the dungeon catalog and the inactive account period on the
   try {
     await page.goto(url + '/_/#/odyle/settings');
     await page.locator('#odyle-inactive').fill('365');
-    // Typed line by line, as a superuser would: Enter must not be swallowed by the list it saves.
-    await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple\n');
+    // Dungeons come in from a list typed line by line, as a superuser would, or pasted.
+    await page.getByRole('button', { name: 'Add several from a list' }).click();
+    await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple | 80 | 10 | Sanctuary | unconfirmed\n');
+    await page.getByRole('button', { name: 'Add to the catalog' }).click();
+    assert.deepEqual(await page.locator('.odyle-catalog [id$="-name"]').evaluateAll(inputs => inputs.map(i => i.value)), ['Fire Temple', 'Udas Temple']);
+    // Then each row is edited in the table: its own cost and party size, a row added and removed again.
+    await page.locator('#odyle-dungeon-0-cost').fill('60'); await page.locator('#odyle-dungeon-0-party').selectOption('5');
+    assert.equal(await page.locator('#odyle-dungeon-1-category').inputValue(), 'Sanctuary'); assert.equal(await page.locator('#odyle-dungeon-1-unconfirmed').isChecked(), true);
+    await page.getByRole('button', { name: 'Add dungeon' }).click(); await page.locator('#odyle-dungeon-2-name').fill('Krao Cave');
+    await page.getByRole('button', { name: 'Remove Krao Cave' }).click();
+    assert.match(await page.locator('.odyle-catalog').locator('xpath=../..').innerText(), /2 dungeons\. New wishlist entries/);
     assert.match(await page.locator('#odyle-inactive').locator('xpath=../..').innerText(), /365 days/);
     // Before saving, the page counts the accounts the next clean-up would delete with that period.
     await page.locator('#odyle-inactive').locator('xpath=../..').getByText(/With this period the next run at 03:17 UTC \(.+ here\) would delete/).waitFor();
@@ -604,7 +659,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
-    assert.deepEqual([saved.dungeons, saved.inactiveAccountDays], [['Fire Temple', 'Udas Temple'], 365]);
+    assert.deepEqual([saved.dungeons, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(url + '/_/#/collections'); await page.locator('.page-header').first().waitFor();

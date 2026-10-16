@@ -14,6 +14,7 @@ import { accountView } from './account.js';
 import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applyShared, applyMembership } from './live.js';
 import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, onlineReader, countdown, readerLabel, pairingSlot } from './pairing.js';
 import { party as partyOf, character as readinessOf } from './readiness.js';
+import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -26,7 +27,7 @@ pb.autoCancellation(false);
 const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.probe'); return s; } catch { return { getItem: () => null, setItem() {}, removeItem() {} }; } })();
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
-let room = null, members = [], wishlist = [], runs = [], dungeons = [], rooms = [], characters = [], demo = false, online = false, invites = [];
+let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog = [], rooms = [], characters = [], demo = false, online = false, invites = [];
 let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
@@ -152,7 +153,7 @@ let rendered = '', renderedLibrary = '';
 const stable = list => list.map(({ lastSeenAt, updated, characters, ...rest }) => ({ ...rest, characters: characters?.map(({ lastSeenAt: _seen, updated: _updated, ...c }) => c) }));
 // Hook responses list record fields in a different order each time; sort keys so identical data compares equal.
 const canonical = value => JSON.stringify(value, (key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
-function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), wishlist, runs, dungeons, flattened().map(c => status(c, now)), readerNow()?.name ?? null]); }
+function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), wishlist, runs, dungeons, catalog, flattened().map(c => status(c, now)), readerNow()?.name ?? null]); }
 function updateAges() {
   const now = Date.now() + serverOffset;
   document.querySelectorAll('[data-age]').forEach(el => { el.textContent = age(el.dataset.age, now); });
@@ -170,34 +171,42 @@ function renderLibrary() {
 }
 // Accounts with a live character in this room, for the dots on the wishlist and runs.
 function liveUsers(now) { return new Set(partyOf(flattened(), now, room?.cost || perCube).live.map(c => c.user)); }
+// The line under a dungeon the catalog lists: its cost and the cubes of it the room's
+// party can open now (catalog.js, readiness.js), the party worked out once per cost.
+function dungeonInfo(now) {
+  const entries = flattened(), parties = new Map(), cost = room?.cost || perCube;
+  const party = at => { if (!parties.has(at)) parties.set(at, partyOf(entries, now, at)); return parties.get(at); };
+  return name => dungeonFacts(entryOf(catalog, name), { perCube: cost, party });
+}
 // What members still need to run, most wanted first. A dot marks members with a
 // live character in this room, so the party sees what it could run right now.
 function wishlistSection(now) {
   const myId = pb.authStore.record?.id, viewer = me()?.role === 'viewer';
   const name = id => id === myId ? t('You') : members.find(m => m.user === id)?.displayName || t('Member');
-  const live = liveUsers(now);
-  // With a dungeon catalog the suggestions are the listed dungeons; otherwise the entries others added.
-  const suggestions = dungeons.length ? dungeons.filter(d => !wishlist.some(w => w.dungeon.toLowerCase() === d.toLowerCase() && w.users.includes(myId))) : wishlist.filter(w => !w.users.includes(myId)).map(w => w.dungeon);
-  const form = viewer ? `<p class="wish-note">${t('Viewers can see the wishlist but cannot add dungeons.')}</p>` : `<form id="wish-form" class="wish-form"><input name="dungeon" maxlength="60" list="wish-suggestions" autocomplete="off" placeholder="${esc(dungeons.length ? t('Choose a dungeon you still need to run') : t('Add a dungeon you still need to run'))}" aria-label="${esc(t('Dungeon'))}" required><datalist id="wish-suggestions">${suggestions.map(d => `<option value="${esc(d)}">`).join('')}</datalist><button class="button primary" type="submit">${icon('plus')} ${t('Add')}</button></form>`;
+  const live = liveUsers(now), facts = dungeonInfo(now);
+  // With a dungeon catalog the form offers the listed dungeons you are not on yet; otherwise it suggests the entries others added.
+  const choices = catalog.filter(d => !wishlist.some(w => dungeonKey(w.dungeon) === dungeonKey(d.name) && w.users.includes(myId))), suggestions = wishlist.filter(w => !w.users.includes(myId)).map(w => w.dungeon);
+  const form = viewer ? `<p class="wish-note">${t('Viewers can see the wishlist but cannot add dungeons.')}</p>` : `<form id="wish-form" class="wish-form">${dungeonField({ catalog, choices, suggestions, list: 'wish-suggestions', placeholder: catalog.length ? t('Choose a dungeon you still need to run') : t('Add a dungeon you still need to run'), perCube: room?.cost || perCube })}<button class="button primary" type="submit">${icon('plus')} ${t('Add')}</button></form>`;
   const rows = wishlist.map(w => {
-    const mine = w.users.includes(myId), count = w.users.length;
+    // Runs need a dungeon the catalog lists, when there is one; Plan picks it in the run form.
+    const mine = w.users.includes(myId), count = w.users.length, listed = entryOf(catalog, w.dungeon), plannable = !catalog.length || listed;
     const people = w.users.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}</span>`).join('');
     const actions = demo ? '' : (mine ? `<button data-wish="${esc(w.dungeon)}" data-wanted="false" title="${esc(t('Take yourself off {dungeon}', { dungeon: w.dungeon }))}">${t('Remove me')}</button>` : viewer ? '' : `<button data-wish="${esc(w.dungeon)}" data-wanted="true">${icon('plus')} ${t('Need it too')}</button>`)
-      + (viewer ? '' : `<button data-plan-wish="${esc(w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
+      + (viewer || !plannable ? '' : `<button data-plan-wish="${esc(listed?.name ?? w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
       + (owner() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="${esc(t('Clear {dungeon} for everyone', { dungeon: w.dungeon }))}">${t('Clear')}</button>` : '');
-    return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${esc(tn(count, '{n} member needs it', '{n} members need it'))}</small></div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
+    return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${esc(tn(count, '{n} member needs it', '{n} members need it'))}</small>${facts(w.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
   }).join('');
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
 }
 function plannedRuns(now) {
-  const suggestions = dungeons.length ? dungeons : [...new Set(wishlist.map(w => w.dungeon))];
-  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, demo, discord: room?.discordReminders });
+  const suggestions = [...new Set(wishlist.map(w => w.dungeon))];
+  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: room?.cost || perCube, facts: dungeonInfo(now), demo, discord: room?.discordReminders });
 }
-// Full redraws keep a half-typed form entry (wishlist, run, task forms) and its focus.
+// Full redraws keep a half-typed form entry or a picked dungeon (wishlist, run, task forms) and its focus.
 function keepingDrafts(render) {
-  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden])')].filter(i => i.value || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]`, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
+  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name]')].filter(i => i.value || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]`, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
   render();
-  for (const d of drafts) { const input = document.querySelector(d.selector); if (!input) continue; input.value = d.value; if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } } }
+  for (const d of drafts) { const input = document.querySelector(d.selector); if (!input || (input.options && ![...input.options].some(o => o.value === d.value))) continue; input.value = d.value; if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } } }
 }
 // Personal daily and weekly checklists. A task counts as done while it was checked
 // after the current reset (07:00 UTC and Wednesday by default; the server names
@@ -230,7 +239,7 @@ async function refreshTasks() {
   if (shown !== '/tasks') return; // navigated elsewhere while loading
   applyTasks(data); if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
 }
-function clearRoom() { room = null; members = []; wishlist = []; runs = []; dungeons = []; demo = false; invites = []; }
+function clearRoom() { room = null; members = []; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; invites = []; }
 async function tasksPage(ticket) {
   await leaveRoomTopic(); clearRoom(); editingTask = '';
   await refreshTasks(); if (ticket !== navigation) return; tasksView();
@@ -410,7 +419,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -750,7 +759,7 @@ app.addEventListener('click', async e => {
       let result; el.disabled = true; try { result = await send('plan', { roomId: room.id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
       return changedRoom(() => { runs = result.runs; });
     }
-    if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, dungeons.length ? dungeons : [...new Set(wishlist.map(w => w.dungeon))], Date.now() + serverOffset)); return; }
+    if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
     if (el.dataset.calendarRun) {
       const r = runs.find(x => x.id === el.dataset.calendarRun); if (!r) return;
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);

@@ -24,6 +24,8 @@
 .odyle-section:first-child{margin-top:0}
 .odyle-section .txt-hint{margin-top:2px}
 .field .odyle-toggle{margin:4px 0}
+/* Game settings: the dungeon catalog, a table like PocketBase's rate limit rules */
+.odyle-catalog .col-label{width:auto;min-width:180px}.odyle-catalog .odyle-col-cost{width:130px}.odyle-catalog .odyle-col-party{width:80px}.odyle-catalog .odyle-col-category{width:22%}.odyle-catalog .odyle-col-mark{width:1px;white-space:nowrap}.odyle-catalog td.odyle-col-mark .field{padding:0 12px}
 .odyle-status,.odyle-reading,.odyle-live{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .odyle-status:before,.odyle-reading:before,.odyle-live:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--surfaceAlt5Color);flex-shrink:0}
 .odyle-status.online:before,.odyle-reading.live:before,.odyle-live:before{background:var(--successColor)}

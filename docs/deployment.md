@@ -121,6 +121,24 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 - Invites can be reused during their 30-minute lifetime. Rotate them to stop new joins; remove a member to revoke existing access. Rooms allow up to 50 members, including viewers.
 - Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
 
+## Dungeon catalog
+
+A deploy leaves the catalog as it is, and a new server starts with none, so wishlists and runs take any name until a superuser fills it under **Game settings → Dungeon catalog**. Each dungeon has its own Odyle per cube (empty uses the server-wide Odyle per cube), party size, category and an **Unconfirmed** mark that rooms show next to the cost. A catalog of names from before these entries keeps its names, each at Odyle per cube with nothing else set.
+
+Odyle ships no costs: NCSOFT publishes no table of cube costs for Global and the guides disagree. The list below is a starting point taken from public guides (MetaBot's Global dungeon list and daily and weekly checklist, and the 1 July 2026 patch notes on aion2hub, which may describe the Korean service), so every line is marked unconfirmed. Check the costs in game, paste the lines into **Add several from a list**, adjust the table and untick **Unconfirmed** for each cost you checked:
+
+```text
+Krao Cave | 20 | 5 | Exploration | unconfirmed
+Urugugu Canyon | 20 | 5 | Exploration | unconfirmed
+Draupnir | 40 | 5 | Conquest | unconfirmed
+Ferocious Horn Den | 40 | 5 | Conquest | unconfirmed
+Abyssal Forge: Ludra | 80 | 10 | Sanctuary | unconfirmed
+Corroded Decontamination Facility | 80 | 10 | Sanctuary | unconfirmed
+Chalice of Muspel | 80 | 10 | Sanctuary | unconfirmed
+```
+
+Each line is name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and a dungeon already in the table takes the values of its line. A mode that costs more (the Korean notes give 60 for Hard) is a dungeon of its own, for example `Draupnir (Hard)`. The membership double-open (twice the cost for twice the loot) is not counted anywhere. Rename dungeons with care: wishlist entries and runs keep the old name and lose its cost.
+
 ## Backups and restore
 
 The migration `1791763226_backups.go` turns on PocketBase's scheduled backups: every night at 03:00 UTC, before the inactive-account clean-up at 03:17, keeping the newest seven. A schedule already set under **Settings → Backups** stays as it is; change the time or the number kept there. A backup is a ZIP of the whole `pb_data`: the database (accounts with their Discord sign-ins and emails, rooms, characters, history, settings and their secrets), PocketBase's log database and the portrait files. It is made from a live copy of the database, so the server keeps running. **Settings → Backups** lists the backups and makes, downloads, uploads, deletes and restores them. **Odyle → Server status** shows the newest backup with its size, the schedule and how many backups it keeps, how many are stored and where, and warns when none is from the last 48 hours.

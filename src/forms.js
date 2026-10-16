@@ -1,13 +1,13 @@
 import { t } from './i18n.js';
 import { timestamp } from './model.js';
 import { localInput } from './runs.js';
+// Dungeon names match as the server matches them: trimmed, inner spaces collapsed, any case.
+import { dungeonKey as key } from './catalog.js';
 // Checks the wishlist and run forms make before sending, so a mistake shows in the form
 // at once instead of after a round trip. Each answers the server's own message, or ''.
 // The server checks everything again (backend validation.go and accounts.go); these
 // spare a request, they decide nothing.
 const hour = 3600000, day = 86400000;
-// Dungeon names match as the server matches them: trimmed, inner spaces collapsed, any case.
-const key = name => String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 // A dungeon name is required; with a dungeon catalog it must be listed, unless it names
 // something that already exists (a wishlist entry, the run's own dungeon).
 export function dungeonProblem(name, catalog = [], existing = []) {

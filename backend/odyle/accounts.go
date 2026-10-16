@@ -105,7 +105,8 @@ func ownSession(app core.App, userId, id string) (*ReaderSession, error) {
 }
 
 // Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
-// Rooms keep their legacy cost field, but every response reports the setting.
+// Rooms keep their legacy cost field, but every response reports the setting. A dungeon
+// of the catalog can cost its own amount (dungeonEntry), which only snapshots carry.
 func odylePerCube(app core.App) int64 { return readSettings(app).OdylePerCube }
 
 // The Discord webhook is a hidden field, so the public export never carries it; members
@@ -407,7 +408,9 @@ func rooms(e *core.RequestEvent) error {
 // characters, instead of two lookups per member. Others see only the characters a
 // member linked to this room; members always see all of their own, each flagged with
 // whether it is shared here. The announcement rides along, so an open dashboard room
-// needs no separate request for it, and so do the viewer's own readers (readersOf).
+// needs no separate request for it, and so do the viewer's own readers (readersOf). The
+// dungeon catalog comes twice: `dungeons` keeps the names that older dashboards read,
+// and `catalog` adds each dungeon's cost, party size and category.
 func snapshot(e *core.RequestEvent) error {
 	return run(e, func() error {
 		id := e.Request.PathValue("id")
@@ -468,7 +471,7 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": rules.Dungeons, "announcement": announcement(rules), "readers": readers})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers})
 	})
 }
 

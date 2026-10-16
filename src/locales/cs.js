@@ -552,4 +552,13 @@ export default {
   'Pair another PC': 'Spárovat další počítač',
   'Getting a connection link…': 'Získávám odkaz pro připojení…',
   "Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic, automates play or collects combat data. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.": 'Odyle je neoficiální fanouškovský projekt, který není spojen se společností NCSOFT ani jí schválen. Čtečka pro Windows jen naslouchá spojení vaší vlastní hry: nikdy nečte paměť hry, nemění ani neposílá herní provoz, neautomatizuje hraní a nesbírá data o boji. Pravidla NCSOFT zakazují neautorizované programy, Odyle proto používáte na vlastní riziko.',
+  // Dungeon catalog entries: costs, party sizes and the cubes a party can open
+  '{cost} Odyle per cube (unconfirmed)': '{cost} Odyle za kostku (nepotvrzeno)',
+  '{cost} Odyle': '{cost} Odyle',
+  '{n} player|{n} players': ['{n} hráč', '{n} hráči', '{n} hráčů'],
+  'party can open {n} cube|party can open {n} cubes': ['parta otevře {n} kostku', 'parta otevře {n} kostky', 'parta otevře {n} kostek'],
+  'Choose a dungeon': 'Vyber dungeon',
+  'Party size must be 4, 5, 10 or 20, or 0 when not set.': 'Velikost party musí být 4, 5, 10 nebo 20, případně 0, když není zadaná.',
+  'A dungeon category is text of up to 30 characters.': 'Kategorie dungeonu je text o nejvýš 30 znacích.',
+  'Unconfirmed must be true or false.': 'Hodnota „unconfirmed“ musí být true nebo false.',
 };

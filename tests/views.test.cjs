@@ -57,9 +57,9 @@ test('runs go to calendars with a reminder, can be changed and count down in Cze
   for (const line of long.split('\r\n')) assert.ok(new TextEncoder().encode(line).length <= 75, line);
   assert.match(long, /\r\n ř/);
   // The change form starts from the run's values in local time.
-  const form = runEditForm(run, ['Fire Temple'], now); assert.match(form, /name="runId" value="r1"/);
+  const form = runEditForm(run, { suggestions: ['Fire Temple'] }, now); assert.match(form, /name="runId" value="r1"/);
   // A run that started long ago can still be changed without moving its start.
-  assert.match(runEditForm({ ...run, startsAt: '2026-10-14 09:00:00.000Z' }, [], now), new RegExp(`min="${localInput(Date.parse('2026-10-14T09:00:00Z'))}"`)); assert.match(form, new RegExp(`value="${localInput(Date.parse('2026-10-14T19:00:00Z'))}"`)); assert.match(form, /value="Potions; food, and\nmore"/);
+  assert.match(runEditForm({ ...run, startsAt: '2026-10-14 09:00:00.000Z' }, {}, now), new RegExp(`min="${localInput(Date.parse('2026-10-14T09:00:00Z'))}"`)); assert.match(form, new RegExp(`value="${localInput(Date.parse('2026-10-14T19:00:00Z'))}"`)); assert.match(form, /value="Potions; food, and\nmore"/);
   const html = runsSection({ runs: [run], members: [], myId: 'u1', viewer: false, owner: false, live: new Set(), now, suggestions: [], demo: false, discord: true });
   assert.match(html, /data-edit-run="r1"/); assert.match(html, /data-calendar-run="r1"/); assert.match(html, /Discord reminders on/);
   assert.doesNotMatch(runsSection({ runs: [run], members: [], myId: 'u9', viewer: true, owner: false, live: new Set(), now, suggestions: [], demo: false }), /data-edit-run/);

@@ -553,8 +553,8 @@ function settingsForm(keys, sync = () => {}) {
 
 export function settingsPage() {
   app.store.title = 'Game settings';
-  // dungeonText is the catalog as typed; form.dungeons is the list it saves.
-  const text = store({ dungeons: '' });
+  // Lines to add to the dungeon catalog at once (pasted or typed), and whether that box is open.
+  const paste = store({ open: false, text: '' });
   // How many accounts the next clean-up would delete with the period in the form, saved or not.
   const retention = store({ days: null, data: null, failed: '' });
   let counting = 0;
@@ -577,11 +577,41 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'dungeons'], form => { text.dungeons = (form.dungeons || []).join('\n'); countInactive(form.inactiveAccountDays); });
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'dungeons'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
-  // The dungeon catalog is edited as one name per line.
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
+  // The dungeon catalog, one row per dungeon: cost 0 means Odyle per cube, party size 0 not
+  // set. Names match regardless of case and spacing, as the server matches them.
+  const sizes = [0, 4, 5, 10, 20], key = name => String(name).trim().replace(/\s+/g, ' ').toLowerCase();
+  const dungeons = () => state.form.dungeons;
+  function addDungeon() {
+    dungeons().push({ name: '', cost: 0, partySize: 0, category: '', unconfirmed: false });
+    const at = dungeons().length - 1;
+    setTimeout(() => document.getElementById('odyle-dungeon-' + at + '-name')?.focus());
+  }
+  // A line of a list: name | Odyle per cube | party size | category | unconfirmed, split at
+  // | or tabs (columns copied from a spreadsheet); only the name is needed.
+  function fromLine(line) {
+    const [name = '', cost = '', size = '', category = '', mark = ''] = line.split(/\t|\|/).map(part => part.trim());
+    return { name, cost: integer(cost) ?? 0, partySize: sizes.includes(integer(size)) ? integer(size) : 0, category, unconfirmed: /^(unconfirmed|yes|true|x|\?)$/i.test(mark) };
+  }
+  // A dungeon the table already lists takes the values of its line and keeps its spelling.
+  function addLines() {
+    for (const entry of lines(paste.text).map(fromLine)) {
+      const at = dungeons().findIndex(d => key(d.name) === key(entry.name));
+      if (at < 0) dungeons().push(entry); else dungeons()[at] = { ...entry, name: dungeons()[at].name };
+    }
+    Object.assign(paste, { open: false, text: '' });
+  }
+  const cell = (className, ...content) => t.td({ className }, t.div({ className: 'field' }, ...content));
+  const dungeonRow = (d, i) => t.tr({ className: 'rate-limit-row' },
+    cell('col-label', t.input({ id: 'odyle-dungeon-' + i + '-name', type: 'text', required: true, maxLength: 60, placeholder: 'Dungeon name', ariaLabel: 'Dungeon name', value: () => d.name, oninput: e => d.name = e.target.value })),
+    cell('odyle-col-cost', t.input({ id: 'odyle-dungeon-' + i + '-cost', type: 'number', min: 0, max: 1000, step: 1, ariaLabel: 'Odyle per cube', placeholder: () => 'Default ' + (state.form.odylePerCube ?? ''), value: () => d.cost || '', oninput: e => d.cost = integer(e.target.value) ?? 0 })),
+    cell('odyle-col-party', t.select({ id: 'odyle-dungeon-' + i + '-party', ariaLabel: 'Party size', onchange: e => d.partySize = Number(e.target.value) }, sizes.map(n => t.option({ value: String(n), selected: () => d.partySize === n }, n ? String(n) : '–')))),
+    cell('odyle-col-category', t.input({ id: 'odyle-dungeon-' + i + '-category', type: 'text', maxLength: 30, placeholder: 'Category', ariaLabel: 'Category', 'html-list': 'odyle-categories', value: () => d.category, oninput: e => d.category = e.target.value })),
+    cell('odyle-col-mark', t.input({ id: 'odyle-dungeon-' + i + '-unconfirmed', type: 'checkbox', checked: () => d.unconfirmed, onchange: e => d.unconfirmed = e.target.checked }), t.label({ htmlFor: 'odyle-dungeon-' + i + '-unconfirmed' }, 'Unconfirmed')),
+    t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (d.name.trim() || 'this dungeon'), onclick: () => dungeons().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
   load();
   return layout('#/odyle/settings', null,
     () => state.loading ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' })) : t.form({ className: 'grid', inert: () => state.saving, onsubmit: e => { e.preventDefault(); save('Saved the Odyle game settings.'); } },
@@ -594,8 +624,19 @@ export function settingsPage() {
         'Weekly tasks uncheck on this day at the daily reset hour.'),
       field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => { state.form.inactiveAccountDays = integer(e.target.value); countInactive(state.form.inactiveAccountDays); } }),
         () => state.form.inactiveAccountDays ? ['Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close. ', deletion()] : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
-      field('odyle-dungeons', 'Dungeon catalog', t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'One dungeon per line', value: () => text.dungeons, oninput: e => { text.dungeons = e.target.value; state.form.dungeons = lines(e.target.value); } }),
-        () => (state.form.dungeons || []).length ? number(state.form.dungeons.length) + ' dungeons. New wishlist entries and planned runs must be one of them and take this spelling; existing entries stay.' : 'Empty: wishlists and planned runs take any dungeon name. One name per line, up to 200.', 8),
+      section('Dungeon catalog', 'The dungeons rooms choose from for wishlists and planned runs, with what opening one cube of each costs. Rooms show the cost and how many cubes the party can open.'),
+      t.div({ className: 'col-lg-12' },
+        t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-catalog' },
+          t.thead({ hidden: () => !dungeons().length }, t.tr(null, t.th({ className: 'col-label' }, 'Dungeon'), t.th(null, 'Odyle per cube'), t.th(null, 'Party'), t.th(null, 'Category'), t.th(null), t.th({ className: 'col-action' }))),
+          t.tbody(null, () => dungeons().map(dungeonRow),
+            t.tr({ className: 'rate-limit-row' }, t.td({ colSpan: 99, className: 'col-new-btn' }, t.button({ type: 'button', className: 'btn secondary sm full-width', disabled: () => dungeons().length >= 200, onclick: addDungeon }, t.i({ className: 'ri-add-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Add dungeon'))))))),
+        t.datalist({ id: 'odyle-categories' }, () => [...new Set(dungeons().map(d => d.category.trim()).filter(Boolean))].map(category => t.option({ value: category }))),
+        t.div({ className: 'field-help' }, () => dungeons().length ? number(dungeons().length) + (dungeons().length === 1 ? ' dungeon' : ' dungeons') + '. New wishlist entries and planned runs must be one of them and take this spelling; existing entries stay. An empty cost uses Odyle per cube; mark a cost you have not checked in game as unconfirmed, and rooms say so.' : 'Empty: wishlists and planned runs take any dungeon name. Up to 200 dungeons.'),
+        t.button({ type: 'button', className: () => 'btn sm secondary m-t-sm ' + (paste.open ? '' : 'transparent'), onclick: () => paste.open = !paste.open }, t.span({ className: 'txt' }, 'Add several from a list'), t.i({ ariaHidden: true, className: () => paste.open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line' })),
+        () => paste.open ? t.div({ className: 'm-t-sm' },
+          t.div({ className: 'field' }, t.label({ htmlFor: 'odyle-dungeons' }, 'One dungeon per line'), t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'Krao Cave | 20 | 5 | Exploration | unconfirmed', value: () => paste.text, oninput: e => paste.text = e.target.value })),
+          t.div({ className: 'field-help' }, 'Name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and columns copied from a spreadsheet work too. A dungeon already in the table takes the values of its line. docs/deployment.md suggests a list for Global.'),
+          t.button({ type: 'button', className: 'btn sm m-t-sm', disabled: () => !lines(paste.text).length, onclick: addLines }, t.span({ className: 'txt' }, 'Add to the catalog'))) : null),
       t.div({ className: 'col-lg-12' }, t.hr()),
       // Resets the game rules only; the retention period and the dungeon catalog stay.
       buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay } },
