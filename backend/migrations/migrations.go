@@ -2,7 +2,8 @@
 //
 // They were JavaScript migrations once and keep their file names: PocketBase records
 // applied migrations by name, so a database migrated by the previous backend runs
-// none of them again, and a new database runs them all in order.
+// none of them again, and a new database runs them all in order. Migrations written in
+// Go from the start are named after their file.
 package migrations
 
 import (
