@@ -32,3 +32,11 @@ test('browser model handles PocketBase timestamps and escapes player-controlled 
   assert.equal(browser.age('2026-10-12 09:00:00.000Z', now), '3h ago');
   assert.equal(browser.escape('<img onerror="oops">'), '&lt;img onerror=&quot;oops&quot;&gt;');
 });
+
+test('class and level read as the official search lists them (#25)', async () => {
+  const { classOf } = await model();
+  assert.equal(classOf({ className: 'Chanter', level: 45 }), 'Chanter · Lv 45');
+  assert.equal(classOf({ className: '', level: 12 }), 'Lv 12');
+  assert.equal(classOf({ className: 'Templar', level: 0 }), 'Templar');
+  for (const c of [{}, null, undefined, { level: 0 }]) assert.equal(classOf(c), '');
+});

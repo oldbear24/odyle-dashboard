@@ -16,7 +16,7 @@ import (
 // officialInfo and officialEquipment are shaped like PLAYNC's answers (docs/armory.md).
 func officialInfo(name string) map[string]any {
 	return map[string]any{
-		"profile": map[string]any{"characterName": name, "characterLevel": 45, "className": "Chanter", "combatPower": 107458, "raceName": "Asmodians", "serverName": "Lumiel", "titleName": "Golden Glow", "titleGrade": "Unique"},
+		"profile": map[string]any{"characterName": name, "characterLevel": 45, "className": "Chanter", "pcId": 36, "combatPower": 107458, "raceName": "Asmodians", "serverName": "Lumiel", "titleName": "Golden Glow", "titleGrade": "Unique"},
 		"stat": map[string]any{"statList": []any{
 			map[string]any{"type": "STR", "name": "Might", "value": 45}, map[string]any{"type": "WIS", "name": "Willpower", "value": 8},
 			map[string]any{"type": "Justice", "name": "Justice [Nezekan]", "value": 41}, map[string]any{"type": "ItemLevel", "name": "아이템레벨", "value": 1671},

@@ -78,6 +78,7 @@ func armoryServer(region string, serverId int) string {
 // The profile the armory keeps and shows, read from PLAYNC's answers. Only what the
 // official pages list publicly; skills, skins and titles' effects are left out.
 type armoryProfile struct {
+	pcId        int64
 	Name        string        `json:"name"`
 	Level       int64         `json:"level"`
 	Class       string        `json:"class"`
@@ -151,7 +152,7 @@ func readArmory(info, equipment map[string]any) (armoryProfile, error) {
 	profile := jsonObject(info["profile"])
 	p := armoryProfile{Name: jsonText(profile, "characterName", 40), Level: whole(profile["characterLevel"]), Class: jsonText(profile, "className", 40), Race: jsonText(profile, "raceName", 40),
 		Server: jsonText(profile, "serverName", 40), Title: jsonText(profile, "titleName", 60), TitleGrade: jsonText(profile, "titleGrade", 20), CombatPower: whole(profile["combatPower"]),
-		Stats: []armoryStat{}, Gear: []armoryGear{}, Boards: []armoryBoard{}}
+		Stats: []armoryStat{}, Gear: []armoryGear{}, Boards: []armoryBoard{}, pcId: whole(profile["pcId"])}
 	if p.Name == "" {
 		return armoryProfile{}, errArmoryAnswer
 	}
@@ -467,6 +468,12 @@ func lookUpArmory(app core.App, j armoryJob) (err error) {
 	}
 	if saveErr := app.Save(record); saveErr != nil {
 		return saveErr
+	}
+	// The page names the class of its class id, for every character with that id (classes.go).
+	if err == nil {
+		if learnErr := learnClass(app, profile.pcId, profile.Class); learnErr != nil {
+			warn(app, "Odyle could not keep a class name", "error", message(learnErr))
+		}
 	}
 	return err
 }

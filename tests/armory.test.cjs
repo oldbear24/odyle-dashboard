@@ -91,3 +91,11 @@ test('bookmarks keep characters in this browser, newest first, with their last o
   assert.match(armoryProfile(answer(), now, false, true), /aria-pressed="true"[^>]*>★ Bookmarked/);
   assert.match(armoryProfile(answer(), now, false, false), /aria-pressed="false"[^>]*>☆ Bookmark</);
 });
+
+test('a character found on PLAYNC opens its own profile, else a search by name (#25)', async () => {
+  const { officialPath, armoryRoute } = await import('../src/armory.js');
+  const found = { officialId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', officialRegion: 'eu', officialServerId: 2304 };
+  assert.equal(officialPath(found), '/armory/eu/2304/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=');
+  assert.ok(armoryRoute.test(officialPath(found)));
+  for (const c of [{}, null, { ...found, officialId: '' }, { ...found, officialServerId: 0 }, { ...found, officialRegion: 'xx' }, { ...found, officialId: '../x' }]) assert.equal(officialPath(c), '', JSON.stringify(c));
+});

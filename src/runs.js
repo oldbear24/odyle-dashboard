@@ -1,5 +1,5 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, timestamp, age } from './model.js';
+import { escape as esc, timestamp, age, classOf } from './model.js';
 import { icon } from './icons.js';
 import { dungeonField } from './catalog.js';
 const two = n => String(n).padStart(2, '0');
@@ -54,8 +54,8 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     const person = row => {
       const c = row?.character, fresh = row?.state === 'live';
       if (!c) return `<span class="wish-person"><i></i>${esc(name(row.user))}</span>`;
-      const cubes = upcoming ? row.cubesAtStart : row.cubes, label = `${name(row.user)}${c.characterName !== c.displayName ? ' · ' + c.characterName : ''} · ${tn(cubes, '{n} cube', '{n} cubes')}`;
-      const hint = (row.picked ? t('Picked for this run') + ' · ' : '') + (fresh ? t('Live in this room now') : t('saved {age}', { age: age(c.lastReadingAt, now) })) + (upcoming && row.cubesAtStart !== row.cubes ? ' · ' + t('{n} at the start, with the Odyle clock', { n: row.cubesAtStart }) : '');
+      const cubes = upcoming ? row.cubesAtStart : row.cubes, label = `${name(row.user)}${c.characterName !== c.displayName ? ' · ' + c.characterName : ''}${c.className ? ' · ' + c.className : ''} · ${tn(cubes, '{n} cube', '{n} cubes')}`;
+      const hint = (classOf(c) ? classOf(c) + ' · ' : '') + (row.picked ? t('Picked for this run') + ' · ' : '') + (fresh ? t('Live in this room now') : t('saved {age}', { age: age(c.lastReadingAt, now) })) + (upcoming && row.cubesAtStart !== row.cubes ? ' · ' + t('{n} at the start, with the Odyle clock', { n: row.cubesAtStart }) : '');
       return `<span class="wish-person ${fresh ? 'live' : ''} ${row.claims ? '' : 'short'}" title="${esc(hint)}"><i></i>${esc(label)}${fresh ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`;
     };
     const people = (ready ? ready.rows.map(person) : r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;

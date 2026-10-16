@@ -541,6 +541,8 @@ export default {
   'Mythic': 'Mýtický',
   'Special': 'Speciální',
   'Level {level}': 'Úroveň {level}',
+  'Lv {level}': 'Úr. {level}',
+  'Class and level from PLAYNC, checked daily': 'Povolání a úroveň z PLAYNC, kontroluje se denně',
   'Elyos': 'Elyos',
   'Asmodians': 'Asmodiané',
   'PLAYNC lists no character of that name on this server.': 'PLAYNC na tomto serveru žádnou postavu s tímto jménem neuvádí.',

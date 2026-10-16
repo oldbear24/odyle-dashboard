@@ -25,8 +25,8 @@ async function request(path, body, auth, method = 'POST') {
   return { status: res.status, data: await res.json() };
 }
 const account = async name => (await request('/__test__/account', { name })).data;
-// The PLAYNC stand-in's characters: id, name as the search lists it, level.
-const armorer = ['QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>', 45], armorerAlt = ['QXJtb3Jlcnhfa2QwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>x', 12];
+// The PLAYNC stand-in's characters: id, name as the search lists it, level, class id (36: Chanter).
+const armorer = ['QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>', 45, 36], armorerAlt = ['QXJtb3Jlcnhfa2QwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>x', 12, 9];
 before(async () => {
   assert.ok(existsSync(resolve('dist/index.html')), 'Build the dashboard first: npm run build');
   // Stands in for Discord's webhook API.
@@ -36,8 +36,8 @@ before(async () => {
   // nobody else, so other characters get no portrait), with their official pages.
   plaync = createServer((req, res) => {
     const at = new URL(req.url, 'http://plaync'), q = at.searchParams, json = body => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (at.pathname === '/search') return json({ list: /^armorer$/i.test(q.get('keyword')) ? [armorer, armorerAlt].map(([characterId, name, level]) => ({ characterId: encodeURIComponent(characterId), name, level, race: 2, serverId: Number(q.get('serverId')), region: q.get('region') })) : [] });
-    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', raceName: 'Asmodians', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique' },
+    if (at.pathname === '/search') return json({ list: /^armorer$/i.test(q.get('keyword')) ? [armorer, armorerAlt].map(([characterId, name, level, pcId]) => ({ characterId: encodeURIComponent(characterId), name, level, pcId, race: 2, serverId: Number(q.get('serverId')), region: q.get('region') })) : [] });
+    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique' },
       stat: { statList: [{ type: 'STR', name: 'Might', value: 45 }, { type: 'WIS', name: 'Willpower', value: 8 }, { type: 'Justice', name: 'Justice [Nezekan]', value: 41 }, { type: 'ItemLevel', name: 'ItemLevel', value: 1671 }] },
       daevanion: { boardList: [{ name: 'Nezekan', openNodeCount: 12, totalNodeCount: 40 }] } });
     if (at.pathname === '/api/character/equipment') return json({ equipment: { equipmentList: [{ slotPos: 5, slotPosName: 'Torso', name: 'Vakron Breastplate', grade: 'Unique', enchantLevel: 10, exceedLevel: 0 }, { slotPos: 1, slotPosName: 'MainHand', name: 'Enraged Kromede Rod', grade: 'Unique', enchantLevel: 15, exceedLevel: 3 }] },
@@ -535,7 +535,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     await shot(page, 'armory-search');
     assert.deepEqual(errors, []);
   } finally { await close(); }
-  // A character card links its armory search, which opens the kept profile at once.
+  // A character card shows its class and level from PLAYNC's search, and links its own profile (#25).
   const player = await account('Armory player');
   const created = (await request('/api/odyle/create', { name: 'Armory room' }, player)).data;
   const session = (await request('/api/odyle/session', {}, player)).data;
@@ -543,9 +543,11 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
   assert.equal((await request('/api/odyle/sharing', { roomId: created.room.id, characterId: c.id, enabled: true }, player)).status, 200);
   const room = await open(player, '#/room/' + created.room.id);
   try {
-    await room.page.locator('.member-card', { hasText: 'Armorer' }).waitFor();
+    await room.page.locator('.member-card', { hasText: 'Armorer' }).locator('.member-class', { hasText: 'Chanter · Lv 45' }).waitFor({ timeout: 15000 });
     await shot(room.page, 'armory-card');
-    await room.page.locator('.member-card', { hasText: 'Armorer' }).locator('a.card-link', { hasText: 'Armory' }).click();
+    const link = room.page.locator('.member-card', { hasText: 'Armorer' }).locator('a.card-link', { hasText: 'Armory' });
+    assert.equal(await link.getAttribute('href'), '#/armory/eu/2304/' + armorer[0]);
+    await link.click();
     await room.page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
     assert.match(await room.page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+[sm] ago$/);
     assert.deepEqual(room.errors, []);
