@@ -97,6 +97,48 @@ func newCharacter(app core.App, userId string) (*Character, error) {
 	return c, nil
 }
 
+// shareNew shares a character the account has just saved in every room where it turned
+// shareNew on; a viewer's membership never shares.
+func shareNew(app core.App, c *Character) error {
+	memberships, err := membershipsWhere(app, "user = {:user} && shareNew = true && role != 'viewer'", dbx.Params{"user": c.User()})
+	if err != nil {
+		return err
+	}
+	for _, m := range memberships {
+		if m.Shares(c.Id) {
+			continue
+		}
+		m.SetShared(append(m.Shared(), c.Id))
+		if err := app.Save(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// POST /api/odyle/share-new turns shareNew on or off for one of the account's rooms.
+func shareNewSetting(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+		m, err := membership(app, user.Id, b.str("roomId"))
+		if err != nil {
+			return nil, err
+		}
+		if m.Role() == "viewer" {
+			return nil, forbidden("Viewers cannot share characters with this room.")
+		}
+		enabled, ok := b.boolean("enabled")
+		if !ok {
+			return nil, badRequest("Sharing must be true or false.")
+		}
+		m.Set("shareNew", enabled)
+		if err := app.Save(m); err != nil {
+			return nil, err
+		}
+		*affected = append(*affected, m.Room())
+		return map[string]any{"shareNew": enabled}, nil
+	})
+}
+
 func ownSession(app core.App, userId, id string) (*ReaderSession, error) {
 	session, err := findAs[ReaderSession](app, "publisher_sessions", id)
 	if err != nil || session.User() != userId || !session.ExpiresAt().After(time.Now()) {
@@ -455,7 +497,7 @@ func rooms(e *core.RequestEvent) error {
 				continue
 			}
 			linked, j := m.Shared(), roomJSON(room, rules.OdylePerCube)
-			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
+			j["role"], j["sharedCharacters"], j["sharing"], j["shareNew"] = m.Role(), linked, len(linked) > 0, m.GetBool("shareNew")
 			out = append(out, j)
 		}
 		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
@@ -965,6 +1007,9 @@ func character(e *core.RequestEvent) error {
 		if err := app.Save(c); err != nil {
 			return nil, err
 		}
+		if err := shareNew(app, c); err != nil {
+			return nil, err
+		}
 		return map[string]any{"character": c}, nil
 	})
 }
@@ -999,6 +1044,7 @@ func report(e *core.RequestEvent) error {
 			return nil, err
 		}
 		var character *Character
+		created := false
 		if b.set("characterId") {
 			if character, err = ownCharacter(app, user.Id, b.str("characterId")); err != nil {
 				return nil, err
@@ -1012,6 +1058,8 @@ func report(e *core.RequestEvent) error {
 				character = existing[0]
 			} else if character, err = newCharacter(app, user.Id); err != nil {
 				return nil, err
+			} else {
+				created = true
 			}
 			// Only a lookup without characterId may name a character; an existing one
 			// keeps the identity the game gave it.
@@ -1025,6 +1073,12 @@ func report(e *core.RequestEvent) error {
 		checkClock(app, before, prevAt, data, time.Now())
 		if err := app.Save(character); err != nil {
 			return nil, err
+		}
+		// A character the reader saw first reaches the rooms that share new characters.
+		if created {
+			if err := shareNew(app, character); err != nil {
+				return nil, err
+			}
 		}
 		if changed {
 			point, err := newRecord(app, "character_readings")

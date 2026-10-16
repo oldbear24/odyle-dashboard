@@ -159,7 +159,21 @@ function sharingMatrix() {
   return characters.map((c, i) => `<div class="share-row"><div class="share-character">${portrait(c, i, 'mini')}<div><strong>${esc(c.characterName)}</strong><small>${esc(c.server)} · ${esc(c.region.replace('GLOBAL_', ''))}</small></div></div><div class="share-rooms">${rooms.map(r => {
     const on = r.sharedCharacters?.includes(c.id), viewer = r.role === 'viewer';
     return `<button class="share-chip ${on ? 'on' : ''}" data-share="${esc(c.id)}" data-room-id="${esc(r.id)}" data-enabled="${!on}" aria-pressed="${on}" ${viewer ? 'disabled' : ''} title="${viewer ? esc(t('Viewers cannot share characters in this room')) : esc(on ? t('Hide {name} in {room}', { name: c.characterName, room: r.name }) : t('Show {name} in {room}', { name: c.characterName, room: r.name }))}"><i></i>${esc(r.name)}</button>`;
-  }).join('')}</div></div>`).join('') + `<p class="share-note">${t('New characters start private in every room. Switched-off characters keep their saved values.')}</p>`;
+  }).join('')}</div></div>`).join('') + `<div class="share-row share-new-row"><div class="share-character"><div><strong>${t('New characters')}</strong><small>${t('shared on their own where this is on')}</small></div></div><div class="share-rooms">${rooms.map(r => shareNewChip(r.id, r.name, r.shareNew, r.role === 'viewer')).join('')}</div></div><p class="share-note">${t('New characters start private, except in rooms where New characters is on. Switched-off characters keep their saved values.')}</p>`;
+}
+// Whether the characters this account saves from now on are shared in a room by themselves.
+function shareNewChip(roomId, name, on, viewer) {
+  return `<button class="share-chip ${on ? 'on' : ''}" data-share-new="${esc(roomId)}" data-enabled="${!on}" aria-pressed="${Boolean(on)}" ${viewer ? 'disabled' : ''} title="${viewer ? esc(t('Viewers cannot share characters in this room')) : esc(on ? t('New characters are shared in {room} by themselves', { room: name }) : t('Share new characters in {room} by themselves', { room: name }))}"><i></i>${esc(name)}</button>`;
+}
+// A character saved meanwhile (by the Windows reader): offer the rooms that do not show it yet.
+const prompted = new Set();
+async function newCharacterPrompt(c) {
+  if (prompted.has(c.id) || demo) return;
+  prompted.add(c.id);
+  rooms = (await pb.send('/api/odyle/rooms')).rooms;
+  const open = rooms.filter(r => r.role !== 'viewer' && !r.sharedCharacters?.includes(c.id));
+  if (!open.length) return;
+  modal(esc(t('New character {name} saved', { name: c.characterName })), `<p>${t('It starts private. Add it to your rooms?')}</p><div class="add-chips prompt-chips">${open.map(r => `<button class="add-chip" data-prompt-share="${esc(c.id)}" data-room-id="${esc(r.id)}">${icon('plus')}${esc(r.name)}</button>`).join('')}</div><div class="modal-actions"><button class="button secondary" data-action="close-dialog">${t('Not now')}</button></div>`);
 }
 // The party shows only characters added (shared) to this room, the member's own
 // included; their other characters wait in the add bar above the party.
@@ -363,11 +377,13 @@ async function openInvites(id) { closeModal(); await go('/room/' + id); if (room
 // other members can leave. Every change asks the server and redraws this dialog.
 function roomSettings() {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to manage your own rooms.'));
-  if (!owner()) return modal(esc(room.name), `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p>${room.discordReminders ? `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>` : ''}<button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`);
+  // New characters this member saves can reach this room by themselves.
+  const newOnes = `<h3 class="modal-sub">${t('New characters')}</h3><p>${t('Characters you save from now on start private. With this on, they are shared in this room by themselves.')}</p><div class="share-rooms">${shareNewChip(room.id, room.name, me()?.shareNew, me()?.role === 'viewer')}</div>`;
+  if (!owner()) return modal(esc(room.name), newOnes + `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p>${room.discordReminders ? `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>` : ''}<button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`);
   const myId = pb.authStore.record?.id;
   const rows = members.map(m => m.user === myId ? `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${t('Leader (you)')}</small></div></div>`
     : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${esc(roleName(m.role))}</small></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
-  modal(t('Room settings'), `<form id="rename-form" class="rename-form"><label>${t('Room name')}<input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form><h3 class="modal-sub">${t('Members')}</h3><p>${t('Players share characters and plan runs; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>${discordSettings()}<div class="modal-actions"><button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button><button class="button danger" data-action="close-room">${t('Close this room')}</button></div>`);
+  modal(t('Room settings'), newOnes + `<form id="rename-form" class="rename-form"><label>${t('Room name')}<input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form><h3 class="modal-sub">${t('Members')}</h3><p>${t('Players share characters and plan runs; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>${discordSettings()}<div class="modal-actions"><button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button><button class="button danger" data-action="close-room">${t('Close this room')}</button></div>`);
 }
 // The owner connects a Discord channel: each planned run is posted there 15 minutes
 // before it starts. The webhook URL never comes back from the server.
@@ -583,8 +599,11 @@ async function ownNews(data) {
     announced(data);
     if (data.release?.version) { windowsReleaseAt = 0; await loadWindowsRelease(); toast(t('Odyle for Windows {version} is out. Running apps update themselves.', { version: data.release.version })); }
     // The open room hears of its own changes on its topic.
-    if (data.refresh) { if (!room && !later()) await refreshPage(); }
-    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
+    // On My rooms & characters, a character saved meanwhile (by the reader) is offered to the rooms
+    // that do not show it yet, after fetching again: rooms that share new characters have it now.
+    const known = new Set(characters.map(c => c.id)), offer = async () => { if (library && known.size + rooms.length) for (const c of characters.filter(c => !known.has(c.id) && c.characterName)) await newCharacterPrompt(c); };
+    if (data.refresh) { if (!room && !later()) { await refreshPage(); await offer(); } }
+    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) { await refreshPage(); await offer(); }
     if (data.seen) applySeen(data.seen, characters);
     // Cap alerts of the account's characters (the job checked the quiet hours).
     if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
@@ -833,6 +852,21 @@ app.addEventListener('click', async e => {
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
+    if (el.dataset.shareNew) {
+      const roomId = el.dataset.shareNew, enabled = el.dataset.enabled === 'true', target = rooms.find(r => r.id === roomId) || (room?.id === roomId ? room : null); el.disabled = true;
+      try { await send('share-new', { roomId, enabled }); } finally { el.disabled = false; }
+      rooms = rooms.map(r => r.id === roomId ? { ...r, shareNew: enabled } : r);
+      if (room?.id === roomId && me()) { me().shareNew = enabled; roomSettings(); } else renderSharing();
+      return toast(enabled ? t('New characters you save will be shared in {room}.', { room: target?.name || '' }) : t('New characters start private in {room} again.', { room: target?.name || '' }));
+    }
+    if (el.dataset.promptShare) {
+      const roomId = el.dataset.roomId; el.disabled = true;
+      const result = await send('sharing', { roomId, characterId: el.dataset.promptShare, enabled: true });
+      rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: true } : r);
+      if (room?.id === roomId) changedRoom(roomId, () => applyShared(me(), result.sharedCharacters)); else if (!room) renderSharing();
+      el.classList.add('done'); el.setAttribute('aria-pressed', 'true'); el.innerHTML = icon('tick') + el.textContent;
+      return;
+    }
     if (el.dataset.share) {
       const roomId = el.dataset.roomId || room.id; el.disabled = true;
       const enabled = el.dataset.enabled === 'true', name = el.dataset.name;
