@@ -26,6 +26,10 @@ jobs:
           cache-dependency-path: backend/go.sum
       - run: npm ci
       - run: npm run lint
+      # The container's web build sees only what the Dockerfile copies; a file the dashboard needs and
+      # it misses fails here, not in the release.
+      - name: Container web build
+        run: docker build --target web .
       - name: gofmt
         run: test -z "$(gofmt -l backend)" || { gofmt -l backend; exit 1; }
       - run: npm test

@@ -3,7 +3,8 @@ FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /src
 COPY package*.json ./
 RUN npm ci
-COPY index.html vite.config.js ./
+# What's new bundles the changelog (src/main.js imports CHANGELOG.md).
+COPY index.html vite.config.js CHANGELOG.md ./
 COPY src ./src
 COPY public ./public
 ARG VITE_POCKETBASE_URL
