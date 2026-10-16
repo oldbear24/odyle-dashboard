@@ -33,10 +33,11 @@ export function party(entries, now, cost) {
 export function explain(entries, now, cost, valueOf = c => c.value) {
   const result = party(entries, now, cost), seen = c => c.lastSeenAt ? timestamp(c.lastSeenAt) : 0;
   const users = [...new Set(entries.filter(c => c.role !== 'viewer').map(c => c.user))];
+  // Not counted, nearest to counting first: a shared character, then the most recently in game.
   const missing = result.uncounted.map(user => {
     const own = entries.filter(c => c.user === user && c.characterName), last = own.reduce((at, c) => Math.max(at, seen(c)), 0);
     return { user, displayName: entries.find(c => c.user === user).displayName, shared: own.length > 0, lastSeenAt: last ? new Date(last).toISOString() : '' };
-  });
+  }).sort((a, b) => b.shared - a.shared || (b.lastSeenAt || '').localeCompare(a.lastSeenAt || '') || a.displayName.localeCompare(b.displayName));
   const spread = Object.entries(result.players.reduce((counts, c) => { const cubes = Math.floor(c.value / cost); return { ...counts, [cubes]: (counts[cubes] || 0) + 1 }; }, {}))
     .map(([cubes, players]) => ({ cubes: Number(cubes), players })).sort((a, b) => b.cubes - a.cubes);
   let lastKnown = null;

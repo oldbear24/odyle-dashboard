@@ -18,6 +18,8 @@ test('the party says who counts, who holds it back, who is missing and what was 
   assert.deepEqual([x.lowest.id, x.cubes, x.members], ['k1', 1, 5]);
   assert.deepEqual(x.spread, [{ cubes: 6, players: 1 }, { cubes: 2, players: 1 }, { cubes: 1, players: 1 }]);
   assert.deepEqual(x.missing, [{ user: 'Nyx', displayName: 'Nyx', shared: true, lastSeenAt: ago(3 * 3600) }, { user: 'Aren', displayName: 'Aren', shared: false, lastSeenAt: '' }]);
+  // Nearest to counting first, whatever order the room lists its members in.
+  assert.deepEqual(explain([...entries].reverse(), now, 40).missing.map(m => m.user), ['Nyx', 'Aren']);
   // Every player's best saved value, the alt included; never part of the live numbers.
   assert.deepEqual({ ...x.lastKnown, lowest: x.lastKnown.lowest.id }, { lowest: 'k1', value: 45, cubes: 1, players: 4, of: 5, newest: ago(600), oldest: ago(3 * 86400) });
   // A projected value (the Odyle clock) replaces the saved one.
