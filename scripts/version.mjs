@@ -21,7 +21,7 @@ const semver = /^(\d+)\.(\d+)\.(\d+)$/;
 const parts = text => text.replace(/^v/, '').split('.').map(Number).concat([0, 0, 0, 0]).slice(0, 4);
 const compare = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 // What does not ship: documentation, tests, CI, local scripts and editor or lint settings.
-const unshipped = /^(docs\/|tests\/|\.github\/|scripts\/|\.vscode\/)|\.md$|_test\.go$|^\.env[^/]*\.example$|^(LICENSE|\.gitignore|\.gitattributes|\.editorconfig|eslint\.config\.[cm]?js)$/;
+const unshipped = /^(docs\/|tests\/|\.github\/|scripts\/|\.vscode\/)|\.md$|_test\.go$|^\.env[^/]*\.example$|^(LICENSE|\.gitignore|\.gitattributes|\.editorconfig|eslint\.config\.[cm]?js|compose\.yaml)$/;
 // package.json and package-lock.json ship only through what the build uses: the runtime
 // dependencies and the build tool (vite), with every package they pull in. A change limited to
 // the test and lint tools (playwright, eslint, …), or to the version itself, ships nothing.
