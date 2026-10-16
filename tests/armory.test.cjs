@@ -82,7 +82,7 @@ test('bookmarks keep characters in this browser, newest first, with their last o
   const page = armorySearch(regions, {}, [{ name: 'Other', level: 45, race: 2, server: 'Lumiel', serverId: 2304, region: 'eu', characterId: other.characterId }], false, list, now);
   assert.match(page, /Bookmarked characters <span>2<\/span>/);
   assert.match(page, /<strong>Ka&lt;b&gt;<\/strong><span>Level 45 · Chanter · Lumiel<\/span><span class="armory-mark-power">120,000 CP · item level 1,671<small>as of 0s ago<\/small>/);
-  assert.match(page, new RegExp(`data-armory-unmark="${bookmarkKey(list[1]).replace(/[/=-]/g, '\$&')}"`));
+  assert.ok(page.includes(`data-armory-unmark="${bookmarkKey(list[1])}"`));
   assert.match(page, /<strong>Other <span class="armory-star"/);
   assert.ok(page.indexOf('armory-bookmarks') < page.indexOf('armory-form'));
   assert.deepEqual(removeBookmark(list, bookmarkKey(list[0])).map(b => b.name), ['Ka<b>']);
