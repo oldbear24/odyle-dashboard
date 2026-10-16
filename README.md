@@ -102,9 +102,9 @@ Open `http://127.0.0.1:8090`. For another frontend host, set `VITE_POCKETBASE_UR
 npm run lint
 npm test
 npm run test:backend
+npm run build
 npm run backend:build
 npm run test:integration
-npm run build
 npm run test:ui
 ```
 

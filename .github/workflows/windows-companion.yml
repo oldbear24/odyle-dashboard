@@ -33,6 +33,8 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - run: npm ci
+      # The dashboard first: the backend embeds it, and the integration tests read its page.
+      - run: npm run build
       - run: npm run backend:build
       # Built ahead: the integration tests give each check a minute to run.
       - run: dotnet build odyle-windows/tests/Odyle.Core.Checks -c Release

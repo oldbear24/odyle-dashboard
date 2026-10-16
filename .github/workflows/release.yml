@@ -42,9 +42,10 @@ jobs:
           for f in $(go test -list '^Fuzz' ./odyle | grep '^Fuzz'); do go test -run '^$' -fuzz "^$f\$" -fuzztime 10s ./odyle; done
           go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
           go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      # The dashboard first: the backend embeds it, and the integration tests read its page.
+      - run: npm run build
       - run: npm run backend:build
       - run: npm run test:integration
-      - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
       # The server for Linux and Windows, with the migrations and the dashboard built in
