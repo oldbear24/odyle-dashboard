@@ -96,6 +96,10 @@ npm run backend
 
 Open `http://127.0.0.1:8090`. For another frontend host, set `VITE_POCKETBASE_URL` in `.env` before building. The backend must allow that exact frontend origin and use HTTPS in production.
 
+## Versions
+
+Releases use semantic versions (MAJOR.MINOR.PATCH): every change that ships bumps `package.json`'s version by what it changes, and the release is tagged with exactly it. See [AGENTS.md](AGENTS.md#versioning).
+
 ## Checks and deployment
 
 ```powershell

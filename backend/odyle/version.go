@@ -14,7 +14,7 @@ import (
 
 // Version is the release the backend was built as and Commit its commit. The release
 // workflow and the image set both (go build -ldflags "-X
-// github.com/oldbear24/odyle-dashboard/backend/odyle.Version=0.5.0.123 -X ….Commit=<sha>");
+// github.com/oldbear24/odyle-dashboard/backend/odyle.Version=0.6.0 -X ….Commit=<sha>");
 // a build from a git checkout names its commit anyway (Go records it), and an unnamed
 // build reads "dev".
 var Version, Commit = "", ""
