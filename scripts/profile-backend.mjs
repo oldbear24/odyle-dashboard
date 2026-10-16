@@ -18,7 +18,7 @@ const seconds = 30, readerCount = 40, roomCount = 8, dashboardCount = 24, worker
 const url = 'http://127.0.0.1:18095';
 const directory = await mkdtemp(join(tmpdir(), 'odyle-profile-'));
 // Outside services are unreachable: lookups fail at once and nothing leaves the machine.
-const child = spawn(binary, ['serve', '--http=127.0.0.1:18095', '--dir=' + join(directory, 'data')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', PLAYNC_IMAGE_URL: 'http://127.0.0.1:9', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: 'http://127.0.0.1:9' } });
+const child = spawn(binary, ['serve', '--http=127.0.0.1:18095', '--dir=' + join(directory, 'data')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', PLAYNC_ARMORY_URL: 'http://127.0.0.1:9', PLAYNC_IMAGE_URL: 'http://127.0.0.1:9', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: 'http://127.0.0.1:9' } });
 const send = async (path, body, token, method = body === undefined ? 'GET' : 'POST') => {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: token } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => null);

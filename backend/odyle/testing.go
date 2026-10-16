@@ -19,7 +19,11 @@ import (
 
 var verifiedAdapters = []string{"test-fixture-v1"}
 
-func init() { testFixtures = fixtures }
+// The armory asks the PLAYNC stand-in of the tests without its pauses between lookups.
+func init() {
+	testFixtures = fixtures
+	armoryPace, armorySearchGap = 300*time.Millisecond, 50*time.Millisecond
+}
 
 func fixture(se *core.ServeEvent, path string, handle func(e *core.RequestEvent, b body) (any, error)) {
 	se.Router.POST("/__test__/"+path, func(e *core.RequestEvent) error {

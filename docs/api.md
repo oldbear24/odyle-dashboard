@@ -236,6 +236,42 @@ A push to `main` ships a Windows release to every installed app at once, so a ne
 
 Superusers can pause every packet reader at once under **Server controls** (`readerPaused` in `odyle_settings`). While it is on, `GET /api/odyle/rooms`, `POST /api/odyle/session` and `POST /api/odyle/heartbeat` answer `readerPaused: true`, and `POST /api/odyle/report` answers 503 with *Packet readers are paused by the server operators.* without saving anything. Sessions, heartbeats and `invalidate` keep working, but a heartbeat no longer keeps a reading live, so every reading turns stale within 45 seconds. Windows apps that know the switch stop capturing and close Npcap, say so on their card and start capturing again by themselves once the flag is `false`. Older apps (adapter `global-reference-v1`) keep capturing; their readings are refused with 400 and the same message instead of 503, because those apps answer any 5xx by opening a new reader session every 20 seconds, while a 400 makes them wait a minute before sending again. They show the message as a refused reading and save again by themselves once the pause ends. Saved values and history stay.
 
+## Armory
+
+Public routes for the armory, signed in or not, with their own rate limits per address: 20 searches and 60 armory requests a minute. Everything comes from PLAYNC's official character pages ([Armory](armory.md)); no route writes armory data.
+
+`GET /api/odyle/armory/servers` answers `{ regions: [{ region, elyos, asmodian }] }`: the four Odyle regions (`GLOBAL_NA`, `GLOBAL_EU`, `GLOBAL_SA`, `GLOBAL_ASIA`) with their server names by race.
+
+`GET /api/odyle/armory/search?name=&server=&region=` takes a character name (2 to 16 letters or digits), a server name and an Odyle region, as characters keep them. It answers `{ results: [{ name, level, race, server, serverId, region, characterId }] }`: up to 20 characters PLAYNC's search lists, those named exactly so first. `region` is PLAYNC's search region (`nae`, `naw`, `eu`, `la`, `as`; North America searches both of its own), and `characterId` is decoded. A bad name or an unknown server answers 400. Paused, busy or with PLAYNC's search not answering, it answers 503.
+
+`GET /api/odyle/armory/{region}/{serverId}/{characterId}` (PLAYNC's search region, server id and character id) answers the kept profile and where its lookup stands:
+
+```json
+{
+  "region": "eu", "serverId": 2304, "characterId": "…=", "server": "Lumiel",
+  "profile": { "name": "…", "level": 45, "class": "Chanter", "race": "Asmodians", "server": "Lumiel", "title": "…", "titleGrade": "Unique", "combatPower": 107458, "itemLevel": 1671,
+    "stats": [{ "type": "Justice", "name": "Justice", "deity": "Nezekan", "value": 41, "primary": false }],
+    "gear": [{ "slot": "MainHand", "name": "…", "grade": "Unique", "enchant": 15, "exceed": 3 }, { "slot": "Pet", "name": "…", "grade": "", "enchant": 0, "exceed": 0, "level": 3 }],
+    "boards": [{ "name": "Nezekan", "open": 12, "total": 40 }] },
+  "fetchedAt": "2026-10-16T10:00:00.000Z", "error": "",
+  "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": ""
+}
+```
+
+- `profile` is `null` until PLAYNC was first asked. `fetchedAt` is when it was, and `error` is why the last lookup of a kept profile failed.
+- `state` says where the lookup stands:
+  - `fresh`: kept and younger than six hours, nothing to do.
+  - `queued`: `position` characters are ahead and it takes about `wait` seconds.
+  - `fetching`: PLAYNC is being asked right now.
+  - `failed`: `lookupError` says why, and it is tried again after `retryAfter` seconds.
+  - `busy`: the queue, or the caller's three places in it, is full.
+  - `paused`: superusers paused the armory.
+- Opening a profile older than six hours queues it again, and `?refresh=1` does the same once it is 15 minutes old. The kept copy is answered meanwhile.
+- Clients ask again after `retryAfter` seconds while the state is `queued`, `fetching` or `busy`.
+- A character PLAYNC does not list, a hidden profile, or an id or server outside the region answers 404.
+
+The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused }`. `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
+
 ## Account and data
 
 | Method / route | Body | Result |
