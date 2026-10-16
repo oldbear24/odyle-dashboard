@@ -6,5 +6,7 @@ backend/web/dist
 backend/pb_data
 .env
 .env.backend
-docs
+docs/*
+# The privacy notice is a page of the dashboard (src/privacy.js).
+!docs/privacy.md
 tests
