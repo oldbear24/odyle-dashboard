@@ -9,10 +9,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -41,6 +44,14 @@ func main() {
 	odyle.Register(app)
 	app.RootCmd.AddCommand(healthcheck())
 
+	// While no superuser exists, PocketBase opens a browser at its installer link. Odyle never
+	// does: it runs in a container, as the test server of the dashboard and Windows checks and
+	// next to a developer's own browser, so it only prints the link.
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		e.InstallerFunc = printInstaller
+		return e.Next()
+	})
+
 	// The dashboard (if the route path is not already defined).
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
@@ -67,6 +78,16 @@ func main() {
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// printInstaller prints the link that creates the first superuser, valid for 30 minutes.
+func printInstaller(app core.App, systemSuperuser *core.Record, baseURL string) error {
+	token, err := systemSuperuser.NewStaticAuthToken(30 * time.Minute)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\n(!) Open this link in a browser within 30 minutes to create your first superuser account:\n%s/_/#/pbinstall/%s\n(or run: %s superuser upsert EMAIL PASS)\n\n", strings.TrimRight(baseURL, "/"), token, filepath.Base(os.Args[0]))
+	return nil
 }
 
 // dashboard serves the dashboard compiled in, or the public dir when --publicDir names
