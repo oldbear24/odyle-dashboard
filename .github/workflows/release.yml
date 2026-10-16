@@ -46,8 +46,10 @@ jobs:
       - run: npm run build
       - run: npm run backend:build
       - run: npm run test:integration
+        timeout-minutes: 15
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
+        timeout-minutes: 25
       # The server for Linux and Windows, with the migrations and the dashboard built in
       # (backend/web).
       - name: Package the server

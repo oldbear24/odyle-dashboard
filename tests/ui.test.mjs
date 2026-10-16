@@ -530,11 +530,10 @@ test('notifications are kept for the account, reach its other tabs and time the 
   const roomId = (await request('/api/odyle/create', { name: 'Reminder room' }, lead)).data.room.id;
   // A run in 100 minutes, which its planner goes to: the default 15 minutes do not remind yet.
   assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() + 100 * 60000).toISOString() }, lead)).status, 200);
-  const { page, errors, close } = await open(lead, '#/account'), other = await open(lead, '#/account');
+  // This browser's push service is one on this machine (test backends may post there).
+  const { page, errors, close } = await open(lead, '#/account'), other = await open(lead, '#/account'), service = await pushService();
   try {
     await page.context().grantPermissions(['notifications'], { origin: url });
-    // This browser's push service is one on this machine (test backends may post there).
-    const service = await pushService();
     await page.context().addInitScript(([endpoint, keys]) => {
       if (!window.PushManager) return;
       let current = null;
@@ -572,18 +571,22 @@ test('notifications are kept for the account, reach its other tabs and time the 
     // Push on this device: the browser subscribes, the server keeps it and a test arrives, encrypted for it.
     await form.locator('[data-action="push-on"]').click();
     await toast(page).filter({ hasText: 'Push notifications are on for this device.' }).waitFor();
-    assert.match(await form.innerText(), /This device takes push notifications\.[\s\S]*Push is on for 1 device: Edge on Windows/);
+    assert.match(await form.innerText(), /This device takes push notifications\.[\s\S]*Push is on for 1 device: \w[\w ]* on \w+/);
     await form.locator('[data-action="push-test"]').click();
     await toast(page).filter({ hasText: 'Sent a test to 1 device.' }).waitFor();
     assert.equal(service.received.at(-1).message.title, 'Odyle notifications work');
     // The service worker shows what a push service brings, and its click opens the page it names.
     const worker = page.context().serviceWorkers()[0] || await page.context().waitForEvent('serviceworker');
+    // What it would show is recorded: headless browsers need not display notifications.
     const titles = await worker.evaluate(async () => {
-      self.dispatchEvent(new globalThis.PushEvent('push', { data: JSON.stringify({ title: 'Fire Temple starts in 15 min', body: 'Evening', tag: 'push-check', page: '#/tasks' }) }));
-      for (let i = 0; i < 20; i++) { const shown = await self.registration.getNotifications({ tag: 'push-check' }); if (shown.length) return shown.map(n => [n.title, n.body, n.data.page]); await new Promise(r => setTimeout(r, 100)); }
-      return [];
+      const shown = [], text = JSON.stringify({ title: 'Fire Temple starts in 15 min', body: 'Evening', tag: 'push-check', page: '#/tasks' });
+      self.registration.showNotification = async (title, options) => { shown.push([title, options.body, options.tag, options.data.page]); };
+      const event = globalThis.PushEvent ? new globalThis.PushEvent('push', { data: text }) : Object.assign(new globalThis.ExtendableEvent('push'), { data: { json: () => JSON.parse(text), text: () => text } });
+      self.dispatchEvent(event);
+      for (let i = 0; i < 20 && !shown.length; i++) await new Promise(done => setTimeout(done, 50));
+      return shown;
     });
-    assert.deepEqual(titles, [['Fire Temple starts in 15 min', 'Evening', '#/tasks']]);
+    assert.deepEqual(titles, [['Fire Temple starts in 15 min', 'Evening', 'push-check', '#/tasks']]);
     // Cap alerts: on in the card, a character 15 Odyle below the cap is told of when the job runs.
     await form.locator('[name=cap]').check(); await form.locator('[name=capTicks]').selectOption('1');
     await form.locator('[type=submit]').click(); await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
@@ -598,14 +601,13 @@ test('notifications are kept for the account, reach its other tabs and time the 
     await form.locator('[data-action="push-off"]').click();
     await toast(page).filter({ hasText: 'Push notifications are off for this device.' }).waitFor();
     await form.locator('[data-action="push-on"]').waitFor();
-    service.server.close();
     // More than three reminder times are refused in the form.
     for (const minutes of [5, 30, 60]) await chip(minutes).click();
     await form.locator('[type=submit]').click();
     assert.match(await form.locator('.form-error').innerText(), /Choose one to three reminder times\./);
     await shot(page, 'account-notifications');
     assert.deepEqual([...errors, ...other.errors], []);
-  } finally { await close(); await other.close(); }
+  } finally { await close(); await other.close(); service.close(); }
 });
 test('the account page renames, switches to Czech, exports data, deletes characters and the account', async () => {
   const user = await account('Account owner');
