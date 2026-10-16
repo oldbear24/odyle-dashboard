@@ -25,6 +25,9 @@ async function request(path, body, auth, method = 'POST') {
   return { status: res.status, data: await res.json() };
 }
 const action = (name, body, auth) => request('/api/odyle/' + name, body, auth);
+// A server time is not later than now. Go reads the precise Windows clock and Node a
+// coarser one, so a time the server just wrote can be a few milliseconds ahead.
+const past = at => Date.parse(at) <= Date.now() + 1000;
 // Realtime news is delivered a moment after a change; this delivers what is pending, so a
 // stream opened next hears only of later changes.
 const settle = async () => assert.equal((await request('/__test__/settle', {})).status, 200);
@@ -436,7 +439,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   // A run by hand is recorded with its result; the account clean-up only runs on its schedule.
   const ran = await run('odyle-expiry'); assert.equal(ran.status, 200, JSON.stringify(ran.data));
   const expiry = ran.data.jobs.find(j => j.name === 'odyle-expiry');
-  assert.equal(expiry.manual, true); assert.equal(expiry.byHand, true); assert.equal(expiry.failed, 0); assert.equal(typeof ran.data.result.done, 'number'); assert.ok(expiry.runs >= 1); assert.ok(Date.parse(expiry.lastRunAt) <= Date.now());
+  assert.equal(expiry.manual, true); assert.equal(expiry.byHand, true); assert.equal(expiry.failed, 0); assert.equal(typeof ran.data.result.done, 'number'); assert.ok(expiry.runs >= 1); assert.ok(past(expiry.lastRunAt));
   assert.equal((await run('odyle-retention')).status, 400); assert.equal((await run('odyle-nothing')).status, 404);
   const base = (await settings()).data.settings, noticeRoom = (await action('create', { name: 'Notice room' }, member)).data.room.id;
   const snapshotNotice = async () => (await request('/api/odyle/snapshot/' + noticeRoom, undefined, member, 'GET')).data.announcement;
@@ -965,10 +968,11 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
   });
   await t.test('an account keeps its ten most recently used Windows pairings', async () => {
     const holder = (await request('/__test__/account', { name: 'Many PCs' })).data, keys = [];
-    for (let i = 0; i < 10; i++) keys.push((await action('desktop-device', {}, holder)).data.deviceKey);
+    // A pause between pairings gives each its own millisecond, so their order is certain.
+    for (let i = 0; i < 10; i++) { keys.push((await action('desktop-device', {}, holder)).data.deviceKey); await delay(3); }
     // The first PC signed in last, so the second and third are the least recently used when two more pair.
     assert.equal((await action('desktop-sign-in', { deviceKey: keys[0] })).status, 200);
-    for (let i = 0; i < 2; i++) keys.push((await action('desktop-device', {}, holder)).data.deviceKey);
+    for (let i = 0; i < 2; i++) { await delay(3); keys.push((await action('desktop-device', {}, holder)).data.deviceKey); }
     assert.deepEqual((await request('/__test__/devices', { keys })).data.kept, [true, false, false, ...Array(9).fill(true)]);
     assert.equal((await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.length, 10);
   });
@@ -1045,7 +1049,7 @@ test('the dashboard offers the newest Windows release through the backend, cache
     assert.equal(offline.data.latest, null); assert.equal(offline.data.releasesUrl, 'https://github.com/oldbear24/odyle-windows/releases/latest');
     // Superusers see why the lookup failed on the Server status page.
     const operator = (await request('/__test__/superuser', {})).data, lookup = (await request('/api/odyle/admin/status', undefined, operator, 'GET')).data.release;
-    assert.deepEqual([lookup.version, lookup.fetchedAt, lookup.error], ['', '', 'GitHub answered 503.']); assert.ok(Date.parse(lookup.checkedAt) <= Date.now());
+    assert.deepEqual([lookup.version, lookup.fetchedAt, lookup.error], ['', '', 'GitHub answered 503.']); assert.ok(past(lookup.checkedAt));
   } finally { releaseDown = false; }
 });
 // Last: it spends this client's pairing budget for the minute.

@@ -44,6 +44,9 @@ test('planned runs count down in local time and history charts round their axis'
   assert.match(chart, /class="history-line" d="M[\d.]+,[\d.]+H[\d.]+V[\d.]+H[\d.]+V[\d.]+H[\d.]+"/); assert.match(chart, /1 cube · 40/);
   assert.match(historyChart([], { now, cost: 40 }), /No changes/);
   assert.deepEqual([...historyList(readings).matchAll(/<td>([^<]*)<\/td><td>([^<]*)<\/td><\/tr>/g)].map(m => [m[1], m[2]]), [['30', '−25'], ['55', '+35'], ['20', '—']]);
+  // Points before hourlyBefore are each hour's last change, so the count left out is a floor.
+  assert.match(historyList(readings, 2), /<p class="history-more">1 earlier change not listed<\/p>/);
+  assert.match(historyList(readings, 1, '2026-10-13 18:00:00.000Z'), /<p class="history-more">At least 2 earlier changes not listed<\/p>/);
 });
 test('runs go to calendars with a reminder, can be changed and count down in Czech', async () => {
   const { calendarFile, runEditForm, localInput, runsSection } = await import('../src/runs.js'), { useLanguage } = await import('../src/i18n.js');

@@ -613,4 +613,6 @@ export default {
   'A use limit is a whole number up to 50, or 0 for none.': 'Limit použití je celé číslo nejvýš 50, nebo 0 bez limitu.',
   'A link label has up to 40 characters.': 'Popisek odkazu má nejvýš 40 znaků.',
   'A room can have up to 20 open invite links. Revoke one first.': 'Místnost může mít nejvýš 20 platných odkazů s pozvánkou. Nejdřív jeden zruš.',
+  'The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.': 'Posledních 30 dní: nejnovějších 1 000 změn a před nimi poslední změna z každé hodiny. Hodnota platí do další změny; čára značí jednu kostku.',
+  'At least {n} earlier change not listed|At least {n} earlier changes not listed': ['Nejméně {n} starší změna není v seznamu', 'Nejméně {n} starší změny nejsou v seznamu', 'Nejméně {n} starších změn není v seznamu'],
 };

@@ -31,8 +31,8 @@ const when = at => Number.isFinite(timestamp(at)) ? new Date(timestamp(at)).toLo
 // Today's date, so the local time follows summer and winter time.
 const localHour = (hour, minute = 0) => new Date(new Date().setUTCHours(hour, minute, 0, 0)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const copy = value => JSON.parse(JSON.stringify(value));
-// Row keys: answers come from the server's JavaScript VM, which does not keep key order,
-// so the same row would look changed in every answer without sorting.
+// Row keys: the backend writes Go maps with sorted keys and its own objects in the order
+// it built them, so rows are compared by sorted keys and key order never counts as a change.
 const signature = value => value && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => key + ':' + signature(value[key])).join(',') + '}' : String(value);
 // The companion sends a heartbeat every 20 seconds. As on the dashboard (src/model.js),
 // 45 seconds without contact is late and 90 seconds is offline.
@@ -100,7 +100,7 @@ const filters = [
   { id: 'web', label: 'Dashboard', test: p => p.source === 'web' },
   { id: 'rejected', label: 'Rejected', test: p => !p.ok },
 ];
-// A packet's fields in a fixed order (the server's VM does not keep key order): its own
+// A packet's fields in a fixed order, whatever order the backend added them in: its own
 // first, then the request's safe fields by name.
 const first = ['id', 'at', 'kind', 'source', 'ok', 'ms', 'error', 'account', 'user'];
 const fields = p => first.filter(key => key in p).concat(Object.keys(p).filter(key => !first.includes(key) && key !== 'fresh').sort()).map(key => [key, p[key]]);

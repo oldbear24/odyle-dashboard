@@ -365,7 +365,7 @@ async function historyDialog(id, name) {
   const data = demo ? demoHistory(id) : await pb.send('/api/odyle/history/' + id);
   if (!demo && data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
   const now = Date.now() + serverOffset, cost = room?.cost || perCube;
-  modal(esc(t('{name} · Odyle history', { name })), `<p>${t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${data.readings.length ? historyList(data.readings) : ''}`, true);
+  modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${data.readings.length ? historyList(data.readings, 12, data.hourlyBefore) : ''}`, true);
   bindHistoryChart(document.querySelector('#modal .history-chart'));
 }
 // The pairing dialog (Pair Windows app, Connect reader; pairing.js). It shows this
