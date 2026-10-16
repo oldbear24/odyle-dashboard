@@ -9,13 +9,14 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18091';
+const dashboardVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
 let child, directory, browser, discord, discordUrl, discordPosts = 0, plaync, playncUrl;
 const shots = process.env.ODYLE_UI_SHOTS;
 async function request(path, body, auth, method = 'POST') {
@@ -53,7 +54,8 @@ after(async () => { await browser?.close(); discord?.close(); plaync?.close(); i
 // A browser tab signed in as `auth` (or signed out), in the given language, failing on page errors.
 async function open(auth, path = '#/', language = 'en') {
   const context = await browser.newContext({ viewport: { width: Number(process.env.ODYLE_UI_WIDTH) || 1280, height: 900 }, acceptDownloads: true, locale: language === 'cs' ? 'cs-CZ' : 'en-GB' });
-  await context.addInitScript(([session, lang]) => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); if (session) localStorage.setItem('odyle.account', session); localStorage.setItem('odyle.language', lang); } }, [auth ? JSON.stringify({ token: auth.token, record: auth.record }) : '', language]);
+  // The browser has seen this version, so no page says it was updated (the What's new test sets an older one).
+  await context.addInitScript(([session, lang, version]) => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); if (session) localStorage.setItem('odyle.account', session); localStorage.setItem('odyle.language', lang); localStorage.setItem('odyle.seenVersion', version); } }, [auth ? JSON.stringify({ token: auth.token, record: auth.record }) : '', language, dashboardVersion]);
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error' && !/Failed to load resource/.test(message.text())) errors.push(message.text()); });
@@ -607,6 +609,37 @@ test('the membership answer settles the clock\'s cap, and a reading that contrad
     await navigate(page, 'library');
     await card.waitFor();
     assert.equal(await card.locator('.cap-mismatch').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test('after an update the dashboard says so once, and What\'s new lists the changes', async () => {
+  const { page, errors, close } = await open(null, '#/');
+  try {
+    // This browser last saw an older version.
+    await page.evaluate(() => localStorage.setItem('odyle.seenVersion', '0.0.1'));
+    await page.reload();
+    const note = page.locator('.update-note');
+    assert.match(await note.locator('p').innerText(), new RegExp(`^Updated to ${dashboardVersion.replace(/\./g, '\\.')}\\. What's new$`));
+    await note.locator('a').click();
+    await page.getByRole('heading', { name: 'What\'s new' }).waitFor();
+    // This version is marked, its entries listed; the note is gone, also after a reload.
+    const current = page.locator('.changelog-entry.is-current');
+    assert.match(await current.locator('.changelog-version').innerText(), new RegExp(`^${dashboardVersion.replace(/\./g, '\\.')}\\s+this version$`));
+    assert.ok(await current.locator('li').count() > 0);
+    assert.equal(await page.locator('.update-note').count(), 0);
+    await shot(page, 'whats-new');
+    await page.goto(url + '/#/'); await page.locator('.welcome').waitFor();
+    assert.equal(await page.locator('.update-note').count(), 0);
+    // The footer's version opens it again.
+    await page.locator('footer .version-link').click();
+    await page.getByRole('heading', { name: 'What\'s new' }).waitFor();
+    // Closing the note works too.
+    await page.evaluate(() => localStorage.setItem('odyle.seenVersion', '0.0.1'));
+    await page.goto(url + '/#/'); await page.reload();
+    await page.locator('.update-note .close-button').click();
+    await page.locator('.update-note').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => localStorage.getItem('odyle.seenVersion')), dashboardVersion);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

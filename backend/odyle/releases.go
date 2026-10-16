@@ -175,7 +175,32 @@ func parseRelease(res response) (map[string]any, error) {
 	if fromGitHub(data["html_url"]) {
 		link = data["html_url"].(string)
 	}
-	return map[string]any{"version": version, "tag": textOf(data["tag_name"]), "url": link, "publishedAt": textOf(data["published_at"]), "packages": packages}, nil
+	return map[string]any{"version": version, "tag": textOf(data["tag_name"]), "url": link, "publishedAt": textOf(data["published_at"]), "packages": packages, "changes": releaseChanges(textOf(data["body"]))}, nil
+}
+
+// releaseChanges reads what a release changed from its notes, between <!-- changes --> and
+// <!-- /changes --> (the release workflows write them from CHANGELOG.md): groups of "### Title"
+// and "- " entries, at most 6 groups of 20, for the dashboard's What's new. Notes without the
+// markers (releases before the changelog) have none.
+func releaseChanges(notes string) []map[string]any {
+	out := []map[string]any{}
+	start, end := strings.Index(notes, "<!-- changes -->"), strings.Index(notes, "<!-- /changes -->")
+	if start < 0 || end < start {
+		return out
+	}
+	var group map[string]any
+	for _, line := range strings.Split(notes[start:end], "\n") {
+		line = trim(line)
+		if title, ok := strings.CutPrefix(line, "### "); ok && len(out) < 6 {
+			group = map[string]any{"title": cut(trim(title), 40), "items": []string{}}
+			out = append(out, group)
+		} else if item, ok := strings.CutPrefix(line, "- "); ok && group != nil {
+			if items := group["items"].([]string); len(items) < 20 {
+				group["items"] = append(items, cut(trim(item), 400))
+			}
+		}
+	}
+	return out
 }
 
 // latestRelease answers the cached release. GitHub is asked again when the cache is

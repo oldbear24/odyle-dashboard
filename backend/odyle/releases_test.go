@@ -115,3 +115,14 @@ func waitFor(t *testing.T, condition func() bool) {
 	}
 	t.Fatal("timed out")
 }
+
+func TestReleaseNotesGiveTheChangesBetweenTheirMarkers(t *testing.T) {
+	notes := "Intro\r\n<!-- changes -->\r\n### New\r\n- **Compact mode** shows your party.\r\n- Second\r\n\r\n### Fixed\r\n- Updates work again.\r\n<!-- /changes -->\r\n## What's Changed\r\n- not this\r\n"
+	got := releaseChanges(notes)
+	if len(got) != 2 || got[0]["title"] != "New" || len(got[0]["items"].([]string)) != 2 || got[0]["items"].([]string)[0] != "**Compact mode** shows your party." || got[1]["items"].([]string)[0] != "Updates work again." {
+		t.Fatalf("changes %v", got)
+	}
+	if got := releaseChanges("## What's Changed\n- a PR"); len(got) != 0 {
+		t.Fatalf("notes without markers: %v", got)
+	}
+}

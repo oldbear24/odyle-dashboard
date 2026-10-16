@@ -124,6 +124,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The release notes start with what the version changed, from CHANGELOG.md (src/changelog.js);
+      # checked out first, as checkout cleans the workspace.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            CHANGELOG.md
+            package.json
+            src/changelog.js
+            scripts/changelog.mjs
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: odyle-dashboard
@@ -134,7 +144,9 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}:$VERSION"
-          cat > notes.md <<EOF
+          node scripts/changelog.mjs notes "$VERSION" > notes.md
+          cat >> notes.md <<EOF
+
           Container image (linux/amd64, linux/arm64): \`docker pull $image\`
 
           \`odyle-dashboard-$VERSION-<os>-<arch>.zip\` (linux-amd64, linux-arm64, windows-amd64) holds the server \`odyle\`, with the dashboard and the migrations built in; run \`odyle serve\`. Migrations run at start.
