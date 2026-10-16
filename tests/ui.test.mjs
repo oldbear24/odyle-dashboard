@@ -549,6 +549,39 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
   } finally { await room.close(); }
 });
 
+test('the armory keeps bookmarked characters in this browser, without an account', async () => {
+  const profileAt = '#/armory/eu/2304/' + armorer[0];
+  const { page, errors, close } = await open(null, profileAt);
+  try {
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor({ timeout: 15000 });
+    // A second tab on the armory page follows the list.
+    const other = await page.context().newPage(); await other.goto(url + '/#/armory');
+    await other.getByRole('heading', { name: 'Look up a character' }).waitFor();
+    assert.equal(await other.locator('.armory-bookmarks').count(), 0);
+    await page.locator('[data-action="armory-bookmark"][aria-pressed="false"]').click();
+    await page.locator('[data-action="armory-bookmark"][aria-pressed="true"]', { hasText: 'Bookmarked' }).waitFor();
+    assert.equal(await toast(page).innerText(), 'Bookmarked Armorer. The armory page lists it.');
+    await other.locator('.armory-bookmarks', { hasText: 'Armorer' }).waitFor();
+    await other.close();
+    // Listed on the armory page with its numbers, also after a reload.
+    await page.locator('.armory-back').click();
+    const row = page.locator('.armory-marked li', { hasText: 'Armorer' });
+    assert.match(await row.innerText(), /Armorer\s+Level 45 · Chanter · Lumiel\s+107,458 CP · item level 1,671\s*as of \d+[sm] ago/);
+    await shot(page, 'armory-bookmarks');
+    await page.reload(); await row.waitFor();
+    // One click opens it again.
+    await row.locator('a').click();
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
+    assert.equal(await page.locator('[data-action="armory-bookmark"]').getAttribute('aria-pressed'), 'true');
+    // Removed from the list, and from the browser.
+    await page.locator('.armory-back').click();
+    await row.locator('[data-armory-unmark]').click();
+    await page.locator('.armory-bookmarks').waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => localStorage.getItem('odyle.armory.bookmarks')), '[]');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('a changed announcement shows on an open page at once, without asking the server', async () => {
   const operator = (await request('/__test__/superuser', {})).data, viewer = await account('News viewer');
   const { page, errors, close } = await open(viewer, '#/tasks');
