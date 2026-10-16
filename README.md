@@ -124,4 +124,4 @@ GitHub Actions runs the checks on every push; pushes to `main` also publish a Li
 
 The account migration locks the previous MVP's guest collections. New accounts use `users`, `party_rooms`, `room_members`, `characters`, `character_readings`, `publisher_sessions`, `room_invites`, `room_wishes`, `room_runs`, `user_tasks`, `desktop_codes` and `desktop_devices`. Old guest tokens cannot use the new API. Guest data is preserved as locked records during migration rather than silently erased.
 
-Fonts use Google Fonts with system fallbacks; there is no analytics. Remove the CSS font import or self-host fonts for a fully self-contained UI.
+The fonts (DM Sans and Manrope, from the `@fontsource-variable` packages) are bundled with the dashboard, and there is no analytics: browsers load nothing from other sites. The privacy notice (`docs/privacy.md`) is also a page of the dashboard (`#/privacy`), linked from the welcome page, the help and the footer.

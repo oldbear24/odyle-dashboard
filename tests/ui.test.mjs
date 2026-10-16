@@ -704,7 +704,7 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
 test('the main pages pass the axe accessibility check, signed out and in', async () => {
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
-  const pages = [[null, '#/'], [null, '#/armory'], [null, '#/changelog'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);
@@ -1080,6 +1080,26 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     await page.unroute('**/api/**');
     await page.locator('.topbar .connection.connected').waitFor({ timeout: 30000 });
   } finally { await context.close(); }
+});
+test('the privacy notice is a page of the dashboard, and no page loads anything from another site (#39)', async () => {
+  const { page, errors, close } = await open(null, '#/');
+  const elsewhere = [];
+  page.on('request', request => { if (new URL(request.url()).host !== '127.0.0.1:18091') elsewhere.push(request.url()); });
+  try {
+    await page.locator('.welcome-note a[href="#/privacy"]').click();
+    await page.getByRole('heading', { name: 'Privacy.' }).waitFor();
+    const text = await page.locator('.privacy-text').innerText();
+    assert.match(text, /odyle\.account/); assert.match(text, /odyle\.taskScope/); assert.match(text, /no font service or tracker sees your address/);
+    assert.equal(await page.locator('.privacy-help a[href="https://github.com/oldbear24/odyle-dashboard/issues"]').count(), 1);
+    assert.equal(await page.locator('footer a[href="#/privacy"]').count(), 1);
+    // The fonts come with the dashboard.
+    await page.evaluate(() => document.fonts.ready);
+    assert.deepEqual(await page.evaluate(() => [document.fonts.check('16px "DM Sans Variable"'), document.fonts.check('16px "Manrope Variable"')]), [true, true]);
+    await page.goto(url + '/#/armory'); await page.locator('#armory-form').waitFor();
+    await shot(page, 'privacy');
+    assert.deepEqual(elsewhere, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
 test('Discord sign-in offers this page in another browser when its window cannot work', async () => {
   // An app's built-in browser that opens no windows: a note before anything is clicked, then the link to copy.

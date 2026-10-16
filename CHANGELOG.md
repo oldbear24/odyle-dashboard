@@ -2,6 +2,14 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.16.0 · 2026-10-17
+
+### New
+- **Privacy** is a page of the dashboard: what Odyle keeps, where it goes and how long it stays, with links to report a problem or ask. The welcome page, the help and the footer link it.
+
+### Changed
+- The fonts come with the dashboard, so opening it no longer contacts Google Fonts; no page loads anything from another site.
+
 ## 0.15.0 · 2026-10-17
 
 ### New

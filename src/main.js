@@ -21,9 +21,14 @@ import { party as partyOf, explain, character as readinessOf } from './readiness
 import { partySummary, statusReason, readyOrder } from './partyview.js';
 import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
 import changelogText from '../CHANGELOG.md?raw';
+import privacyText from '../docs/privacy.md?raw';
+import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
+// The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
+import '@fontsource-variable/dm-sans';
+import '@fontsource-variable/manrope';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -106,7 +111,7 @@ function renderConnection() { const el = document.querySelector('.topbar .connec
 function shell(content, active = 'overview', crumb = '') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent;
-  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'), taskBadge())}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb"><a href="#/">${t('Workspace')}</a> <span>/</span> <a href="#${esc(currentPath())}" aria-current="page"><strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></a></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · ${t('Live packet readings')}</span></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
+  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'), taskBadge())}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb"><a href="#/">${t('Workspace')}</a> <span>/</span> <a href="#${esc(currentPath())}" aria-current="page"><strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></a></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · <a class="version-link" href="#/privacy">${t('Privacy')}</a> · ${t('Live packet readings')}</span></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -119,7 +124,7 @@ const scopeText = () => t("Odyle is an unofficial fan project, not affiliated wi
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 // The welcome page; an invite link (code) adds its card, filled in from the preview.
 function welcome(code = '') {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p>${scopeNote()}</main>`);
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')} <a href="#/privacy">${t('Privacy')}</a></p>${scopeNote()}</main>`);
   if (code && !previewed(code)) previewInvite(code);
 }
 // What the invite link on screen opens (invites.js inviteLanding), asked once per code:
@@ -398,6 +403,8 @@ async function armoryPage(path, ticket, refresh = false) {
   if (exact.length === 1) return go(profilePath(exact[0]), true);
   armoryResults = results; armoryRender();
 }
+// The privacy notice (#/privacy, privacy.js), open to anyone.
+const privacyRender = () => shell(privacyPage(privacyText), 'privacy', t('Privacy'));
 // What's new (#/changelog): the bundled changelog and the newest Windows release's changes.
 const changelog = parseChangelog(changelogText);
 function changelogRender() {
@@ -749,7 +756,7 @@ async function refreshPage() {
   if (room) await refreshRoom();
   else if (shown === '/tasks') await refreshTasks();
   else if (shown === '/account') await refreshAccount();
-  else if (shown?.startsWith('/armory') || shown === '/changelog') await pb.health.check(); // nothing of the account to fetch
+  else if (shown?.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
     if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
@@ -770,6 +777,7 @@ function rerender() {
   if (demo) return demoSession();
   if (shown?.startsWith('/armory')) return armoryRender();
   if (shown === '/changelog') return changelogRender();
+  if (shown === '/privacy') return privacyRender();
   if (room) return dashboard();
   if (shown === '/tasks') return tasksView();
   if (shown === '/account' && account) return accountRender();
@@ -786,7 +794,7 @@ const memoryKey = 'odyle.location';
 function remembered() { try { return JSON.parse(storage.getItem(memoryKey)) || {}; } catch { return {}; } }
 function remember(path) { try { storage.setItem(memoryKey, JSON.stringify({ path, room: path.startsWith('/room/') ? path.slice(6) : remembered().room })); } catch { /* storage full or blocked */ } }
 function forget(id) { try { if (!id) storage.removeItem(memoryKey); else if (remembered().room === id) storage.setItem(memoryKey, JSON.stringify({ path: '/' })); } catch { /* storage blocked */ } }
-function currentPath() { const armory = location.hash.slice(1); if (armoryRoute.test(armory)) return armory; const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog)?)$/); return match ? match[1] : '/'; }
+function currentPath() { const armory = location.hash.slice(1); if (armoryRoute.test(armory)) return armory; const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy)?)$/); return match ? match[1] : '/'; }
 async function show(force = false) {
   const path = currentPath();
   if (path === shown && !force) return;
@@ -794,6 +802,7 @@ async function show(force = false) {
   if (path === '/demo') { await leaveRoomTopic(); return demoSession(); }
   if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
   if (path === '/changelog') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return changelogPage(ticket); }
+  if (path === '/privacy') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return privacyRender(); }
   clearTimeout(armoryTimer);
   const code = joinCode(path);
   if (!pb.authStore.isValid) { await leaveRoomTopic(); clearRoom(); return welcome(code); }
@@ -1144,6 +1153,7 @@ app.addEventListener('click', async e => {
         t('The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for 30 days as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.'),
         t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
         scopeText(),
+        `${t('What Odyle keeps and how long:')} <a href="#/privacy">${t('Privacy notice')}</a> · <a href="https://github.com/oldbear24/odyle-dashboard/issues" target="_blank" rel="noopener">${t('Report a problem or ask')}</a>`,
       ].map(p => `<p>${p}</p>`).join('')); break;
       case 'session': if (!pb.authStore.isValid || demo) await go('/'); else modal(t('Your Discord account'), `<p>${esc(pb.authStore.record.displayName)} · ${t('Rooms and characters remain saved after sign-out.')}</p><div class="modal-actions"><button class="button secondary" data-action="account">${t('Account & data')}</button><button class="button secondary" data-action="library">${t('My rooms & characters')}</button><button class="button secondary" data-action="tasks">${t('Daily & weekly tasks')}</button><button class="button secondary" data-action="armory">${t('Armory')}</button><button class="button secondary" data-action="invite">${t('Invitations')}</button><button class="button secondary" data-action="help">${t('Reader & privacy')}</button><button class="button secondary" data-action="desktop">${t('Pair Windows app')}</button></div><button class="text-button" data-action="logout">${t('Sign out of this browser')}</button>`); break;
       case 'leave-room': ask(esc(t('Leave {room}?', { room: room.name })), t('You lose access to this room, your wishlist entries and your place on planned runs. Your characters stay on your account; you need a new invite to come back.'), t('Leave room'), { action: 'confirm-leave' }); break;

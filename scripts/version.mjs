@@ -55,8 +55,10 @@ function buildPackages(manifest, lock) {
 const packagesShipped = base => manifestShipped(at(base, 'package.json'), at('HEAD', 'package.json')) ||
   buildPackages(at(base, 'package.json'), at(base, 'package-lock.json')) !== buildPackages(at('HEAD', 'package.json'), at('HEAD', 'package-lock.json'));
 const npmFiles = ['package.json', 'package-lock.json'];
+// Documents the dashboard bundles ship although they live under docs/.
+const bundled = new Set(['docs/privacy.md']);
 const shipped = (files, base) => {
-  const out = files.filter(f => !unshipped.test(f));
+  const out = files.filter(f => bundled.has(f) || !unshipped.test(f));
   return out.some(f => npmFiles.includes(f)) && !packagesShipped(base) ? out.filter(f => !npmFiles.includes(f)) : out;
 };
 const list = files => files.slice(0, 5).join(', ') + (files.length > 5 ? ', …' : '');
