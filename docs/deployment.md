@@ -97,6 +97,8 @@ The version comes from `package.json`; bump it to start a new line. Release arch
 image: ghcr.io/oldbear24/odyle-dashboard:latest
 ```
 
+A new Windows release reaches players without a restart: the **Release check** job asks GitHub every two minutes, and a newer release is news for every open dashboard (its download links and a short note) and every running Windows app (it checks for the update at once, still verified against GitHub and the release's checksum). Right after publishing, **Background jobs → Release check → Run now** tells them immediately. A changed announcement under **Server controls** reaches them the same way, within seconds.
+
 ## Operations
 
 - Bootstrap the first PocketBase operator account locally. Restrict the management path `/_/` at your proxy to operator access.

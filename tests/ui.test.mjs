@@ -408,6 +408,20 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('a changed announcement shows on an open page at once, without asking the server', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, viewer = await account('News viewer');
+  const { page, errors, close } = await open(viewer, '#/tasks');
+  try {
+    await page.getByRole('heading', { name: 'Daily & weekly' }).first().waitFor();
+    const asked = []; page.on('request', r => { if (/\/api\/odyle\/(announcement|rooms|tasks)/.test(r.url())) asked.push(new URL(r.url()).pathname); });
+    assert.equal((await request('/api/odyle/admin/settings', { announcement: 'Maintenance at 08:00 UTC', announcementLevel: 'warning' }, operator)).status, 200);
+    await page.locator('.announcement.warning', { hasText: 'Maintenance at 08:00 UTC' }).waitFor({ timeout: 3000 });
+    assert.equal((await request('/api/odyle/admin/settings', { announcement: '' }, operator)).status, 200);
+    await page.locator('.announcement').waitFor({ state: 'detached', timeout: 3000 });
+    assert.deepEqual(asked, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); await request('/api/odyle/admin/settings', { announcement: '' }, operator); }
+});
 test('an open room checks no health while live, waits while hidden and draws its own changes from their answers', async () => {
   const [lead, mate] = await Promise.all([account('Quiet lead'), account('Quiet mate')]);
   const created = (await request('/api/odyle/create', { name: 'Quiet room' }, lead)).data, roomId = created.room.id;
