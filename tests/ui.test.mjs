@@ -832,7 +832,9 @@ test('notifications are kept for the account, reach its other tabs and time the 
     assert.equal((await request('/api/odyle/admin/jobs/odyle-cap-alerts', {}, operator)).status, 200);
     await page.waitForFunction(() => window.shown.length > 1, null, { timeout: 15000 });
     assert.equal((await page.evaluate(() => window.shown))[1], 'Nearly caps soon');
-    assert.equal(service.received.at(-1).message.title, 'Nearly caps soon', 'and by push');
+    // And by push; the minute's run reminders may be pushed around it, so it is looked for, not taken as the last.
+    for (let i = 0; i < 50 && !service.received.some(r => r.message.title === 'Nearly caps soon'); i++) await delay(100);
+    assert.ok(service.received.some(r => r.message.title === 'Nearly caps soon'), 'and by push');
     // Push off on this device.
     await form.locator('[data-action="push-off"]').click();
     await toast(page).filter({ hasText: 'Push notifications are off for this device.' }).waitFor();
