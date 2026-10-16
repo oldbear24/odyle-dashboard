@@ -97,6 +97,48 @@ func newCharacter(app core.App, userId string) (*Character, error) {
 	return c, nil
 }
 
+// shareNew shares a character the account has just saved in every room where it turned
+// shareNew on; a viewer's membership never shares.
+func shareNew(app core.App, c *Character) error {
+	memberships, err := membershipsWhere(app, "user = {:user} && shareNew = true && role != 'viewer'", dbx.Params{"user": c.User()})
+	if err != nil {
+		return err
+	}
+	for _, m := range memberships {
+		if m.Shares(c.Id) {
+			continue
+		}
+		m.SetShared(append(m.Shared(), c.Id))
+		if err := app.Save(m); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// POST /api/odyle/share-new turns shareNew on or off for one of the account's rooms.
+func shareNewSetting(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+		m, err := membership(app, user.Id, b.str("roomId"))
+		if err != nil {
+			return nil, err
+		}
+		if m.Role() == "viewer" {
+			return nil, forbidden("Viewers cannot share characters with this room.")
+		}
+		enabled, ok := b.boolean("enabled")
+		if !ok {
+			return nil, badRequest("Sharing must be true or false.")
+		}
+		m.Set("shareNew", enabled)
+		if err := app.Save(m); err != nil {
+			return nil, err
+		}
+		*affected = append(*affected, m.Room())
+		return map[string]any{"shareNew": enabled}, nil
+	})
+}
+
 func ownSession(app core.App, userId, id string) (*ReaderSession, error) {
 	session, err := findAs[ReaderSession](app, "publisher_sessions", id)
 	if err != nil || session.User() != userId || !session.ExpiresAt().After(time.Now()) {
@@ -455,7 +497,7 @@ func rooms(e *core.RequestEvent) error {
 				continue
 			}
 			linked, j := m.Shared(), roomJSON(room, rules.OdylePerCube)
-			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
+			j["role"], j["sharedCharacters"], j["sharing"], j["shareNew"] = m.Role(), linked, len(linked) > 0, m.GetBool("shareNew")
 			out = append(out, j)
 		}
 		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
@@ -965,6 +1007,9 @@ func character(e *core.RequestEvent) error {
 		if err := app.Save(c); err != nil {
 			return nil, err
 		}
+		if err := shareNew(app, c); err != nil {
+			return nil, err
+		}
 		return map[string]any{"character": c}, nil
 	})
 }
@@ -999,6 +1044,7 @@ func report(e *core.RequestEvent) error {
 			return nil, err
 		}
 		var character *Character
+		created := false
 		if b.set("characterId") {
 			if character, err = ownCharacter(app, user.Id, b.str("characterId")); err != nil {
 				return nil, err
@@ -1012,6 +1058,8 @@ func report(e *core.RequestEvent) error {
 				character = existing[0]
 			} else if character, err = newCharacter(app, user.Id); err != nil {
 				return nil, err
+			} else {
+				created = true
 			}
 			// Only a lookup without characterId may name a character; an existing one
 			// keeps the identity the game gave it.
@@ -1025,6 +1073,12 @@ func report(e *core.RequestEvent) error {
 		checkClock(app, before, prevAt, data, time.Now())
 		if err := app.Save(character); err != nil {
 			return nil, err
+		}
+		// A character the reader saw first reaches the rooms that share new characters.
+		if created {
+			if err := shareNew(app, character); err != nil {
+				return nil, err
+			}
 		}
 		if changed {
 			point, err := newRecord(app, "character_readings")
@@ -1681,36 +1735,62 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 			return nil, err
 		}
 	}
-	users := memberUsers(members)
+	users, byId := memberUsers(members), map[string]*Member{}
+	for _, m := range members {
+		byId[m.Id] = m
+	}
 	found, err := app.FindRecordsByFilter("room_runs", "room = {:room} && startsAt >= {:since}", "startsAt", 0, 0, dbx.Params{"room": roomId, "since": ago(3 * time.Hour)})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]plannedRun, len(found))
 	for i, r := range views[Run](found) {
-		attendees := []string{}
+		attendees, picks := []string{}, map[string]string{}
 		for _, id := range r.Attendees() {
 			if user := users[id]; user != "" {
 				attendees = append(attendees, user)
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees}
+		// A pick counts while the member still goes and still shares that character here.
+		for member, character := range r.Picks() {
+			if m := byId[member]; m != nil && contains(r.Attendees(), member) && m.Shares(character) {
+				picks[users[member]] = character
+			}
+		}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks}
 	}
 	return out, nil
 }
 
-// plannedRun is a run as rooms list it; planner and attendees are account ids.
+// runRoom refuses a new run when the room already has 20 still ahead; runs that started
+// do not count (they stay listed for three hours and are deleted after a day).
+func runRoom(app core.App, roomId string) error {
+	ahead, err := app.CountRecords("room_runs", dbx.HashExp{"room": roomId}, dbx.NewExp("startsAt >= {:now}", dbx.Params{"now": stamp(time.Now())}))
+	if err != nil {
+		return err
+	}
+	if ahead >= 20 {
+		return badRequest("A room can plan up to 20 runs at a time.")
+	}
+	return nil
+}
+
+// plannedRun is a run as rooms list it; planner and attendees are account ids, and picks
+// maps an attendee's account id to the character they bring (when they picked one).
 type plannedRun struct {
-	Id        string   `json:"id"`
-	Dungeon   string   `json:"dungeon"`
-	StartsAt  string   `json:"startsAt"`
-	Note      string   `json:"note"`
-	Planner   string   `json:"planner"`
-	Attendees []string `json:"attendees"`
+	Id        string            `json:"id"`
+	Dungeon   string            `json:"dungeon"`
+	StartsAt  string            `json:"startsAt"`
+	Note      string            `json:"note"`
+	Planner   string            `json:"planner"`
+	Attendees []string          `json:"attendees"`
+	Picks     map[string]string `json:"picks"`
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
-// planner going, { roomId, id, going } joins or leaves it, { roomId, id, dungeon?,
+// planner going, { roomId, id, going, character? } joins (with the character it brings) or leaves it,
+// { roomId, id, done: true } wraps a started run up (its attendees' wishes for the dungeon go),
+// { roomId, id, again: true, startsAt? } plans it again a week later, { roomId, id, dungeon?,
 // startsAt?, note? } changes it and { roomId, id, remove: true } cancels it (changes
 // and cancelling: its planner or the room owner). Owners and players plan and join;
 // viewers read.
@@ -1727,9 +1807,67 @@ func plan(e *core.RequestEvent) error {
 				return nil, notFound("This run is no longer planned.")
 			}
 			going, isGoing := b.boolean("going")
+			// After the start, its attendees wrap the run up too: done, or it did not happen.
+			started, attending := !timeOf(r.StartsAt()).After(time.Now()), contains(r.Attendees(), m.Id)
 			switch {
+			case b.isTrue("done"):
+				if !started {
+					return nil, badRequest("A run can be marked done once it has started.")
+				}
+				if r.PlannedBy() != m.Id && !isOwner && !attending {
+					return nil, forbidden("Only its planner, an attendee or the room owner can mark this run done.")
+				}
+				// The dungeon leaves the wishlist of everyone who went.
+				ran, err := dungeon(r.Dungeon())
+				if err != nil {
+					return nil, err
+				}
+				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": ran.key})
+				if err != nil {
+					return nil, err
+				}
+				for _, w := range wishes {
+					if contains(r.Attendees(), w.GetString("member")) {
+						if err := app.Delete(w); err != nil {
+							return nil, err
+						}
+					}
+				}
+				if err := app.Delete(r); err != nil {
+					return nil, err
+				}
+			case b.isTrue("again"):
+				if viewer {
+					return nil, forbidden("Viewers cannot plan runs.")
+				}
+				// The same dungeon, note and local time a week later (the browser sends that time,
+				// which keeps it across a daylight saving change), with the caller going.
+				next := timeOf(r.StartsAt()).Add(7 * 24 * time.Hour).UTC().Format(isoLayout)
+				if b.has("startsAt") {
+					if next, err = runStart(b["startsAt"], time.Now()); err != nil {
+						return nil, err
+					}
+				} else if next, err = runStart(next, time.Now()); err != nil {
+					return nil, err
+				}
+				if err := runRoom(app, roomId); err != nil {
+					return nil, err
+				}
+				again, err := newAs[Run](app, "room_runs")
+				if err != nil {
+					return nil, err
+				}
+				again.Set("room", roomId)
+				again.Set("plannedBy", m.Id)
+				again.SetDungeon(r.Dungeon())
+				again.SetStart(next)
+				again.SetNote(r.Note())
+				again.SetAttendees([]string{m.Id})
+				if err := app.Save(again); err != nil {
+					return nil, err
+				}
 			case b.isTrue("remove"):
-				if r.PlannedBy() != m.Id && !isOwner {
+				if r.PlannedBy() != m.Id && !isOwner && !(started && attending) {
 					return nil, forbidden("Only its planner or the room owner can cancel this run.")
 				}
 				if err := app.Delete(r); err != nil {
@@ -1739,16 +1877,35 @@ func plan(e *core.RequestEvent) error {
 				if viewer {
 					return nil, forbidden("Viewers cannot join runs.")
 				}
-				attendees := []string{}
+				// Going with a character: one of the member's own, shared in this room.
+				pick := ""
+				if going && b.set("character") {
+					c, err := ownCharacter(app, user.Id, b.str("character"))
+					if err != nil {
+						return nil, err
+					}
+					if !m.Shares(c.Id) {
+						return nil, badRequest("Pick a character you share in this room.")
+					}
+					pick = c.Id
+				}
+				// A member already going keeps their place; one leaving drops their pick.
+				attendees, already := []string{}, contains(r.Attendees(), m.Id)
 				for _, id := range r.Attendees() {
-					if id != m.Id {
+					if id != m.Id || going {
 						attendees = append(attendees, id)
 					}
 				}
-				if going {
+				if going && !already {
 					attendees = append(attendees, m.Id)
 				}
 				r.SetAttendees(attendees)
+				picks := r.Picks()
+				delete(picks, m.Id)
+				if pick != "" {
+					picks[m.Id] = pick
+				}
+				r.Set("picks", picks)
 				if err := app.Save(r); err != nil {
 					return nil, err
 				}
@@ -1802,7 +1959,7 @@ func plan(e *core.RequestEvent) error {
 					return nil, err
 				}
 			default:
-				return nil, badRequest("Send going (true or false), the changes to the run or remove: true.")
+				return nil, badRequest("Send going (true or false), the changes to the run, done, again or remove: true.")
 			}
 		} else {
 			if viewer {
@@ -1823,12 +1980,8 @@ func plan(e *core.RequestEvent) error {
 			if err != nil {
 				return nil, err
 			}
-			count, err := app.CountRecords("room_runs", dbx.HashExp{"room": roomId})
-			if err != nil {
+			if err := runRoom(app, roomId); err != nil {
 				return nil, err
-			}
-			if count >= 20 {
-				return nil, badRequest("A room can plan up to 20 runs at a time.")
 			}
 			r, err := newAs[Run](app, "room_runs")
 			if err != nil {

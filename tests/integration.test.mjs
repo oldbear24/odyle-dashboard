@@ -907,6 +907,12 @@ test('owners save a full dungeon catalog and closed rooms answer plainly', async
     const again = await action(name, body, host); assert.equal(again.status, 404, name); assert.equal(again.data.message, 'This room no longer exists.');
   }
 });
+// The Windows app's party rules run the same cases as src/readiness.js: its copy of the
+// vectors must be this one.
+test('the Windows app checks its party rules against these readiness vectors', { skip: !process.env.ODYLE_WINDOWS_CHECKS }, async () => {
+  const { readFile } = await import('node:fs/promises'), read = async file => JSON.parse(await readFile(file, 'utf8'));
+  assert.deepEqual(await read(join(process.env.ODYLE_WINDOWS_CHECKS, 'readiness-vectors.json')), await read(resolve('tests', 'readiness-vectors.json')), 'copy tests/readiness-vectors.json to odyle-windows/tests/Odyle.Core.Checks');
+});
 test('Windows UI follows the game character, sends only changes and follows dashboard sharing', { skip: !process.env.ODYLE_WINDOWS_UI_CHECKS }, async () => {
   const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
   const pair = (await action('desktop-code', {}, user)).data;

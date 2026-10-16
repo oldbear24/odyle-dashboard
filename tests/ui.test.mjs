@@ -237,6 +237,9 @@ test('rooms plan, change and export runs, and members see each character history
   // A newer Windows app sends the game's two numbers and what the change was.
   await request('/api/odyle/report', { ...reading, sequence: 4, value: 90, characterId: c.id, base: 60, bonus: 30, kind: 'item', delta: 60 }, lead);
   await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead);
+  // A second character shared here: runs count the best one unless the lead picks another.
+  const second = (await request('/api/odyle/report', { ...reading, sequence: 5, characterName: 'Second', value: 150 }, lead)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: second.id, enabled: true }, lead);
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
@@ -261,6 +264,17 @@ test('rooms plan, change and export runs, and members see each character history
     assert.match(await page.locator('.runs .wish-row').innerText(), /Fire Temple[\s\S]*Bring potions[\s\S]*You/);
     // The default start is the next full hour, which right before it is under a minute away.
     assert.match(await page.locator('.runs [data-starts]').innerText(), /^(in |starting now)/);
+    // The run counts its attendees at its cost: the lead brings their best character, or the one they pick.
+    assert.equal(await page.locator('.runs .run-claim').innerText(), '1 of 1 can claim a cube at the start · 40 Odyle');
+    assert.equal(await page.locator('.runs .wish-people .wish-person').innerText(), 'You · Second · 3 cubes');
+    await page.locator('.runs [data-run][data-going="false"]').click();
+    await page.locator('.runs .run-nobody').waitFor();
+    await page.locator('.runs [data-run][data-going="true"]').click();
+    assert.deepEqual(await page.locator('#modal .pick-chips .add-chip').allInnerTexts(), ['Charted · 90', 'Second · 150', 'Any: my best']);
+    await page.locator('#modal .pick-chips .add-chip', { hasText: 'Charted' }).click();
+    await page.locator('.runs .wish-people .wish-person', { hasText: 'Charted' }).waitFor();
+    assert.equal(await page.locator('.runs .wish-people .wish-person').innerText(), 'You · Charted · 2 cubes');
+    assert.match(await page.locator('.runs .wish-people .wish-person').getAttribute('title'), /^Picked for this run · /);
     // The planner changes the run in a dialog and anyone can put it in their calendar.
     await page.locator('.runs [data-edit-run]').click();
     await page.locator('#run-edit-form [name=note]').fill('Bring food');
@@ -406,13 +420,71 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
   try {
     const card = page.locator('.member-card', { hasText: 'Pulse' });
     await card.locator('.status.offline, .status.stale').waitFor();
+    // Nobody is live: the card says why, and the summary keeps the last known party apart.
+    assert.match(await card.locator('.status-why').innerText(), /^The reader has not been heard from for \d+s$|^Last in game /);
+    const summary = page.locator('.party-explain');
+    assert.match(await summary.innerText(), /0 of 2 players live · Not counted: Live reader \(last in game 1m ago\), Live lead \(no character shared\)/);
+    assert.match(await summary.innerText(), /Last known: 3 cubes · lowest Live reader · Pulse 120 · values from \d+s ago · 1 of 2 players have a saved value\n?Not live: it does not count toward the party cubes\./);
+    assert.equal(await page.locator('.member-card').count(), 1, 'a member without a shared character has no card');
     const fetched = []; page.on('request', r => { if (r.url().includes('/api/odyle/snapshot/')) fetched.push(r.url()); });
     // Its next heartbeat makes it live again and a reading changes its value: both are pushed.
     assert.equal((await request('/api/odyle/heartbeat', { sessionId: session.sessionId, characterId: c.id }, reader)).status, 200);
     await card.locator('.status.live').waitFor({ timeout: 8000 });
+    // Live: it counts for its player, and the summary says who is still missing.
+    assert.equal(await card.locator('.counts-for').innerText(), 'Counts for Live reader');
+    assert.match(await page.locator('.party-explain').innerText(), /^1 of 2 players live · Not counted: Live lead \(no character shared\)/);
+    await page.locator('[data-action="live-only"][aria-pressed="false"]').click();
+    await page.locator('[data-action="live-only"][aria-pressed="true"]').waitFor();
+    assert.equal(await page.locator('.member-card').count(), 1);
+    await page.locator('[data-action="live-only"]').click();
     assert.equal((await request('/api/odyle/report', { ...reading, sequence: 2, value: 150, characterId: c.id }, reader)).status, 200);
     await card.locator('.energy strong', { hasText: '150' }).waitFor({ timeout: 5000 });
     assert.deepEqual(fetched, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('new characters reach the rooms that ask for them, and a prompt offers the others', async () => {
+  const player = await account('Alt player');
+  const auto = (await request('/api/odyle/create', { name: 'Auto room' }, player)).data.room.id, other = (await request('/api/odyle/create', { name: 'Other room' }, player)).data.room.id;
+  const session = (await request('/api/odyle/session', {}, player)).data;
+  const reading = { sessionId: session.sessionId, server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  assert.equal((await request('/api/odyle/report', { ...reading, sequence: 1, characterName: 'Main', value: 100 }, player)).status, 200);
+  const { page, errors, close } = await open(player, '#/');
+  try {
+    const chip = page.locator(`.share-new-row [data-share-new="${auto}"]`);
+    await chip.click();
+    await toast(page).filter({ hasText: 'New characters you save will be shared in Auto room.' }).waitFor();
+    assert.equal(await page.locator(`.share-new-row [data-share-new="${auto}"]`).getAttribute('aria-pressed'), 'true');
+    // The reader saves a new character: it is in Auto room at once, and the page offers Other room.
+    assert.equal((await request('/api/odyle/report', { ...reading, sequence: 2, characterName: 'Fresh alt', value: 60 }, player)).status, 200);
+    await page.locator('#modal', { hasText: 'New character Fresh alt saved' }).waitFor({ timeout: 8000 });
+    assert.deepEqual(await page.locator('#modal [data-prompt-share]').allInnerTexts(), ['Other room']);
+    assert.equal(await page.locator('#modal [data-prompt-share]').getAttribute('data-room-id'), other);
+    await page.locator('#modal [data-prompt-share]').click();
+    await page.locator('#modal [data-prompt-share][aria-pressed="true"]').waitFor();
+    const listed = (await request('/api/odyle/rooms', undefined, player, 'GET')).data.rooms, fresh = (await request('/api/collections/characters/records?filter=' + encodeURIComponent("characterName='Fresh alt'"), undefined, player, 'GET')).data.items[0];
+    assert.deepEqual(listed.map(r => [r.name, r.shareNew, r.sharedCharacters.includes(fresh.id)]).sort(), [['Auto room', true, true], ['Other room', false, true]]);
+    await shot(page, 'new-character-prompt');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('a started run is planned again next week, then marked done, which clears the wishlist', async () => {
+  const lead = await account('Wrap lead'), roomId = (await request('/api/odyle/create', { name: 'Wrap room' }, lead)).data.room.id;
+  await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
+  assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() - 30 * 60000).toISOString(), note: 'Weekly' }, lead)).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    const started = page.locator('.runs .wish-row', { has: page.locator('[data-run-done]') });
+    await started.waitFor();
+    assert.match(await started.innerText(), /Fire Temple[\s\S]*Done[\s\S]*Plan again next week[\s\S]*Didn’t happen/);
+    await started.locator('[data-run-again]').click();
+    await toast(page).filter({ hasText: 'Fire Temple is planned again for' }).waitFor();
+    assert.equal(await page.locator('.runs .wish-row').count(), 2);
+    assert.match(await page.locator('.runs .wish-row').nth(1).innerText(), /Weekly/);
+    await started.locator('[data-run-done]').click();
+    await toast(page).filter({ hasText: 'Fire Temple done: it left the wishlist of everyone who went.' }).waitFor();
+    await page.locator('.wishlist:not(.runs) .wish-empty').waitFor();
+    assert.equal(await page.locator('.runs .wish-row').count(), 1, 'the run next week stays');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

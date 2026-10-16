@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -332,6 +333,16 @@ func (r *Run) SetStart(startsAt string) {
 
 // Reminded notes that Discord announced the run.
 func (r *Run) Reminded() { r.Set("remindedAt", now()) }
+
+// Picks maps a membership to the character it brings to the run.
+func (r *Run) Picks() map[string]string {
+	var picks map[string]string
+	_ = json.Unmarshal([]byte(r.GetString("picks")), &picks)
+	if picks == nil { // none saved: JSON null
+		picks = map[string]string{}
+	}
+	return picks
+}
 
 // Wish is a member's entry on a room's dungeon wishlist (room_wishes); key groups the
 // entries of one dungeon however its name was typed.

@@ -1,3 +1,4 @@
+import { runReadiness, broughtBy, earliestClaim } from './runready.js';
 import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
 import { defaultClock, clockOf, clockLine } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
@@ -15,7 +16,8 @@ import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
 import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applyShared, applyMembership } from './live.js';
 import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, onlineReader, countdown, readerLabel, pairingSlot } from './pairing.js';
-import { party as partyOf, character as readinessOf } from './readiness.js';
+import { party as partyOf, explain, character as readinessOf } from './readiness.js';
+import { partySummary, statusReason, readyOrder } from './partyview.js';
 import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
 import './style.css';
 import './accounts.css';
@@ -158,7 +160,21 @@ function sharingMatrix() {
   return characters.map((c, i) => `<div class="share-row"><div class="share-character">${portrait(c, i, 'mini')}<div><strong>${esc(c.characterName)}</strong><small>${esc(c.server)} · ${esc(c.region.replace('GLOBAL_', ''))}</small></div></div><div class="share-rooms">${rooms.map(r => {
     const on = r.sharedCharacters?.includes(c.id), viewer = r.role === 'viewer';
     return `<button class="share-chip ${on ? 'on' : ''}" data-share="${esc(c.id)}" data-room-id="${esc(r.id)}" data-enabled="${!on}" aria-pressed="${on}" ${viewer ? 'disabled' : ''} title="${viewer ? esc(t('Viewers cannot share characters in this room')) : esc(on ? t('Hide {name} in {room}', { name: c.characterName, room: r.name }) : t('Show {name} in {room}', { name: c.characterName, room: r.name }))}"><i></i>${esc(r.name)}</button>`;
-  }).join('')}</div></div>`).join('') + `<p class="share-note">${t('New characters start private in every room. Switched-off characters keep their saved values.')}</p>`;
+  }).join('')}</div></div>`).join('') + `<div class="share-row share-new-row"><div class="share-character"><div><strong>${t('New characters')}</strong><small>${t('shared on their own where this is on')}</small></div></div><div class="share-rooms">${rooms.map(r => shareNewChip(r.id, r.name, r.shareNew, r.role === 'viewer')).join('')}</div></div><p class="share-note">${t('New characters start private, except in rooms where New characters is on. Switched-off characters keep their saved values.')}</p>`;
+}
+// Whether the characters this account saves from now on are shared in a room by themselves.
+function shareNewChip(roomId, name, on, viewer) {
+  return `<button class="share-chip ${on ? 'on' : ''}" data-share-new="${esc(roomId)}" data-enabled="${!on}" aria-pressed="${Boolean(on)}" ${viewer ? 'disabled' : ''} title="${viewer ? esc(t('Viewers cannot share characters in this room')) : esc(on ? t('New characters are shared in {room} by themselves', { room: name }) : t('Share new characters in {room} by themselves', { room: name }))}"><i></i>${esc(name)}</button>`;
+}
+// A character saved meanwhile (by the Windows reader): offer the rooms that do not show it yet.
+const prompted = new Set();
+async function newCharacterPrompt(c) {
+  if (prompted.has(c.id) || demo) return;
+  prompted.add(c.id);
+  rooms = (await pb.send('/api/odyle/rooms')).rooms;
+  const open = rooms.filter(r => r.role !== 'viewer' && !r.sharedCharacters?.includes(c.id));
+  if (!open.length) return;
+  modal(esc(t('New character {name} saved', { name: c.characterName })), `<p>${t('It starts private. Add it to your rooms?')}</p><div class="add-chips prompt-chips">${open.map(r => `<button class="add-chip" data-prompt-share="${esc(c.id)}" data-room-id="${esc(r.id)}">${icon('plus')}${esc(r.name)}</button>`).join('')}</div><div class="modal-actions"><button class="button secondary" data-action="close-dialog">${t('Not now')}</button></div>`);
 }
 // The party shows only characters added (shared) to this room, the member's own
 // included; their other characters wait in the add bar above the party.
@@ -222,8 +238,12 @@ function wishlistSection(now) {
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
 }
 function plannedRuns(now) {
-  const suggestions = [...new Set(wishlist.map(w => w.dungeon))];
-  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: room?.cost || perCube, facts: dungeonInfo(now), demo, discord: room?.discordReminders });
+  const suggestions = [...new Set(wishlist.map(w => w.dungeon))], entries = flattened(), cost = room?.cost || perCube;
+  // A run counts at its dungeon's own cost when the catalog has one.
+  const costOf = r => entryOf(catalog, r.dungeon)?.cost || cost;
+  const players = [...new Set(entries.filter(c => c.role !== 'viewer').map(c => c.user))].map(user => broughtBy(user, entries, now).character);
+  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: cost, facts: dungeonInfo(now), demo, discord: room?.discordReminders,
+    readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules) });
 }
 // Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
 // changed checkbox, and the focus; what the user did not change shows what the redraw brings.
@@ -292,12 +312,18 @@ function dashboard() {
   rendered = signature();
   // Odyle cannot be pooled. Each player brings one character (their best fresh one),
   // and the party can only do as many cubes as its lowest player allows (readiness.js).
-  const now = Date.now() + serverOffset, party = flattened(), { characters: actual, ready, players, lowest, cubes } = partyOf(party, now, room.cost);
+  // Saved values of characters not live are projected by the Odyle clock for the last known party.
+  const now = Date.now() + serverOffset, party = flattened(), estimate = c => status(c, now) === 'live' ? c.value : clockOf(c, now, clockRules)?.total ?? c.value;
+  const explained = explain(party, now, room.cost, estimate), { characters: actual, ready, players, lowest, cubes, counted } = explained;
+  const estimated = Boolean(explained.lastKnown && clockOf(explained.lastKnown.lowest, now, clockRules)?.projected);
+  const shown = readyOrder(actual, now, room.cost).filter(c => !liveOnly() || status(c, now) === 'live');
   const lowestName = lowest ? esc(lowest.displayName) + (lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`) : '';
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
-  keepingDrafts(() => shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR NEXT ADVENTURE')}</div><h1>${t('Party overview')}<span class="mint">.</span></h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${t('Every last confirmed value stays saved.')}</p></div><div class="heading-actions">${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Room settings') : t('Room')}</button>${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button>` : ''}</div></section><section class="stats"><article><div class="stat-caption">${t('CHARACTER READINESS')} ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">${t('Fresh characters with enough for a cube')}</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">${t('LOWEST PLAYER ODYLE')} ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString(locale()) : '—'}<span class="unit">${t('energy')}</span></div><div class="stat-detail">${lowest ? `${lowestName} · ${esc(tn(players.length, 'best character of {n} player', 'best character of each of {n} players'))}` : t('No current readings; old values stay on their cards')}</div></article><article><div class="stat-caption">${t('PARTY CUBES')} ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${esc(tn(cubes, 'cube', 'cubes'))}</span></div><div class="stat-detail">${esc(t('Lowest count in the room · {cost} Odyle per cube', { cost: room.cost }))}</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? t('Illustrative readings') : t('Live room updates')}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>${t('A spot for your next ally')}</strong><span>${t('Invite another Discord account')}</span></button></div></section>${wishlistSection(now)}${plannedRuns(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>${t('Your data. Your call.')}</h3><p>${t('Account-owned characters. Room-scoped sharing.')}</p></div></div><p>${t('All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.')}</p><button class="text-button" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">${t('BEFORE YOU HEAD OUT')}</div><h3>${t('Check the character you’re taking.')}</h3><p>${esc(tn(ready.length, '{n} character can currently claim a cube at {cost} Odyle.', '{n} characters can currently claim a cube at {cost} Odyle.', { cost: room.cost }))} ${t('A stale value remains stored but does not count as ready.')}</p>${demo ? `<button class="button secondary" data-action="help">${t('How readings work')} ${icon('arrow')}</button>` : readerButton(`${t('Connect packet reader')} ${icon('arrow')}`)}</article></section></main>`));
+  keepingDrafts(() => shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR NEXT ADVENTURE')}</div><h1>${t('Party overview')}<span class="mint">.</span></h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${t('Every last confirmed value stays saved.')}</p></div><div class="heading-actions">${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Room settings') : t('Room')}</button>${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button>` : ''}</div></section><section class="stats"><article><div class="stat-caption">${t('CHARACTER READINESS')} ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">${t('Fresh characters with enough for a cube')}</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">${t('LOWEST PLAYER ODYLE')} ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString(locale()) : '—'}<span class="unit">${t('energy')}</span></div><div class="stat-detail">${lowest ? `${lowestName} · ${esc(tn(players.length, 'best character of {n} player', 'best character of each of {n} players'))}` : t('No current readings; old values stay on their cards')}</div></article><article><div class="stat-caption">${t('PARTY CUBES')} ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${esc(tn(cubes, 'cube', 'cubes'))}</span></div><div class="stat-detail">${esc(t('Lowest count in the room · {cost} Odyle per cube', { cost: room.cost }))}</div></article></section>${partySummary(explained, now, { estimated })}${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button><span class="refresh-label"><i></i>${demo ? t('Illustrative readings') : t('Live room updates')}</span></span></div><div class="member-grid">${shown.map((c, i) => card(c, i, counted)).join('')}${liveOnly() && shown.length < actual.length ? `<p class="wish-note live-only-note">${esc(tn(actual.length - shown.length, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>${t('A spot for your next ally')}</strong><span>${t('Invite another Discord account')}</span></button></div></section>${wishlistSection(now)}${plannedRuns(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>${t('Your data. Your call.')}</h3><p>${t('Account-owned characters. Room-scoped sharing.')}</p></div></div><p>${t('All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.')}</p><button class="text-button" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">${t('BEFORE YOU HEAD OUT')}</div><h3>${t('Check the character you’re taking.')}</h3><p>${esc(tn(ready.length, '{n} character can currently claim a cube at {cost} Odyle.', '{n} characters can currently claim a cube at {cost} Odyle.', { cost: room.cost }))} ${t('A stale value remains stored but does not count as ready.')}</p>${demo ? `<button class="button secondary" data-action="help">${t('How readings work')} ${icon('arrow')}</button>` : readerButton(`${t('Connect packet reader')} ${icon('arrow')}`)}</article></section></main>`));
 }
-function card(c, index) {
+// Only live characters on the room page, a choice of this browser.
+const liveOnlyKey = 'odyle.liveOnly', liveOnly = () => storage.getItem(liveOnlyKey) === 'on';
+function card(c, index, counted = null) {
   const now = Date.now() + serverOffset, cost = room?.cost || perCube, { state, known, cubes, ready } = readinessOf(c, now, cost), fresh = state === 'live';
   const labels = { live: t('Live'), stale: t('Stale'), unknown: t('No reading'), offline: t('Offline') }, self = c.user === pb.authStore.record?.id && !demo;
   const history = c.id && c.characterName && (known || !demo) ? `<button data-history="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Odyle history of {name}', { name: c.characterName }))}">${t('History')}</button>` : '';
@@ -305,7 +331,7 @@ function card(c, index) {
     : self && !room ? `<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}`
       : owner() && c.membershipId && c.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(c.membershipId)}" data-name="${esc(c.displayName)}">${t('Remove member')}</button>` : '';
   const source = demo ? t('Sample') : c.source === 'packet' ? t('Packet') : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
-  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}${known && clockOf(c, now, clockRules) ? `<div class="energy-clock">${esc(clockLine(clockOf(c, now, clockRules), now, fresh))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
+  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div>${counted?.has(c.id) ? `<div class="counts-for">${icon('diamond')} ${esc(t('Counts for {name}', { name: c.displayName }))}</div>` : ''}${room && c.characterName && !fresh ? `<div class="status-why">${esc(statusReason(c, now))}</div>` : ''}<div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}${known && clockOf(c, now, clockRules) ? `<div class="energy-clock">${esc(clockLine(clockOf(c, now, clockRules), now, fresh))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
 }
 let toastTimer;
 function toast(message) { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 6000); }
@@ -356,11 +382,13 @@ async function openInvites(id) { closeModal(); await go('/room/' + id); if (room
 // other members can leave. Every change asks the server and redraws this dialog.
 function roomSettings() {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to manage your own rooms.'));
-  if (!owner()) return modal(esc(room.name), `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p>${room.discordReminders ? `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>` : ''}<button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`);
+  // New characters this member saves can reach this room by themselves.
+  const newOnes = `<h3 class="modal-sub">${t('New characters')}</h3><p>${t('Characters you save from now on start private. With this on, they are shared in this room by themselves.')}</p><div class="share-rooms">${shareNewChip(room.id, room.name, me()?.shareNew, me()?.role === 'viewer')}</div>`;
+  if (!owner()) return modal(esc(room.name), newOnes + `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p>${room.discordReminders ? `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>` : ''}<button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`);
   const myId = pb.authStore.record?.id;
   const rows = members.map(m => m.user === myId ? `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${t('Leader (you)')}</small></div></div>`
     : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${esc(roleName(m.role))}</small></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
-  modal(t('Room settings'), `<form id="rename-form" class="rename-form"><label>${t('Room name')}<input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form><h3 class="modal-sub">${t('Members')}</h3><p>${t('Players share characters and plan runs; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>${discordSettings()}<div class="modal-actions"><button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button><button class="button danger" data-action="close-room">${t('Close this room')}</button></div>`);
+  modal(t('Room settings'), newOnes + `<form id="rename-form" class="rename-form"><label>${t('Room name')}<input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form><h3 class="modal-sub">${t('Members')}</h3><p>${t('Players share characters and plan runs; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>${discordSettings()}<div class="modal-actions"><button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button><button class="button danger" data-action="close-room">${t('Close this room')}</button></div>`);
 }
 // The owner connects a Discord channel: each planned run is posted there 15 minutes
 // before it starts. The webhook URL never comes back from the server.
@@ -576,8 +604,11 @@ async function ownNews(data) {
     announced(data);
     if (data.release?.version) { windowsReleaseAt = 0; await loadWindowsRelease(); toast(t('Odyle for Windows {version} is out. Running apps update themselves.', { version: data.release.version })); }
     // The open room hears of its own changes on its topic.
-    if (data.refresh) { if (!room && !later()) await refreshPage(); }
-    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
+    // On My rooms & characters, a character saved meanwhile (by the reader) is offered to the rooms
+    // that do not show it yet, after fetching again: rooms that share new characters have it now.
+    const known = new Set(characters.map(c => c.id)), offer = async () => { if (library && known.size + rooms.length) for (const c of characters.filter(c => !known.has(c.id) && c.characterName)) await newCharacterPrompt(c); };
+    if (data.refresh) { if (!room && !later()) { await refreshPage(); await offer(); } }
+    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) { await refreshPage(); await offer(); }
     if (data.seen) applySeen(data.seen, characters);
     // Cap alerts of the account's characters (the job checked the quiet hours).
     if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
@@ -826,6 +857,21 @@ app.addEventListener('click', async e => {
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
+    if (el.dataset.shareNew) {
+      const roomId = el.dataset.shareNew, enabled = el.dataset.enabled === 'true', target = rooms.find(r => r.id === roomId) || (room?.id === roomId ? room : null); el.disabled = true;
+      try { await send('share-new', { roomId, enabled }); } finally { el.disabled = false; }
+      rooms = rooms.map(r => r.id === roomId ? { ...r, shareNew: enabled } : r);
+      if (room?.id === roomId && me()) { me().shareNew = enabled; roomSettings(); } else renderSharing();
+      return toast(enabled ? t('New characters you save will be shared in {room}.', { room: target?.name || '' }) : t('New characters start private in {room} again.', { room: target?.name || '' }));
+    }
+    if (el.dataset.promptShare) {
+      const roomId = el.dataset.roomId; el.disabled = true;
+      const result = await send('sharing', { roomId, characterId: el.dataset.promptShare, enabled: true });
+      rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: true } : r);
+      if (room?.id === roomId) changedRoom(roomId, () => applyShared(me(), result.sharedCharacters)); else if (!room) renderSharing();
+      el.classList.add('done'); el.setAttribute('aria-pressed', 'true'); el.innerHTML = icon('tick') + el.textContent;
+      return;
+    }
     if (el.dataset.share) {
       const roomId = el.dataset.roomId || room.id; el.disabled = true;
       const enabled = el.dataset.enabled === 'true', name = el.dataset.name;
@@ -850,8 +896,15 @@ app.addEventListener('click', async e => {
       const form = document.querySelector('#run-form'); if (!form) return;
       form.elements.dungeon.value = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
     }
+    // Going with one of several characters shared here asks which one first.
+    if (el.dataset.run && el.dataset.going === 'true' && !el.dataset.character && mine().filter(c => c.shared).length > 1) {
+      const run = runs.find(r => r.id === el.dataset.run);
+      return modal(esc(t('Going to {dungeon} with', { dungeon: run?.dungeon || '' })), `<p>${t('Pick the character you bring. The run counts its cubes.')}</p><div class="add-chips pick-chips">${mine().filter(c => c.shared).map(c => `<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="${esc(c.id)}">${esc(c.characterName)} · ${esc(c.value.toLocaleString(locale()))}</button>`).join('')}<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="any">${t('Any: my best')}</button></div>`);
+    }
+    if (el.dataset.useStart) { const input = document.querySelector('#run-form [name="startsAt"]'); if (input) { input.value = el.dataset.useStart; input.focus(); } return; }
     if (el.dataset.run) {
-      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
+      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true', ...(el.dataset.character && el.dataset.character !== 'any' ? { character: el.dataset.character } : {}) }); } finally { el.disabled = false; }
+      if (el.dataset.character) closeModal();
       return changedRoom(id, () => { runs = result.runs; });
     }
     if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
@@ -860,7 +913,20 @@ app.addEventListener('click', async e => {
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
       return download(calendarFile(r, { room: room.name, going, now: Date.now() + serverOffset }), `odyle-${r.dungeon.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'run'}.ics`, 'text/calendar');
     }
+    if (el.dataset.cancelRun && el.dataset.missed) return ask(esc(t('{dungeon} did not happen?', { dungeon: el.dataset.name })), t('The run disappears for everyone. The wishlist stays as it is.'), t('Didn’t happen'), { 'confirm-cancel-run': el.dataset.cancelRun });
     if (el.dataset.cancelRun) return ask(esc(t('Cancel {dungeon}?', { dungeon: el.dataset.name })), t('The run disappears for everyone who planned to go.'), t('Cancel run'), { 'confirm-cancel-run': el.dataset.cancelRun });
+    if (el.dataset.runDone) {
+      const id = room.id; el.disabled = true; let result; try { result = await send('plan', { roomId: id, id: el.dataset.runDone, done: true }); } finally { el.disabled = false; }
+      changedRoom(id, () => { runs = result.runs; });
+      return toast(t('{dungeon} done: it left the wishlist of everyone who went.', { dungeon: el.dataset.name }));
+    }
+    if (el.dataset.runAgain) {
+      // The same local time a week later, also across a daylight saving change.
+      const next = new Date(timestamp(el.dataset.at)); next.setDate(next.getDate() + 7);
+      const id = room.id; el.disabled = true; let result; try { result = await send('plan', { roomId: id, id: el.dataset.runAgain, again: true, startsAt: next.toISOString() }); } finally { el.disabled = false; }
+      changedRoom(id, () => { runs = result.runs; });
+      return toast(t('{dungeon} is planned again for {when}, with you going.', { dungeon: el.dataset.name, when: next.toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }));
+    }
     if (el.dataset.confirmCancelRun) { const id = room.id, result = await send('plan', { roomId: id, id: el.dataset.confirmCancelRun, remove: true }); closeModal(); return changedRoom(id, () => { runs = result.runs; }); }
     if (el.dataset.clearWish) return ask(t('Clear from the wishlist?'), t('This takes <strong>{dungeon}</strong> off the wishlist for every member, for example after the party ran it. Anyone can add it again.', { dungeon: esc(el.dataset.clearWish) }), t('Clear for everyone'), { 'confirm-clear': el.dataset.clearWish });
     if (el.dataset.confirmClear) { const id = room.id, result = await send('wishlist', { roomId: id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); closeModal(); return changedRoom(id, () => { wishlist = result.wishlist; }); }
@@ -888,6 +954,7 @@ app.addEventListener('click', async e => {
       case 'confirm-discord-off': { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: '' }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are off.')); break; }
       case 'open-elsewhere': signInElsewhere(embedded() ? 'app' : ''); break;
       case 'reminders': await toggleReminders(); accountRender(); break;
+      case 'live-only': storage.setItem(liveOnlyKey, liveOnly() ? 'off' : 'on'); dashboard(); break;
       case 'push-on': await pushOn(); accountRender(); break;
       case 'push-off': await pushOff(); accountRender(); break;
       case 'push-test': { const result = await send('push-test', {}); account.push = result.push; toast(tn(result.sent, 'Sent a test to {n} device.', 'Sent a test to {n} devices.')); break; }

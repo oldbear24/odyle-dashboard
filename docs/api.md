@@ -39,6 +39,7 @@ A paired app opens its reader session with its key (`POST /api/odyle/session` wi
 | GET `/api/odyle/announcement` | — | Public `{ announcement }`, the same message, for pages without an account |
 | GET `/api/odyle/snapshot/{id}` | — | Member-only `{ room, members, wishlist, runs, dungeons, catalog, announcement, readers, clock, serverNow }`; each member has `displayName` and `characters`; `dungeons` lists the names of the server's dungeon catalog (empty: any name) and `catalog` its entries with their costs (see [Dungeon catalog](#dungeon-catalog)); `announcement`, `clock` and `readers` (the requesting account's own readers, never another member's) are the same as in `GET /api/odyle/rooms`. A room page that hears `contact` from a reader session it does not list fetches the snapshot once, so a reader started meanwhile is named |
 | POST `/api/odyle/sharing` | `{ roomId, characterId, enabled }` | Reporter/owner shares or hides one of their own characters in this room; returns `{ sharedCharacters }`. Without `characterId` (older clients) the choice applies to every character saved at that moment |
+| POST `/api/odyle/share-new` | `{ roomId, enabled }` | Reporter/owner turns `shareNew` on or off for this room (viewers get 403): with it on, every character the account saves from then on (by the Windows reader or `POST /api/odyle/character`) is shared there in the same transaction. Returns `{ shareNew }`; `GET /api/odyle/rooms` lists it per room and snapshots per member |
 | POST `/api/odyle/wishlist` | `{ roomId, dungeon, wanted, everyone? }` | Adds (`wanted: true`, reporter/owner) or removes (`false`, any member) the caller's own entry for a dungeon; `everyone: true` with `wanted: false` lets the owner clear that dungeon for all members. Returns `{ wishlist }` |
 | POST `/api/odyle/invite-create` | `{ roomId, role?, expiresIn?, maxUses?, label? }` | Owner makes one invite link: `role` `reporter` (default) or `viewer`, `expiresIn` 1800, 86400 (default) or 604800 seconds, `maxUses` 0 (default: no limit) to 50 joins, `label` up to 40 characters. Returns `{ invite, invites }`: the new link with its `code`, the only time it is sent, and the room's open links. A room has up to 20 open links |
 | GET `/api/odyle/invites/{id}` | — | Owner-only `{ invites }`: the room's open links (neither expired nor used up), player links first, then the newest, each `{ id, role, label, expiresAt, maxUses, uses, created }`; never a code or digest |
@@ -80,15 +81,17 @@ Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:
 
 | Body | Who | Effect |
 | --- | --- | --- |
-| `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room |
-| `{ roomId, id, going }` | owner, players | `true` joins the run, `false` leaves it |
+| `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room still ahead (started runs do not count) |
+| `{ roomId, id, going, character? }` | owner, players | `true` joins the run, `false` leaves it. With `character` (one of the caller's own characters shared in this room, else 400) the caller brings that character; joining again changes or drops the pick and keeps the caller's place |
 | `{ roomId, id, dungeon?, startsAt?, note? }` | planner, owner | Changes the run with the same rules as planning; a dungeon that only differs in case or spacing keeps its name, an empty or blank `note` removes the note, a new `startsAt` announces the run on Discord again |
-| `{ roomId, id, remove: true }` | planner, owner | Cancels the run |
+| `{ roomId, id, remove: true }` | planner, owner; after the start also attendees | Cancels the run (after its start: it did not happen) |
+| `{ roomId, id, done: true }` | planner, attendees, owner; after the start | Wraps the run up: its attendees' wishes for that dungeon are deleted, then the run (400 before the start) |
+| `{ roomId, id, again: true, startsAt? }` | owner, players | Plans the same dungeon and note a week later with the caller going: `startsAt` (the browser sends the same local time, which keeps it across a daylight saving change) or the start plus 7 × 24 hours |
 
-The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run):
+The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run), and `picks` maps an attendee's account id to the character they bring, while they still go and still share it in the room (unsharing or deleting the character drops the pick):
 
 ```json
-[{ "id": "run-id", "dungeon": "Fire Temple", "startsAt": "2026-10-14 19:00:00.000Z", "note": "Bring potions", "planner": "user-id-1", "attendees": ["user-id-1", "user-id-2"] }]
+[{ "id": "run-id", "dungeon": "Fire Temple", "startsAt": "2026-10-14 19:00:00.000Z", "note": "Bring potions", "planner": "user-id-1", "attendees": ["user-id-1", "user-id-2"], "picks": { "user-id-2": "character-id" } }]
 ```
 
 Viewers read runs but cannot plan or join them. The `room_runs` collection has no API rules.
