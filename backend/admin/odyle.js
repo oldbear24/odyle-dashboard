@@ -38,6 +38,8 @@ const signature = value => value && typeof value === 'object' ? '{' + Object.key
 // 45 seconds without contact is late and 90 seconds is offline.
 function contact(at, now) { const age = now - timestamp(at); return !(age < 90000) ? 'offline' : age >= 45000 ? 'late' : 'online'; }
 const contactLabels = { online: 'Online', late: 'Late', offline: 'Offline' };
+// What a Windows app's reader reports with its heartbeat (backend/odyle/health.go).
+const readerLabels = { waiting: 'no game connection', listening: 'listening, no Odyle yet', midstream: 'started after login', reading: 'reading Odyle', problem: 'capture problem', npcap: 'Npcap missing', 'two-clients': 'two game clients', paused: 'paused by the server', stopped: 'stopped by hand' };
 function reading(c, now) {
   if (!c) return { state: 'waiting', label: 'Waiting for the game' };
   if (!c.confirmed) return { state: 'waiting', label: 'Named, no reading yet' };
@@ -176,10 +178,11 @@ export function monitorPage(route) {
     : [t.div({ className: 'txt-code' }, a.appVersion), older(a.appVersion, state.latestVersion) ? t.span({ className: 'label sm warning', title: 'Newest release: ' + state.latestVersion }, 'update available') : state.latestVersion ? t.span({ className: 'txt-hint txt-sm' }, 'newest') : null];
   // Rows are keyed by session and content: an unchanged row is kept as it is, a changed one
   // is redrawn in its place. Only the status and ages tick every second.
+  const readerLine = a => a.reader ? t.div({ className: 'txt-hint txt-sm', title: 'since ' + when(a.reader.since) }, (readerLabels[a.reader.status] || a.reader.status) + (a.reader.game ? ' · ' + a.reader.game : '')) : null;
   const appRow = a => t.tr({ rid: signature(a) + '@' + state.latestVersion },
     t.td(null, t.span({ className: () => 'odyle-status ' + contact(a.lastContactAt, now()) }, () => contactLabels[contact(a.lastContactAt, now())])),
     t.td(null, t.button({ type: 'button', className: 'odyle-link txt-bold', title: 'Show only this account\'s packets', onclick: () => onlyAccount(a.user) }, a.account || '—'), a.device ? t.div({ className: 'txt-sm' }, a.device) : null, t.div({ className: 'txt-hint txt-sm txt-code' }, a.sessionId)),
-    t.td({ className: 'txt-nowrap' }, version(a)),
+    t.td({ className: 'txt-nowrap' }, version(a), readerLine(a)),
     // A character belongs to the session that read it last, so older sessions lose it.
     t.td(null, a.character ? [t.div(null, place(a.character)), t.span({ className: () => 'odyle-reading ' + reading(a.character, now()).state }, () => reading(a.character, now()).label)] : () => contact(a.lastContactAt, now()) === 'offline' ? t.span({ className: 'txt-hint' }, '—') : t.span({ className: 'odyle-reading waiting' }, 'Waiting for the game')),
     t.td({ className: 'txt-right' }, a.character?.confirmed ? [t.div({ className: 'txt-bold' }, number(a.character.value)), t.div({ className: 'txt-hint txt-sm' }, () => 'changed ' + ago(a.character.lastReadingAt, now()))] : '—'),
@@ -300,6 +303,7 @@ export function statusPage() {
   const latest = () => state.data.release.version || '';
   const reached = () => state.data.activation?.now || {}, days = () => state.data.activation?.days || [];
   const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
+  const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -393,6 +397,8 @@ export function statusPage() {
       () => proxied() ? t.div({ className: 'alert warning m-b-sm' }, number(traffic().private) + ' of the last hour\'s ' + number(traffic().total.count) + ' requests came from private or loopback addresses',
         proxy().headers.length ? ' although ' + proxy().headers.join(', ') + ' is trusted. Check that your reverse proxy sets it with the client\'s address.'
           : ' and no proxy header is trusted, so rate limits count everyone behind your reverse proxy as one client. Set ODYLE_TRUSTED_PROXY_HEADERS to the header your proxy writes (docs/deployment.md).') : null,
+      () => readers().stuck ? t.div({ className: 'alert warning m-b-sm' }, number(readers().stuck) + ' of ' + number(readers().connected) + (readers().connected === 1 ? ' app' : ' apps') + ' connected to the game have read no Odyle for 10 minutes' + (readers().games.length ? ' (' + readers().games.map(g => g.game).join(', ') + ')' : '') + '. After a game patch, pause the readers or switch the adapter off under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ', then follow the patch-day runbook in the Windows app\'s docs/packet-reader.md.') : null,
+      () => readers().refusedAdapters.length ? t.div({ className: 'alert warning m-b-sm' }, 'Readings arrive under ' + readers().refusedAdapters.join(', ') + ', which this backend refuses, so they are not saved. Accept it under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ' or deploy the backend that lists it.') : null,
       () => [backups().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
       t.div({ className: 'odyle-stats m-b-base' },
         stat('Server running', () => state.data.startedAt ? duration(now() - timestamp(state.data.startedAt)) : '—', () => state.data.startedAt ? 'since ' + when(state.data.startedAt) : ''),
@@ -458,6 +464,12 @@ export function statusPage() {
         stat('Trusted proxy', () => proxy().headers.length ? proxy().headers.join(', ') : 'none', () => (proxy().headers.length ? (proxy().leftmost ? 'leftmost' : 'rightmost') + ' address · ' : '') + (traffic().total.count ? share(traffic().private, traffic().total.count) + ' of the last hour\'s requests from private addresses' : 'no requests in the last hour'))),
       t.div({ className: 'flex m-b-base odyle-profiles' }, t.span({ className: 'txt-hint txt-sm' }, 'Profiles for go tool pprof:'),
         profileButton('profile', 'CPU, 30 s', '?seconds=30'), profileButton('heap', 'Heap'), profileButton('allocs', 'Allocations'), profileButton('goroutine', 'Goroutines')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Readers'), t.span({ className: 'txt-hint txt-sm' }, 'what the connected apps\' readers report with their heartbeats, now')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Reporting', () => number(readers().reporting), () => Object.entries(readers().statuses).map(([s, n]) => number(n) + ' ' + (readerLabels[s] || s)).join(' · ') || 'no reports yet; apps send them from the next Windows release on'),
+        stat('Listening without Odyle', () => number(readers().stuck), () => 'for 10 minutes, of ' + number(readers().connected) + ' connected to the game'),
+        stat('Game builds', () => readers().games.length ? readers().games.map(g => g.game.replace(/^Steam build /, '')).join(', ') : '—', () => readers().games.length ? readers().games.map(g => number(g.apps) + ' on ' + g.game).join(' · ') : 'Steam builds the apps read'),
+        stat('Operator alerts', () => readers().alerts ? 'on' : 'off', () => readers().alerts ? 'Discord, by the Reader health job every 5 minutes' : 'set ODYLE_ALERT_WEBHOOK to a Discord webhook')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
@@ -481,6 +493,7 @@ const jobInfo = {
   'odyle-reminders': { label: 'Discord reminders', schedule: () => 'Every minute', unit: 'reminders posted', about: 'Posts planned runs to their room\'s Discord channel 15 minutes before they start.' },
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
   'odyle-stats': { label: 'Daily numbers', schedule: () => 'Daily at 23:55 UTC (' + localHour(23, 55) + ' here)', unit: 'days stored', about: 'Stores the day\'s activation and feature-use totals shown under Server status, so their trend survives restarts; a run by hand replaces today\'s. Totals only, no account is recorded.' },
+  'odyle-health': { label: 'Reader health', schedule: () => 'Every 5 minutes', unit: 'alerts posted', about: 'Posts to the Discord webhook in ODYLE_ALERT_WEBHOOK when most apps connected to the game have read no Odyle for 10 minutes (a game patch, most likely) or readings arrive under a refused adapter, once when it starts and once when it clears. Without the variable it only keeps the readers\' reports, which Server status shows.' },
 };
 const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account' };
 

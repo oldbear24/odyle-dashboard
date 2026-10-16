@@ -51,7 +51,7 @@ type job struct {
 	work     func(core.App) (result, error)
 }
 
-var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-stats"}
+var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-stats", "odyle-health"}
 
 var jobs = map[string]job{
 	"odyle-expiry":    {schedule: "*/5 * * * *", manual: true, work: cleanup},
@@ -59,6 +59,7 @@ var jobs = map[string]job{
 	"odyle-reminders": {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.RemindersPaused }, work: remindRuns},
 	"odyle-retention": {schedule: "17 3 * * *", manual: false, work: retention},
 	"odyle-stats":     {schedule: "55 23 * * *", manual: true, work: recordStats},
+	"odyle-health":    {schedule: "*/5 * * * *", manual: true, work: checkHealth},
 }
 
 // nextDaily is when a daily schedule ("minute hour * * *", UTC like every job) runs next,

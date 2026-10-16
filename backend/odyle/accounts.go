@@ -1120,6 +1120,7 @@ func heartbeat(e *core.RequestEvent) error {
 				}
 			}
 			beat(e.App, session, read, time.Now())
+			noteReader(e.App, session.Id, b, time.Now())
 		}
 		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused})
 	})

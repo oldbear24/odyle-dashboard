@@ -19,6 +19,7 @@ type state struct {
 	changes   *outbox   // realtime news, delivered at once
 	sightings *outbox   // heartbeats for realtime, delivered every two seconds
 	presence  *presence // heartbeats not written yet
+	health    *health   // what each reader last reported (health.go)
 
 	settings settingsCache // has its own lock
 
@@ -50,6 +51,6 @@ type state struct {
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
 		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, portraits: newPortraitWork(),
-			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence()}
+			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence(), health: newHealth()}
 	}).(*state)
 }
