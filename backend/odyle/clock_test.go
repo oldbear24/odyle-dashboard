@@ -71,12 +71,13 @@ func TestTheServerProjectsTheNaturalPoolAsTheDashboardDoes(t *testing.T) {
 	if got := clockTicks(at("2026-10-15T04:00:00Z"), at("2026-10-15T07:00:00Z"), hours, 100); len(got) != 1 {
 		t.Fatalf("ticks %v", got)
 	}
+	// A membership answer settles the cap whatever the readings showed; without one they decide.
 	for _, c := range []struct {
-		max  int64
-		want string
-	}{{0, "[560 840]"}, {560, "[560 840]"}, {600, "[840]"}, {2000, "[840]"}} {
-		if got := fmt.Sprint(capsFor(c.max, []int64{560, 840})); got != c.want {
-			t.Errorf("caps for %d: %s", c.max, got)
+		answered, max int64
+		want          string
+	}{{0, 0, "[560 840]"}, {0, 560, "[560 840]"}, {0, 600, "[840]"}, {0, 2000, "[840]"}, {560, 0, "[560]"}, {560, 700, "[560]"}, {840, 0, "[840]"}} {
+		if got := fmt.Sprint(capsFor(c.answered, c.max, []int64{560, 840})); got != c.want {
+			t.Errorf("caps for %d answered %d: %s", c.max, c.answered, got)
 		}
 	}
 	if projectBase(500, 2, 15, 560) != 530 || projectBase(550, 2, 15, 560) != 560 || projectBase(600, 2, 15, 560) != 600 {

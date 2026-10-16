@@ -2382,6 +2382,7 @@ func account(e *core.RequestEvent) error {
 		return e.JSON(200, map[string]any{
 			"account":       map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
 			"notifications": notificationsOf(user.Record),
+			"membership":    user.GetString("membership"),
 			"push":          pushState(e.App, user.Id),
 			"limits":        limits,
 			"serverNow":     now(),
@@ -2517,6 +2518,7 @@ func exportData(e *core.RequestEvent) error {
 		return e.JSON(200, map[string]any{
 			"exportedAt":        now(),
 			"notifications":     notificationsOf(user.Record),
+			"membership":        user.GetString("membership"),
 			"pushSubscriptions": pushExport(e.App, user.Id),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
 			"characters":        exportedCharacters,

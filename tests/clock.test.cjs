@@ -46,3 +46,24 @@ test('the clock projects the natural pool from the last reading and says when it
   assert.match(clockLine(reached, now, true), /^přirozená zásoba 560: plná, pokud je strop 560 · plno ≈ .+ při 840$/);
   await useLanguage('en');
 });
+test('a membership answer settles the cap, and readings that contradict it are flagged', async () => {
+  const { capsOf, clockOf, clockLine, capMismatch, defaultClock } = await clock(), { useLanguage } = await import('../src/i18n.js');
+  await useLanguage('en');
+  // The answer wins over the readings, both ways.
+  assert.deepEqual(capsOf({ answeredCap: 560 }, defaultClock), [560]);
+  assert.deepEqual(capsOf({ answeredCap: 840, naturalMax: 300 }, defaultClock), [840]);
+  assert.deepEqual(capsOf({ answeredCap: 0, naturalMax: 300 }, defaultClock), [560, 840]);
+  const now = at('2026-10-15T05:00:00Z'), c = { parts: { base: 500, bonus: 0 }, lastReadingAt: '2026-10-15 04:30:00.000Z', naturalMax: 500 };
+  // Without the membership the pool is full at 560, said without hedging.
+  const without = clockOf({ ...c, answeredCap: 560 }, now, defaultClock);
+  assert.deepEqual([without.cap, without.settled, without.fills.map(f => f.cap)], [560, true, [560]]);
+  assert.doesNotMatch(clockLine(without, now, true), / at 560/);
+  // With it, a pool that never passed 560 still counts up to 840.
+  const member = clockOf({ ...c, answeredCap: 840 }, now, defaultClock);
+  assert.deepEqual([member.cap, member.settled, member.fills.map(f => f.cap)], [840, true, [840]]);
+  // A pool that held more than the answered cap contradicts "no membership"; the reading stays.
+  assert.equal(capMismatch({ answeredCap: 560, naturalMax: 700 }), true);
+  assert.equal(capMismatch({ answeredCap: 560, naturalMax: 560 }), false);
+  assert.equal(capMismatch({ answeredCap: 0, naturalMax: 700 }), false);
+  assert.equal(capMismatch({ answeredCap: 840, naturalMax: 300 }), false);
+});

@@ -38,7 +38,7 @@ func capState(c *Character, rules clockRules, capTicks int64, at time.Time) (str
 	if !ok || from.IsZero() || at.Sub(from) > capAlertsFor || len(rules.TickHours) == 0 {
 		return "", capAlert{}
 	}
-	caps := capsFor(c.GetInt64("naturalMax"), rules.Caps)
+	caps := capsFor(c.GetInt64("answeredCap"), c.GetInt64("naturalMax"), rules.Caps)
 	if len(caps) == 0 {
 		return "", capAlert{}
 	}

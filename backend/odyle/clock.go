@@ -28,10 +28,14 @@ func clockTicks(from, until time.Time, hours []int64, limit int) []time.Time {
 	return out
 }
 
-// capsFor lists the caps a character's fullest natural pool of the last 30 days fits under,
-// smallest first: one when its readings settled it (it held more than the smaller caps),
-// more while they did not.
-func capsFor(naturalMax int64, caps []int64) []int64 {
+// capsFor lists the caps a character may have, smallest first: the one its account's
+// membership answer settled (answeredCap, membership.go), else those its fullest natural pool
+// of the last 30 days fits under, one when its readings settled it (it held more than the
+// smaller caps), more while they did not.
+func capsFor(answered, naturalMax int64, caps []int64) []int64 {
+	if answered > 0 {
+		return []int64{answered}
+	}
 	out := []int64{}
 	for _, c := range caps {
 		if c >= naturalMax {
@@ -111,7 +115,7 @@ func checkClock(app core.App, before *Character, from time.Time, r reading, at t
 		return
 	}
 	matched := false
-	for _, limit := range capsFor(before.GetInt64("naturalMax"), rules.Caps) {
+	for _, limit := range capsFor(before.GetInt64("answeredCap"), before.GetInt64("naturalMax"), rules.Caps) {
 		if projectBase(prev, ticks, tickFor(before.GetInt64("regenTick"), rules), limit) == base {
 			matched = true
 		}
