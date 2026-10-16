@@ -523,6 +523,47 @@ test('the account page lists paired PCs, removes one and signs out everywhere', 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('notifications are kept for the account, reach its other tabs and time the browser run reminders', async () => {
+  const lead = await account('Reminded lead');
+  const roomId = (await request('/api/odyle/create', { name: 'Reminder room' }, lead)).data.room.id;
+  // A run in 100 minutes, which its planner goes to: the default 15 minutes do not remind yet.
+  assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() + 100 * 60000).toISOString() }, lead)).status, 200);
+  const { page, errors, close } = await open(lead, '#/account'), other = await open(lead, '#/account');
+  try {
+    await page.context().grantPermissions(['notifications'], { origin: url });
+    await page.reload(); await page.getByRole('heading', { name: 'Account & data.' }).waitFor();
+    await page.evaluate(() => {
+      window.shown = [];
+      const record = title => { window.shown.push(title); return Promise.resolve(); };
+      if (window.ServiceWorkerRegistration) ServiceWorkerRegistration.prototype.showNotification = record;
+      window.Notification = class extends window.Notification { constructor(title, options) { super(title, options); record(title); } };
+    });
+    assert.match(await page.locator('#notifications-form').innerText(), /This browser may show them\./);
+    await other.page.getByRole('heading', { name: 'Account & data.' }).waitFor();
+    // Two hours instead of 15 minutes, no Windows tray, quiet hours at night.
+    const form = page.locator('#notifications-form');
+    const chip = minutes => form.locator(`.chip-check:has(input[value="${minutes}"])`);
+    await chip(15).click(); await chip(120).click();
+    await form.locator('[name=tray]').uncheck();
+    await form.locator('[name=quietFrom]').fill('03:00'); await form.locator('[name=quietTo]').fill('03:30');
+    await form.locator('[type=submit]').click();
+    await toast(page).filter({ hasText: 'Notifications saved.' }).waitFor();
+    const saved = (await request('/api/odyle/account', undefined, lead, 'GET')).data.notifications;
+    assert.deepEqual([saved.leadMinutes, saved.channels.tray, saved.quiet.from, saved.quiet.to, saved.saved], [[120], false, '03:00', '03:30', true]);
+    assert.equal(saved.quiet.timeZone, await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone));
+    // The other tab hears of it at once, and this one reminds of the run within the 2 hours.
+    await other.page.locator('#notifications-form .chip-check input[value="120"]:checked').waitFor({ state: 'attached' });
+    assert.equal(await other.page.locator('#notifications-form [name=tray]').isChecked(), false);
+    await page.waitForFunction(() => window.shown.length > 0, null, { timeout: 15000 });
+    const shown = await page.evaluate(() => window.shown); assert.equal(shown.length, 1); assert.match(shown[0], /^Fire Temple starts in 1h (39|40)m$/);
+    // More than three reminder times are refused in the form.
+    for (const minutes of [5, 30, 60]) await chip(minutes).click();
+    await form.locator('[type=submit]').click();
+    assert.match(await form.locator('.form-error').innerText(), /Choose one to three reminder times\./);
+    await shot(page, 'account-notifications');
+    assert.deepEqual([...errors, ...other.errors], []);
+  } finally { await close(); await other.close(); }
+});
 test('the account page renames, switches to Czech, exports data, deletes characters and the account', async () => {
   const user = await account('Account owner');
   await request('/api/odyle/character', { characterName: 'Doomed', server: 'Lumiel', region: 'GLOBAL_EU' }, user);

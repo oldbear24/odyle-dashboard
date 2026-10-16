@@ -54,6 +54,8 @@ type userNews struct {
 	characters map[string]*Character
 	seen       map[string]time.Time // its characters' heartbeats
 	contact    map[string]time.Time // its reader sessions' heartbeats
+	// notification settings saved meanwhile (notifications.go)
+	notifications *notificationSettings
 }
 
 // outbox collects news until its delivery.
@@ -241,6 +243,9 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 			changed = append(changed, c.PublicExport())
 		}
 		message["characters"] = changed
+	}
+	if n.notifications != nil {
+		message["notifications"] = n.notifications
 	}
 	for _, kind := range []struct {
 		key   string

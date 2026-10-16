@@ -72,13 +72,33 @@ test('runs go to calendars with a reminder, can be changed and count down in Cze
   try { await useLanguage('cs'); const { startsIn } = await import('../src/runs.js'); assert.equal(startsIn(now + 125 * 60000, now), 'za 2 h 5 min'); assert.equal(startsIn(now + 26 * 3600000, now), 'za 1 d 2 h'); }
   finally { await useLanguage('en'); }
 });
-test('the account page lists paired PCs with their reader and offers reminders', async () => {
+test('the account page lists paired PCs with their reader and keeps the notifications', async () => {
   const { accountView } = await import('../src/account.js'), now = Date.parse('2026-10-14T12:00:00Z');
   const html = accountView({ account: { displayName: 'Lumina', email: '' }, characters: 1, limits: { characters: 30 }, reminders: 'off', now,
     devices: [{ id: 'd1', name: 'DESK-PC', pairedAt: '2026-10-01 10:00:00.000Z', lastSignInAt: '2026-10-14 11:00:00.000Z' }, { id: 'd2', name: '', pairedAt: '2026-10-02 10:00:00.000Z', lastSignInAt: '' }],
     apps: [{ sessionId: 's1', device: 'd1', character: 'Lumina', connectedAt: '2026-10-14 11:00:00.000Z', lastContactAt: '2026-10-14 11:59:50.000Z' }, { sessionId: 's2', device: '', character: '', connectedAt: '2026-10-14 10:00:00.000Z', lastContactAt: '2026-10-14 10:00:00.000Z' }] });
   assert.match(html, /DESK-PC/); assert.match(html, /Windows PC/); assert.match(html, /data-forget-device="d1"/); assert.match(html, /data-forget-device="d2"/);
   assert.match(html, /<h2>Windows apps <span>3<\/span>/); assert.match(html, /status live/); assert.match(html, /Not reading/);
-  assert.match(html, /data-action="reminders" aria-pressed="false"/);
-  assert.match(accountView({ account: { displayName: 'L' }, characters: 0, limits: { characters: 30 }, reminders: 'blocked', now, devices: [], apps: [] }), /blocked for this site/);
+  // Notifications: the defaults until saved, and this browser's permission asked here.
+  assert.match(html, /id="notifications-form"/); assert.match(html, /data-action="reminders"/);
+  assert.deepEqual([...html.matchAll(/name="lead" value="(\d+)" ?(checked)?/g)].map(m => [m[1], Boolean(m[2])]), [['5', false], ['15', true], ['30', false], ['60', false], ['120', false], ['1440', false]]);
+  assert.match(html, /name="tray" checked/); assert.match(html, /name="quietFrom" value=""/);
+  const saved = accountView({ account: { displayName: 'L' }, characters: 0, limits: { characters: 30 }, reminders: 'blocked', now, devices: [], apps: [],
+    notifications: { channels: { tray: false, browser: true, push: true }, leadMinutes: [45, 15], kinds: { runs: true, cap: false }, quiet: { from: '23:00', to: '07:00', timeZone: 'Europe/Prague' }, saved: true } });
+  assert.match(saved, /blocked for this site/); assert.doesNotMatch(saved, /data-action="reminders"/);
+  assert.match(saved, /name="tray"\s+>/); assert.match(saved, /value="45" checked><span>45 min/); assert.match(saved, /name="quietFrom" value="23:00"/); assert.match(saved, /in Europe\/Prague/);
+});
+test('run reminders come once, at the smallest reminder time a run is within, and never in quiet hours', async () => {
+  const { dueReminders, quietAt, leadLabel } = await import('../src/notify.js'), now = Date.parse('2026-10-15T18:00:00Z');
+  const runs = [{ id: 'a', startsAt: '2026-10-15 18:10:00.000Z' }, { id: 'b', startsAt: '2026-10-15 19:30:00.000Z' }, { id: 'c', startsAt: '2026-10-16 18:00:00.000Z' }, { id: 'd', startsAt: '2026-10-15 17:59:00.000Z' }];
+  const due = dueReminders(runs, now, [120, 15], {});
+  assert.deepEqual(due.map(d => [d.run.id, d.lead, d.marks.length]), [['a', 15, 2], ['b', 120, 1]]);
+  const done = Object.fromEntries(due.flatMap(d => d.marks.map(k => [k, d.at])));
+  assert.deepEqual(dueReminders(runs, now, [120, 15], done), []);
+  // Later, run b comes within 15 minutes and is reminded again.
+  assert.deepEqual(dueReminders(runs, Date.parse('2026-10-15T19:20:00Z'), [120, 15], done).map(d => [d.run.id, d.lead]), [['b', 15]]);
+  const night = { quiet: { from: '22:00', to: '07:00', timeZone: 'Europe/Prague' } };
+  assert.equal(quietAt(night, Date.parse('2026-10-15T19:59:00Z')), false); assert.equal(quietAt(night, Date.parse('2026-10-15T20:00:00Z')), true);
+  assert.equal(quietAt(night, Date.parse('2026-10-16T05:00:00Z')), false); assert.equal(quietAt({ quiet: { from: '', to: '' } }, now), false);
+  assert.deepEqual([5, 60, 90, 1440].map(leadLabel), ['5 min', '1 h', '90 min', '24 h']);
 });

@@ -1,3 +1,4 @@
+import { defaultNotifications, dueReminders, quietAt } from './notify.js';
 import { defaultClock, clockOf, clockLine } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp } from './model.js';
@@ -224,11 +225,18 @@ function plannedRuns(now) {
   const suggestions = [...new Set(wishlist.map(w => w.dungeon))];
   return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: room?.cost || perCube, facts: dungeonInfo(now), demo, discord: room?.discordReminders });
 }
-// Full redraws keep a half-typed form entry or a picked dungeon (wishlist, run, task forms) and its focus.
+// Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
+// changed checkbox, and the focus; what the user did not change shows what the redraw brings.
 function keepingDrafts(render) {
-  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name]')].filter(i => i.value || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]`, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
+  const ticked = i => i.type === 'checkbox' || i.type === 'radio';
+  const changed = i => ticked(i) ? i.checked !== i.defaultChecked : Boolean(i.value) && i.value !== (i.defaultValue ?? '');
+  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name]')].filter(i => changed(i) || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]` + (ticked(i) ? `[value="${CSS.escape(i.value)}"]` : ''), ticked: ticked(i), checked: i.checked, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
   render();
-  for (const d of drafts) { const input = document.querySelector(d.selector); if (!input || (input.options && ![...input.options].some(o => o.value === d.value))) continue; input.value = d.value; if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } } }
+  for (const d of drafts) {
+    const input = document.querySelector(d.selector); if (!input || (input.options && ![...input.options].some(o => o.value === d.value))) continue;
+    if (d.ticked) input.checked = d.checked; else input.value = d.value;
+    if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } }
+  }
 }
 // Personal daily and weekly checklists. A task counts as done while it was checked
 // after the current reset (07:00 UTC and Wednesday by default; the server names
@@ -269,7 +277,7 @@ async function tasksPage(ticket) {
 // The account page redraws when its apps change or go online, late or offline; ages tick in place.
 const contactState = at => { const quiet = Date.now() + serverOffset - timestamp(at); return quiet < 45000 ? 'online' : quiet < 90000 ? 'late' : 'offline'; };
 const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device, contactState(a.lastContactAt)]), account?.devices?.map(d => [d.id, d.name])]);
-function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, reminders: reminderState(), now: Date.now() + serverOffset }), 'account')); }
+function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), now: Date.now() + serverOffset }), 'account')); }
 async function refreshAccount() {
   const data = await pb.send('/api/odyle/account');
   if (shown !== '/account') return;
@@ -570,6 +578,8 @@ async function ownNews(data) {
     if (data.refresh) { if (!room && !later()) await refreshPage(); }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
     if (data.seen) applySeen(data.seen, characters);
+    // Notification settings saved in another tab or app.
+    if (data.notifications) { upcomingAt = 0; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
     if (data.contact) {
       applyContact(data.contact, account?.apps); applyContact(data.contact, readers);
       // A reader started since the room was fetched: the snapshot names its PC (other pages hear of it as news).
@@ -790,6 +800,12 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'discord-form') { const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language() }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
     else if (form.id === 'rename-form') { const id = room.id, result = await send('rename', { roomId: id, name: data.name }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Room renamed.')); }
+    else if (form.id === 'notifications-form') {
+      const leads = new FormData(form).getAll('lead').map(Number);
+      if (!leads.length || leads.length > 3) { formError(form, t('Choose one to three reminder times.')); return; }
+      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: (account.notifications || defaultNotifications).channels.push }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs) }, quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
+      account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
+    }
     else if (form.id === 'profile-form') {
       const result = await send('profile', { displayName: data.displayName });
       pb.authStore.save(pb.authStore.token, result.record); account.account.displayName = result.record.displayName; accountRender(); toast(t('Display name saved.'));
@@ -924,28 +940,28 @@ function download(text, name, type) {
   const url = URL.createObjectURL(new Blob([text], { type })), link = document.createElement('a');
   link.href = url; link.download = name; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-// Browser reminders of the runs this account is going to: a notification 15 minutes
-// before each one starts while a dashboard tab is open. The choice belongs to this browser.
-const remindersKey = 'odyle.reminders', remindedKey = 'odyle.reminded';
+// Browser reminders of the runs this account is going to, at the account's reminder times
+// (Account & data → Notifications) while a dashboard tab is open and this browser may show
+// notifications; none in the quiet hours.
+const remindedKey = 'odyle.reminded';
 const notifications = () => 'Notification' in window;
-function reminderState() { if (!notifications()) return 'unsupported'; if (Notification.permission === 'denied') return 'blocked'; return storage.getItem(remindersKey) === 'on' && Notification.permission === 'granted' ? 'on' : 'off'; }
+function reminderState() { if (!notifications()) return 'unsupported'; if (Notification.permission === 'denied') return 'blocked'; return Notification.permission === 'granted' ? 'on' : 'off'; }
 async function toggleReminders() {
-  if (reminderState() === 'on') { storage.setItem(remindersKey, 'off'); return toast(t('Run reminders are off in this browser.')); }
   if (!notifications()) return toast(t('This browser cannot show notifications.'));
   if (await Notification.requestPermission() !== 'granted') return toast(t('Notifications are blocked for this site. Allow them in the browser settings.'));
-  storage.setItem(remindersKey, 'on'); upcomingAt = 0; toast(t('Run reminders are on in this browser.'));
+  upcomingAt = 0; toast(t('This browser shows your notifications now.'));
 }
 let upcomingAt = 0;
 async function remindRuns() {
   if (reminderState() !== 'on' || demo || !pb.authStore.isValid || Date.now() - upcomingAt < 60000) return;
   upcomingAt = Date.now();
-  const data = await pb.send('/api/odyle/upcoming'), now = Date.parse(data.serverNow) || Date.now();
+  const data = await pb.send('/api/odyle/upcoming'), now = Date.parse(data.serverNow) || Date.now(), settings = data.notifications || defaultNotifications;
+  if (!settings.kinds.runs || !settings.channels.browser) return;
   let done; try { done = JSON.parse(storage.getItem(remindedKey)) || {}; } catch { done = {}; }
-  for (const r of data.runs) {
-    // One notification per run and start time, also across tabs and reloads.
-    const at = timestamp(r.startsAt), key = r.id + '@' + r.startsAt;
-    if (done[key] || at <= now || at - now > 15 * 60000) continue;
-    done[key] = at;
+  for (const { run: r, at, key, marks } of dueReminders(data.runs, now, settings.leadMinutes, done)) {
+    // One notification per run, start time and reminder time, also across tabs and reloads.
+    for (const key of marks) done[key] = at;
+    if (quietAt(settings, now)) continue;
     const title = t('{dungeon} starts {time}', { dungeon: r.dungeon, time: startsIn(at, now) }), options = { body: [r.room, r.note].filter(Boolean).join(' · '), tag: key, icon: 'icon-192.png' };
     try { const worker = await navigator.serviceWorker?.getRegistration(); if (worker) await worker.showNotification(title, options); else new Notification(title, options); } catch { /* permission withdrawn meanwhile */ }
   }

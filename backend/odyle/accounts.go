@@ -458,7 +458,7 @@ func rooms(e *core.RequestEvent) error {
 			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
 	})
 }
 
@@ -2119,7 +2119,7 @@ func upcoming(e *core.RequestEvent) error {
 		}
 		out := []upcomingRun{}
 		if len(roomIds) == 0 {
-			return e.JSON(200, map[string]any{"runs": out, "serverNow": now()})
+			return e.JSON(200, map[string]any{"runs": out, "notifications": notificationsOf(e.Auth), "serverNow": now()})
 		}
 		rooms, err := roomsByID(e.App, roomIds)
 		if err != nil {
@@ -2141,7 +2141,7 @@ func upcoming(e *core.RequestEvent) error {
 			out = append(out, upcomingRun{Id: r.Id, RoomId: r.Room(), Room: name, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note()})
 		}
 		sort.SliceStable(out, func(a, b int) bool { return out[a].StartsAt < out[b].StartsAt })
-		return e.JSON(200, map[string]any{"runs": out, "serverNow": now()})
+		return e.JSON(200, map[string]any{"runs": out, "notifications": notificationsOf(e.Auth), "serverNow": now()})
 	})
 }
 
@@ -2227,12 +2227,13 @@ func account(e *core.RequestEvent) error {
 			paired[i] = map[string]any{"id": d.Id, "name": d.Name(), "pairedAt": d.PairedAt(), "lastSignInAt": d.LastUsedAt()}
 		}
 		return e.JSON(200, map[string]any{
-			"account":    map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
-			"limits":     limits,
-			"serverNow":  now(),
-			"characters": characters,
-			"apps":       apps,
-			"devices":    paired,
+			"account":       map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
+			"notifications": notificationsOf(user.Record),
+			"limits":        limits,
+			"serverNow":     now(),
+			"characters":    characters,
+			"apps":          apps,
+			"devices":       paired,
 		})
 	})
 }
@@ -2361,6 +2362,7 @@ func exportData(e *core.RequestEvent) error {
 		}
 		return e.JSON(200, map[string]any{
 			"exportedAt":        now(),
+			"notifications":     notificationsOf(user.Record),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
 			"characters":        exportedCharacters,
 			"rooms":             joined,
