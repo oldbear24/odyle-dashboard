@@ -59,12 +59,12 @@ func TestInviteLinksArePreviewedCountedListedAndRevoked(t *testing.T) {
 	if link["role"] != "reporter" || link["label"] != "Discord #raids" || link["maxUses"] != float64(1) || link["uses"] != float64(0) {
 		t.Fatalf("made %v", link)
 	}
-	if expires := timeOf(link["expiresAt"].(string)); expires.Sub(time.Now()) < 6*24*time.Hour {
+	if expires := timeOf(link["expiresAt"].(string)); time.Until(expires) < 6*24*time.Hour {
 		t.Fatalf("a week-long link expires %v", expires)
 	}
 	// A viewer link with the defaults: a day, any number of joins.
 	viewer := ask(t, app, http.MethodPost, "/api/odyle/invite-create", owner, `{"roomId":"`+room.Id+`","role":"viewer"}`, 200)["invite"].(map[string]any)
-	if expires := timeOf(viewer["expiresAt"].(string)); expires.Sub(time.Now()) < 23*time.Hour || expires.Sub(time.Now()) > 25*time.Hour || viewer["maxUses"] != float64(0) {
+	if expires := timeOf(viewer["expiresAt"].(string)); time.Until(expires) < 23*time.Hour || time.Until(expires) > 25*time.Hour || viewer["maxUses"] != float64(0) {
 		t.Fatalf("default link %v", viewer)
 	}
 
