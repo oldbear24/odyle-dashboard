@@ -245,7 +245,7 @@ func catalog(value any, kept []dungeonEntry) ([]dungeonEntry, error) {
 }
 
 // storedCatalog reads the saved catalog, plain names included (a record from before
-// 1791763229_catalog_entries.go, or edited under Collections); a dungeon it cannot read
+// 1791763230_catalog_entries.go, or edited under Collections); a dungeon it cannot read
 // is left out.
 func storedCatalog(value any) []dungeonEntry {
 	out := []dungeonEntry{}

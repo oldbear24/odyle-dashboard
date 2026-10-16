@@ -9,7 +9,7 @@ import "github.com/pocketbase/pocketbase/core"
 const backupSchedule, backupsKept = "0 3 * * *", 7
 
 func init() {
-	register("1791763226_backups.go", func(app core.App) error {
+	register("1791763227_backups.go", func(app core.App) error {
 		settings, err := app.Settings().Clone()
 		if err != nil {
 			return err

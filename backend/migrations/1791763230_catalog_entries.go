@@ -11,7 +11,7 @@ import (
 // whether its cost is unconfirmed. Saved names become entries with nothing else set, so
 // rooms keep counting them at Odyle per cube; the field grows to hold 200 entries.
 func init() {
-	register("1791763229_catalog_entries.go", func(app core.App) error {
+	register("1791763230_catalog_entries.go", func(app core.App) error {
 		return convertCatalog(app, 200000, func(item any) any {
 			if name, ok := item.(string); ok {
 				return m{"name": name, "cost": 0, "partySize": 0, "category": "", "unconfirmed": false}

@@ -11,7 +11,7 @@ import (
 // step from signing in to reading together in a room, and how many rooms and accounts
 // use each feature. Only totals are computed, from the stored data: nothing follows a
 // single account, and only superusers see them. The odyle-stats job keeps one row of
-// them a day (odyle_stats, migration 1791763228_odyle_stats.go), so the trend survives
+// them a day (odyle_stats, migration 1791763229_odyle_stats.go), so the trend survives
 // restarts; the page shows the last 30 days.
 
 // A character with a game reading (manual values of the first releases do not count).

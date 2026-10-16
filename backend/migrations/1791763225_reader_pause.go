@@ -6,7 +6,7 @@ import "github.com/pocketbase/pocketbase/core"
 // learn it from their rooms, session and heartbeat answers, stop capturing and resume
 // once it is off; readings sent meanwhile are refused. Off by default.
 func init() {
-	register("1791763224_reader_pause.go", func(app core.App) error {
+	register("1791763225_reader_pause.go", func(app core.App) error {
 		settings, err := app.FindCollectionByNameOrId("odyle_settings")
 		if err != nil {
 			return err

@@ -155,7 +155,7 @@ func TestTheCatalogMigrationTurnsNamesIntoEntries(t *testing.T) {
 	app := newTestApp(t)
 	var migration *core.Migration
 	for _, m := range core.AppMigrations.Items() {
-		if m.File == "1791763229_catalog_entries.go" {
+		if m.File == "1791763230_catalog_entries.go" {
 			migration = m
 		}
 	}

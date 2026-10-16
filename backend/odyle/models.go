@@ -233,7 +233,7 @@ func (r *Room) SetDiscord(webhook, language string) {
 }
 
 // Invite is a room's invite link for a role (room_invites); only its code's digest is
-// stored. Links made before 1791763230 have no maker, label or use limit.
+// stored. Links made before 1791763231 have no maker, label or use limit.
 type Invite struct{ core.BaseRecordProxy }
 
 func (i *Invite) Room() string         { return i.GetString("room") }

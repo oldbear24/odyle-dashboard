@@ -18,7 +18,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 let portraitVersion = 1;
 // The first start leaves these migrations out, so the legacy data the upgrade tests
 // check is written to an older database; every later start applies them.
-const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js', '1791763229_catalog_entries.go', '1791763230_invite_links.go'];
+const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js', '1791763230_catalog_entries.go', '1791763231_invite_links.go'];
 let upgraded = false;
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });

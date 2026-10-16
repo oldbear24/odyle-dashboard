@@ -11,7 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Backups are PocketBase's own (Settings → Backups): migration 1791763226_backups.go
+// Backups are PocketBase's own (Settings → Backups): migration 1791763227_backups.go
 // schedules one every night at 03:00 UTC and keeps the newest seven, unless a superuser
 // set a schedule first. They land in pb_data/backups, on the same volume as the data,
 // unless S3-compatible storage holds them: ODYLE_BACKUP_S3_BUCKET, _REGION, _ENDPOINT,

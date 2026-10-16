@@ -98,7 +98,7 @@ func removeFields(app core.App, collectionName string, names ...string) error {
 // savedSettings is the application settings as saved so far. Pending migrations run in
 // one transaction and PocketBase reloads its settings only once that commits, so a
 // migration that changes them reloads them first: saving them as they were at start would
-// undo what an earlier migration of the same run saved (1791763226's backup schedule).
+// undo what an earlier migration of the same run saved (1791763227's backup schedule).
 func savedSettings(app core.App) (*core.Settings, error) {
 	if err := app.ReloadSettings(); err != nil {
 		return nil, err

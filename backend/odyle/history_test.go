@@ -116,7 +116,7 @@ func TestUpgradeTagsSavedHistoryWithTheCharacterAdapter(t *testing.T) {
 	app := newTestApp(t)
 	var tagging *core.Migration
 	for _, m := range core.AppMigrations.Items() {
-		if m.File == "1791763223_reading_adapters.go" {
+		if m.File == "1791763224_reading_adapters.go" {
 			tagging = m
 		}
 	}

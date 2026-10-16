@@ -7,7 +7,7 @@ import "github.com/pocketbase/pocketbase/core"
 // Points saved before carry their character's latest adapter: until now only
 // global-reference-v1 and names superusers added under Server controls were accepted.
 func init() {
-	register("1791763223_reading_adapters.go", func(app core.App) error {
+	register("1791763224_reading_adapters.go", func(app core.App) error {
 		readings, err := app.FindCollectionByNameOrId("character_readings")
 		if err != nil {
 			return err

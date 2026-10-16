@@ -10,7 +10,7 @@ import "github.com/pocketbase/pocketbase/core"
 // maker (the room owner stands in) and no use limit.
 func init() {
 	const preview = "/api/odyle/invite-preview"
-	register("1791763230_invite_links.go", func(app core.App) error {
+	register("1791763231_invite_links.go", func(app core.App) error {
 		users, err := app.FindCollectionByNameOrId("users")
 		if err != nil {
 			return err

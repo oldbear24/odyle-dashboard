@@ -7,7 +7,7 @@ import "github.com/pocketbase/pocketbase/core"
 // survives restarts. Totals only: no row names or counts a single account. No API
 // rules: superusers only.
 func init() {
-	register("1791763228_odyle_stats.go", func(app core.App) error {
+	register("1791763229_odyle_stats.go", func(app core.App) error {
 		totals := []any{}
 		for _, name := range []string{"accounts", "activeAccounts", "pairedAccounts", "readingAccounts", "sharingAccounts", "roomsReading", "readings", "roomsWithRuns", "wishlistEntries", "taskAccounts", "discordRooms"} {
 			totals = append(totals, m{"name": name, "type": "number", "min": 0, "onlyInt": true})
