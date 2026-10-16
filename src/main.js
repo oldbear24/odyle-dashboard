@@ -19,7 +19,7 @@ import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, o
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder } from './partyview.js';
 import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
-import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, waiting } from './armory.js';
+import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -297,10 +297,25 @@ function clearRoom() { room = null; members = []; wishlist = []; runs = []; dung
 let armoryServers = null, armoryAnswer = null, armoryResults = null, armoryChosen = null, armoryTimer = 0;
 const armoryKey = 'odyle.armory';
 function armoryChoice() { try { return JSON.parse(storage.getItem(armoryKey)) || {}; } catch { return {}; } }
+// Bookmarked characters (#72), in this browser only: no account needed, nothing sent anywhere.
+const bookmarksKey = 'odyle.armory.bookmarks';
+const bookmarks = () => readBookmarks(storage.getItem(bookmarksKey));
+function keepBookmarks(list) {
+  try { storage.setItem(bookmarksKey, JSON.stringify(list)); return true; }
+  catch { toast(t('This browser does not let Odyle keep bookmarks.')); return false; }
+}
+function toggleBookmark() {
+  if (!armoryAnswer?.profile) return;
+  const list = bookmarks(), name = armoryAnswer.profile.name, on = isBookmarked(list, armoryAnswer);
+  if (!on && list.length >= bookmarkLimit) return toast(t('You can keep up to {n} bookmarks. Remove one first.', { n: bookmarkLimit }));
+  if (!keepBookmarks(on ? removeBookmark(list, `${armoryAnswer.region}/${armoryAnswer.serverId}/${armoryAnswer.characterId}`) : addBookmark(list, armoryAnswer, new Date().toISOString()))) return;
+  armoryRender(); toast(on ? t('Removed {name} from your bookmarks.', { name }) : t('Bookmarked {name}. The armory page lists it.', { name }));
+}
 const armoryRefreshable = () => armoryAnswer?.state === 'fresh' && armoryAnswer.fetchedAt && Date.now() + serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
 function armoryRender(searching = false) {
   const chosen = armoryChosen || armoryChoice();
-  shell(armoryAnswer ? armoryProfile(armoryAnswer, Date.now() + serverOffset, armoryRefreshable()) : armorySearch(armoryServers || [], chosen, armoryResults, searching), 'armory', armoryAnswer?.profile?.name || t('Armory'));
+  const now = Date.now() + serverOffset, marks = bookmarks();
+  shell(armoryAnswer ? armoryProfile(armoryAnswer, now, armoryRefreshable(), isBookmarked(marks, armoryAnswer)) : armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now), 'armory', armoryAnswer?.profile?.name || t('Armory'));
 }
 async function armoryPage(path, ticket, refresh = false) {
   clearTimeout(armoryTimer);
@@ -313,7 +328,9 @@ async function armoryPage(path, ticket, refresh = false) {
     try { answer = await pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`, refresh ? { query: { refresh: 1 } } : {}); }
     catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryAnswer = armoryResults = null; armoryRender(); return toast(t(error.message)); }
     if (ticket !== navigation) return;
-    online = true; armoryAnswer = answer; armoryRender();
+    online = true; armoryAnswer = answer;
+    if (answer.profile && isBookmarked(bookmarks(), answer)) keepBookmarks(refreshBookmark(bookmarks(), answer));
+    armoryRender();
     if (waiting(answer) || answer.state === 'failed') armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, answer.retryAfter || 5) * 1000);
     return;
   }
@@ -904,6 +921,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
+    if (el.dataset.armoryUnmark) { keepBookmarks(removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
     if (el.dataset.shareNew) {
@@ -1012,6 +1030,7 @@ app.addEventListener('click', async e => {
       case 'tasks': await go('/tasks'); break;
       case 'armory': closeModal(); await go('/armory'); break;
       case 'armory-refresh': await armoryPage(shown, navigation, true); break;
+      case 'armory-bookmark': toggleBookmark(); break;
       case 'account': if (!pb.authStore.isValid || demo) await go('/'); else await go('/account'); break;
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;
@@ -1161,6 +1180,7 @@ app.addEventListener('change', async e => {
   catch (error) { el.checked = !done; el.disabled = false; failure(error); }
 });
 app.addEventListener('click', e => { if (e.target.closest('#toast')) e.target.closest('#toast').classList.remove('show'); });
+window.addEventListener('storage', e => { if (e.key === bookmarksKey && shown?.startsWith('/armory') && document.activeElement?.name !== 'name') armoryRender(); });
 app.addEventListener('focusin', e => { if (e.target.matches?.('.link-field')) e.target.select(); });
 // A closed dialog may have held back room changes (rename, roles); draw them now. A closed
 // pairing dialog stops following its link.

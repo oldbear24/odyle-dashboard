@@ -60,3 +60,34 @@ test('the search form keeps the last region and server and lists what PLAYNC fou
   assert.match(found, /href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="><strong>Ka<\/strong><span>Level 45 · Asmodians · Lumiel/);
   assert.match(armorySearch(regions, {}, []), /PLAYNC lists no character of that name on this server\./);
 });
+
+test('bookmarks keep characters in this browser, newest first, with their last opened numbers', async () => {
+  const { readBookmarks, addBookmark, removeBookmark, refreshBookmark, isBookmarked, bookmarkKey, armorySearch, armoryProfile } = await import('../src/armory.js');
+  let list = addBookmark([], answer(), '2026-10-16T12:00:00.000Z');
+  assert.deepEqual(list, [{ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', name: 'Ka<b>', server: 'Lumiel', class: 'Chanter', level: 45, combatPower: 107458, itemLevel: 1671, fetchedAt: answer().fetchedAt, savedAt: '2026-10-16T12:00:00.000Z' }]);
+  assert.equal(addBookmark(list, answer(), 'later'), list, 'a character is bookmarked once');
+  const other = answer({ characterId: 'QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', profile: { ...profile, name: 'Other' } });
+  list = addBookmark(list, other, '2026-10-16T12:05:00.000Z');
+  assert.deepEqual(list.map(b => b.name), ['Other', 'Ka<b>']);
+  // Opening a bookmarked profile brings its row up to date, in its place.
+  list = refreshBookmark(list, answer({ profile: { ...profile, combatPower: 120000 }, fetchedAt: new Date(now).toISOString() }));
+  assert.deepEqual([list[1].combatPower, list[1].savedAt, list[0].name], [120000, '2026-10-16T12:00:00.000Z', 'Other']);
+  assert.ok(isBookmarked(list, { region: 'eu', serverId: '2304', characterId: other.characterId }));
+  // Read back from storage: broken, foreign or repeated entries are left out.
+  const stored = JSON.stringify([...list, list[0], { name: 'x', region: 'xx', serverId: 1, characterId: 'y' }, null, 'text']);
+  assert.deepEqual(readBookmarks(stored).map(b => b.name), ['Other', 'Ka<b>']);
+  assert.deepEqual([readBookmarks('not json'), readBookmarks('{}'), readBookmarks(null)], [[], [], []]);
+  // The armory page lists them above the form, escaped, and marks them in results.
+  const regions = [{ region: 'GLOBAL_EU', elyos: ['Siel'], asmodian: ['Lumiel'] }];
+  const page = armorySearch(regions, {}, [{ name: 'Other', level: 45, race: 2, server: 'Lumiel', serverId: 2304, region: 'eu', characterId: other.characterId }], false, list, now);
+  assert.match(page, /Bookmarked characters <span>2<\/span>/);
+  assert.match(page, /<strong>Ka&lt;b&gt;<\/strong><span>Level 45 · Chanter · Lumiel<\/span><span class="armory-mark-power">120,000 CP · item level 1,671<small>as of 0s ago<\/small>/);
+  assert.match(page, new RegExp(`data-armory-unmark="${bookmarkKey(list[1]).replace(/[/=-]/g, '\$&')}"`));
+  assert.match(page, /<strong>Other <span class="armory-star"/);
+  assert.ok(page.indexOf('armory-bookmarks') < page.indexOf('armory-form'));
+  assert.deepEqual(removeBookmark(list, bookmarkKey(list[0])).map(b => b.name), ['Ka<b>']);
+  assert.doesNotMatch(armorySearch(regions, {}, null, false, [], now), /armory-bookmarks/);
+  // The profile's button says whether it is bookmarked.
+  assert.match(armoryProfile(answer(), now, false, true), /aria-pressed="true"[^>]*>★ Bookmarked/);
+  assert.match(armoryProfile(answer(), now, false, false), /aria-pressed="false"[^>]*>☆ Bookmark</);
+});
