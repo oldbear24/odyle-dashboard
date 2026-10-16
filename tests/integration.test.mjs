@@ -666,6 +666,11 @@ test('accounts list their paired PCs and remove one without signing out elsewher
   assert.equal((await action('session', {}, me)).status, 200);
   page = await account(); const deskId = page.devices.find(d => d.name === 'DESK-PC').id;
   assert.equal(page.apps.find(a => a.sessionId === session.sessionId).device, deskId);
+  // Rooms name the account's own readers by PC, so the dashboard does not ask to connect one.
+  const readers = (await request('/api/odyle/rooms', undefined, me, 'GET')).data.readers;
+  assert.equal(readers.length, 2); assert.equal(readers.find(r => r.sessionId === session.sessionId).name, 'DESK-PC');
+  for (const r of readers) assert.deepEqual(Object.keys(r).sort(), ['lastContactAt', 'name', 'sessionId']);
+  assert.deepEqual((await request('/api/odyle/rooms', undefined, other, 'GET')).data.readers, []);
   // A PC runs one app: its next session (a restart, an update) replaces the one it left open,
   // and the character that session read stays valid for the restarted app to take over.
   const fields = { characterName: 'Restarter', server: 'Lumiel', region: 'GLOBAL_EU', value: 500, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };

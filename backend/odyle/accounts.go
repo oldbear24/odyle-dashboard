@@ -331,14 +331,57 @@ func join(e *core.RequestEvent) error {
 	})
 }
 
+// readersOf lists the account's own Windows apps with an open reader session, the latest
+// contact first: the session, the computer name of the PC that opened it (empty for an
+// app that opened it without its device key) and its last contact. Rooms and snapshots
+// carry it, so the dashboard names the PC that reads instead of asking to connect one.
+// One query, and one more for the PC names when a session has a PC.
+func readersOf(app core.App, userId string) ([]any, error) {
+	found, err := app.FindRecordsByFilter("publisher_sessions", "user = {:user} && expiresAt > {:now}", "-updated", 10, 0, dbx.Params{"user": userId, "now": stamp(time.Now())})
+	if err != nil {
+		return nil, err
+	}
+	sessions, names, devices := views[ReaderSession](found), map[string]string{}, []string{}
+	for _, s := range sessions {
+		if s.Device() != "" {
+			devices = append(devices, s.Device())
+		}
+	}
+	if len(devices) > 0 {
+		paired, err := app.FindRecordsByIds("desktop_devices", unique(devices))
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range views[Device](paired) {
+			names[d.Id] = d.Name()
+		}
+	}
+	type reader struct{ session, name, contact string }
+	list := make([]reader, len(sessions))
+	for i, s := range sessions {
+		list[i] = reader{s.Id, names[s.Device()], contactAt(app, s)}
+	}
+	sort.SliceStable(list, func(a, b int) bool { return list[a].contact > list[b].contact })
+	out := make([]any, len(list))
+	for i, r := range list {
+		out[i] = map[string]any{"sessionId": r.session, "name": r.name, "lastContactAt": r.contact}
+	}
+	return out, nil
+}
+
 // rooms answers with one query for the memberships, one for their rooms and one for
-// the settings; serverNow lets the dashboard correct its clock without a heartbeat
-// round trip. The Windows app shows the announcement from here, as it refreshes rooms
-// every 15 seconds anyway, and learns whether packet readers are paused.
+// the settings, plus the account's readers (readersOf); serverNow lets the dashboard
+// correct its clock without a heartbeat round trip. The Windows app shows the
+// announcement from here, as it refreshes rooms every 15 seconds anyway, and learns
+// whether packet readers are paused.
 func rooms(e *core.RequestEvent) error {
 	return run(e, func() error {
 		rules := readSettings(e.App)
 		memberships, err := membershipsWhere(e.App, "user = {:user}", dbx.Params{"user": e.Auth.Id})
+		if err != nil {
+			return err
+		}
+		readers, err := readersOf(e.App, e.Auth.Id)
 		if err != nil {
 			return err
 		}
@@ -356,7 +399,7 @@ func rooms(e *core.RequestEvent) error {
 			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "rooms": out})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out})
 	})
 }
 
@@ -364,7 +407,7 @@ func rooms(e *core.RequestEvent) error {
 // characters, instead of two lookups per member. Others see only the characters a
 // member linked to this room; members always see all of their own, each flagged with
 // whether it is shared here. The announcement rides along, so an open dashboard room
-// needs no separate request for it.
+// needs no separate request for it, and so do the viewer's own readers (readersOf).
 func snapshot(e *core.RequestEvent) error {
 	return run(e, func() error {
 		id := e.Request.PathValue("id")
@@ -421,7 +464,11 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": rules.Dungeons, "announcement": announcement(rules)})
+		readers, err := readersOf(e.App, e.Auth.Id)
+		if err != nil {
+			return err
+		}
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": rules.Dungeons, "announcement": announcement(rules), "readers": readers})
 	})
 }
 

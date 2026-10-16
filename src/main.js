@@ -12,6 +12,7 @@ import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
 import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applyShared, applyMembership } from './live.js';
+import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, onlineReader, countdown, readerLabel, pairingSlot } from './pairing.js';
 import { party as partyOf, character as readinessOf } from './readiness.js';
 import './style.css';
 import './accounts.css';
@@ -31,6 +32,10 @@ let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false,
 let windowsRelease = null, windowsReleaseAt = 0;
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
 let account = null, renderedAccount = '';
+// The account's own Windows readers (readers in GET /rooms and the snapshot), kept current
+// by the heartbeats on its own topic: buttons name the PC that reads instead of asking to
+// connect one.
+let readers = [];
 // The message superusers set under Server controls, refreshed every minute at most: from
 // the rooms list or a room snapshot, which carry it, or on its own when neither came in
 // that minute. Hiding it lasts until the text changes.
@@ -77,14 +82,25 @@ function shell(content, active = 'overview') {
 // installed web app looks like one but is not.
 const standalone = () => navigator.standalone === true || Boolean(window.matchMedia?.('(display-mode: standalone)').matches);
 const embedded = () => inAppBrowser(navigator.userAgent, standalone());
+// What Odyle is and what its reader does, where players decide to use it: the welcome
+// page, the pairing dialog and Reader & privacy.
+const scopeText = () => t("Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic, automates play or collects combat data. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.");
+const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 function welcome(joining = false) {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${joining ? `<p class="join-note">${icon('link')} ${t('You were invited to a room. Sign in with Discord and you join it right away.')}</p>` : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p></main>`);
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${joining ? `<p class="join-note">${icon('link')} ${t('You were invited to a room. Sign in with Discord and you join it right away.')}</p>` : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p>${scopeNote()}</main>`);
 }
 function libraryView() {
-  shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR ADVENTURE, SAVED')}</div><h1>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })}<span class="mint">.</span></h1><p>${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section><section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2><button class="button secondary" data-action="reading">${icon('plus')} ${t('Connect reader')}</button></div><div class="member-grid">${characterCards()}</div></section></main>`, 'library');
+  shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR ADVENTURE, SAVED')}</div><h1>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })}<span class="mint">.</span></h1><p>${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section><section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2>${readerButton(`${icon('plus')} ${t('Connect reader')}`)}</div><div class="member-grid">${characterCards()}</div></section></main>`, 'library');
 }
 const roomItems = () => rooms.map(r => `<button class="room-item" data-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))} · ${esc(t('{cost} Odyle per cube', { cost: r.cost }))}</small></span>${icon('arrow')}</button>`).join('') || `<p class="intro">${t('Create your first room, or join one with an invite.')}</p>`;
 const characterCards = () => ownCards() || `<div class="info-panel"><h3>${t('Every character gets its own reading.')}</h3><p>${t('Connect the Windows reader to read Odyle straight from the game. Values update live while the reader runs and stay saved when you leave a room or sign out.')}</p>${appLink('text-button', t('Download the Windows app'))}</div>`;
+// The PC that reads for this account now, or the way to connect a reader: an account
+// whose reader is online is not asked to pair again (its dialog offers another PC).
+const readerNow = () => onlineReader(readers, Date.now() + serverOffset);
+function readerButton(connect) {
+  const reader = readerNow();
+  return reader ? `<button class="button secondary reader-button reader-online" data-action="reading" title="${esc(t('Show the reader or pair another PC'))}"><i></i>${esc(readerLabel(reader.name))}</button>` : `<button class="button secondary reader-button" data-action="reading">${connect}</button>`;
+}
 // Links to the Windows app's newest release: version and package links when the
 // backend knows them, GitHub's stable latest-release page otherwise.
 async function loadWindowsRelease() {
@@ -125,7 +141,7 @@ function sharingMatrix() {
 function flattened() { return members.flatMap(m => { const added = (m.characters || []).filter(c => c.shared ?? m.sharing); return added.length ? added.map(c => ({ ...c, sharing: true, user: m.user, membershipId: m.id, role: m.role, displayName: m.displayName })) : [{ ...m, id: '', characterName: '', confirmed: false, lastReadingAt: '', source: 'packet' }]; }); }
 function addBar() {
   if (me()?.role === 'viewer') return `<div class="sharing-bar"><span>${t('Viewers cannot add characters to this room.')}</span></div>`;
-  if (!mine().length) return `<div class="sharing-bar"><span>${t('Save a character with the Windows app to add it here.')}</span><button class="button secondary" data-action="reading">${t('Connect reader')}</button></div>`;
+  if (!mine().length) return `<div class="sharing-bar"><span>${t('Save a character with the Windows app to add it here.')}</span>${readerButton(t('Connect reader'))}</div>`;
   const missing = mine().filter(c => !c.shared);
   if (!missing.length) return '';
   return `<div class="sharing-bar"><span>${t('Not in this room')}</span><div class="add-chips">${missing.map(c => `<button class="add-chip" data-share="${esc(c.id)}" data-enabled="true" title="${esc(t('Add {name} to this room', { name: c.characterName }))}">${icon('plus')}${esc(c.characterName)}</button>`).join('')}${missing.length > 1 ? `<button class="text-button" data-action="add-all">${t('Add all')}</button>` : ''}</div></div>`;
@@ -136,19 +152,20 @@ let rendered = '', renderedLibrary = '';
 const stable = list => list.map(({ lastSeenAt, updated, characters, ...rest }) => ({ ...rest, characters: characters?.map(({ lastSeenAt: _seen, updated: _updated, ...c }) => c) }));
 // Hook responses list record fields in a different order each time; sort keys so identical data compares equal.
 const canonical = value => JSON.stringify(value, (key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
-function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), wishlist, runs, dungeons, flattened().map(c => status(c, now))]); }
+function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), wishlist, runs, dungeons, flattened().map(c => status(c, now)), readerNow()?.name ?? null]); }
 function updateAges() {
   const now = Date.now() + serverOffset;
   document.querySelectorAll('[data-age]').forEach(el => { el.textContent = age(el.dataset.age, now); });
   document.querySelectorAll('[data-starts]').forEach(el => { el.textContent = startsIn(timestamp(el.dataset.starts), now); });
 }
 function renderDashboard() { if (signature() === rendered) updateAges(); else dashboard(); }
-function librarySignature() { const now = Date.now() + serverOffset; return canonical([stable([{ characters }]), characters.map(c => status({ ...c, sharing: true }, now)), rooms.map(r => [r.id, r.name, r.role, r.cost, r.sharedCharacters])]); }
+function librarySignature() { const now = Date.now() + serverOffset; return canonical([stable([{ characters }]), characters.map(c => status({ ...c, sharing: true }, now)), rooms.map(r => [r.id, r.name, r.role, r.cost, r.sharedCharacters]), readerNow()?.name ?? null]); }
 function renderSharing() { const el = document.querySelector('.share-matrix'); if (el) el.innerHTML = sharingMatrix(); }
 // Redraws the rooms, the saved characters and the sharing list without touching the room forms.
 function renderLibrary() {
   const grid = document.querySelector('.personal-characters .member-grid'), list = document.querySelector('.room-section .room-list'); if (!grid || !list) return;
   renderedLibrary = librarySignature(); list.innerHTML = roomItems(); grid.innerHTML = characterCards();
+  const button = document.querySelector('.personal-characters .reader-button'); if (button) button.outerHTML = readerButton(`${icon('plus')} ${t('Connect reader')}`);
   document.querySelector('.room-section h2 span').textContent = rooms.length; document.querySelector('.personal-characters h2 span').textContent = characters.length; renderSharing();
 }
 // Accounts with a live character in this room, for the dots on the wishlist and runs.
@@ -238,7 +255,7 @@ function dashboard() {
   const now = Date.now() + serverOffset, party = flattened(), { characters: actual, ready, players, lowest, cubes } = partyOf(party, now, room.cost);
   const lowestName = lowest ? esc(lowest.displayName) + (lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`) : '';
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
-  keepingDrafts(() => shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR NEXT ADVENTURE')}</div><h1>${t('Party overview')}<span class="mint">.</span></h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${t('Every last confirmed value stays saved.')}</p></div><div class="heading-actions">${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Room settings') : t('Room')}</button>${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button>` : ''}</div></section><section class="stats"><article><div class="stat-caption">${t('CHARACTER READINESS')} ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">${t('Fresh characters with enough for a cube')}</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">${t('LOWEST PLAYER ODYLE')} ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString(locale()) : '—'}<span class="unit">${t('energy')}</span></div><div class="stat-detail">${lowest ? `${lowestName} · ${esc(tn(players.length, 'best character of {n} player', 'best character of each of {n} players'))}` : t('No current readings; old values stay on their cards')}</div></article><article><div class="stat-caption">${t('PARTY CUBES')} ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${esc(tn(cubes, 'cube', 'cubes'))}</span></div><div class="stat-detail">${esc(t('Lowest count in the room · {cost} Odyle per cube', { cost: room.cost }))}</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? t('Illustrative readings') : t('Live room updates')}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>${t('A spot for your next ally')}</strong><span>${t('Invite another Discord account')}</span></button></div></section>${wishlistSection(now)}${plannedRuns(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>${t('Your data. Your call.')}</h3><p>${t('Account-owned characters. Room-scoped sharing.')}</p></div></div><p>${t('All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.')}</p><button class="text-button" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">${t('BEFORE YOU HEAD OUT')}</div><h3>${t('Check the character you’re taking.')}</h3><p>${esc(tn(ready.length, '{n} character can currently claim a cube at {cost} Odyle.', '{n} characters can currently claim a cube at {cost} Odyle.', { cost: room.cost }))} ${t('A stale value remains stored but does not count as ready.')}</p><button class="button secondary" data-action="${demo ? 'help' : 'reading'}">${demo ? t('How readings work') : t('Connect packet reader')} ${icon('arrow')}</button></article></section></main>`));
+  keepingDrafts(() => shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR NEXT ADVENTURE')}</div><h1>${t('Party overview')}<span class="mint">.</span></h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${t('Every last confirmed value stays saved.')}</p></div><div class="heading-actions">${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Room settings') : t('Room')}</button>${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button>` : ''}</div></section><section class="stats"><article><div class="stat-caption">${t('CHARACTER READINESS')} ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">${t('Fresh characters with enough for a cube')}</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">${t('LOWEST PLAYER ODYLE')} ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString(locale()) : '—'}<span class="unit">${t('energy')}</span></div><div class="stat-detail">${lowest ? `${lowestName} · ${esc(tn(players.length, 'best character of {n} player', 'best character of each of {n} players'))}` : t('No current readings; old values stay on their cards')}</div></article><article><div class="stat-caption">${t('PARTY CUBES')} ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${esc(tn(cubes, 'cube', 'cubes'))}</span></div><div class="stat-detail">${esc(t('Lowest count in the room · {cost} Odyle per cube', { cost: room.cost }))}</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? t('Illustrative readings') : t('Live room updates')}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>${t('A spot for your next ally')}</strong><span>${t('Invite another Discord account')}</span></button></div></section>${wishlistSection(now)}${plannedRuns(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>${t('Your data. Your call.')}</h3><p>${t('Account-owned characters. Room-scoped sharing.')}</p></div></div><p>${t('All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.')}</p><button class="text-button" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">${t('BEFORE YOU HEAD OUT')}</div><h3>${t('Check the character you’re taking.')}</h3><p>${esc(tn(ready.length, '{n} character can currently claim a cube at {cost} Odyle.', '{n} characters can currently claim a cube at {cost} Odyle.', { cost: room.cost }))} ${t('A stale value remains stored but does not count as ready.')}</p>${demo ? `<button class="button secondary" data-action="help">${t('How readings work')} ${icon('arrow')}</button>` : readerButton(`${t('Connect packet reader')} ${icon('arrow')}`)}</article></section></main>`));
 }
 function card(c, index) {
   const now = Date.now() + serverOffset, cost = room?.cost || perCube, { state, known, cubes, ready } = readinessOf(c, now, cost), fresh = state === 'live';
@@ -298,10 +315,79 @@ async function historyDialog(id, name) {
   modal(esc(t('{name} · Odyle history', { name })), `<p>${t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${data.readings.length ? historyList(data.readings) : ''}`, true);
   bindHistoryChart(document.querySelector('#modal .history-chart'));
 }
-async function desktopDialog() {
+// The pairing dialog (Pair Windows app, Connect reader; pairing.js). It shows this
+// browser's unused connection link again, or asks for one, with a countdown to its
+// expiry; an account whose reader is online sees that reader first. While it is open, the
+// account's news (or, without realtime, a look every ten seconds) tells it when the PC
+// paired and what it reads. When pairing is paused, it says so and keeps the downloads.
+let pairing = null, pairingTimer = 0;
+async function desktopDialog(another = false) {
   if (!pb.authStore.isValid || demo) return toast(t('Sign in with Discord to connect your reader.'));
-  const [pair] = await Promise.all([send('desktop-code'), loadWindowsRelease()]), link = connectionLink(backend, pair.code);
-  modal(t('Connect your packet reader'), `<p>${t('Copy this link, then click <strong>Paste link & connect</strong> in the Windows app. The reader starts by itself and follows the character you log in with.')}</p><button class="button primary" data-copy="${esc(link)}" data-copied="${esc(t('Connection link copied.'))}">${icon('copy')} ${t('Copy connection link')}</button><p>${t('The link expires in five minutes and works once. The app then stays paired, even after weeks switched off, until you disconnect it or sign out everywhere. The app requires Npcap.')}</p>${downloadPanel()}<div class="info-panel"><h3>${t('How it works')}</h3><p>${t('Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.')}</p></div>`);
+  const [data] = await Promise.all([pairingAccount(), loadWindowsRelease()]), now = Date.now() + serverOffset;
+  const p = pairing = { user: pb.authStore.record.id, step: 'loading', account: data, checkedAt: Date.now() };
+  const saved = savedPairing(storage, p.user, now), paired = saved && pairedWith(data?.devices, saved), online = onlineReader(readerList(data), now);
+  // A link used since this browser asked for it: the PC it paired.
+  if (paired) { forgetPairing(storage); Object.assign(p, { step: 'paired', device: paired.id }); }
+  else if (online && !another) Object.assign(p, { step: 'online', reader: online });
+  modal(t('Connect your packet reader'), `<div class="pairing-slot">${pairingSlot(pairingView(p))}</div>${downloadPanel()}<div class="info-panel"><h3>${t('How it works')}</h3><p>${t('Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.')}</p></div>${scopeNote()}`);
+  clearInterval(pairingTimer); pairingTimer = setInterval(pairingTick, 1000);
+  if (p.step === 'loading') await openLink(p);
+}
+// The account's PCs and readers; null when the server cannot tell now.
+async function pairingAccount() {
+  try { const data = await pb.send('/api/odyle/account'); serverOffset = Date.parse(data.serverNow) - Date.now(); readers = readerList(data); return data; }
+  catch (error) { if (error?.status === 401) throw error; return null; }
+}
+// This browser's link while it is unused, else a new one.
+async function openLink(p) {
+  const saved = savedPairing(storage, p.user, Date.now() + serverOffset);
+  if (saved && !pairedWith(p.account?.devices, saved)) { showLink(p, saved); return renderPairing(); }
+  forgetPairing(storage); Object.assign(p, { step: 'loading' }); renderPairing();
+  try { const pair = await send('desktop-code'); if (pairing !== p) return; rememberPairing(storage, p.user, pair); showLink(p, pair); }
+  catch (error) { if (error?.status === 401) { stopPairing(); return expired(); } if (pairing !== p) return; Object.assign(p, { step: 'refused', problem: error?.message || 'Request could not be completed.' }); }
+  renderPairing();
+}
+function showLink(p, pair) {
+  try { Object.assign(p, { step: 'link', pair, link: connectionLink(backend, pair.code) }); }
+  catch (error) { Object.assign(p, { step: 'refused', problem: error.message }); }
+}
+const pairingReading = p => p.account?.apps?.find(a => a.device === p.device && a.character)?.character || '';
+function pairingView(p) {
+  if (p.step === 'link') return { step: 'link', link: p.link, left: timestamp(p.pair.expiresAt) - Date.now() - serverOffset };
+  if (p.step === 'refused') return { step: 'refused', problem: p.problem, paused: p.problem === 'Pairing new PCs is paused for now. Try again later.' };
+  if (p.step === 'paired') return { step: 'paired', pc: p.account?.devices?.find(d => d.id === p.device)?.name || '', character: pairingReading(p) };
+  if (p.step === 'online') return { step: 'online', pc: p.reader.name, character: p.reader.character };
+  return { step: p.step };
+}
+function renderPairing() { const el = document.querySelector('#modal[open] .pairing-slot'); if (el && pairing) el.innerHTML = pairingSlot(pairingView(pairing)); }
+function stopPairing() { clearInterval(pairingTimer); pairingTimer = 0; pairing = null; }
+// Waiting for the PC to pair, or for its first character.
+const pairingWaits = p => p.step === 'link' || p.step === 'expired' || (p.step === 'paired' && !pairingReading(p));
+function pairingTick() {
+  if (!pairing || !document.querySelector('#modal[open] .pairing-slot')) return stopPairing();
+  if (pairing.step === 'link') {
+    const left = timestamp(pairing.pair.expiresAt) - Date.now() - serverOffset, el = document.querySelector('#modal [data-pair-expires]');
+    if (left <= 0) { forgetPairing(storage); pairing.step = 'expired'; renderPairing(); } else if (el) el.textContent = countdown(left);
+  }
+  if (!live && !document.hidden && pairingWaits(pairing) && Date.now() - pairing.checkedAt >= 10000) checkPairing();
+}
+// Asks the account page's data whether the link paired a PC and what that PC reads; news
+// arriving meanwhile asks once more afterwards.
+async function checkPairing() {
+  const p = pairing; if (!p || !pairingWaits(p)) return;
+  if (p.checking) { p.again = true; return; }
+  p.checking = true;
+  try {
+    do {
+      p.again = false; p.checkedAt = Date.now();
+      const data = await pairingAccount(); if (pairing !== p) return; if (!data) continue;
+      p.account = data;
+      const paired = p.step !== 'paired' && p.pair && pairedWith(data.devices, p.pair);
+      if (paired) { forgetPairing(storage); Object.assign(p, { step: 'paired', device: paired.id }); }
+      renderPairing();
+    } while (p.again);
+  } catch (error) { if (error?.status === 401) { stopPairing(); expired(); } }
+  finally { p.checking = false; }
 }
 async function send(action, body = {}) {
   const data = await pb.send('/api/odyle/' + action, { method: 'POST', body });
@@ -324,7 +410,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -342,7 +428,7 @@ async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
   if (ticket !== navigation) return;
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -378,6 +464,7 @@ function roomPresence(id, data) {
 // changed, or its readers sent heartbeats. A page fetches its data again when the
 // realtime connection comes back, as news may have been missed meanwhile.
 let ownTopic = null, ownTopicUser = '', connectTopic = null, live = false, connects = 0, disconnected;
+const startedReaders = new Set();
 async function watchOwnTopic() {
   const id = pb.authStore.record?.id;
   if (!id || ownTopicUser === id) return;
@@ -407,7 +494,14 @@ async function ownNews(data) {
     if (data.refresh) { if (!room && !later()) await refreshPage(); }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
     if (data.seen) applySeen(data.seen, characters);
-    if (data.contact) applyContact(data.contact, account?.apps);
+    if (data.contact) {
+      applyContact(data.contact, account?.apps); applyContact(data.contact, readers);
+      // A reader started since the room was fetched: the snapshot names its PC (other pages hear of it as news).
+      const started = Object.keys(data.contact).filter(id => !readers.some(r => r.sessionId === id) && !startedReaders.has(id));
+      if (room && started.length && !later()) { started.forEach(id => startedReaders.add(id)); await refreshRoom(); }
+    }
+    // An open pairing dialog looks whether its PC paired or reads now; a hidden tab looks once it is shown.
+    if (pairing && (data.refresh || data.characters)) { if (document.hidden) pairing.missed = true; else checkPairing(); }
     renderPage();
   } catch (error) { if (error?.status === 401) return expired(); online = false; renderConnection(); }
 }
@@ -418,7 +512,7 @@ async function refreshPage() {
   else if (shown === '/account') await refreshAccount();
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
@@ -524,7 +618,11 @@ async function tick() {
   } catch (error) { if (error?.status === 401) return expired(); online = false; }
   finally { renderConnection(); }
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && timer) tick(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (timer) tick();
+  if (pairing?.missed) { pairing.missed = false; checkPairing(); }
+});
 function unreachable() {
   clearInterval(timer); timer = 0; online = false;
   shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('STILL SIGNED IN')}</div><h1>${t('The Odyle server is out of reach')}<span class="mint">.</span></h1><p class="intro">${t('Your sign-in is kept. The dashboard tries again every ten seconds and opens your page as soon as the server answers.')}</p><button class="button secondary" data-action="retry">${t('Try again now')} ${icon('arrow')}</button></main>`);
@@ -565,8 +663,8 @@ async function discordLogin() {
   await authenticated();
 }
 async function logout() {
-  // Invite codes stay usable for 30 minutes; a shared computer must not keep them.
-  await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); pb.authStore.clear(); forget(); forgetAllInvites(storage); clearRoom(); rooms = []; characters = []; tasks = []; account = null; online = false;
+  // Invite codes stay usable for 30 minutes and pairing codes for five; a shared computer must not keep them.
+  await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); stopPairing(); pb.authStore.clear(); forget(); forgetAllInvites(storage); forgetPairing(storage); clearRoom(); rooms = []; characters = []; readers = []; tasks = []; account = null; online = false;
   await go('/', true);
 }
 function demoSession() {
@@ -686,11 +784,13 @@ app.addEventListener('click', async e => {
       case 'invite': inviteDialog(); break;
       case 'room-settings': roomSettings(); break;
       case 'reading': await desktopDialog(); break;
+      case 'pair-another': if (pairing) await openLink(pairing); break;
+      case 'new-pairing': if (pairing) { forgetPairing(storage); await openLink(pairing); } break;
       case 'add-all': { const result = await send('sharing', { roomId: room.id, enabled: true }); changedRoom(() => applyShared(me(), result.sharedCharacters)); break; }
       // Codes already sent stop working, so replacing them asks first.
       case 'generate-invites': if (invites.length) { ask(t('Revoke the current codes?'), t('Invite links and codes already sent stop working at once, and new ones replace them. Members already in the room stay.'), t('Revoke & generate'), { action: 'confirm-generate-invites' }); break; } // falls through
       case 'confirm-generate-invites': invites = (await send('invites', { roomId: room.id })).invites; rememberInvites(storage, room.id, invites); inviteDialog(); break;
-      case 'desktop': await desktopDialog(); break;
+      case 'desktop': await desktopDialog(true); break;
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [
         t('Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.'),
@@ -700,6 +800,7 @@ app.addEventListener('click', async e => {
         t('The Windows app is a free download from its GitHub releases; My rooms & characters links the newest version, and an installed app updates itself from new releases. It pairs once with a one-time link, stays paired until you disconnect it and reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.'),
         t('The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for 30 days as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.'),
         t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
+        scopeText(),
       ].map(p => `<p>${p}</p>`).join('')); break;
       case 'session': if (!pb.authStore.isValid || demo) await go('/'); else modal(t('Your Discord account'), `<p>${esc(pb.authStore.record.displayName)} · ${t('Rooms and characters remain saved after sign-out.')}</p><div class="modal-actions"><button class="button secondary" data-action="account">${t('Account & data')}</button><button class="button secondary" data-action="library">${t('My rooms & characters')}</button><button class="button secondary" data-action="tasks">${t('Daily & weekly tasks')}</button><button class="button secondary" data-action="desktop">${t('Pair Windows app')}</button></div><button class="text-button" data-action="logout">${t('Sign out of this browser')}</button>`); break;
       case 'leave-room': ask(esc(t('Leave {room}?', { room: room.name })), t('You lose access to this room, your wishlist entries and your place on planned runs. Your characters stay on your account; you need a new invite to come back.'), t('Leave room'), { action: 'confirm-leave' }); break;
@@ -708,7 +809,7 @@ app.addEventListener('click', async e => {
       case 'export': download(JSON.stringify(await pb.send('/api/odyle/export'), null, 2), `odyle-data-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); break;
       case 'sign-out-everywhere': ask(t('Sign out everywhere?'), t('Every other browser and every paired Windows app loses access and must sign in or pair again. This browser stays signed in.'), t('Sign out everywhere'), { action: 'confirm-sign-out-everywhere' }); break;
       // The new token ends every realtime sign-in of the account, this browser's too: subscribe again with it.
-      case 'confirm-sign-out-everywhere': { const data = await send('sign-out-everywhere'); pb.authStore.save(data.token, data.record); await unwatchOwnTopic(); closeModal(); toast(t('Signed out everywhere else. Pair your Windows app again to keep reading.')); await show(true); break; }
+      case 'confirm-sign-out-everywhere': { const data = await send('sign-out-everywhere'); pb.authStore.save(data.token, data.record); forgetPairing(storage); await unwatchOwnTopic(); closeModal(); toast(t('Signed out everywhere else. Pair your Windows app again to keep reading.')); await show(true); break; }
       case 'delete-account': modal(t('Delete your account?'), `<p>${t('Your characters, their history, your memberships, wishlist entries and tasks are deleted for good. Rooms you own pass to their longest-standing player, or close if there is none. Download your data first if you want to keep it.')}</p><label>${esc(t('Type {name} to confirm', { name: pb.authStore.record.displayName }))}<input id="delete-confirm" autocomplete="off"></label><button class="button danger" data-action="confirm-delete-account">${t('Delete account for good')}</button><button class="button secondary" data-action="close-dialog">${t('Keep it')}</button>`); break;
       case 'confirm-delete-account': {
         if (document.querySelector('#delete-confirm')?.value.trim() !== pb.authStore.record.displayName) return toast(t('Type your display name exactly as shown to confirm.'));
@@ -779,8 +880,9 @@ app.addEventListener('change', async e => {
 });
 app.addEventListener('click', e => { if (e.target.closest('#toast')) e.target.closest('#toast').classList.remove('show'); });
 app.addEventListener('focusin', e => { if (e.target.matches?.('.link-field')) e.target.select(); });
-// A closed dialog may have held back room changes (rename, roles); draw them now.
-app.addEventListener('close', e => { if (e.target.id === 'modal' && room && !demo) renderDashboard(); }, true);
+// A closed dialog may have held back room changes (rename, roles); draw them now. A closed
+// pairing dialog stops following its link.
+app.addEventListener('close', e => { if (e.target.id !== 'modal') return; stopPairing(); if (room && !demo) renderDashboard(); }, true);
 // A picture that fails to load (removed meanwhile, server unreachable) uncovers the initials.
 app.addEventListener('error', e => { if (e.target.matches?.('.portrait img')) e.target.closest('.portrait-photo').remove(); }, true);
 // The page language is ready before the first page is drawn; without its dictionary it stays English.

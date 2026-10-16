@@ -399,6 +399,65 @@ test('the account page renames, switches to Czech, exports data, deletes charact
   } finally { await close(); }
 });
 
+test('pairing shows one link with a countdown, confirms the PC it paired and names the reader', async () => {
+  const user = await account('Pairing player');
+  const { page, errors, close } = await open(user, '#/');
+  const linkOf = () => page.locator('#modal .link-field').inputValue();
+  try {
+    await page.locator('.personal-characters .reader-button', { hasText: 'Connect reader' }).click();
+    const first = await linkOf(); assert.match(first, /#odyle-pair=[A-Z2-9]{16}$/);
+    assert.match(await page.locator('#modal .scope-note').innerText(), /unofficial fan project/);
+    // The countdown runs while the dialog is open.
+    const left = await page.locator('#modal [data-pair-expires]').innerText(); assert.match(left, /^[45]:\d\d$/);
+    await page.waitForFunction(before => document.querySelector('#modal [data-pair-expires]')?.textContent !== before, left);
+    await shot(page, 'pairing');
+    // The unused link comes back after closing the dialog and after a reload, instead of a new one.
+    await page.keyboard.press('Escape'); await page.locator('.personal-characters .reader-button').click();
+    assert.equal(await linkOf(), first);
+    await page.reload(); await page.locator('.personal-characters .reader-button').click();
+    assert.equal(await linkOf(), first);
+    // A new link replaces the old one on the server too.
+    await page.locator('#modal [data-action="new-pairing"]').click();
+    await page.waitForFunction(old => { const field = document.querySelector('#modal .link-field'); return field && field.value !== old; }, first);
+    const link = await linkOf(), code = link.split('odyle-pair=')[1];
+    assert.equal((await request('/api/odyle/pair', { code: first.split('odyle-pair=')[1], name: 'Old link' })).status, 400);
+    // The Windows app pairs with it: the open dialog names the PC, then the character it reads.
+    const paired = (await request('/api/odyle/pair', { code, name: 'UI-DESK' })).data, app = { token: paired.token };
+    await page.locator('#modal .pairing-done', { hasText: 'Paired with UI-DESK' }).waitFor();
+    assert.match(await page.locator('#modal .pairing-done').innerText(), /Waiting for the game/);
+    const session = (await request('/api/odyle/session', { deviceKey: paired.deviceKey }, app)).data;
+    const reading = await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Pairlight', server: 'Lumiel', region: 'GLOBAL_EU', value: 120, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, app);
+    assert.equal(reading.status, 200, JSON.stringify(reading.data));
+    await page.locator('#modal .pairing-done', { hasText: 'Reading Pairlight' }).waitFor();
+    await shot(page, 'pairing-done');
+    await page.locator('#modal [data-action="close-dialog"].button').click();
+    // An account whose reader is online is not asked to connect one: the button names the PC.
+    await page.locator('.personal-characters .reader-online', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    await shot(page, 'reader-online');
+    await page.locator('.personal-characters .reader-online').click();
+    await page.locator('#modal .pairing-done', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    assert.match(await page.locator('#modal .pairing-done').innerText(), /Reading Pairlight/);
+    assert.equal(await page.locator('#modal .link-field').count(), 0);
+    await page.keyboard.press('Escape');
+    const created = (await request('/api/odyle/create', { name: 'Reading room' }, user)).data;
+    await request('/api/odyle/heartbeat', { sessionId: session.sessionId }, app);
+    await page.goto(url + '/#/room/' + created.room.id);
+    await page.locator('.next-panel .reader-online', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    await shot(page, 'room-reader-online');
+    // Paused pairing still opens the dialog: it says why and keeps the downloads.
+    const operator = (await request('/__test__/superuser', {})).data;
+    assert.equal((await request('/api/odyle/admin/settings', { pairingPaused: true }, operator)).status, 200);
+    try {
+      await navigate(page, 'library'); await page.locator('.heading-actions [data-action="desktop"]').click();
+      await page.locator('#modal .pairing-problem', { hasText: 'Pairing new PCs is paused' }).waitFor();
+      assert.match(await page.locator('#modal').innerText(), /download and install the app now/);
+      assert.equal(await page.locator('#modal .app-panel').count(), 1);
+      await shot(page, 'pairing-paused');
+    } finally { await request('/api/odyle/admin/settings', { pairingPaused: false }, operator); }
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('an unreachable server keeps the sign-in and the connection state follows it', async () => {
   const user = await account('Outage');
   // English whatever the machine's language, as the checks read English text.
@@ -445,6 +504,7 @@ test('Discord sign-in offers this page in another browser when its window cannot
   const { page, errors, close } = await open(null, '#/');
   try {
     await page.locator('[data-action="discord"]').waitFor();
+    assert.match(await page.locator('.welcome .scope-note').innerText(), /not affiliated with or endorsed by NCSOFT[\s\S]*at your own risk/);
     assert.equal(await page.locator('.in-app-note').count(), 0); assert.equal(await page.locator('.signin-help').isVisible(), false);
     await page.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
     await page.locator('[data-action="discord"]').click();

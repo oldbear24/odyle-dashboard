@@ -115,3 +115,51 @@ func TestPausedReadersAreToldAndTheirReadingsRefused(t *testing.T) {
 		s.Test(t)
 	}
 }
+
+// Rooms and snapshots name the account's own PCs that read (readersOf), latest contact
+// first, and never another account's.
+func TestRoomsAndSnapshotsNameTheAccountsReaders(t *testing.T) {
+	app := newTestApp(t)
+	me, mate := newUser(t, app, "Me"), newUser(t, app, "Mate")
+	room := saved(t, app, "party_rooms", map[string]any{"owner": me.Id, "name": "Raid", "cost": 40})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": me.Id, "role": "owner"})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
+	desk := saved(t, app, "desktop_devices", map[string]any{"user": me.Id, "digest": "desk-digest", "name": "DESK-PC"})
+	reading := saved(t, app, "publisher_sessions", map[string]any{"user": me.Id, "expiresAt": expiry(86400), "device": desk.Id})
+	keyless := saved(t, app, "publisher_sessions", map[string]any{"user": me.Id, "expiresAt": expiry(86400)})
+	ended := saved(t, app, "publisher_sessions", map[string]any{"user": me.Id, "expiresAt": expiry(-60), "device": desk.Id})
+	other := saved(t, app, "publisher_sessions", map[string]any{"user": mate.Id, "expiresAt": expiry(86400)})
+	session, err := findAs[ReaderSession](app, "publisher_sessions", reading.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beat(app, session, nil, time.Now().Add(time.Minute))
+	readers, err := readersOf(app, me.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readers) != 2 {
+		t.Fatalf("readers: %v", readers)
+	}
+	first, second := readers[0].(map[string]any), readers[1].(map[string]any)
+	if first["sessionId"] != reading.Id || first["name"] != "DESK-PC" || second["sessionId"] != keyless.Id || second["name"] != "" {
+		t.Fatalf("readers: %v", readers)
+	}
+	raw, err := me.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := map[string]string{"Authorization": raw}
+	reuse := func(testing.TB) *tests.TestApp { return app }
+	// Answers list their keys in any order.
+	listed := []string{`"readers":[{`, `"sessionId":"` + reading.Id + `"`, `"name":"DESK-PC"`, `"sessionId":"` + keyless.Id + `"`, `"name":""`}
+	for _, s := range []tests.ApiScenario{
+		{Name: "rooms name the readers", Method: http.MethodGet, URL: "/api/odyle/rooms", Headers: auth,
+			ExpectedStatus: 200, ExpectedContent: listed, NotExpectedContent: []string{ended.Id, other.Id}},
+		{Name: "snapshots name the viewer's readers", Method: http.MethodGet, URL: "/api/odyle/snapshot/" + room.Id, Headers: auth,
+			ExpectedStatus: 200, ExpectedContent: listed, NotExpectedContent: []string{ended.Id, other.Id}},
+	} {
+		s.TestAppFactory, s.DisableTestAppCleanup = reuse, true
+		s.Test(t)
+	}
+}
