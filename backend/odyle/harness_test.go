@@ -60,8 +60,13 @@ func newTestApp(t testing.TB) *tests.TestApp {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(app.Cleanup)
 	Register(app)
+	// A character saved by the test starts its portrait lookup in the background; it ends
+	// before the app is torn down, or it races the clean-up (go test -race).
+	t.Cleanup(func() {
+		stateOf(app).portraits.wait()
+		app.Cleanup()
+	})
 	return app
 }
 

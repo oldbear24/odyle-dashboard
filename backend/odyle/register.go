@@ -100,6 +100,7 @@ func Register(app core.App) {
 	watchSettings(app)
 	watchCharacters(app)
 	watchMembership(app)
+	watchRunPosts(app)
 	scheduleJobs(app)
 }
 

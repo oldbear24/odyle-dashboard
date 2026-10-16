@@ -42,7 +42,7 @@ var shown = map[string][]string{
 	// The dashboard
 	"create": {"name"}, "join": {}, "rename": {"roomId", "name"}, "leave": {"roomId"}, "close": {"roomId"}, "invites": {"roomId"}, "revoke": {"roomId", "memberId"}, "role": {"roomId", "memberId", "role"}, "transfer": {"roomId", "memberId"},
 	"invite-create": {"roomId", "role", "expiresIn", "maxUses"}, "invite-revoke": {"roomId", "inviteId"}, "invite-preview": {},
-	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove"}, "discord-webhook": {"roomId", "language"},
+	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove"}, "discord-webhook": {"roomId", "language", "startPost"},
 	"task": {"id:taskId", "done", "move", "remove"}, "profile": {"displayName"}, "desktop-code": {}, "forget-device": {"deviceId"}, "sign-out-everywhere": {}, "delete-account": {}, "delete-character": {"characterId"}, "notifications": {}, "push-subscribe": {"language", "device"}, "push-unsubscribe": {}, "push-test": {}, "share-new": {"roomId", "enabled"},
 }
 

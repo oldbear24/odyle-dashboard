@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.13.0 · 2026-10-17
+
+### New
+- **Discord reminders link back to the room** and stay correct: a post is updated when the run changes and marked when it is cancelled or done.
+- Room owners choose up to three reminder times (5 minutes to 2 hours) and can have a run posted as it starts too.
+- **Discord mentions**: turn them on under Account & data → Notifications and the reminder of a run you are going to pings you in Discord, even with the PC off.
+- Room settings show the webhook's name and whether the last post got through, and why reminders stopped if Discord dropped the webhook.
+
+### Fixed
+- A run is never posted twice when the server fails to note a reminder.
+
 ## 0.12.0 · 2026-10-16
 
 ### New

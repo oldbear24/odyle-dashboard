@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -253,6 +254,25 @@ func (r *Room) Owner() string           { return r.GetString("owner") }
 func (r *Room) Name() string            { return r.GetString("name") }
 func (r *Room) DiscordWebhook() string  { return r.GetString("discordWebhook") }
 func (r *Room) DiscordLanguage() string { return r.GetString("discordLanguage") }
+func (r *Room) DiscordStartPost() bool  { return r.GetBool("discordStartPost") }
+
+// DiscordLeads are the room's reminder times before a run in minutes, largest first; 15 until chosen.
+func (r *Room) DiscordLeads() []int64 {
+	var saved []int64
+	_ = json.Unmarshal([]byte(r.GetString("discordLeads")), &saved)
+	leads := []int64{}
+	for _, lead := range saved {
+		if slices.Contains(discordLeadChoices, lead) && !slices.Contains(leads, lead) && len(leads) < 3 {
+			leads = append(leads, lead)
+		}
+	}
+	if len(leads) == 0 {
+		return []int64{15}
+	}
+	slices.Sort(leads)
+	slices.Reverse(leads)
+	return leads
+}
 
 func (r *Room) SetOwner(user string) { r.Set("owner", user) }
 func (r *Room) SetName(name string)  { r.Set("name", name) }
