@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.11.0 · 2026-10-16
+
+### New
+- **Phones** get a bar at the bottom with Overview, Rooms, Daily, Armory and Account; Invitations and Reader & privacy are in the avatar menu.
+- The pages in the sidebar are links, so they open in a new tab too.
+
+### Changed
+- Small print is at least 11 px on narrow screens, the sidebar with icons only names its items, and the breadcrumb leads home.
+
+### Fixed
+- Signed out, the dashboard no longer says "Not connected" while the server answers.
+- Screen readers get a skip link, dialogs named by their heading, and who is live in the wishlist and runs as text.
+
 ## 0.10.0 · 2026-10-16
 
 ### New
