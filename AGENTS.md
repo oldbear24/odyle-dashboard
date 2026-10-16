@@ -15,7 +15,7 @@ Odyle uses semantic versions, **MAJOR.MINOR.PATCH**. The version lives in `packa
 | **PATCH** (0.0.x) | No new behaviour | A bug fix, wording, styling, performance, a refactor, a dependency update |
 
 - Reset the lower parts: 0.6.3 plus a feature is 0.7.0; 0.7.0 plus a breaking change is 1.0.0.
-- One pull request with several changes bumps once, by the largest. A pull request stacked on another unmerged one bumps from the version on `main`, not from the other branch.
+- One pull request with several changes bumps once, by the largest. Pull requests open side by side each bump from the version on `main`; before the second one merges, bump it again above the first, or its release fails. A pull request stacked on another bumps from that one's version.
 - What does not ship needs no bump and makes no release: `docs/`, Markdown files, `tests/`, `.github/`, `scripts/`, `*_test.go`, lint and editor settings (`scripts/version.mjs` has the exact list).
 - Change the version with an edit of that one line (or `npm version <x.y.z> --no-git-tag-version`, then undo any other reformatting it does).
 - Name the bump in the pull request description ("Version 0.6.0 → 0.7.0: new features").
