@@ -8,8 +8,9 @@ import (
 )
 
 // state is what the backend keeps in server memory only: the settings, the newest
-// packets, the last hour's traffic, the background jobs' records and the cached Windows
-// release. A restart clears it.
+// packets, the last hour's traffic, the background jobs' records, the cached Windows
+// release and backup list, and what kept the environment's backup and proxy settings
+// from applying. A restart clears it.
 type state struct {
 	mu        sync.Mutex
 	startedAt string
@@ -31,6 +32,10 @@ type state struct {
 	portraits *portraitWork // has its own lock
 
 	webhooks webhookWaits // has its own lock
+
+	backups     backupList // has its own lock
+	backupSetup string     // why ODYLE_BACKUP_S3_* did not apply (backups.go)
+	proxySetup  string     // why ODYLE_TRUSTED_PROXY_* did not apply (proxy.go)
 
 	releaseAt        time.Time // the last lookup
 	release          map[string]any

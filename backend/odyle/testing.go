@@ -124,6 +124,14 @@ func fixtures(se *core.ServeEvent) {
 		sightings(e.App).deliver(e.App)
 		return map[string]any{}, nil
 	})
+	// Ends every realtime connection, as a server going away does; clients reconnect.
+	fixture(se, "drop-realtime", func(e *core.RequestEvent, _ body) (any, error) {
+		broker := e.App.SubscriptionsBroker()
+		for id := range broker.Clients() {
+			broker.Unregister(id)
+		}
+		return map[string]any{}, nil
+	})
 	// Runs the expiry job and reports which of the given invite codes it kept.
 	fixture(se, "cleanup", func(e *core.RequestEvent, b body) (any, error) {
 		if _, err := cleanup(e.App); err != nil {
@@ -209,6 +217,15 @@ func fixtures(se *core.ServeEvent) {
 		_, err = save(e.App, "room_members", map[string]any{"room": room.Id, "user": b["user"], "role": "owner", "sharing": true})
 		return room, err
 	})
+	// A dungeon catalog of plain names, as saved before catalog entries.
+	fixture(se, "legacy-catalog", func(e *core.RequestEvent, b body) (any, error) {
+		record := findSettings(e.App)
+		if record == nil {
+			return nil, badRequest("No odyle_settings record.")
+		}
+		record.Set("dungeons", []string{"Fire Temple", "Udas Temple"})
+		return map[string]any{}, e.App.Save(record)
+	})
 	// The passing of time: an aged account, portrait check, invite, reading or run.
 	fixture(se, "inactive", func(e *core.RequestEvent, b body) (any, error) {
 		user, err := e.App.FindRecordById("users", b.str("user"))
@@ -237,7 +254,8 @@ func fixtures(se *core.ServeEvent) {
 		if err != nil {
 			return nil, err
 		}
-		invite.Set("expiresAt", time.Now().Add(-time.Minute).UTC().Format(isoLayout))
+		// A minute ago, or the given number of days and a minute ago.
+		invite.Set("expiresAt", time.Now().Add(-time.Minute-time.Duration(count(b["days"]))*24*time.Hour).UTC().Format(isoLayout))
 		return map[string]any{}, e.App.Save(invite)
 	})
 	fixture(se, "age", func(e *core.RequestEvent, b body) (any, error) {

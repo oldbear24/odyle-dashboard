@@ -2,10 +2,12 @@ package odyle
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
@@ -50,6 +52,127 @@ func TestRoutesOverHTTP(t *testing.T) {
 		{Name: "Go profiles are for superusers", Method: http.MethodGet, URL: "/api/odyle/admin/pprof/heap", Headers: token(lead), ExpectedStatus: 403, ExpectedContent: []string{`"status":403`}},
 	}
 	for _, s := range scenarios {
+		s.TestAppFactory, s.DisableTestAppCleanup = reuse, true
+		s.Test(t)
+	}
+}
+
+// Packet readers paused under Server controls: apps hear of it from rooms, sessions and
+// heartbeats, readings are refused with 503 (400 for apps released before the switch,
+// which then wait a minute instead of reconnecting), heartbeats no longer keep a
+// reading live and the rest keeps working.
+func TestPausedReadersAreToldAndTheirReadingsRefused(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := writeSettings(app, body{"portraitsPaused": true}); err != nil {
+		t.Fatal(err)
+	}
+	reader := newUser(t, app, "Reader")
+	session := saved(t, app, "publisher_sessions", map[string]any{"user": reader.Id, "expiresAt": expiry(86400)})
+	character := saved(t, app, "characters", map[string]any{"user": reader.Id, "characterName": "Paused", "server": "Lumiel", "region": "GLOBAL_EU", "readingSession": session.Id, "value": 100, "confirmed": true, "valid": true})
+	raw, err := reader.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := map[string]string{"Authorization": raw}
+	readingBy := func(sequence int, adapter string) *strings.Reader {
+		return strings.NewReader(`{"sessionId":"` + session.Id + `","sequence":` + strconv.Itoa(sequence) + `,"characterId":"` + character.Id + `","characterName":"Paused","server":"Lumiel","region":"GLOBAL_EU","value":140,"source":"packet","parserVersion":"` + adapter + `","confirmed":true}`)
+	}
+	reading := func(sequence int) *strings.Reader { return readingBy(sequence, "global-reference-v2") }
+	pause := func(paused bool) func(testing.TB, *tests.TestApp, *core.ServeEvent) {
+		return func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
+			if _, err := writeSettings(app, body{"readerPaused": paused}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	reuse := func(testing.TB) *tests.TestApp { return app }
+	scenarios := []tests.ApiScenario{
+		{Name: "rooms tell the app", Method: http.MethodGet, URL: "/api/odyle/rooms", Headers: auth, BeforeTestFunc: pause(true),
+			ExpectedStatus: 200, ExpectedContent: []string{`"readerPaused":true`}},
+		{Name: "a new session tells the app", Method: http.MethodPost, URL: "/api/odyle/session", Headers: auth, Body: strings.NewReader(`{}`),
+			ExpectedStatus: 200, ExpectedContent: []string{`"sessionId":`, `"readerPaused":true`}},
+		{Name: "heartbeats keep working and tell the app", Method: http.MethodPost, URL: "/api/odyle/heartbeat", Headers: auth,
+			Body: strings.NewReader(`{"sessionId":"` + session.Id + `","characterId":"` + character.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"serverNow":`, `"readerPaused":true`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, _ *http.Response) {
+				c, err := findAs[Character](app, "characters", character.Id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, seen := seenAt(app, c); seen {
+					t.Fatal("a paused reader's heartbeat kept its reading live")
+				}
+			}},
+		{Name: "readings of apps released before the switch are refused with 400", Method: http.MethodPost, URL: "/api/odyle/report", Headers: auth, Body: readingBy(1, "global-reference-v1"),
+			ExpectedStatus: 400, ExpectedContent: []string{`"message":"Packet readers are paused by the server operators."`}},
+		{Name: "readings are refused", Method: http.MethodPost, URL: "/api/odyle/report", Headers: auth, Body: reading(1),
+			ExpectedStatus: 503, ExpectedContent: []string{`"message":"Packet readers are paused by the server operators."`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, _ *http.Response) {
+				if c, _ := findAs[Character](app, "characters", character.Id); c.Value() != 100 || countOf(t, app, "character_readings") != 0 {
+					t.Fatalf("a paused reading was saved: %d", c.Value())
+				}
+			}},
+		{Name: "a stale mark still works", Method: http.MethodPost, URL: "/api/odyle/invalidate", Headers: auth,
+			Body: strings.NewReader(`{"sessionId":"` + session.Id + `","characterId":"` + character.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"success":true`}},
+		{Name: "once resumed, the next reading is saved with its adapter", Method: http.MethodPost, URL: "/api/odyle/report", Headers: auth, Body: reading(1), BeforeTestFunc: pause(false),
+			ExpectedStatus: 200, ExpectedContent: []string{`"value":140`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, _ *http.Response) {
+				points, err := allAs[HistoryPoint](app, "character_readings", "character = {:id}", dbx.Params{"id": character.Id})
+				if err != nil || len(points) != 1 || points[0].Adapter() != "global-reference-v2" {
+					t.Fatalf("history after the reading: %v", err)
+				}
+			}},
+		{Name: "rooms tell the app it may read again", Method: http.MethodGet, URL: "/api/odyle/rooms", Headers: auth,
+			ExpectedStatus: 200, ExpectedContent: []string{`"readerPaused":false`}},
+	}
+	for _, s := range scenarios {
+		s.TestAppFactory, s.DisableTestAppCleanup = reuse, true
+		s.Test(t)
+	}
+}
+
+// Rooms and snapshots name the account's own PCs that read (readersOf), latest contact
+// first, and never another account's.
+func TestRoomsAndSnapshotsNameTheAccountsReaders(t *testing.T) {
+	app := newTestApp(t)
+	me, mate := newUser(t, app, "Me"), newUser(t, app, "Mate")
+	room := saved(t, app, "party_rooms", map[string]any{"owner": me.Id, "name": "Raid", "cost": 40})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": me.Id, "role": "owner"})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
+	desk := saved(t, app, "desktop_devices", map[string]any{"user": me.Id, "digest": "desk-digest", "name": "DESK-PC"})
+	reading := saved(t, app, "publisher_sessions", map[string]any{"user": me.Id, "expiresAt": expiry(86400), "device": desk.Id})
+	keyless := saved(t, app, "publisher_sessions", map[string]any{"user": me.Id, "expiresAt": expiry(86400)})
+	ended := saved(t, app, "publisher_sessions", map[string]any{"user": me.Id, "expiresAt": expiry(-60), "device": desk.Id})
+	other := saved(t, app, "publisher_sessions", map[string]any{"user": mate.Id, "expiresAt": expiry(86400)})
+	session, err := findAs[ReaderSession](app, "publisher_sessions", reading.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beat(app, session, nil, time.Now().Add(time.Minute))
+	readers, err := readersOf(app, me.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(readers) != 2 {
+		t.Fatalf("readers: %v", readers)
+	}
+	first, second := readers[0].(map[string]any), readers[1].(map[string]any)
+	if first["sessionId"] != reading.Id || first["name"] != "DESK-PC" || second["sessionId"] != keyless.Id || second["name"] != "" {
+		t.Fatalf("readers: %v", readers)
+	}
+	raw, err := me.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := map[string]string{"Authorization": raw}
+	reuse := func(testing.TB) *tests.TestApp { return app }
+	// Answers list their keys in any order.
+	listed := []string{`"readers":[{`, `"sessionId":"` + reading.Id + `"`, `"name":"DESK-PC"`, `"sessionId":"` + keyless.Id + `"`, `"name":""`}
+	for _, s := range []tests.ApiScenario{
+		{Name: "rooms name the readers", Method: http.MethodGet, URL: "/api/odyle/rooms", Headers: auth,
+			ExpectedStatus: 200, ExpectedContent: listed, NotExpectedContent: []string{ended.Id, other.Id}},
+		{Name: "snapshots name the viewer's readers", Method: http.MethodGet, URL: "/api/odyle/snapshot/" + room.Id, Headers: auth,
+			ExpectedStatus: 200, ExpectedContent: listed, NotExpectedContent: []string{ended.Id, other.Id}},
+	} {
 		s.TestAppFactory, s.DisableTestAppCleanup = reuse, true
 		s.Test(t)
 	}

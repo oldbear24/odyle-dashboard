@@ -7,7 +7,16 @@ package odyle
 // rejected so an outdated or unknown client cannot write totals. Superusers can
 // accept more names, or stop one of these, under Server controls (settings.go).
 //
+// A Windows release ships to every installed app at once, so a new adapter is listed
+// here (or accepted under Server controls) and deployed before the release that sends
+// it. Once apps have moved on, superusers switch the older one off under Server
+// controls, and a later backend release drops it from this list.
+//
 // global-reference-v1: Global (Steam) stream decoder — length-prefixed frames,
 // transport flag, LZ4 blocks, 0B61 stat snapshot and 0C61 stat update for
 // field 1. Checked live on EU/Lumiel (startup read 0 + 390 = 390).
-var verifiedAdapters = []string{"global-reference-v1"}
+//
+// global-reference-v2: the same stream, with every 0B61/0C61 stat record read by one
+// parser pinned to Odyle's resource id 60000001, so records without a bonus or base
+// part are read and other counters are never taken for Odyle.
+var verifiedAdapters = []string{"global-reference-v1", "global-reference-v2"}

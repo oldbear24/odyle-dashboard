@@ -28,11 +28,13 @@ export function historyChart(readings, { now, cost }) {
   const data = points.map(p => [p.at, p.value, x(p.at), y(p.value)]);
   return `<figure class="history-chart" data-points="${esc(JSON.stringify(data))}"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(t('Odyle over time'))}">${grid}${cube}<path class="history-area" d="${line}V${y(0)}H${x(first)}Z"/><path class="history-line" d="${line}"/><line class="history-cross" y1="${pad.top}" y2="${height - pad.bottom}" x1="0" x2="0" visibility="hidden"/><circle class="history-dot" cx="${x(end)}" cy="${y(last.value)}" r="4"/><circle class="history-focus" r="4" cx="0" cy="0" visibility="hidden"/>${ticks}<rect class="history-hit" x="${pad.left}" y="0" width="${width - pad.left - pad.right}" height="${height}"/></svg><div class="history-tip" hidden></div></figure>`;
 }
-// Newest first, each with the change from the value before it.
-export function historyList(readings, limit = 12) {
+// Newest first, each with the change from the value before it. With hourlyBefore (a
+// character with more than 1,000 changes) the points before that time are each hour's
+// last change, so the changes left out are at least as many as the points.
+export function historyList(readings, limit = 12, hourlyBefore = null) {
   const rows = readings.map((r, i) => ({ ...r, delta: i ? r.value - readings[i - 1].value : null })).reverse().slice(0, limit);
-  const more = readings.length - rows.length;
-  return `<table class="history-table"><thead><tr><th>${t('Changed')}</th><th>${t('Odyle')}</th><th>${t('Change')}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(new Date(timestamp(r.at)).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${r.value.toLocaleString(locale())}</td><td>${r.delta === null ? '—' : (r.delta > 0 ? '+' : r.delta < 0 ? '−' : '±') + Math.abs(r.delta).toLocaleString(locale())}</td></tr>`).join('')}</tbody></table>${more > 0 ? `<p class="history-more">${esc(tn(more, '{n} earlier change not listed', '{n} earlier changes not listed'))}</p>` : ''}`;
+  const more = readings.length - rows.length, left = hourlyBefore ? tn(more, 'At least {n} earlier change not listed', 'At least {n} earlier changes not listed') : tn(more, '{n} earlier change not listed', '{n} earlier changes not listed');
+  return `<table class="history-table"><thead><tr><th>${t('Changed')}</th><th>${t('Odyle')}</th><th>${t('Change')}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(new Date(timestamp(r.at)).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${r.value.toLocaleString(locale())}</td><td>${r.delta === null ? '—' : (r.delta > 0 ? '+' : r.delta < 0 ? '−' : '±') + Math.abs(r.delta).toLocaleString(locale())}</td></tr>`).join('')}</tbody></table>${more > 0 ? `<p class="history-more">${esc(left)}</p>` : ''}`;
 }
 // Crosshair and tooltip: the pointer picks the nearest change on the time axis.
 export function bindHistoryChart(figure) {

@@ -19,7 +19,7 @@ test('every dashboard text and backend message has a Czech translation', async (
   }
   // The backend's messages (backend/odyle, its tests and test build aside).
   for (const source of sources('backend/odyle', '.go', name => !name.endsWith('_test.go') && name !== 'testing.go'))
-    for (const m of source.matchAll(new RegExp(`\\b(?:errors\\.New|badRequest|forbidden|notFound|unauthorized)\\(\\s*${literal}\\s*\\)`, 'g'))) if (typeof cs[value(m, 1)] !== 'string') missing.push(value(m, 1));
+    for (const m of source.matchAll(new RegExp(`\\b(?:errors\\.New|badRequest|forbidden|notFound|unauthorized|unavailable)\\(\\s*${literal}\\s*\\)`, 'g'))) if (typeof cs[value(m, 1)] !== 'string') missing.push(value(m, 1));
   // Messages of the PocketBase SDK and server that reach the toast as they are.
   for (const text of ['Something went wrong.', 'Too Many Requests.', 'Request entity too large.', 'The request requires valid record authorization token.', 'Only superusers can perform this action.', "The requested resource wasn't found.", 'Failed to fetch']) if (typeof cs[text] !== 'string') missing.push(text);
   for (const day of ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']) if (!cs[day]) missing.push(day);

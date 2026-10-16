@@ -25,7 +25,7 @@ import (
 // Server ids follow the game protocol (see odyle-windows GameIdentity.cs):
 // race * 1000 + region * 100 + list index + 1. Saved characters keep only the
 // server name and region, so the id is rebuilt here. NA has two search regions
-// (East 1xx, West 2xx) and both are tried.
+// (East 1xx, West 2xx) and both are tried, West also when East failed.
 var elyos = strings.Split("Siel,Nezekan,Vaizel,Kaisinel,Yustiel,Ariel,Fregion,Meslamtaeda,Hithanya,Nania,Tahabata,Luteros,Phernos,Daminu,Kasika,Bakarma,Tsenka,Kochi,Ishtar,Tiamat,Poeta,Verteron,Nathara,Talisra,Zumion,Nahid,Asahr,Caelid,Laveis,Perion,Dramata,Reda,Auldor,Vakron,Narun,Gartua,Chloris,Ione,Teina,Dymones,Bargott,Atheron,Ruthilis,Siliator,Idris,Satia,Estian,Rahu,Rhanman,Hebran", ",")
 var asmodian = strings.Split("Israphel,Zikel,Triniel,Lumiel,Marchutan,Azphel,Ereshkigal,Beritra,Nemon,Hadala,Ludra,Ulgorn,Munin,Odar,Zemurru,Kromede,Quai,Baba,Fafnir,Indnath,Ishalgen,Altgard,Agnita,Atiel,Valdemar,Lagta,Gerod,Urd,Ecco,Giselle,Kashapa,Stof,Berk,Nuakum,Grisilla,Santras,Reuben,Hugo,Kraki,Hystan,Rathman,Sigebert,Nazmun,Gelcos,Paton,Pelleir,Elvida,Ketu,Pydeon,Notun", ",")
 
@@ -109,10 +109,32 @@ func number(v any) float64 {
 	return -1
 }
 
+// The search lists names that contain the keyword, 20 to a page, so a short name can
+// come after longer ones: a lookup reads up to five pages, until the name or the last
+// page (by pagination.total; without it the first page is the last).
+const searchPageSize, searchPages = 20, 5
+
+// imageURL is the portrait link the search lists for the character, or "" when it does
+// not list it. A failed search returns its error only when no other search region
+// listed the character.
 func imageURL(name, server, region string) (string, error) {
+	var failure error
 	for _, s := range searches(server, region) {
+		link, err := searchServer(name, s)
+		if link != "" {
+			return link, nil
+		}
+		if err != nil && failure == nil {
+			failure = err
+		}
+	}
+	return "", failure
+}
+
+func searchServer(name string, s search) (string, error) {
+	for page := 1; page <= searchPages; page++ {
 		// encodeURIComponent: spaces as %20.
-		query := "keyword=" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20") + "&serverId=" + strconv.Itoa(s.serverId) + "&region=" + s.region + "&localeInfo=en-US&page=1&size=20"
+		query := "keyword=" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20") + "&serverId=" + strconv.Itoa(s.serverId) + "&region=" + s.region + "&localeInfo=en-US&page=" + strconv.Itoa(page) + "&size=" + strconv.Itoa(searchPageSize)
 		res, err := send(call{method: "GET", url: searchURL() + "?" + query, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 1 << 20})
 		if err != nil {
 			return "", err
@@ -131,6 +153,10 @@ func imageURL(name, server, region string) (string, error) {
 			if path, ok := hit["profileImageUrl"].(string); ok && strings.HasPrefix(path, "/") {
 				return imageBase() + path, nil
 			}
+			return "", nil
+		}
+		pagination, _ := found["pagination"].(map[string]any)
+		if len(hits) < searchPageSize || float64(page*searchPageSize) >= number(pagination["total"]) {
 			break
 		}
 	}
@@ -174,13 +200,18 @@ func portraitHash(image []byte) string {
 }
 
 // portraitWork keeps the PLAYNC lookups apart: at most two run at a time, whether the
-// job or a newly saved character started them, and never two for one character.
+// job or a newly saved character started them, and never two for one character. At
+// most ten newly saved characters wait for theirs (queued); the job looks up the rest,
+// five a minute.
 type portraitWork struct {
 	mu      sync.Mutex
 	idle    *sync.Cond // signalled when a lookup ends
 	running map[string]bool
+	queued  int
 	slots   chan struct{}
 }
+
+const queuedPortraits = 10
 
 func newPortraitWork() *portraitWork {
 	w := &portraitWork{running: map[string]bool{}, slots: make(chan struct{}, 2)}
@@ -199,14 +230,37 @@ func (w *portraitWork) claim(id string) bool {
 	return true
 }
 
+// queue starts the lookup of a newly saved character, unless one runs for it already
+// or ten wait, which leaves it to the job.
+func (w *portraitWork) queue(app core.App, id string) {
+	w.mu.Lock()
+	if w.running[id] || w.queued >= queuedPortraits {
+		w.mu.Unlock()
+		return
+	}
+	w.running[id] = true
+	w.queued++
+	w.mu.Unlock()
+	go func() {
+		if err := w.run(app, id, true); err != nil {
+			warn(app, "Odyle portrait lookup failed", "character", id, "error", message(err))
+		}
+	}()
+}
+
 // lookUp runs the claimed lookup of a character in one of the slots.
-func (w *portraitWork) lookUp(app core.App, id string) (err error) {
+func (w *portraitWork) lookUp(app core.App, id string) error { return w.run(app, id, false) }
+
+func (w *portraitWork) run(app core.App, id string, queued bool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("the portrait lookup failed: %v", r)
 		}
 		w.mu.Lock()
 		delete(w.running, id)
+		if queued {
+			w.queued--
+		}
 		w.mu.Unlock()
 		w.idle.Broadcast()
 	}()
@@ -225,15 +279,11 @@ func (w *portraitWork) wait() {
 }
 
 // watchCharacters gives a newly saved character its portrait right away, instead of
-// at the job's next run, unless superusers paused portraits.
+// at the job's next run, unless superusers paused portraits or ten wait already.
 func watchCharacters(app core.App) {
 	app.OnRecordAfterCreateSuccess("characters").BindFunc(func(e *core.RecordEvent) error {
-		if work := stateOf(e.App).portraits; !readSettings(e.App).PortraitsPaused && work.claim(e.Record.Id) {
-			go func(app core.App, id string) {
-				if err := work.lookUp(app, id); err != nil {
-					warn(app, "Odyle portrait lookup failed", "character", id, "error", message(err))
-				}
-			}(e.App, e.Record.Id)
+		if !readSettings(e.App).PortraitsPaused {
+			stateOf(e.App).portraits.queue(e.App, e.Record.Id)
 		}
 		return e.Next()
 	})
@@ -260,6 +310,10 @@ func gamePortrait(app core.App, id string) error {
 		if found != nil && (found.hash != c.PortraitHash() || c.Portrait() == "") {
 			c.SetPortrait(found.file, found.hash)
 		}
+		// A failed lookup says nothing about the listing, so it is retried as before.
+		if failure == nil {
+			c.PortraitListed(found != nil)
+		}
 		c.PortraitChecked()
 		return tx.Save(c)
 	}); err != nil {
@@ -268,16 +322,30 @@ func gamePortrait(app core.App, id string) error {
 	return failure
 }
 
-// refreshPortraits is a job: characters saved while portraits were paused (or whose
-// lookup failed) get theirs within a minute, missing ones are retried hourly and the
-// rest refresh daily. Five characters per run, two at a time, keep traffic to PLAYNC
-// low; a character whose lookup runs already is left to it. Superusers can pause it
-// (Server controls).
+// portraitsDue are the characters the job looks up: never looked up yet (saved while
+// portraits were paused, or more than ten at once); with a portrait, daily; without
+// one, an hour, six hours and a day after the first misses of the search, then weekly
+// (a failed lookup keeps the pace of the misses so far). Characters no reader has seen
+// for 60 days, or saved that long ago and never read, wait until a reader sees them.
+const portraitsDue = "(lastSeenAt >= {:dormant} || (lastSeenAt = '' && created >= {:dormant})) && (portraitCheckedAt = '' || (portrait != '' && portraitCheckedAt < {:day}) || " +
+	"(portrait = '' && ((portraitMisses <= 1 && portraitCheckedAt < {:hour}) || (portraitMisses = 2 && portraitCheckedAt < {:hours}) || (portraitMisses = 3 && portraitCheckedAt < {:day}) || portraitCheckedAt < {:week})))"
+
+const dormantCharacters = 60 * 24 * time.Hour
+
+// duePortraits are up to limit characters due, the longest unchecked first.
+func duePortraits(app core.App, limit int) ([]*core.Record, error) {
+	return app.FindRecordsByFilter("characters", portraitsDue, "portraitCheckedAt", limit, 0, dbx.Params{"dormant": ago(dormantCharacters),
+		"hour": ago(time.Hour), "hours": ago(6 * time.Hour), "day": ago(24 * time.Hour), "week": ago(7 * 24 * time.Hour)})
+}
+
+// refreshPortraits is a job: the characters due (portraitsDue) get their portrait, five
+// per run, two at a time, so traffic to PLAYNC stays low; a character whose lookup runs
+// already is left to it. Superusers can pause it (Server controls).
 func refreshPortraits(app core.App) (result, error) {
 	if readSettings(app).PortraitsPaused {
 		return result{Skipped: "paused"}, nil
 	}
-	due, err := app.FindRecordsByFilter("characters", "portraitCheckedAt = '' || (portrait = '' && portraitCheckedAt < {:hour}) || portraitCheckedAt < {:day}", "portraitCheckedAt", 5, 0, dbx.Params{"hour": ago(time.Hour), "day": ago(24 * time.Hour)})
+	due, err := duePortraits(app, 5)
 	if err != nil {
 		return result{}, err
 	}

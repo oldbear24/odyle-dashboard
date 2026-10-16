@@ -144,6 +144,19 @@ func (c *Character) SetPortrait(file any, hash string) {
 // PortraitChecked notes a portrait lookup now, whatever it found.
 func (c *Character) PortraitChecked() { c.Set("portraitCheckedAt", now()) }
 
+// PortraitMisses counts the lookups in a row the official search did not list the character.
+func (c *Character) PortraitMisses() int { return c.GetInt("portraitMisses") }
+
+// PortraitListed notes whether the official search listed the character: the portrait
+// job tries again later each time it did not.
+func (c *Character) PortraitListed(listed bool) {
+	if listed {
+		c.Set("portraitMisses", 0)
+	} else {
+		c.Set("portraitMisses", c.PortraitMisses()+1)
+	}
+}
+
 // SetLastSeenAt shows a later heartbeat in an answer (present); it is written separately.
 func (c *Character) SetLastSeenAt(at time.Time) {
 	if when, err := types.ParseDateTime(at); err == nil {
@@ -170,15 +183,21 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 	return changed
 }
 
-// HistoryPoint is one change of a character's Odyle (character_readings).
+// HistoryPoint is one change of a character's Odyle (character_readings), with the
+// packet adapter that decoded it.
 type HistoryPoint struct{ core.BaseRecordProxy }
 
 func (p *HistoryPoint) Character() string { return p.GetString("character") }
 func (p *HistoryPoint) Value() int64      { return p.GetInt64("value") }
+func (p *HistoryPoint) Adapter() string   { return p.GetString("adapter") }
 func (p *HistoryPoint) At() string        { return p.GetString("created") }
 
-// JSON is the point as history answers carry it.
-func (p *HistoryPoint) JSON() map[string]any { return map[string]any{"value": p.Value(), "at": p.At()} }
+// JSON is the point as history answers and the data export carry it.
+func (p *HistoryPoint) JSON() map[string]any { return historyJSON(p.Value(), p.At(), p.Adapter()) }
+
+func historyJSON(value int64, at, adapter string) map[string]any {
+	return map[string]any{"value": value, "at": at, "adapter": adapter}
+}
 
 // Member is an account's membership of a room (room_members): its role and the
 // characters it shares there.
@@ -213,12 +232,29 @@ func (r *Room) SetDiscord(webhook, language string) {
 	}
 }
 
-// Invite is a room's invite code for a role (room_invites); only its digest is stored.
+// Invite is a room's invite link for a role (room_invites); only its code's digest is
+// stored. Links made before 1791763231 have no maker, label or use limit.
 type Invite struct{ core.BaseRecordProxy }
 
 func (i *Invite) Room() string         { return i.GetString("room") }
 func (i *Invite) Role() string         { return i.GetString("role") }
 func (i *Invite) ExpiresAt() time.Time { return i.GetDateTime("expiresAt").Time() }
+func (i *Invite) CreatedBy() string    { return i.GetString("createdBy") }
+func (i *Invite) Label() string        { return i.GetString("label") }
+func (i *Invite) MaxUses() int64       { return i.GetInt64("maxUses") }
+func (i *Invite) Uses() int64          { return i.GetInt64("uses") }
+func (i *Invite) Created() string      { return i.GetString("created") }
+
+// Open reports whether the link still lets someone join: not expired and, when it has
+// a use limit, not used up.
+func (i *Invite) Open(at time.Time) bool {
+	return i.ExpiresAt().After(at) && (i.MaxUses() == 0 || i.Uses() < i.MaxUses())
+}
+
+// JSON is a link as its room owner's list shows it: never its code or digest.
+func (i *Invite) JSON() map[string]any {
+	return map[string]any{"id": i.Id, "role": i.Role(), "label": i.Label(), "expiresAt": i.GetString("expiresAt"), "maxUses": i.MaxUses(), "uses": i.Uses(), "created": i.Created()}
+}
 
 // PairingCode is a short-lived code that pairs a Windows app with an account
 // (desktop_codes); only its digest is stored.

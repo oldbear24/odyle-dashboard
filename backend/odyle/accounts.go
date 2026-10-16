@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,7 +106,8 @@ func ownSession(app core.App, userId, id string) (*ReaderSession, error) {
 }
 
 // Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
-// Rooms keep their legacy cost field, but every response reports the setting.
+// Rooms keep their legacy cost field, but every response reports the setting. A dungeon
+// of the catalog can cost its own amount (dungeonEntry), which only snapshots carry.
 func odylePerCube(app core.App) int64 { return readSettings(app).OdylePerCube }
 
 // The Discord webhook is a hidden field, so the public export never carries it; members
@@ -193,20 +195,66 @@ func mutate(e *core.RequestEvent, fn change) error {
 	})
 }
 
-func invite(app core.App, room *Room, role string) (map[string]any, error) {
+// Invite links last 30 minutes, a day (the default) or a week, and may be limited to a
+// number of joins. A room has up to 20 open links. An expired link is kept three more
+// days, so opening it still names its room (invitePreview) instead of saying nothing.
+var inviteLifetimes = []int{1800, 86400, 604800}
+
+const defaultInviteLifetime, openInviteLimit, inviteGrace = 86400, 20, 72 * time.Hour
+
+type inviteOptions struct {
+	role     string
+	lifetime int
+	maxUses  int64
+	label    string
+}
+
+// invite makes a link to the room: its code goes to the owner's browser once, the server
+// keeps the digest and the link's details (JSON).
+func invite(app core.App, room *Room, userId string, o inviteOptions) (map[string]any, error) {
 	code := security.RandomStringWithAlphabet(12, codeAlphabet)
-	record, err := newRecord(app, "room_invites")
+	made, err := newAs[Invite](app, "room_invites")
 	if err != nil {
 		return nil, err
 	}
-	record.Set("room", room.Id)
-	record.Set("role", role)
-	record.Set("digest", security.SHA256(code))
-	record.Set("expiresAt", expiry(1800))
-	if err := app.Save(record); err != nil {
+	made.Set("room", room.Id)
+	made.Set("role", o.role)
+	made.Set("digest", security.SHA256(code))
+	made.Set("expiresAt", expiry(o.lifetime))
+	made.Set("createdBy", userId)
+	made.Set("label", o.label)
+	made.Set("maxUses", o.maxUses)
+	if err := app.Save(made); err != nil {
 		return nil, err
 	}
-	return map[string]any{"code": code, "role": role, "expiresAt": record.GetString("expiresAt")}, nil
+	out := made.JSON()
+	out["code"] = code
+	return out, nil
+}
+
+// openInvites lists the room's links that still let someone join, player links first,
+// then the newest.
+func openInvites(app core.App, roomId string) ([]map[string]any, error) {
+	found, err := whereAs[Invite](app, "room_invites", "room = {:room} && expiresAt > {:now}", dbx.Params{"room": roomId, "now": stamp(time.Now())})
+	if err != nil {
+		return nil, err
+	}
+	at, open := time.Now(), []*Invite{}
+	for _, i := range found {
+		if i.Open(at) {
+			open = append(open, i)
+		}
+	}
+	sort.SliceStable(open, func(a, b int) bool {
+		if open[a].Role() != open[b].Role() {
+			return open[a].Role() == "reporter"
+		}
+		if open[a].Created() != open[b].Created() {
+			return open[a].Created() > open[b].Created()
+		}
+		return open[a].GetString("expiresAt") > open[b].GetString("expiresAt")
+	})
+	return pluck(open, (*Invite).JSON), nil
 }
 
 func addMember(app core.App, roomId, userId, role string) (*Member, error) {
@@ -232,12 +280,14 @@ func joinable(app core.App, userId string) error {
 	return nil
 }
 
-func roomInvites(app core.App, room *Room) ([]any, error) {
-	reporter, err := invite(app, room, "reporter")
+// roomInvites makes a player and a viewer link with the default lifetime: for a new room,
+// and for dashboards from before links were made one by one (invites).
+func roomInvites(app core.App, room *Room, userId string) ([]any, error) {
+	reporter, err := invite(app, room, userId, inviteOptions{role: "reporter", lifetime: defaultInviteLifetime})
 	if err != nil {
 		return nil, err
 	}
-	viewer, err := invite(app, room, "viewer")
+	viewer, err := invite(app, room, userId, inviteOptions{role: "viewer", lifetime: defaultInviteLifetime})
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +325,7 @@ func create(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		invites, err := roomInvites(app, room)
+		invites, err := roomInvites(app, room, user.Id)
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +347,7 @@ func join(e *core.RequestEvent) error {
 			return nil, err
 		}
 		invitation, err := firstAs[Invite](app, "room_invites", "digest", security.SHA256(normalizeCode(typed)))
-		if err != nil || !invitation.ExpiresAt().After(time.Now()) {
+		if err != nil {
 			return nil, badRequest("Invite is invalid or expired.")
 		}
 		room, err := findAs[Room](app, "party_rooms", invitation.Room())
@@ -309,8 +359,13 @@ func join(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
+		// A member opening the link again, even once it expired or was used up, lands in the
+		// room and uses none of its joins.
 		if len(existing) > 0 {
-			return map[string]any{"room": roomJSON(room, cost), "membership": existing[0]}, nil
+			return map[string]any{"room": roomJSON(room, cost), "membership": existing[0], "alreadyMember": true}, nil
+		}
+		if !invitation.Open(time.Now()) {
+			return nil, badRequest("Invite is invalid or expired.")
 		}
 		members, err := app.CountRecords("room_members", dbx.HashExp{"room": room.Id})
 		if err != nil {
@@ -326,19 +381,66 @@ func join(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
+		invitation.Set("uses", invitation.Uses()+1)
+		if err := app.Save(invitation); err != nil {
+			return nil, err
+		}
 		*affected = append(*affected, room.Id)
 		return map[string]any{"room": roomJSON(room, cost), "membership": member}, nil
 	})
 }
 
+// readersOf lists the account's own Windows apps with an open reader session, the latest
+// contact first: the session, the computer name of the PC that opened it (empty for an
+// app that opened it without its device key) and its last contact. Rooms and snapshots
+// carry it, so the dashboard names the PC that reads instead of asking to connect one.
+// One query, and one more for the PC names when a session has a PC.
+func readersOf(app core.App, userId string) ([]any, error) {
+	found, err := app.FindRecordsByFilter("publisher_sessions", "user = {:user} && expiresAt > {:now}", "-updated", 10, 0, dbx.Params{"user": userId, "now": stamp(time.Now())})
+	if err != nil {
+		return nil, err
+	}
+	sessions, names, devices := views[ReaderSession](found), map[string]string{}, []string{}
+	for _, s := range sessions {
+		if s.Device() != "" {
+			devices = append(devices, s.Device())
+		}
+	}
+	if len(devices) > 0 {
+		paired, err := app.FindRecordsByIds("desktop_devices", unique(devices))
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range views[Device](paired) {
+			names[d.Id] = d.Name()
+		}
+	}
+	type reader struct{ session, name, contact string }
+	list := make([]reader, len(sessions))
+	for i, s := range sessions {
+		list[i] = reader{s.Id, names[s.Device()], contactAt(app, s)}
+	}
+	sort.SliceStable(list, func(a, b int) bool { return list[a].contact > list[b].contact })
+	out := make([]any, len(list))
+	for i, r := range list {
+		out[i] = map[string]any{"sessionId": r.session, "name": r.name, "lastContactAt": r.contact}
+	}
+	return out, nil
+}
+
 // rooms answers with one query for the memberships, one for their rooms and one for
-// the settings; serverNow lets the dashboard correct its clock without a heartbeat
-// round trip. The Windows app shows the announcement from here, as it refreshes rooms
-// every 15 seconds anyway.
+// the settings, plus the account's readers (readersOf); serverNow lets the dashboard
+// correct its clock without a heartbeat round trip. The Windows app shows the
+// announcement from here, as it refreshes rooms every 15 seconds anyway, and learns
+// whether packet readers are paused.
 func rooms(e *core.RequestEvent) error {
 	return run(e, func() error {
 		rules := readSettings(e.App)
 		memberships, err := membershipsWhere(e.App, "user = {:user}", dbx.Params{"user": e.Auth.Id})
+		if err != nil {
+			return err
+		}
+		readers, err := readersOf(e.App, e.Auth.Id)
 		if err != nil {
 			return err
 		}
@@ -356,14 +458,17 @@ func rooms(e *core.RequestEvent) error {
 			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "rooms": out})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out})
 	})
 }
 
 // snapshot is a whole room in three queries: members, their accounts and all their
 // characters, instead of two lookups per member. Others see only the characters a
 // member linked to this room; members always see all of their own, each flagged with
-// whether it is shared here.
+// whether it is shared here. The announcement rides along, so an open dashboard room
+// needs no separate request for it, and so do the viewer's own readers (readersOf). The
+// dungeon catalog comes twice: `dungeons` keeps the names that older dashboards read,
+// and `catalog` adds each dungeon's cost, party size and category.
 func snapshot(e *core.RequestEvent) error {
 	return run(e, func() error {
 		id := e.Request.PathValue("id")
@@ -420,7 +525,11 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": rules.Dungeons})
+		readers, err := readersOf(e.App, e.Auth.Id)
+		if err != nil {
+			return err
+		}
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers})
 	})
 }
 
@@ -771,7 +880,8 @@ func appVersion(value any) string {
 // session opens a reader session. A paired app sends its device key, so removing the
 // PC ends this session too; a key the server no longer knows means the pairing ended
 // (401, and the app pairs again). Newer apps also send their version, for the
-// superuser dashboard's Apps page.
+// superuser dashboard's Apps page. Sessions open while packet readers are paused, so
+// the app learns of the pause from the answer.
 func session(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		var device *Device
@@ -821,7 +931,7 @@ func session(e *core.RequestEvent) error {
 		if err := app.Save(s); err != nil {
 			return nil, err
 		}
-		return map[string]any{"sessionId": s.Id, "sequence": 0}, nil
+		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused}, nil
 	})
 }
 
@@ -863,9 +973,23 @@ func sameCharacter(app core.App, userId string, data identity) ([]*Character, er
 	return charactersWhere(app, "user = {:user} && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }
 
-// report saves a reading of the Windows app.
+// Adapters of the Windows releases from before the reader pause. Those apps take any
+// 5xx answer to a reading for a lost connection and open a new session for it every 20
+// seconds, so while readers are paused their readings are refused with 400 instead,
+// which makes them wait a minute before sending again.
+var pauseUnawareAdapters = []string{"global-reference-v1"}
+
+// report saves a reading of the Windows app. While superusers pause packet readers
+// (Server controls) every reading is refused with 503; apps that know the switch stop
+// capturing until it is off, older ones keep sending and are refused (400, above).
 func report(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		if readSettings(app).ReaderPaused {
+			if contains(pauseUnawareAdapters, b.str("parserVersion")) {
+				return nil, badRequest("Packet readers are paused by the server operators.")
+			}
+			return nil, unavailable("Packet readers are paused by the server operators.")
+		}
 		session, err := ownSession(app, user.Id, b.str("sessionId"))
 		if err != nil {
 			return nil, err
@@ -893,7 +1017,8 @@ func report(e *core.RequestEvent) error {
 			// keeps the identity the game gave it.
 			character.SetIdentity(data.identity)
 		}
-		// Every change (the first reading included) is also kept in the character's history.
+		// Every change (the first reading included) is also kept in the character's history,
+		// with the adapter that decoded it.
 		changed := character.Read(data, session.Id)
 		if err := app.Save(character); err != nil {
 			return nil, err
@@ -905,6 +1030,7 @@ func report(e *core.RequestEvent) error {
 			}
 			point.Set("character", character.Id)
 			point.Set("value", data.value)
+			point.Set("adapter", data.parserVersion)
 			if err := app.Save(point); err != nil {
 				return nil, err
 			}
@@ -968,7 +1094,10 @@ func sharing(e *core.RequestEvent) error {
 
 // heartbeat is presence only: the session is in contact and the character it reads is
 // seen. Both are kept in memory and written every ten seconds (presence.go); the
-// character's rooms and its owner hear of it over realtime, without a snapshot.
+// character's rooms and its owner hear of it over realtime, without a snapshot. The
+// answer tells the app whether packet readers are paused; heartbeats work either way,
+// but while they are paused a heartbeat no longer keeps a reading live, so the
+// readings of apps that keep capturing turn stale.
 func heartbeat(e *core.RequestEvent) error {
 	return run(e, func() error {
 		b, err := requestBody(e)
@@ -986,13 +1115,13 @@ func heartbeat(e *core.RequestEvent) error {
 				if err != nil {
 					return err
 				}
-				if c.ReadingSession() == session.Id {
+				if c.ReadingSession() == session.Id && !readSettings(e.App).ReaderPaused {
 					read = c
 				}
 			}
 			beat(e.App, session, read, time.Now())
 		}
-		return e.JSON(200, map[string]any{"serverNow": now()})
+		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused})
 	})
 }
 
@@ -1035,6 +1164,8 @@ func closeRoom(e *core.RequestEvent) error {
 	})
 }
 
+// invites replaces every link of the room with a new player and viewer link, for
+// dashboards from before links were made and revoked one by one.
 func invites(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
@@ -1050,11 +1181,147 @@ func invites(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
-		fresh, err := roomInvites(app, room)
+		fresh, err := roomInvites(app, room, user.Id)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"invites": fresh}, nil
+	})
+}
+
+// inviteCreate makes one invite link for the owner: a role (player by default), a
+// lifetime (a day by default), an optional use limit and label. The answer carries the
+// code once, and the room's open links.
+func inviteCreate(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		room, err := owner(app, user.Id, b.str("roomId"))
+		if err != nil {
+			return nil, err
+		}
+		o := inviteOptions{role: "reporter", lifetime: defaultInviteLifetime}
+		if b.has("role") {
+			if o.role, _ = b.text("role"); o.role != "reporter" && o.role != "viewer" {
+				return nil, badRequest("Choose player or viewer.")
+			}
+		}
+		if b.has("expiresIn") {
+			seconds, err := integer(b["expiresIn"], "expiresIn", 0, maxSafeInteger)
+			if o.lifetime = int(seconds); err != nil || !slices.Contains(inviteLifetimes, o.lifetime) {
+				return nil, badRequest("An invite link lasts 30 minutes, 24 hours or 7 days.")
+			}
+		}
+		if b.has("maxUses") {
+			if o.maxUses, err = integer(b["maxUses"], "maxUses", 0, 50); err != nil {
+				return nil, badRequest("A use limit is a whole number up to 50, or 0 for none.")
+			}
+		}
+		if b.set("label") {
+			label, ok := b.text("label")
+			if o.label = trim(label); !ok || length(o.label) > 40 {
+				return nil, badRequest("A link label has up to 40 characters.")
+			}
+		}
+		open, err := openInvites(app, room.Id)
+		if err != nil {
+			return nil, err
+		}
+		if len(open) >= openInviteLimit {
+			return nil, badRequest("A room can have up to 20 open invite links. Revoke one first.")
+		}
+		made, err := invite(app, room, user.Id, o)
+		if err != nil {
+			return nil, err
+		}
+		listed, err := openInvites(app, room.Id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"invite": made, "invites": listed}, nil
+	})
+}
+
+// inviteRevoke deletes one link of the owner's room, so it stops working at once;
+// members who joined with it stay. A link already gone changes nothing. The answer
+// carries the room's open links.
+func inviteRevoke(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		room, err := owner(app, user.Id, b.str("roomId"))
+		if err != nil {
+			return nil, err
+		}
+		if link, err := findAs[Invite](app, "room_invites", b.str("inviteId")); err == nil && link.Room() == room.Id {
+			if err := app.Delete(link); err != nil {
+				return nil, err
+			}
+		}
+		listed, err := openInvites(app, room.Id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"invites": listed}, nil
+	})
+}
+
+// inviteList is GET /api/odyle/invites/{id}: the open links of the owner's room, from
+// any browser. Never their codes: only the browser that made a link can show it.
+func inviteList(e *core.RequestEvent) error {
+	return run(e, func() error {
+		room, err := owner(e.App, e.Auth.Id, e.Request.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		listed, err := openInvites(e.App, room.Id)
+		if err != nil {
+			return err
+		}
+		return e.JSON(200, map[string]any{"invites": listed})
+	})
+}
+
+// invitePreview tells whoever opens an invite link what it opens, before they sign in:
+// the room, who made the link, the role and how many members the room has. It is public
+// and rate limited per address; the code comes in the body, never in a URL, and is
+// found by its digest like a join. An expired or used-up link names only its room, a
+// code that matches no link nothing.
+func invitePreview(e *core.RequestEvent) error {
+	return run(e, func() error {
+		b, err := requestBody(e)
+		if err != nil {
+			return err
+		}
+		unknown := map[string]any{"state": "unknown"}
+		typed, _ := b.text("code")
+		code := normalizeCode(typed)
+		if code == "" || length(code) > 20 {
+			return e.JSON(200, unknown)
+		}
+		link, err := firstAs[Invite](e.App, "room_invites", "digest", security.SHA256(code))
+		if err != nil {
+			if isNoRows(err) {
+				return e.JSON(200, unknown)
+			}
+			return err
+		}
+		room, err := findAs[Room](e.App, "party_rooms", link.Room())
+		if err != nil {
+			return e.JSON(200, unknown)
+		}
+		if !link.Open(time.Now()) {
+			return e.JSON(200, map[string]any{"state": "expired", "room": room.Name()})
+		}
+		members, err := e.App.CountRecords("room_members", dbx.HashExp{"room": room.Id})
+		if err != nil {
+			return err
+		}
+		// Only owners make links, so the inviter is the room's owner: the link's maker while
+		// they own the room, the new owner after a hand-over (the maker may have left), and
+		// the owner for links made before makers were kept or whose maker deleted the account.
+		names, err := displayNames(e.App, []string{room.Owner()})
+		if err != nil {
+			return err
+		}
+		inviter := names[room.Owner()]
+		return e.JSON(200, map[string]any{"state": "valid", "room": room.Name(), "inviter": inviter, "role": link.Role(), "members": members})
 	})
 }
 
@@ -1323,11 +1590,12 @@ func forgetDevice(e *core.RequestEvent) error {
 	})
 }
 
-// cleanup is the expiry job: expired invites, pairing codes and reader sessions,
-// history older than 30 days and planned runs a day after they started.
+// cleanup is the expiry job: invite links three days after they expired (inviteGrace),
+// expired pairing codes and reader sessions, history older than 30 days and planned
+// runs a day after they started.
 func cleanup(app core.App) (result, error) {
 	at := time.Now()
-	done, err := purge(app, "room_invites", "expiresAt <= {:cutoff}", stamp(at))
+	done, err := purge(app, "room_invites", "expiresAt <= {:cutoff}", stamp(at.Add(-inviteGrace)))
 	if err != nil {
 		return result{}, err
 	}
@@ -2065,6 +2333,25 @@ func exportData(e *core.RequestEvent) error {
 		for i, d := range devices {
 			paired[i] = map[string]any{"name": d.Name(), "pairedAt": d.PairedAt(), "lastSignInAt": d.LastUsedAt()}
 		}
+		// The invite links the account made that are still kept, without their codes.
+		links, err := allAs[Invite](app, "room_invites", "createdBy = {:user}", mine)
+		if err != nil {
+			return err
+		}
+		linkRooms, err := roomsByID(app, pluck(links, (*Invite).Room))
+		if err != nil {
+			return err
+		}
+		inviteLinks := make([]any, len(links))
+		for i, l := range links {
+			j := l.JSON()
+			delete(j, "id")
+			j["room"] = l.Room()
+			if room := linkRooms[l.Room()]; room != nil {
+				j["name"] = room.Name()
+			}
+			inviteLinks[i] = j
+		}
 		return e.JSON(200, map[string]any{
 			"exportedAt":        now(),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
@@ -2073,6 +2360,7 @@ func exportData(e *core.RequestEvent) error {
 			"tasks":             checklist,
 			"readerSessions":    readerSessions,
 			"pairedWindowsApps": paired,
+			"inviteLinks":       inviteLinks,
 		})
 	})
 }
@@ -2184,30 +2472,76 @@ func history(e *core.RequestEvent) error {
 				return forbidden("This character is not shared with you.")
 			}
 		}
-		found, err := e.App.FindRecordsByFilter("character_readings", "character = {:id} && created >= {:since}", "-created", 500, 0, dbx.Params{"id": id, "since": ago(30 * 24 * time.Hour)})
+		readings, hourlyBefore, err := historyOf(e.App, id)
 		if err != nil {
 			return err
 		}
-		points := views[HistoryPoint](found)
-		readings := make([]any, len(points))
-		for i, p := range points {
-			readings[len(points)-1-i] = p.JSON()
+		var thinned any
+		if hourlyBefore != "" {
+			thinned = hourlyBefore
 		}
-		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed()}, "readings": readings, "serverNow": now()})
+		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed()}, "readings": readings, "hourlyBefore": thinned, "serverNow": now()})
 	})
 }
 
+// historyExact is how many of a character's latest changes its history lists one by
+// one. Before the oldest of them, the 30 days continue as the last change of each hour,
+// so a busy character keeps the start of its month and an answer holds at most 1,721
+// points (30 days touch 721 hours).
+const historyExact = 1000
+
+// historyOf is a character's changes of the last 30 days, oldest first, and the time of
+// the oldest change listed one by one when earlier ones were thinned to one an hour
+// (empty when every change is listed).
+func historyOf(app core.App, id string) ([]any, string, error) {
+	since := ago(30 * 24 * time.Hour)
+	found, err := app.FindRecordsByFilter("character_readings", "character = {:id} && created >= {:since}", "-created", historyExact+1, 0, dbx.Params{"id": id, "since": since})
+	if err != nil {
+		return nil, "", err
+	}
+	points, readings, hourlyBefore := views[HistoryPoint](found), []any{}, ""
+	if len(points) > historyExact {
+		points = points[:historyExact]
+		hourlyBefore = points[historyExact-1].At()
+		// The bare value and adapter come from the row of MAX(created), each hour's last change.
+		var hours []struct {
+			Value   int64  `db:"value"`
+			Adapter string `db:"adapter"`
+			At      string `db:"at"`
+		}
+		if err := app.DB().NewQuery("SELECT value, adapter, MAX(created) AS at FROM character_readings WHERE character = {:id} AND created >= {:since} AND created < {:before} GROUP BY substr(created, 1, 13) ORDER BY at").
+			Bind(dbx.Params{"id": id, "since": since, "before": hourlyBefore}).All(&hours); err != nil {
+			return nil, "", err
+		}
+		for _, h := range hours {
+			readings = append(readings, historyJSON(h.Value, h.At, h.Adapter))
+		}
+	}
+	for i := len(points) - 1; i >= 0; i-- {
+		readings = append(readings, points[i].JSON())
+	}
+	return readings, hourlyBefore, nil
+}
+
+// The inactive-account clean-up deletes up to 200 accounts a night.
+const retentionBatch = 200
+
+// inactiveBefore matches accounts unused since the cutoff (stored form): by their last
+// activity, or by their creation when they never used Odyle.
+func inactiveBefore(cutoff string) dbx.Expression {
+	return dbx.NewExp("lastActiveAt < {:cutoff} AND (lastActiveAt != '' OR created < {:cutoff})", dbx.Params{"cutoff": cutoff})
+}
+
 // retention is the nightly job that deletes accounts unused for
-// odyle_settings.inactiveAccountDays days (0 keeps them), up to 200 a night. handOver
-// passes their rooms on first.
+// odyle_settings.inactiveAccountDays days (0 keeps them), up to 200 a night, longest
+// unused first. handOver passes their rooms on first.
 func retention(app core.App) (result, error) {
 	days := readSettings(app).InactiveAccountDays
 	if days == 0 {
 		return result{Skipped: "off"}, nil
 	}
-	cutoff, out := ago(time.Duration(days)*24*time.Hour), result{}
-	users, err := app.FindRecordsByFilter("users", "lastActiveAt < {:cutoff} && (lastActiveAt != '' || created < {:cutoff})", "lastActiveAt", 200, 0, dbx.Params{"cutoff": cutoff})
-	if err != nil {
+	out, users := result{}, []*core.Record{}
+	if err := app.RecordQuery("users").AndWhere(inactiveBefore(ago(time.Duration(days)*24*time.Hour))).OrderBy("lastActiveAt ASC", "id ASC").Limit(retentionBatch).All(&users); err != nil {
 		return result{}, err
 	}
 	for _, user := range users {
@@ -2225,4 +2559,18 @@ func retention(app core.App) (result, error) {
 		info(app, "Odyle deleted an inactive account", "user", user.Id)
 	}
 	return out, nil
+}
+
+// retentionPreview is what the clean-up would do on its next run with the given period,
+// if no account comes back before then: how many accounts are unused that long, and how
+// many of them that run deletes (the rest follow on the next nights).
+func retentionPreview(app core.App, days int64, at time.Time) (*object, error) {
+	next, inactive := nextDaily(jobs["odyle-retention"].schedule, at), int64(0)
+	if days > 0 {
+		var err error
+		if inactive, err = app.CountRecords("users", inactiveBefore(stamp(next.Add(-time.Duration(days)*24*time.Hour)))); err != nil {
+			return nil, err
+		}
+	}
+	return newObject().set("days", days).set("runAt", next.Format(isoLayout)).set("inactive", inactive).set("deleted", min(inactive, retentionBatch)), nil
 }

@@ -119,3 +119,22 @@ func TestRejectionReasonsAreCappedPerMinute(t *testing.T) {
 		t.Errorf("%d reasons", got)
 	}
 }
+
+// Requests from private or loopback addresses are counted for the hour like the rest.
+func TestPrivateClientsAreCountedForTheHour(t *testing.T) {
+	at, tr := time.Date(2026, 10, 15, 8, 0, 0, 0, time.UTC), newTraffic()
+	for range 3 {
+		tr.record(at, "heartbeat", "app", 0, nil)
+	}
+	tr.fromPrivate(at)
+	tr.fromPrivate(at.Add(time.Minute))
+	if got := tr.summary(at.Add(time.Minute)).values["private"]; got != 2 {
+		t.Errorf("private = %v", got)
+	}
+	if got := tr.summary(at.Add(time.Hour)).values["private"]; got != 1 {
+		t.Errorf("an hour later, private = %v", got)
+	}
+	if got := newTraffic().summary(at).values["private"]; got != 0 {
+		t.Errorf("an empty hour, private = %v", got)
+	}
+}

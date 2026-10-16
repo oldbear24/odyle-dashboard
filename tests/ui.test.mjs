@@ -83,6 +83,8 @@ test('owners invite with a link, manage the room and close it only after confirm
     await page.locator('#create-form [name=name]').fill('UI room');
     await page.locator('#create-form [type=submit]').click();
     await page.locator('#modal .invite-row').first().waitFor();
+    // A new room starts with a player link (first) and a viewer link for a day.
+    assert.match(await page.locator('#modal .invite-row').first().innerText(), /PLAYER INVITE[\s\S]*No use limit/);
     const link = await page.locator('#modal [data-copied]').first().getAttribute('data-copy');
     assert.match(link, /#\/join\/[A-Z2-9]{12}$/);
     await shot(page, 'invite');
@@ -91,24 +93,66 @@ test('owners invite with a link, manage the room and close it only after confirm
     assert.equal(await page.locator('#modal [data-copied]').first().getAttribute('data-copy'), link);
     await page.keyboard.press('Escape');
 
-    // A friend who is not signed in opens the link, signs in and lands in the room.
+    // A friend who is not signed in opens the link, sees who invited them where, signs in and lands in the room.
     const guest = await open(null, link.slice(link.indexOf('#')));
     try {
-      await guest.page.locator('.join-note').waitFor();
+      await guest.page.locator('.invite-landing.valid').waitFor();
+      assert.match(await guest.page.locator('.invite-landing').innerText(), /UI lead invited you to UI room[\s\S]*as a player · 1 member/);
+      await shot(guest.page, 'invite-landing');
       await guest.page.evaluate(session => localStorage.setItem('odyle.account', session), JSON.stringify({ token: friend.token, record: friend.record }));
       await guest.page.reload();
       await guest.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+      await toast(guest.page).filter({ hasText: 'You joined UI room as a player.' }).waitFor();
       assert.match(guest.page.url(), /#\/room\/[a-z0-9]+$/);
       assert.equal(await guest.page.locator('[data-action="invite"].button').count(), 0);
+      // Only the leader invites; the others are told whom to ask.
+      await guest.page.locator('.empty-card[data-action="invite"]').click();
+      assert.match(await guest.page.locator('#modal').innerText(), /Only the leader of UI room, UI lead, can invite/);
       assert.deepEqual(guest.errors, []);
     } finally { await guest.close(); }
 
+    // Revoking a link asks first; Keep it goes back to the links.
+    await page.reload(); await page.locator('[data-action="invite"]:visible').first().click();
+    await page.locator('#modal .invite-row').nth(1).waitFor();
+    await page.locator('#modal .invite-row').nth(1).locator('[data-revoke-invite]').click();
+    assert.match(await page.locator('#modal').innerText(), /Revoke this invite link\?[\s\S]*stops working at once/);
+    await page.locator('#modal [data-action="invite"]').click();
+    await page.locator('#modal .invite-row').nth(1).locator('[data-revoke-invite]').click();
+    await page.locator('#modal [data-confirm-revoke-invite]').click();
+    await toast(page).filter({ hasText: 'Invite link revoked.' }).waitFor();
+    assert.equal(await page.locator('#modal .invite-row').count(), 1);
+    // A new link: a viewer link for 30 minutes that one person can use, with a label.
+    await page.locator('#invite-form [name=role]').selectOption('viewer');
+    await page.locator('#invite-form [name=expiresIn]').selectOption('1800');
+    await page.locator('#invite-form [name=maxUses]').selectOption('1');
+    await page.locator('#invite-form [name=label]').fill('Raid night');
+    await page.locator('#invite-form [type=submit]').click();
+    await toast(page).filter({ hasText: 'Invite link made.' }).waitFor();
+    assert.match(await page.locator('#modal .invite-row').nth(1).innerText(), /VIEWER INVITE · Raid night[\s\S]*1 use left/);
+    assert.equal(await page.locator('#invite-form [name=label]').inputValue(), '');
+    await shot(page, 'invite-links');
+    await page.keyboard.press('Escape');
+    // Another browser lists the same links, but only the browser that made a link can copy it.
+    const elsewhere = await open(lead, new URL(page.url()).hash);
+    try {
+      await elsewhere.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+      await elsewhere.page.locator('[data-action="invite"]:visible').first().click();
+      await elsewhere.page.locator('#modal .invite-row').nth(1).waitFor();
+      assert.equal(await elsewhere.page.locator('#modal [data-copied]').count(), 0);
+      assert.match(await elsewhere.page.locator('#modal .invite-row').first().innerText(), /shows only in the browser that made it/);
+      assert.deepEqual(elsewhere.errors, []);
+    } finally { await elsewhere.close(); }
+
     // Room settings: rename, make the friend a viewer, then hand the room over.
-    await page.reload(); await page.locator('[data-action="room-settings"]').click();
+    await page.locator('[data-action="room-settings"]').click();
     await page.locator('#rename-form [name=name]').fill('Renamed UI room');
     await page.locator('#rename-form [type=submit]').click();
     await toast(page).filter({ hasText: 'Room renamed.' }).waitFor();
     await page.locator('#modal select[data-role]').selectOption('viewer');
+    // A role change asks first.
+    await page.locator('#modal [data-confirm-role]').waitFor();
+    assert.match(await page.locator('#modal').innerText(), /Make UI friend a viewer\?/);
+    await page.locator('#modal [data-confirm-role]').click();
     await toast(page).filter({ hasText: 'Role changed.' }).waitFor();
     assert.equal(await page.locator('#modal select[data-role]').inputValue(), 'viewer');
     await shot(page, 'room-settings');
@@ -132,6 +176,55 @@ test('owners invite with a link, manage the room and close it only after confirm
   } finally { await owner.close(); }
 });
 
+test('an invite link that no longer works says why, and Invitations finds the room to invite to', async () => {
+  const [lead, friend] = await Promise.all([account('Link lead'), account('Link friend')]);
+  const first = (await request('/api/odyle/create', { name: 'First link room' }, lead)).data;
+  await request('/api/odyle/create', { name: 'Second link room' }, lead);
+  const expired = first.invites[1].code;
+  assert.equal((await request('/__test__/expire-invite', { code: expired })).status, 200);
+  // Before signing in, an expired link names its room only.
+  const guest = await open(null, '#/join/' + expired);
+  try {
+    await guest.page.locator('.invite-landing.problem').waitFor();
+    assert.match(await guest.page.locator('.invite-landing').innerText(), /This invite to First link room expired or was used up/);
+    assert.doesNotMatch(await guest.page.locator('.invite-landing').innerText(), /Link lead/);
+    assert.deepEqual(guest.errors, []);
+  } finally { await guest.close(); }
+  // Signed in, a link that does not join stays on screen instead of an empty library.
+  const { page, errors, close } = await open(friend, '#/join/' + expired);
+  try {
+    await page.getByRole('heading', { name: 'This invite did not work.' }).waitFor();
+    assert.match(page.url(), /#\/join\//);
+    assert.match(await page.locator('.invite-landing').innerText(), /First link room expired/);
+    await shot(page, 'invite-expired');
+    await page.goto(url + '/#/join/ZZZZ-ZZZZ-ZZZZ');
+    await page.locator('.invite-landing.problem').filter({ hasText: 'does not work' }).waitFor();
+    await page.locator('.invite-page-actions [data-action="library"]').click();
+    await page.getByRole('heading', { name: 'Welcome, Link friend.' }).waitFor();
+    // Invitations without a room you lead says what to do instead of a dead end.
+    if (await page.locator('.sidebar [data-action="invite"]').isVisible()) {
+      await page.locator('.sidebar [data-action="invite"]').click();
+      await page.locator('#modal').filter({ hasText: 'Create a room first' }).waitFor();
+    }
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+  // A leader of two rooms picks the room, which opens with its invite links.
+  const leader = await open(lead, '#/');
+  try {
+    await leader.page.getByRole('heading', { name: 'Welcome, Link lead.' }).waitFor();
+    if (await leader.page.locator('.sidebar [data-action="invite"]').isVisible()) {
+      await leader.page.locator('.sidebar [data-action="invite"]').click();
+      await leader.page.locator('#modal [data-invite-room]').first().waitFor();
+      assert.match(await leader.page.locator('#modal').innerText(), /Invite to which room\?[\s\S]*First link room[\s\S]*Second link room|Invite to which room\?[\s\S]*Second link room[\s\S]*First link room/);
+      await leader.page.locator('#modal [data-invite-room]').filter({ hasText: 'First link room' }).click();
+      await leader.page.locator('#modal .invite-row').first().waitFor();
+      assert.match(await leader.page.locator('.topbar .breadcrumb').innerText(), /First link room/);
+      assert.match(leader.page.url(), new RegExp('#/room/' + first.room.id + '$'));
+    }
+    assert.deepEqual(leader.errors, []);
+  } finally { await leader.close(); }
+});
+
 test('rooms plan, change and export runs, and members see each character history', async () => {
   const [lead, mate, stranger] = await Promise.all([account('Run lead'), account('Run mate'), account('Run stranger')]);
   const created = (await request('/api/odyle/create', { name: 'Run room' }, lead)).data, roomId = created.room.id;
@@ -147,6 +240,15 @@ test('rooms plan, change and export runs, and members see each character history
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
     await page.locator('[data-plan-wish="Fire Temple"]').click();
     assert.equal(await page.locator('#run-form [name=dungeon]').inputValue(), 'Fire Temple');
+    // The start takes only what the server accepts; where a browser ignores the bounds, the form says why before sending.
+    const start = page.locator('#run-form [name=startsAt]'), sent = [];
+    assert.match(await start.getAttribute('min'), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/); assert.match(await start.getAttribute('max'), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    page.on('request', r => { if (r.url().endsWith('/api/odyle/plan')) sent.push(r.url()); });
+    await start.evaluate(input => { input.removeAttribute('max'); input.value = new Date(Date.now() + 70 * 86400000).toISOString().slice(0, 16); });
+    await page.locator('#run-form [type=submit]').click();
+    assert.match(await page.locator('#run-form .form-error[role=alert]').innerText(), /from an hour ago up to 60 days ahead/);
+    assert.deepEqual(sent, []);
+    await start.evaluate(input => { input.value = input.defaultValue; });
     await page.locator('#run-form [name=note]').fill('Bring potions');
     await page.locator('#run-form [type=submit]').click();
     await page.locator('.runs .wish-row').waitFor();
@@ -198,6 +300,10 @@ test('members keep the wishlist together, share characters and viewers only watc
     // Characters join the room from the bar above the party and leave it from their card.
     await mates.page.locator(`.add-chip[data-share="${mine.id}"]`).click();
     await mates.page.locator(`.member-card [data-share="${mine.id}"][data-enabled="false"]`).waitFor();
+    // A blank dungeon is stopped in the form, before anything is sent.
+    await mates.page.locator('#wish-form [name=dungeon]').fill('   ');
+    await mates.page.locator('#wish-form [type=submit]').click();
+    assert.match(await mates.page.locator('#wish-form .form-error[role=alert]').innerText(), /Dungeon is required/);
     await mates.page.locator('#wish-form [name=dungeon]').fill('Fire Temple');
     await mates.page.locator('#wish-form [type=submit]').click();
     await mates.page.locator('.wishlist .wish-row').first().waitFor();
@@ -232,6 +338,52 @@ test('members keep the wishlist together, share characters and viewers only watc
     assert.deepEqual(viewer.errors, []);
   } finally { await viewer.close(); }
 });
+test('with a dungeon catalog rooms pick dungeons from it and show what a cube costs and how many the party can open', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, lead = await account('Catalog lead');
+  const roomId = (await request('/api/odyle/create', { name: 'Catalog room' }, lead)).data.room.id;
+  const session = (await request('/api/odyle/session', {}, lead)).data;
+  const c = (await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Priced', server: 'Lumiel', region: 'GLOBAL_EU', value: 170, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, lead)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead);
+  // A wish from before the catalog stays on the list.
+  await request('/api/odyle/wishlist', { roomId, dungeon: 'Old Cave', wanted: true }, lead);
+  const catalog = [{ name: 'Krao Cave', cost: 20, partySize: 5, category: 'Exploration', unconfirmed: true }, 'Fire Temple', { name: 'Abyssal Forge: Ludra', cost: 80, partySize: 10, category: 'Sanctuary' }];
+  assert.equal((await request('/api/odyle/admin/settings', { dungeons: catalog }, operator)).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    // The wishlist picks from the catalog, each dungeon with what a cube of it costs.
+    const wish = page.locator('#wish-form select[name=dungeon]');
+    assert.deepEqual(await wish.locator('option').allInnerTexts(), ['Choose a dungeon you still need to run', 'Krao Cave · 20 Odyle', 'Fire Temple · 40 Odyle', 'Abyssal Forge: Ludra · 80 Odyle']);
+    await wish.selectOption('Abyssal Forge: Ludra'); await page.locator('#wish-form [type=submit]').click();
+    const row = page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Abyssal Forge: Ludra' }); await row.waitFor();
+    // Priced holds 170 Odyle: two cubes at 80.
+    assert.equal(await row.locator('.dungeon-facts').innerText(), '80 Odyle per cube · 10 players · party can open 2 cubes');
+    assert.equal(await wish.locator('option', { hasText: 'Ludra' }).count(), 0);
+    // The older wish shows no cost and cannot be planned: runs need a listed dungeon.
+    const old = page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Old Cave' });
+    assert.deepEqual([await old.locator('.dungeon-facts').count(), await old.locator('[data-plan-wish]').count()], [0, 0]);
+    // Plan picks the dungeon in the run form's list.
+    await row.locator('[data-plan-wish]').click();
+    assert.equal(await page.locator('#run-form select[name=dungeon]').inputValue(), 'Abyssal Forge: Ludra');
+    await page.locator('#run-form [type=submit]').click();
+    const run = page.locator('.runs .wish-row', { hasText: 'Abyssal Forge: Ludra' }); await run.waitFor();
+    assert.match(await run.locator('.dungeon-facts').innerText(), /party can open 2 cubes/);
+    // Changing the run picks from the catalog too.
+    await run.locator('[data-edit-run]').click();
+    const change = page.locator('#run-edit-form select[name=dungeon]');
+    assert.equal(await change.inputValue(), 'Abyssal Forge: Ludra');
+    await change.selectOption('Krao Cave'); await page.locator('#run-edit-form [type=submit]').click();
+    const moved = page.locator('.runs .wish-row', { hasText: 'Krao Cave' }); await moved.waitFor();
+    assert.equal(await moved.locator('.dungeon-facts').innerText(), '20 Odyle per cube (unconfirmed) · 5 players · party can open 8 cubes');
+    await shot(page, 'room-catalog');
+    // Without a catalog the forms take any name again.
+    assert.equal((await request('/api/odyle/admin/settings', { dungeons: [] }, operator)).status, 200);
+    await page.reload(); await page.locator('#wish-form input[name=dungeon][list=wish-suggestions]').waitFor();
+    assert.equal(await page.locator('.dungeon-facts').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [] }, operator); }
+});
+
 test('a room follows heartbeats and readings as they arrive, without fetching the room again', async () => {
   const [lead, reader] = await Promise.all([account('Live lead'), account('Live reader')]);
   const created = (await request('/api/odyle/create', { name: 'Live room' }, lead)).data;
@@ -256,6 +408,49 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('an open room checks no health while live, waits while hidden and draws its own changes from their answers', async () => {
+  const [lead, mate] = await Promise.all([account('Quiet lead'), account('Quiet mate')]);
+  const created = (await request('/api/odyle/create', { name: 'Quiet room' }, lead)).data, roomId = created.room.id;
+  assert.equal((await request('/api/odyle/join', { code: created.invites[0].code }, mate)).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    const asked = []; page.on('request', r => { const path = new URL(r.url()).pathname; if (/^\/api\/(health|odyle\/(snapshot|announcement))/.test(path)) asked.push(path.split('/').slice(0, 4).join('/')); });
+    // Realtime is connected, so no health checks; the snapshot already brought the announcement.
+    await delay(21000);
+    assert.deepEqual(asked, []);
+    // A hidden tab leaves room news for later and catches up as soon as it is shown.
+    const visibility = hidden => page.evaluate(h => { for (const [name, value] of [['hidden', h], ['visibilityState', h ? 'hidden' : 'visible']]) Object.defineProperty(document, name, { configurable: true, get: () => value }); document.dispatchEvent(new Event('visibilitychange')); }, hidden);
+    await visibility(true);
+    assert.equal((await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, mate)).status, 200);
+    await delay(2000);
+    assert.deepEqual(asked, []); assert.equal(await page.locator('.wishlist:not(.runs) .wish-row').count(), 0);
+    await visibility(false);
+    await page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Fire Temple' }).waitFor();
+    assert.deepEqual(asked, ['/api/odyle/snapshot']);
+    // The page's own change shows from the route's answer, even while snapshots fail.
+    await page.route('**/api/odyle/snapshot/**', route => route.abort());
+    await page.locator('[data-wish="Fire Temple"][data-wanted="true"]').click();
+    await page.locator('[data-wish="Fire Temple"][data-wanted="false"]').waitFor();
+    assert.match(await page.locator('.wishlist .wish-row').first().innerText(), /2 members need it/);
+    await page.unroute('**/api/odyle/snapshot/**');
+    // An answer that arrives after leaving the room is not drawn over the next page.
+    let answered; const answer = new Promise(r => { answered = r; });
+    await page.route('**/api/odyle/rename', async route => { await delay(1500); await route.continue(); setTimeout(answered, 300); });
+    await page.locator('[data-action="room-settings"]').click();
+    await page.locator('#rename-form [name=name]').fill('Late name');
+    await page.locator('#rename-form [type=submit]').click();
+    await page.keyboard.press('Escape');
+    await navigate(page, 'library');
+    await page.locator('.heading-actions [data-action="desktop"]').waitFor();
+    await answer; await delay(300);
+    assert.equal(new URL(page.url()).hash, '#/'); assert.equal(await page.getByRole('heading', { name: 'Party overview.' }).count(), 0);
+    assert.equal(await page.locator('#modal[open] #rename-form').count(), 0);
+    await page.locator('.heading-actions [data-action="desktop"]').waitFor();
+    await page.unroute('**/api/odyle/rename');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 test('the daily and weekly checklist adds, ticks, renames, orders and removes tasks', async () => {
   const user = await account('Checklist owner');
   const { page, errors, close } = await open(user, '#/tasks');
@@ -276,6 +471,8 @@ test('the daily and weekly checklist adds, ticks, renames, orders and removes ta
     assert.deepEqual(await titles(), ['Arena x3', 'Daily dungeon']);
     await shot(page, 'tasks');
     await page.locator('.task-row', { hasText: 'Arena x3' }).locator('[data-remove-task]').click();
+    assert.match(await page.locator('#modal').innerText(), /Remove Arena x3\?/);
+    await page.locator('#modal [data-confirm-remove-task]').click();
     await page.waitForFunction(() => document.querySelectorAll('.task-panel:first-child .task-row').length === 1);
     assert.deepEqual((await request('/api/odyle/tasks', undefined, user, 'GET')).data.tasks.map(t => t.title), ['Daily dungeon']);
     assert.deepEqual(errors, []);
@@ -342,9 +539,69 @@ test('the account page renames, switches to Czech, exports data, deletes charact
   } finally { await close(); }
 });
 
+test('pairing shows one link with a countdown, confirms the PC it paired and names the reader', async () => {
+  const user = await account('Pairing player');
+  const { page, errors, close } = await open(user, '#/');
+  const linkOf = () => page.locator('#modal .link-field').inputValue();
+  try {
+    await page.locator('.personal-characters .reader-button', { hasText: 'Connect reader' }).click();
+    const first = await linkOf(); assert.match(first, /#odyle-pair=[A-Z2-9]{16}$/);
+    assert.match(await page.locator('#modal .scope-note').innerText(), /unofficial fan project/);
+    // The countdown runs while the dialog is open.
+    const left = await page.locator('#modal [data-pair-expires]').innerText(); assert.match(left, /^[45]:\d\d$/);
+    await page.waitForFunction(before => document.querySelector('#modal [data-pair-expires]')?.textContent !== before, left);
+    await shot(page, 'pairing');
+    // The unused link comes back after closing the dialog and after a reload, instead of a new one.
+    await page.keyboard.press('Escape'); await page.locator('.personal-characters .reader-button').click();
+    assert.equal(await linkOf(), first);
+    await page.reload(); await page.locator('.personal-characters .reader-button').click();
+    assert.equal(await linkOf(), first);
+    // A new link replaces the old one on the server too.
+    await page.locator('#modal [data-action="new-pairing"]').click();
+    await page.waitForFunction(old => { const field = document.querySelector('#modal .link-field'); return field && field.value !== old; }, first);
+    const link = await linkOf(), code = link.split('odyle-pair=')[1];
+    assert.equal((await request('/api/odyle/pair', { code: first.split('odyle-pair=')[1], name: 'Old link' })).status, 400);
+    // The Windows app pairs with it: the open dialog names the PC, then the character it reads.
+    const paired = (await request('/api/odyle/pair', { code, name: 'UI-DESK' })).data, app = { token: paired.token };
+    await page.locator('#modal .pairing-done', { hasText: 'Paired with UI-DESK' }).waitFor();
+    assert.match(await page.locator('#modal .pairing-done').innerText(), /Waiting for the game/);
+    const session = (await request('/api/odyle/session', { deviceKey: paired.deviceKey }, app)).data;
+    const reading = await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Pairlight', server: 'Lumiel', region: 'GLOBAL_EU', value: 120, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true }, app);
+    assert.equal(reading.status, 200, JSON.stringify(reading.data));
+    await page.locator('#modal .pairing-done', { hasText: 'Reading Pairlight' }).waitFor();
+    await shot(page, 'pairing-done');
+    await page.locator('#modal [data-action="close-dialog"].button').click();
+    // An account whose reader is online is not asked to connect one: the button names the PC.
+    await page.locator('.personal-characters .reader-online', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    await shot(page, 'reader-online');
+    await page.locator('.personal-characters .reader-online').click();
+    await page.locator('#modal .pairing-done', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    assert.match(await page.locator('#modal .pairing-done').innerText(), /Reading Pairlight/);
+    assert.equal(await page.locator('#modal .link-field').count(), 0);
+    await page.keyboard.press('Escape');
+    const created = (await request('/api/odyle/create', { name: 'Reading room' }, user)).data;
+    await request('/api/odyle/heartbeat', { sessionId: session.sessionId }, app);
+    await page.goto(url + '/#/room/' + created.room.id);
+    await page.locator('.next-panel .reader-online', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    await shot(page, 'room-reader-online');
+    // Paused pairing still opens the dialog: it says why and keeps the downloads.
+    const operator = (await request('/__test__/superuser', {})).data;
+    assert.equal((await request('/api/odyle/admin/settings', { pairingPaused: true }, operator)).status, 200);
+    try {
+      await navigate(page, 'library'); await page.locator('.heading-actions [data-action="desktop"]').click();
+      await page.locator('#modal .pairing-problem', { hasText: 'Pairing new PCs is paused' }).waitFor();
+      assert.match(await page.locator('#modal').innerText(), /download and install the app now/);
+      assert.equal(await page.locator('#modal .app-panel').count(), 1);
+      await shot(page, 'pairing-paused');
+    } finally { await request('/api/odyle/admin/settings', { pairingPaused: false }, operator); }
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('an unreachable server keeps the sign-in and the connection state follows it', async () => {
   const user = await account('Outage');
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // English whatever the machine's language, as the checks read English text.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-GB' });
   await context.addInitScript(session => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('odyle.account', session); } }, JSON.stringify({ token: user.token, record: user.record }));
   const page = await context.newPage();
   try {
@@ -357,12 +614,73 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     await page.unroute('**/api/**');
     await page.getByRole('heading', { name: 'Welcome, Outage.' }).waitFor({ timeout: 15000 });
     await page.locator('.topbar .connection.connected').waitFor();
-    // Losing the server later flips the indicator without a reload.
+    // Losing the server later flips the indicator without a reload. A server going away
+    // ends the realtime stream too, which otherwise stands in for the health check.
     await page.route('**/api/**', route => route.abort());
+    assert.equal((await request('/__test__/drop-realtime', {})).status, 200);
     await page.locator('.topbar .connection:not(.connected)').waitFor({ timeout: 30000 });
     await page.unroute('**/api/**');
     await page.locator('.topbar .connection.connected').waitFor({ timeout: 30000 });
   } finally { await context.close(); }
+});
+test('Discord sign-in offers this page in another browser when its window cannot work', async () => {
+  // An app's built-in browser that opens no windows: a note before anything is clicked, then the link to copy.
+  const embedded = await browser.newContext({ viewport: { width: Number(process.env.ODYLE_UI_WIDTH) || 1280, height: 900 }, locale: 'en-GB', userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A.240505.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36 Instagram 312.0.0.32.112' });
+  await embedded.addInitScript(() => { window.open = () => null; });
+  try {
+    const page = await embedded.newPage(), errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto(url + '/#/join/ABCD-EFGH-2345');
+    await page.locator('.in-app-note').waitFor();
+    await shot(page, 'signin-in-app');
+    await page.locator('[data-action="discord"]').click();
+    // The invite link stays whole, so the invite still works in the other browser.
+    assert.equal(await page.locator('#modal .link-field').inputValue(), url + '/#/join/ABCD-EFGH-2345');
+    assert.equal(await page.locator('#modal [data-copied]').getAttribute('data-copy'), url + '/#/join/ABCD-EFGH-2345');
+    assert.match(await page.locator('#modal').innerText(), /could not open here[\s\S]*keeps your invite/);
+    await shot(page, 'signin-elsewhere');
+    assert.deepEqual(errors, []);
+  } finally { await embedded.close(); }
+  // A desktop browser gets no note; once the Discord window is open, help waits under the button.
+  const { page, errors, close } = await open(null, '#/');
+  try {
+    await page.locator('[data-action="discord"]').waitFor();
+    assert.match(await page.locator('.welcome .scope-note').innerText(), /not affiliated with or endorsed by NCSOFT[\s\S]*at your own risk/);
+    assert.equal(await page.locator('.in-app-note').count(), 0); assert.equal(await page.locator('.signin-help').isVisible(), false);
+    await page.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
+    await page.locator('[data-action="discord"]').click();
+    await page.locator('.signin-help').waitFor();
+    // The test backend has no Discord sign-in configured, and the page says so.
+    await toast(page).filter({ hasText: 'Discord sign-in needs backend configuration' }).waitFor();
+    await page.locator('.signin-help [data-action="open-elsewhere"]').click();
+    assert.equal(await page.locator('#modal .link-field').inputValue(), url + '/#/');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('Discord sign-in opens its window, signs in and joins the room of an invite link', async () => {
+  // Stands in for Discord's token and user endpoints; PocketBase still exchanges the code and creates the account.
+  const oauth = createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/token' && req.method === 'POST') { req.resume(); res.end(JSON.stringify({ access_token: 'test-discord-access', token_type: 'Bearer', expires_in: 3600 })); }
+    else if (req.url === '/user' && req.headers.authorization === 'Bearer test-discord-access') res.end(JSON.stringify({ id: '100000000000000077', username: 'window-tester', global_name: 'Window Tester', email: 'window@test.invalid', verified: true }));
+    else { res.writeHead(401); res.end('{}'); }
+  });
+  await new Promise(r => oauth.listen(0, '127.0.0.1', r));
+  assert.equal((await request('/__test__/oauth-provider', { url: 'http://127.0.0.1:' + oauth.address().port })).status, 200);
+  const lead = await account('Window lead'), created = (await request('/api/odyle/create', { name: 'Window room' }, lead)).data;
+  const { page, errors, close } = await open(null, '#/join/' + created.invites[0].code);
+  try {
+    // Discord's authorize page sends the window straight back with a code for the state it was given.
+    await page.context().route('https://discord.com/**', route => { const asked = new URL(route.request().url()); return route.fulfill({ status: 302, headers: { location: asked.searchParams.get('redirect_uri') + '?code=test-code&state=' + asked.searchParams.get('state') } }); });
+    await page.locator('.join-note').waitFor();
+    const opened = page.waitForEvent('popup');
+    await page.locator('[data-action="discord"]').click();
+    await opened;
+    // Signed in with the Discord name, the invite joins at once.
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    assert.match(page.url(), /#\/room\/[a-z0-9]+$/); assert.match(await page.locator('.topbar .breadcrumb').innerText(), /Window room/);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('odyle.account')).record.displayName), 'Window Tester');
+    assert.deepEqual(errors, []);
+  } finally { await close(); oauth.close(); }
 });
 test('the service worker opens the dashboard without a connection', async () => {
   const { page, errors, close } = await open(null, '#/');
@@ -391,7 +709,10 @@ test('room owners connect Discord reminders and a bad webhook says why in the fo
     await toast(page).filter({ hasText: 'Discord reminders are on' }).waitFor();
     assert.equal(discordPosts, before + 1);
     await page.locator('#modal [data-action="discord-off"]').click();
+    assert.match(await page.locator('#modal').innerText(), /Stop Discord reminders\?/);
+    await page.locator('#modal [data-action="confirm-discord-off"]').click();
     await toast(page).filter({ hasText: 'Discord reminders are off.' }).waitFor();
+    assert.match(await page.locator('#modal').innerText(), /Post each planned run/);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -414,14 +735,25 @@ test('superusers keep the dungeon catalog and the inactive account period on the
   try {
     await page.goto(url + '/_/#/odyle/settings');
     await page.locator('#odyle-inactive').fill('365');
-    // Typed line by line, as a superuser would: Enter must not be swallowed by the list it saves.
-    await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple\n');
+    // Dungeons come in from a list typed line by line, as a superuser would, or pasted.
+    await page.getByRole('button', { name: 'Add several from a list' }).click();
+    await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple | 80 | 10 | Sanctuary | unconfirmed\n');
+    await page.getByRole('button', { name: 'Add to the catalog' }).click();
+    assert.deepEqual(await page.locator('.odyle-catalog [id$="-name"]').evaluateAll(inputs => inputs.map(i => i.value)), ['Fire Temple', 'Udas Temple']);
+    // Then each row is edited in the table: its own cost and party size, a row added and removed again.
+    await page.locator('#odyle-dungeon-0-cost').fill('60'); await page.locator('#odyle-dungeon-0-party').selectOption('5');
+    assert.equal(await page.locator('#odyle-dungeon-1-category').inputValue(), 'Sanctuary'); assert.equal(await page.locator('#odyle-dungeon-1-unconfirmed').isChecked(), true);
+    await page.getByRole('button', { name: 'Add dungeon' }).click(); await page.locator('#odyle-dungeon-2-name').fill('Krao Cave');
+    await page.getByRole('button', { name: 'Remove Krao Cave' }).click();
+    assert.match(await page.locator('.odyle-catalog').locator('xpath=../..').innerText(), /2 dungeons\. New wishlist entries/);
     assert.match(await page.locator('#odyle-inactive').locator('xpath=../..').innerText(), /365 days/);
+    // Before saving, the page counts the accounts the next clean-up would delete with that period.
+    await page.locator('#odyle-inactive').locator('xpath=../..').getByText(/With this period the next run at 03:17 UTC \(.+ here\) would delete/).waitFor();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
-    assert.deepEqual([saved.dungeons, saved.inactiveAccountDays], [['Fire Temple', 'Udas Temple'], 365]);
+    assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(url + '/_/#/collections'); await page.locator('.page-header').first().waitFor();
@@ -487,6 +819,9 @@ test('superusers search, open and export packets and read the server status', as
     const [heap] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Heap' }).click()]);
     assert.match(heap.suggestedFilename(), /^odyle-heap-.*\.pb\.gz$/);
     assert.deepEqual([...(await (await import('node:fs/promises')).readFile(await heap.path())).subarray(0, 2)], [0x1f, 0x8b]);
+    // Activation totals and the backups.
+    assert.match(await page.locator('.odyle-stat', { hasText: 'First reading' }).innerText(), /First reading\s+[1-9]/);
+    assert.match(await page.locator('.odyle-stat', { hasText: 'Schedule' }).innerText(), /Daily 03:00 UTC\s+keeps the newest 7/);
     await shot(page, 'admin-status');
     // A route links to its packets, the rejected ones from a reason.
     await reasons.getByRole('link', { name: 'Show packets' }).click();

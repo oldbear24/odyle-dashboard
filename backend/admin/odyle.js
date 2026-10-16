@@ -31,8 +31,8 @@ const when = at => Number.isFinite(timestamp(at)) ? new Date(timestamp(at)).toLo
 // Today's date, so the local time follows summer and winter time.
 const localHour = (hour, minute = 0) => new Date(new Date().setUTCHours(hour, minute, 0, 0)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const copy = value => JSON.parse(JSON.stringify(value));
-// Row keys: answers come from the server's JavaScript VM, which does not keep key order,
-// so the same row would look changed in every answer without sorting.
+// Row keys: the backend writes Go maps with sorted keys and its own objects in the order
+// it built them, so rows are compared by sorted keys and key order never counts as a change.
 const signature = value => value && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => key + ':' + signature(value[key])).join(',') + '}' : String(value);
 // The companion sends a heartbeat every 20 seconds. As on the dashboard (src/model.js),
 // 45 seconds without contact is late and 90 seconds is offline.
@@ -72,6 +72,9 @@ function describe(p) {
     case 'leave': return 'Left ' + room(p);
     case 'close': return 'Closed ' + room(p);
     case 'invites': return 'New invites for ' + room(p);
+    case 'invite-create': return 'New ' + (p.role === 'viewer' ? 'viewer' : 'player') + ' invite link for ' + room(p);
+    case 'invite-revoke': return 'Revoked an invite link of ' + room(p);
+    case 'invite-preview': return 'Invite link opened';
     case 'revoke': return 'Removed a member from ' + room(p);
     case 'role': return 'Made a member ' + (p.role === 'viewer' ? 'viewer' : 'player') + ' in ' + room(p);
     case 'transfer': return 'Handed ' + room(p) + ' to another member';
@@ -97,7 +100,7 @@ const filters = [
   { id: 'web', label: 'Dashboard', test: p => p.source === 'web' },
   { id: 'rejected', label: 'Rejected', test: p => !p.ok },
 ];
-// A packet's fields in a fixed order (the server's VM does not keep key order): its own
+// A packet's fields in a fixed order, whatever order the backend added them in: its own
 // first, then the request's safe fields by name.
 const first = ['id', 'at', 'kind', 'source', 'ok', 'ms', 'error', 'account', 'user'];
 const fields = p => first.filter(key => key in p).concat(Object.keys(p).filter(key => !first.includes(key) && key !== 'fresh').sort()).map(key => [key, p[key]]);
@@ -264,10 +267,19 @@ const share = (part, whole) => whole ? (part / whole * 100).toLocaleString([], {
 const minuteLabel = at => Number.isFinite(timestamp(at)) ? new Date(timestamp(at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 // Packet routes link to the packet list, filtered; reads are never listed as packets.
 const packets = (kind, extra = '') => '#/odyle?kind=' + encodeURIComponent(kind) + extra;
+// The stored days' columns (odyle-stats job, backend/odyle/stats.go).
+const dayHeads = [['day', 'Day'], ['accounts', 'Accounts'], ['activeAccounts', 'Active 24 h'], ['pairedAccounts', 'Paired'], ['readingAccounts', 'Reading'], ['sharingAccounts', 'Sharing'],
+  ['roomsReading', 'Rooms together'], ['readings', 'Odyle changes'], ['roomsWithRuns', 'Rooms with runs'], ['wishlistEntries', 'Wishes'], ['taskAccounts', 'With tasks'], ['discordRooms', 'Discord']];
+// A daily backup schedule ("minute hour * * *", UTC) in words; any other as PocketBase takes it.
+function schedule(cron) {
+  const daily = /^(\d{1,2}) (\d{1,2}) \* \* \*$/.exec(cron || '');
+  return !cron ? 'Off' : daily ? 'Daily ' + daily[2].padStart(2, '0') + ':' + daily[1].padStart(2, '0') + ' UTC' : cron;
+}
 
 export function statusPage() {
   app.store.title = 'Server status';
-  const empty = { serverNow: '', startedAt: '', build: {}, runtime: {}, database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [] } };
+  const empty = { serverNow: '', startedAt: '', build: {}, runtime: {}, database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [], private: 0 },
+    activation: { now: {}, days: [] }, backups: {}, proxy: { headers: [] } };
   // hover is the minute (its time) the chart's tooltip shows.
   const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '', profiling: '' });
   const now = () => state.now + state.offset;
@@ -286,6 +298,12 @@ export function statusPage() {
   const perMinute = () => traffic().total.count / Math.min(60, Math.max(1, Math.ceil((now() - timestamp(state.data.startedAt)) / 60000)) || 60);
   const counts = name => state.data.counts[name] || {};
   const latest = () => state.data.release.version || '';
+  const reached = () => state.data.activation?.now || {}, days = () => state.data.activation?.days || [];
+  const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
+  // Most of an hour's requests (20 or more) from private or loopback addresses come through
+  // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
+  const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
+  const staleBackups = () => Boolean(state.data.serverNow) && !(now() - timestamp(backups().latest?.at) < 48 * 3600000);
 
   // Requests per minute, stacked by source. Each minute's column is its hover target; the
   // arrow keys move through the minutes when the chart has focus.
@@ -345,6 +363,7 @@ export function statusPage() {
     t.td({ className: 'txt-right' }, number(r.count)),
     t.td({ className: 'txt-nowrap odyle-age', title: when(r.lastAt) }, () => ago(r.lastAt, now())),
     t.td({ className: 'txt-right txt-nowrap' }, r.kind.startsWith('GET ') ? null : t.a({ href: packets(r.kind, '&filter=rejected'), title: 'The rejected ones among the latest packets' }, 'Show packets')));
+  const dayRow = d => t.tr({ rid: signature(d) }, dayHeads.map(([key]) => key === 'day' ? t.td({ className: 'txt-nowrap' }, d.day) : t.td({ className: 'txt-right' }, number(d[key]))));
   const versionRow = v => t.tr({ rid: signature(v) + '@' + latest() },
     t.td({ className: 'txt-code' }, v.version || t.span({ className: 'txt-hint' }, 'not sent (older app)')),
     t.td({ className: 'txt-right' }, number(v.apps)),
@@ -368,6 +387,13 @@ export function statusPage() {
   return layout('#/odyle/status', app.components.refreshButton({ onclick: load }),
     t.div({ onmount: () => { load(); poll = setInterval(load, 10000); tick = setInterval(() => state.now = Date.now(), 1000); }, onunmount: () => { clearInterval(poll); clearInterval(tick); } },
       () => state.failed ? t.div({ className: 'alert danger m-b-sm' }, state.failed) : null,
+      () => staleBackups() ? t.div({ className: 'alert warning m-b-sm' }, backups().latest ? 'No backup in the last 48 hours: the newest is from ' + when(backups().latest.at) + '. ' : 'There is no backup yet. ',
+        !backups().schedule ? 'Scheduled backups are off; turn them on under ' : backups().latest ? 'Check the server log for failed backups, and make one now under '
+          : 'Backups run ' + (/^Daily /.test(schedule(backups().schedule)) ? schedule(backups().schedule).replace('Daily ', 'daily at ') : 'on the schedule ' + backups().schedule) + '; make one now under ', t.a({ href: '#/settings/backups' }, 'Settings → Backups'), '.') : null,
+      () => proxied() ? t.div({ className: 'alert warning m-b-sm' }, number(traffic().private) + ' of the last hour\'s ' + number(traffic().total.count) + ' requests came from private or loopback addresses',
+        proxy().headers.length ? ' although ' + proxy().headers.join(', ') + ' is trusted. Check that your reverse proxy sets it with the client\'s address.'
+          : ' and no proxy header is trusted, so rate limits count everyone behind your reverse proxy as one client. Set ODYLE_TRUSTED_PROXY_HEADERS to the header your proxy writes (docs/deployment.md).') : null,
+      () => [backups().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
       t.div({ className: 'odyle-stats m-b-base' },
         stat('Server running', () => state.data.startedAt ? duration(now() - timestamp(state.data.startedAt)) : '—', () => state.data.startedAt ? 'since ' + when(state.data.startedAt) : ''),
         stat('Requests last hour', () => number(traffic().total.count), () => perMinute().toLocaleString([], { maximumFractionDigits: 1 }) + ' a minute · busiest ' + number(busiest())),
@@ -395,13 +421,41 @@ export function statusPage() {
         stat('Planned runs', () => number(counts('plannedRuns').total), () => number(counts('plannedRuns').upcoming) + ' still to start'),
         stat('Odyle history', () => number(counts('historyPoints').total), 'changes of the last 30 days'),
         stat('Checklist tasks', () => number(counts('tasks').total), 'daily and weekly')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Activation'), t.span({ className: 'txt-hint txt-sm' }, 'accounts that reached each step and what they use, now; totals only, no account is followed')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Signed up', () => number(reached().accounts), () => number(reached().activeAccounts) + ' used Odyle in 24 h'),
+        stat('Paired a PC', () => number(reached().pairedAccounts), () => share(reached().pairedAccounts, reached().accounts) + ' of the accounts'),
+        stat('First reading', () => number(reached().readingAccounts), () => share(reached().readingAccounts, reached().pairedAccounts) + ' of those paired'),
+        stat('Shared in a room', () => number(reached().sharingAccounts), () => share(reached().sharingAccounts, reached().readingAccounts) + ' of those reading'),
+        stat('Reading together', () => number(reached().roomsReading), 'rooms with 2 or more members read in 7 days')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Rooms with runs', () => number(reached().roomsWithRuns), 'from yesterday to 7 days ahead'),
+        stat('Wishlist entries', () => number(reached().wishlistEntries), 'in all rooms'),
+        stat('Accounts with tasks', () => number(reached().taskAccounts), 'daily or weekly'),
+        stat('Discord reminders', () => number(reached().discordRooms), 'rooms with a webhook'),
+        stat('Odyle changes', () => number(reached().readings), 'saved in the last 24 h')),
+      t.div({ className: 'flex m-b-base odyle-chips' }, t.span({ className: 'txt-hint txt-sm' }, 'Windows apps of the last 24 hours, one per PC:'),
+        () => (reached().appVersions || []).length ? reached().appVersions.slice().sort((a, b) => byVersion(a.version, b.version)).map(v => t.span({ className: 'label sm' }, (v.version || 'not sent') + ' · ' + number(v.apps))) : t.span({ className: 'txt-hint txt-sm' }, 'none')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Last 30 days'), t.span({ className: 'txt-hint txt-sm' }, 'the same totals, stored every night at 23:55 UTC by the Daily numbers job, newest first')),
+      t.div({ className: 'odyle-table m-b-base' }, t.table(null,
+        t.thead(null, t.tr(null, dayHeads.map(([key, label]) => t.th({ className: key === 'day' ? '' : 'txt-right' }, label)))),
+        t.tbody(null, () => days().length ? days().map(dayRow) : t.tr(null, t.td({ colSpan: dayHeads.length, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'No day stored yet. Run Daily numbers under Background jobs to store today\'s.'))))),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Backups'), t.a({ className: 'txt-sm', href: '#/settings/backups' }, 'Settings → Backups')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Last backup', () => backups().latest ? ago(backups().latest.at, now()) : '—', () => backups().latest ? size(backups().latest.size) + ' · ' + backups().latest.name : 'none yet'),
+        stat('Schedule', () => schedule(backups().schedule), () => backups().schedule ? 'keeps the newest ' + number(backups().keep) : 'backups only by hand'),
+        stat('Stored', () => number(backups().count), () => backups().offHost ? 'off the host, in S3 storage' : 'on the data volume only')),
+      () => backups().error ? t.div({ className: 'alert warning m-b-sm odyle-error' }, 'The backups could not be listed: ' + backups().error) : null,
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, () => backups().offHost ? 'Backups go to S3 storage, set by ODYLE_BACKUP_S3_* or under Settings → Backups. Restore one there, or by hand as docs/deployment.md describes.'
+        : 'Backups stay on the same disk as the data and would be lost with it. Set ODYLE_BACKUP_S3_* to keep them off the host (docs/deployment.md). Restore one under Settings → Backups.'),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Server'), t.span({ className: 'txt-hint txt-sm' }, () => [build().go, build().pocketbase ? 'PocketBase ' + build().pocketbase : '', build().platform].filter(Boolean).join(' · '))),
       t.div({ className: 'odyle-stats m-b-sm' },
         stat('Version', () => build().version || '—', () => build().commit ? 'commit ' + build().commit.slice(0, 12) + (build().modified ? ' (modified)' : '') + (build().builtAt ? ' · ' + when(build().builtAt) : '') : ''),
         stat('Goroutines', () => number(run().goroutines), () => number(run().realtimeClients) + ' realtime connections'),
         stat('Memory', () => size(run().heapBytes), () => number(run().heapObjects) + ' objects · ' + size(run().systemBytes) + ' from the system'),
         stat('Garbage collection', () => number(run().gcCycles), () => typeof run().lastPauseMs === 'number' ? 'cycles · last pause ' + millis(run().lastPauseMs) + ' · ' + millis(run().pauseTotalMs) + ' in all' : ''),
-        stat('Processors', () => number(run().maxProcs), () => typeof run().cpus === 'number' ? 'in use of ' + number(run().cpus) + ' CPUs' : '')),
+        stat('Processors', () => number(run().maxProcs), () => typeof run().cpus === 'number' ? 'in use of ' + number(run().cpus) + ' CPUs' : ''),
+        stat('Trusted proxy', () => proxy().headers.length ? proxy().headers.join(', ') : 'none', () => (proxy().headers.length ? (proxy().leftmost ? 'leftmost' : 'rightmost') + ' address · ' : '') + (traffic().total.count ? share(traffic().private, traffic().total.count) + ' of the last hour\'s requests from private addresses' : 'no requests in the last hour'))),
       t.div({ className: 'flex m-b-base odyle-profiles' }, t.span({ className: 'txt-hint txt-sm' }, 'Profiles for go tool pprof:'),
         profileButton('profile', 'CPU, 30 s', '?seconds=30'), profileButton('heap', 'Heap'), profileButton('allocs', 'Allocations'), profileButton('goroutine', 'Goroutines')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
@@ -422,10 +476,11 @@ export function statusPage() {
 
 // What each background job does; the backend's odyle/jobs.go holds the schedules and the records.
 const jobInfo = {
-  'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes expired invites, pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
-  'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones saved while portraits were paused, missing ones hourly, the rest daily. New characters are looked up as soon as they are saved.' },
+  'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes invite links three days after they expired, expired pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
+  'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones not looked up yet, the others daily. A character the search does not list is tried again after an hour, six hours and a day, then weekly; characters no reader has seen for 60 days wait until one does. New characters are looked up as soon as they are saved, up to ten at a time.' },
   'odyle-reminders': { label: 'Discord reminders', schedule: () => 'Every minute', unit: 'reminders posted', about: 'Posts planned runs to their room\'s Discord channel 15 minutes before they start.' },
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
+  'odyle-stats': { label: 'Daily numbers', schedule: () => 'Daily at 23:55 UTC (' + localHour(23, 55) + ' here)', unit: 'days stored', about: 'Stores the day\'s activation and feature-use totals shown under Server status, so their trend survives restarts; a run by hand replaces today\'s. Totals only, no account is recorded.' },
 };
 const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account' };
 
@@ -501,13 +556,65 @@ function settingsForm(keys, sync = () => {}) {
 
 export function settingsPage() {
   app.store.title = 'Game settings';
-  // dungeonText is the catalog as typed; form.dungeons is the list it saves.
-  const text = store({ dungeons: '' });
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'dungeons'], form => text.dungeons = (form.dungeons || []).join('\n'));
+  // Lines to add to the dungeon catalog at once (pasted or typed), and whether that box is open.
+  const paste = store({ open: false, text: '' });
+  // How many accounts the next clean-up would delete with the period in the form, saved or not.
+  const retention = store({ days: null, data: null, failed: '' });
+  let counting = 0;
+  function countInactive(days) {
+    clearTimeout(counting);
+    Object.assign(retention, { days, data: null, failed: '' });
+    if (!Number.isInteger(days) || days < 30 || days > 3650) return;
+    counting = setTimeout(async () => {
+      try {
+        const data = await app.pb.send('/api/odyle/admin/retention', { query: { days }, requestKey: null });
+        if (retention.days === days) retention.data = data;
+      } catch (error) { if (!error.isAbort && retention.days === days) retention.failed = error.message || 'The inactive accounts could not be counted.'; }
+    }, 300);
+  }
+  const deletion = () => {
+    const d = retention.data;
+    if (retention.failed) return t.span({ className: 'txt-danger' }, retention.failed);
+    if (!d) return null;
+    const run = 'the next run at ' + String(d.runAt).slice(11, 16) + ' UTC (' + minuteLabel(d.runAt) + ' here)';
+    return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
+      : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
+  };
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
-  // The dungeon catalog is edited as one name per line.
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
+  // The dungeon catalog, one row per dungeon: cost 0 means Odyle per cube, party size 0 not
+  // set. Names match regardless of case and spacing, as the server matches them.
+  const sizes = [0, 4, 5, 10, 20], key = name => String(name).trim().replace(/\s+/g, ' ').toLowerCase();
+  const dungeons = () => state.form.catalog;
+  function addDungeon() {
+    dungeons().push({ name: '', cost: 0, partySize: 0, category: '', unconfirmed: false });
+    const at = dungeons().length - 1;
+    setTimeout(() => document.getElementById('odyle-dungeon-' + at + '-name')?.focus());
+  }
+  // A line of a list: name | Odyle per cube | party size | category | unconfirmed, split at
+  // | or tabs (columns copied from a spreadsheet); only the name is needed.
+  function fromLine(line) {
+    const [name = '', cost = '', size = '', category = '', mark = ''] = line.split(/\t|\|/).map(part => part.trim());
+    return { name, cost: integer(cost) ?? 0, partySize: sizes.includes(integer(size)) ? integer(size) : 0, category, unconfirmed: /^(unconfirmed|yes|true|x|\?)$/i.test(mark) };
+  }
+  // A dungeon the table already lists takes the values of its line and keeps its spelling.
+  function addLines() {
+    for (const entry of lines(paste.text).map(fromLine)) {
+      const at = dungeons().findIndex(d => key(d.name) === key(entry.name));
+      if (at < 0) dungeons().push(entry); else dungeons()[at] = { ...entry, name: dungeons()[at].name };
+    }
+    Object.assign(paste, { open: false, text: '' });
+  }
+  const cell = (className, ...content) => t.td({ className }, t.div({ className: 'field' }, ...content));
+  const dungeonRow = (d, i) => t.tr({ className: 'rate-limit-row' },
+    cell('col-label', t.input({ id: 'odyle-dungeon-' + i + '-name', type: 'text', required: true, maxLength: 60, placeholder: 'Dungeon name', ariaLabel: 'Dungeon name', value: () => d.name, oninput: e => d.name = e.target.value })),
+    cell('odyle-col-cost', t.input({ id: 'odyle-dungeon-' + i + '-cost', type: 'number', min: 0, max: 1000, step: 1, ariaLabel: 'Odyle per cube', placeholder: () => 'Default ' + (state.form.odylePerCube ?? ''), value: () => d.cost || '', oninput: e => d.cost = integer(e.target.value) ?? 0 })),
+    cell('odyle-col-party', t.select({ id: 'odyle-dungeon-' + i + '-party', ariaLabel: 'Party size', onchange: e => d.partySize = Number(e.target.value) }, sizes.map(n => t.option({ value: String(n), selected: () => d.partySize === n }, n ? String(n) : '–')))),
+    cell('odyle-col-category', t.input({ id: 'odyle-dungeon-' + i + '-category', type: 'text', maxLength: 30, placeholder: 'Category', ariaLabel: 'Category', 'html-list': 'odyle-categories', value: () => d.category, oninput: e => d.category = e.target.value })),
+    cell('odyle-col-mark', t.input({ id: 'odyle-dungeon-' + i + '-unconfirmed', type: 'checkbox', checked: () => d.unconfirmed, onchange: e => d.unconfirmed = e.target.checked }), t.label({ htmlFor: 'odyle-dungeon-' + i + '-unconfirmed' }, 'Unconfirmed')),
+    t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (d.name.trim() || 'this dungeon'), onclick: () => dungeons().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
   load();
   return layout('#/odyle/settings', null,
     () => state.loading ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' })) : t.form({ className: 'grid', inert: () => state.saving, onsubmit: e => { e.preventDefault(); save('Saved the Odyle game settings.'); } },
@@ -518,10 +625,21 @@ export function settingsPage() {
         () => Number.isInteger(state.form.dailyResetHour) && state.form.dailyResetHour >= 0 && state.form.dailyResetHour < 24 ? 'Daily tasks uncheck at ' + String(state.form.dailyResetHour).padStart(2, '0') + ':00 UTC, ' + localHour(state.form.dailyResetHour) + ' in your time zone.' : 'An hour from 0 to 23.'),
       field('odyle-weekly-reset', 'Weekly reset day', app.components.select({ id: 'odyle-weekly-reset', required: true, options: days.map(d => ({ label: capital(d), value: d })), value: () => state.form.weeklyResetDay, onchange: e => state.form.weeklyResetDay = e?.[0]?.value }),
         'Weekly tasks uncheck on this day at the daily reset hour.'),
-      field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => state.form.inactiveAccountDays = integer(e.target.value) }),
-        () => state.form.inactiveAccountDays ? 'Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close.' : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
-      field('odyle-dungeons', 'Dungeon catalog', t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'One dungeon per line', value: () => text.dungeons, oninput: e => { text.dungeons = e.target.value; state.form.dungeons = lines(e.target.value); } }),
-        () => (state.form.dungeons || []).length ? number(state.form.dungeons.length) + ' dungeons. New wishlist entries and planned runs must be one of them and take this spelling; existing entries stay.' : 'Empty: wishlists and planned runs take any dungeon name. One name per line, up to 200.', 8),
+      field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => { state.form.inactiveAccountDays = integer(e.target.value); countInactive(state.form.inactiveAccountDays); } }),
+        () => state.form.inactiveAccountDays ? ['Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close. ', deletion()] : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
+      section('Dungeon catalog', 'The dungeons rooms choose from for wishlists and planned runs, with what opening one cube of each costs. Rooms show the cost and how many cubes the party can open.'),
+      t.div({ className: 'col-lg-12' },
+        t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-catalog' },
+          t.thead({ hidden: () => !dungeons().length }, t.tr(null, t.th({ className: 'col-label' }, 'Dungeon'), t.th(null, 'Odyle per cube'), t.th(null, 'Party'), t.th(null, 'Category'), t.th(null), t.th({ className: 'col-action' }))),
+          t.tbody(null, () => dungeons().map(dungeonRow),
+            t.tr({ className: 'rate-limit-row' }, t.td({ colSpan: 99, className: 'col-new-btn' }, t.button({ type: 'button', className: 'btn secondary sm full-width', disabled: () => dungeons().length >= 200, onclick: addDungeon }, t.i({ className: 'ri-add-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Add dungeon'))))))),
+        t.datalist({ id: 'odyle-categories' }, () => [...new Set(dungeons().map(d => d.category.trim()).filter(Boolean))].map(category => t.option({ value: category }))),
+        t.div({ className: 'field-help' }, () => dungeons().length ? number(dungeons().length) + (dungeons().length === 1 ? ' dungeon' : ' dungeons') + '. New wishlist entries and planned runs must be one of them and take this spelling; existing entries stay. An empty cost uses Odyle per cube; mark a cost you have not checked in game as unconfirmed, and rooms say so.' : 'Empty: wishlists and planned runs take any dungeon name. Up to 200 dungeons.'),
+        t.button({ type: 'button', className: () => 'btn sm secondary m-t-sm ' + (paste.open ? '' : 'transparent'), onclick: () => paste.open = !paste.open }, t.span({ className: 'txt' }, 'Add several from a list'), t.i({ ariaHidden: true, className: () => paste.open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line' })),
+        () => paste.open ? t.div({ className: 'm-t-sm' },
+          t.div({ className: 'field' }, t.label({ htmlFor: 'odyle-dungeons' }, 'One dungeon per line'), t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'Krao Cave | 20 | 5 | Exploration | unconfirmed', value: () => paste.text, oninput: e => paste.text = e.target.value })),
+          t.div({ className: 'field-help' }, 'Name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and columns copied from a spreadsheet work too. A dungeon already in the table takes the values of its line. docs/deployment.md suggests a list for Global.'),
+          t.button({ type: 'button', className: 'btn sm m-t-sm', disabled: () => !lines(paste.text).length, onclick: addLines }, t.span({ className: 'txt' }, 'Add to the catalog'))) : null),
       t.div({ className: 'col-lg-12' }, t.hr()),
       // Resets the game rules only; the retention period and the dungeon catalog stay.
       buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay } },
@@ -532,7 +650,7 @@ export function controlsPage() {
   app.store.title = 'Server controls';
   // extra is the extra adapter list as typed; form.adapters.extra is the list it saves.
   const text = store({ extra: '' });
-  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
+  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const builtIn = () => state.data?.builtInAdapters || [];
   const adapters = next => state.form.adapters = { ...state.form.adapters, ...next };
@@ -558,6 +676,7 @@ export function controlsPage() {
       switchField('portraitsPaused', 'Pause portrait refresh', 'Stops asking PLAYNC for character portraits. New characters get theirs once it runs again.'),
       switchField('remindersPaused', 'Pause Discord reminders', 'No planned run is posted to Discord. Runs that start while paused are not announced afterwards; saving a webhook still posts its test message.'),
       switchField('pairingPaused', 'Pause new pairings', 'The dashboard stops creating connection links and Windows apps cannot pair. PCs already paired keep signing in and reading.'),
+      switchField('readerPaused', 'Pause packet readers', 'Paired Windows apps stop reading game packets and close Npcap within about 20 seconds, say so on their card and resume by themselves once this is off. Readings sent meanwhile are refused; apps from before this switch keep capturing, but their readings are refused too.'),
       section('Packet adapters', 'The Windows app names its decoder with every reading, and only readings from accepted adapters are stored. Built-in adapters come with the backend code; accept a new decoder here before the next deploy, or stop one that reads wrong values.'),
       t.div({ className: 'col-lg-4' }, t.div({ className: 'txt-bold m-b-xs' }, 'Built-in adapters'),
         builtIn().map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
