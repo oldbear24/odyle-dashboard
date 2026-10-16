@@ -82,14 +82,14 @@ Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:
 | Body | Who | Effect |
 | --- | --- | --- |
 | `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room |
-| `{ roomId, id, going }` | owner, players | `true` joins the run, `false` leaves it |
+| `{ roomId, id, going, character? }` | owner, players | `true` joins the run, `false` leaves it. With `character` (one of the caller's own characters shared in this room, else 400) the caller brings that character; joining again changes or drops the pick and keeps the caller's place |
 | `{ roomId, id, dungeon?, startsAt?, note? }` | planner, owner | Changes the run with the same rules as planning; a dungeon that only differs in case or spacing keeps its name, an empty or blank `note` removes the note, a new `startsAt` announces the run on Discord again |
 | `{ roomId, id, remove: true }` | planner, owner | Cancels the run |
 
-The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run):
+The snapshot's `runs` lists runs until three hours after they started, soonest first; the expiry cron deletes them a day after the start. `planner` and `attendees` are account ids (`planner` is empty once its member left; leaving or removal takes a member off every run), and `picks` maps an attendee's account id to the character they bring, while they still go and still share it in the room (unsharing or deleting the character drops the pick):
 
 ```json
-[{ "id": "run-id", "dungeon": "Fire Temple", "startsAt": "2026-10-14 19:00:00.000Z", "note": "Bring potions", "planner": "user-id-1", "attendees": ["user-id-1", "user-id-2"] }]
+[{ "id": "run-id", "dungeon": "Fire Temple", "startsAt": "2026-10-14 19:00:00.000Z", "note": "Bring potions", "planner": "user-id-1", "attendees": ["user-id-1", "user-id-2"], "picks": { "user-id-2": "character-id" } }]
 ```
 
 Viewers read runs but cannot plan or join them. The `room_runs` collection has no API rules.

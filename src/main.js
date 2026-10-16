@@ -1,3 +1,4 @@
+import { runReadiness, broughtBy, earliestClaim } from './runready.js';
 import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
 import { defaultClock, clockOf, clockLine } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
@@ -237,8 +238,12 @@ function wishlistSection(now) {
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
 }
 function plannedRuns(now) {
-  const suggestions = [...new Set(wishlist.map(w => w.dungeon))];
-  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: room?.cost || perCube, facts: dungeonInfo(now), demo, discord: room?.discordReminders });
+  const suggestions = [...new Set(wishlist.map(w => w.dungeon))], entries = flattened(), cost = room?.cost || perCube;
+  // A run counts at its dungeon's own cost when the catalog has one.
+  const costOf = r => entryOf(catalog, r.dungeon)?.cost || cost;
+  const players = [...new Set(entries.filter(c => c.role !== 'viewer').map(c => c.user))].map(user => broughtBy(user, entries, now).character);
+  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: cost, facts: dungeonInfo(now), demo, discord: room?.discordReminders,
+    readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules) });
 }
 // Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
 // changed checkbox, and the focus; what the user did not change shows what the redraw brings.
@@ -891,8 +896,15 @@ app.addEventListener('click', async e => {
       const form = document.querySelector('#run-form'); if (!form) return;
       form.elements.dungeon.value = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
     }
+    // Going with one of several characters shared here asks which one first.
+    if (el.dataset.run && el.dataset.going === 'true' && !el.dataset.character && mine().filter(c => c.shared).length > 1) {
+      const run = runs.find(r => r.id === el.dataset.run);
+      return modal(esc(t('Going to {dungeon} with', { dungeon: run?.dungeon || '' })), `<p>${t('Pick the character you bring. The run counts its cubes.')}</p><div class="add-chips pick-chips">${mine().filter(c => c.shared).map(c => `<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="${esc(c.id)}">${esc(c.characterName)} · ${esc(c.value.toLocaleString(locale()))}</button>`).join('')}<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="any">${t('Any: my best')}</button></div>`);
+    }
+    if (el.dataset.useStart) { const input = document.querySelector('#run-form [name="startsAt"]'); if (input) { input.value = el.dataset.useStart; input.focus(); } return; }
     if (el.dataset.run) {
-      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
+      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true', ...(el.dataset.character && el.dataset.character !== 'any' ? { character: el.dataset.character } : {}) }); } finally { el.disabled = false; }
+      if (el.dataset.character) closeModal();
       return changedRoom(id, () => { runs = result.runs; });
     }
     if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }

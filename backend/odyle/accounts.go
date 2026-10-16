@@ -1735,36 +1735,47 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 			return nil, err
 		}
 	}
-	users := memberUsers(members)
+	users, byId := memberUsers(members), map[string]*Member{}
+	for _, m := range members {
+		byId[m.Id] = m
+	}
 	found, err := app.FindRecordsByFilter("room_runs", "room = {:room} && startsAt >= {:since}", "startsAt", 0, 0, dbx.Params{"room": roomId, "since": ago(3 * time.Hour)})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]plannedRun, len(found))
 	for i, r := range views[Run](found) {
-		attendees := []string{}
+		attendees, picks := []string{}, map[string]string{}
 		for _, id := range r.Attendees() {
 			if user := users[id]; user != "" {
 				attendees = append(attendees, user)
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees}
+		// A pick counts while the member still goes and still shares that character here.
+		for member, character := range r.Picks() {
+			if m := byId[member]; m != nil && contains(r.Attendees(), member) && m.Shares(character) {
+				picks[users[member]] = character
+			}
+		}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks}
 	}
 	return out, nil
 }
 
-// plannedRun is a run as rooms list it; planner and attendees are account ids.
+// plannedRun is a run as rooms list it; planner and attendees are account ids, and picks
+// maps an attendee's account id to the character they bring (when they picked one).
 type plannedRun struct {
-	Id        string   `json:"id"`
-	Dungeon   string   `json:"dungeon"`
-	StartsAt  string   `json:"startsAt"`
-	Note      string   `json:"note"`
-	Planner   string   `json:"planner"`
-	Attendees []string `json:"attendees"`
+	Id        string            `json:"id"`
+	Dungeon   string            `json:"dungeon"`
+	StartsAt  string            `json:"startsAt"`
+	Note      string            `json:"note"`
+	Planner   string            `json:"planner"`
+	Attendees []string          `json:"attendees"`
+	Picks     map[string]string `json:"picks"`
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
-// planner going, { roomId, id, going } joins or leaves it, { roomId, id, dungeon?,
+// planner going, { roomId, id, going, character? } joins (with the character it brings) or leaves it, { roomId, id, dungeon?,
 // startsAt?, note? } changes it and { roomId, id, remove: true } cancels it (changes
 // and cancelling: its planner or the room owner). Owners and players plan and join;
 // viewers read.
@@ -1793,16 +1804,35 @@ func plan(e *core.RequestEvent) error {
 				if viewer {
 					return nil, forbidden("Viewers cannot join runs.")
 				}
-				attendees := []string{}
+				// Going with a character: one of the member's own, shared in this room.
+				pick := ""
+				if going && b.set("character") {
+					c, err := ownCharacter(app, user.Id, b.str("character"))
+					if err != nil {
+						return nil, err
+					}
+					if !m.Shares(c.Id) {
+						return nil, badRequest("Pick a character you share in this room.")
+					}
+					pick = c.Id
+				}
+				// A member already going keeps their place; one leaving drops their pick.
+				attendees, already := []string{}, contains(r.Attendees(), m.Id)
 				for _, id := range r.Attendees() {
-					if id != m.Id {
+					if id != m.Id || going {
 						attendees = append(attendees, id)
 					}
 				}
-				if going {
+				if going && !already {
 					attendees = append(attendees, m.Id)
 				}
 				r.SetAttendees(attendees)
+				picks := r.Picks()
+				delete(picks, m.Id)
+				if pick != "" {
+					picks[m.Id] = pick
+				}
+				r.Set("picks", picks)
 				if err := app.Save(r); err != nil {
 					return nil, err
 				}

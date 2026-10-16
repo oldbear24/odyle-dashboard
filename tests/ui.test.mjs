@@ -237,6 +237,9 @@ test('rooms plan, change and export runs, and members see each character history
   // A newer Windows app sends the game's two numbers and what the change was.
   await request('/api/odyle/report', { ...reading, sequence: 4, value: 90, characterId: c.id, base: 60, bonus: 30, kind: 'item', delta: 60 }, lead);
   await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead);
+  // A second character shared here: runs count the best one unless the lead picks another.
+  const second = (await request('/api/odyle/report', { ...reading, sequence: 5, characterName: 'Second', value: 150 }, lead)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: second.id, enabled: true }, lead);
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
@@ -261,6 +264,17 @@ test('rooms plan, change and export runs, and members see each character history
     assert.match(await page.locator('.runs .wish-row').innerText(), /Fire Temple[\s\S]*Bring potions[\s\S]*You/);
     // The default start is the next full hour, which right before it is under a minute away.
     assert.match(await page.locator('.runs [data-starts]').innerText(), /^(in |starting now)/);
+    // The run counts its attendees at its cost: the lead brings their best character, or the one they pick.
+    assert.equal(await page.locator('.runs .run-claim').innerText(), '1 of 1 can claim a cube at the start · 40 Odyle');
+    assert.equal(await page.locator('.runs .wish-people .wish-person').innerText(), 'You · Second · 3 cubes');
+    await page.locator('.runs [data-run][data-going="false"]').click();
+    await page.locator('.runs .run-nobody').waitFor();
+    await page.locator('.runs [data-run][data-going="true"]').click();
+    assert.deepEqual(await page.locator('#modal .pick-chips .add-chip').allInnerTexts(), ['Charted · 90', 'Second · 150', 'Any: my best']);
+    await page.locator('#modal .pick-chips .add-chip', { hasText: 'Charted' }).click();
+    await page.locator('.runs .wish-people .wish-person', { hasText: 'Charted' }).waitFor();
+    assert.equal(await page.locator('.runs .wish-people .wish-person').innerText(), 'You · Charted · 2 cubes');
+    assert.match(await page.locator('.runs .wish-people .wish-person').getAttribute('title'), /^Picked for this run · /);
     // The planner changes the run in a dialog and anyone can put it in their calendar.
     await page.locator('.runs [data-edit-run]').click();
     await page.locator('#run-edit-form [name=note]').fill('Bring food');
