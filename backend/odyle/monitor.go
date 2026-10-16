@@ -356,7 +356,7 @@ func status(e *core.RequestEvent) error {
 		return err
 	}
 	readers, _ := readerHealth(e.App, time.Now())
-	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("proxy", proxyStatus(e.App)).set("readers", readers))
+	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("proxy", proxyStatus(e.App)).set("readers", readers).set("armory", armoryStatus(e.App)))
 }
 
 // retentionRoute answers how many accounts the inactive-account clean-up would delete on

@@ -105,6 +105,7 @@ type settings struct {
 	RemindersPaused     bool           `json:"remindersPaused"`
 	PairingPaused       bool           `json:"pairingPaused"`
 	ReaderPaused        bool           `json:"readerPaused"`
+	ArmoryPaused        bool           `json:"armoryPaused"`
 	Adapters            adapterLists   `json:"adapters"`
 	Clock               clockRules     `json:"clock"`
 }
@@ -218,7 +219,7 @@ func loadSettings(app core.App) settings {
 	}
 	out := settings{OdylePerCube: s.GetInt64("odylePerCube"), DailyResetHour: s.GetInt64("dailyResetHour"), WeeklyResetDay: s.GetString("weeklyResetDay"), InactiveAccountDays: s.GetInt64("inactiveAccountDays"),
 		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
-		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused")}
+		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
 	}
@@ -480,7 +481,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	for _, s := range []struct {
 		key    string
 		target *bool
-	}{{"portraitsPaused", &next.PortraitsPaused}, {"remindersPaused", &next.RemindersPaused}, {"pairingPaused", &next.PairingPaused}, {"readerPaused", &next.ReaderPaused}} {
+	}{{"portraitsPaused", &next.PortraitsPaused}, {"remindersPaused", &next.RemindersPaused}, {"pairingPaused", &next.PairingPaused}, {"readerPaused", &next.ReaderPaused}, {"armoryPaused", &next.ArmoryPaused}} {
 		if b.has(s.key) {
 			on, ok := b.boolean(s.key)
 			if !ok {
@@ -510,6 +511,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("remindersPaused", next.RemindersPaused)
 	record.Set("pairingPaused", next.PairingPaused)
 	record.Set("readerPaused", next.ReaderPaused)
+	record.Set("armoryPaused", next.ArmoryPaused)
 	record.Set("adapters", map[string]any{"extra": next.Adapters.Extra, "disabled": next.Adapters.Disabled})
 	record.Set("clock", next.Clock)
 	if err := app.Save(record); err != nil {

@@ -121,6 +121,10 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/export", timed("export", exportData)).Bind(signedIn)
 	// Public: the newest Windows companion release, cached from GitHub (no account data involved).
 	se.Router.GET("/api/odyle/windows-release", timed("windows-release", windowsRelease))
+	// Public: the armory (armory.go), signed in or not, with its own rate limits per address.
+	se.Router.GET("/api/odyle/armory/servers", timed("armory-servers", armoryServersRoute))
+	se.Router.GET("/api/odyle/armory/search", timed("armory-search", armorySearchRoute))
+	se.Router.GET("/api/odyle/armory/{region}/{serverId}/{characterId}", timed("armory", armoryRoute))
 	// Public: the message superusers set under Server controls, for the dashboard (signed in or not).
 	se.Router.GET("/api/odyle/announcement", timed("announcement", func(e *core.RequestEvent) error {
 		return e.JSON(200, map[string]any{"announcement": announcement(readSettings(e.App))})

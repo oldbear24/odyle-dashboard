@@ -305,6 +305,7 @@ export function statusPage() {
   const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
   const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
   const clock = () => readers().clock || { checked: 0, matched: 0, checkedToday: 0, missedToday: 0 };
+  const armory = () => state.data.armory || { profiles: 0, hidden: 0, waiting: 0, fetching: false, done: 0, failed: 0, lastAt: '', lastError: '', lastErrorAt: '', blockedUntil: '', paused: false };
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -473,6 +474,13 @@ export function statusPage() {
         stat('Game builds', () => readers().games.length ? readers().games.map(g => g.game.replace(/^Steam build /, '')).join(', ') : '—', () => readers().games.length ? readers().games.map(g => number(g.apps) + ' on ' + g.game).join(' · ') : 'Steam builds the apps read'),
         stat('Odyle clock', () => clock().checked ? Math.round(clock().matched / clock().checked * 100) + '%' : '—', () => clock().checked ? number(clock().matched) + ' of ' + number(clock().checked) + ' login readings of the last 7 days matched its projection' : 'login readings after a tick, compared with its projection'),
         stat('Operator alerts', () => readers().alerts ? 'on' : 'off', () => readers().alerts ? 'Discord, by the Reader health job every 5 minutes' : 'set ODYLE_ALERT_WEBHOOK to a Discord webhook')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Armory'), t.span({ className: 'txt-hint txt-sm' }, 'public character profiles from PLAYNC, one lookup at a time; counts since the server started')),
+      () => armory().blockedUntil ? t.div({ className: 'alert warning m-b-sm' }, 'PLAYNC refused the armory lookups; the queue waits until ' + new Date(armory().blockedUntil).toLocaleTimeString() + '. If it keeps happening, pause the armory under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), '.') : null,
+      t.div({ className: 'odyle-stats m-b-base' },
+        stat('Kept profiles', () => number(armory().profiles), () => number(armory().hidden) + ' hidden · kept 30 days after they were last opened'),
+        stat('Queue', () => armory().paused ? 'paused' : number(armory().waiting + (armory().fetching ? 1 : 0)), () => armory().paused ? 'Server controls' : armory().fetching ? 'one lookup running' : 'waiting for PLAYNC'),
+        stat('Lookups', () => number(armory().done), () => (armory().failed ? number(armory().failed) + ' failed · ' : '') + (armory().lastAt ? 'last ' + new Date(armory().lastAt).toLocaleString() : 'none yet')),
+        stat('Last error', () => armory().lastError ? new Date(armory().lastErrorAt).toLocaleString() : 'none', () => armory().lastError || 'PLAYNC answered every lookup')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
@@ -499,6 +507,7 @@ const jobInfo = {
   'odyle-health': { label: 'Reader health', schedule: () => 'Every 5 minutes', unit: 'alerts posted', about: 'Posts to the Discord webhook in ODYLE_ALERT_WEBHOOK when most apps connected to the game have read no Odyle for 10 minutes (a game patch, most likely) or readings arrive under a refused adapter, once when it starts and once when it clears. Without the variable it only keeps the readers\' reports, which Server status shows.' },
   'odyle-cap-alerts': { label: 'Cap alerts', schedule: () => 'Hourly at :05', unit: 'alerts sent', about: 'Tells players who turned cap alerts on when a character\'s natural pool, as the Odyle clock projects it, is about to reach its cap or is full: in their Windows app, open dashboards and by Web Push, outside their quiet hours. Never to rooms or Discord.' },
   'odyle-push': { label: 'Push reminders', schedule: () => 'Every minute', unit: 'notifications sent', about: 'Sends planned-run reminders by Web Push to players going to a run who turned push on, at their reminder times and outside their quiet hours. Devices whose push service forgot them are removed.' },
+  'odyle-armory': { label: 'Armory clean-up', schedule: () => 'Daily at 04:41 UTC (' + localHour(4, 41) + ' here)', unit: 'profiles deleted', about: 'Deletes armory profiles nobody opened for 30 days. Hidden profiles stay, so the armory keeps them out. Profiles are fetched from PLAYNC when readers open them, one at a time, not by this job.' },
   'odyle-release': { label: 'Release check', schedule: () => 'Every 2 minutes', unit: 'lookups', about: 'Asks GitHub for the newest Windows release. A newer one is news for every open dashboard and running app at once, so run it by hand right after publishing a release.' },
 };
 const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account', clock: 'Skipped, the Odyle clock is hidden under Game settings' };
@@ -684,7 +693,7 @@ export function controlsPage() {
   app.store.title = 'Server controls';
   // extra is the extra adapter list as typed; form.adapters.extra is the list it saves.
   const text = store({ extra: '' });
-  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
+  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const builtIn = () => state.data?.builtInAdapters || [];
   const adapters = next => state.form.adapters = { ...state.form.adapters, ...next };
@@ -708,6 +717,7 @@ export function controlsPage() {
       t.div({ className: 'col-lg-12' }, () => state.form.announcement.trim() ? t.div({ className: () => 'alert ' + (state.form.announcementLevel === 'warning' ? 'warning' : 'info') }, t.i({ className: state.form.announcementLevel === 'warning' ? 'ri-alert-line' : 'ri-information-line', ariaHidden: true }), t.span({ className: 'txt' }, state.form.announcement.trim().replace(/\s+/g, ' '))) : t.div({ className: 'txt-hint txt-sm' }, 'No announcement is shown.')),
       section('Switches', 'Pause a part of Odyle without a redeploy, for example while an outside service fails. Background jobs shows what each job did last.'),
       switchField('portraitsPaused', 'Pause portrait refresh', 'Stops asking PLAYNC for character portraits. New characters get theirs once it runs again.'),
+      switchField('armoryPaused', 'Pause the armory', 'Stops every armory lookup and search at PLAYNC and empties its queue. Kept profiles stay readable, marked with their age. To keep one character out for good, set hidden on its row under Collections → armory_profiles.'),
       switchField('remindersPaused', 'Pause Discord reminders', 'No planned run is posted to Discord. Runs that start while paused are not announced afterwards; saving a webhook still posts its test message.'),
       switchField('pairingPaused', 'Pause new pairings', 'The dashboard stops creating connection links and Windows apps cannot pair. PCs already paired keep signing in and reading.'),
       switchField('readerPaused', 'Pause packet readers', 'Paired Windows apps stop reading game packets and close Npcap within about 20 seconds, say so on their card and resume by themselves once this is off. Readings sent meanwhile are refused; apps from before this switch keep capturing, but their readings are refused too.'),
