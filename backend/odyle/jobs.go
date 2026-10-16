@@ -51,13 +51,27 @@ type job struct {
 	work     func(core.App) (result, error)
 }
 
-var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention"}
+var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-stats"}
 
 var jobs = map[string]job{
 	"odyle-expiry":    {schedule: "*/5 * * * *", manual: true, work: cleanup},
 	"odyle-portraits": {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.PortraitsPaused }, work: refreshPortraits},
 	"odyle-reminders": {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.RemindersPaused }, work: remindRuns},
 	"odyle-retention": {schedule: "17 3 * * *", manual: false, work: retention},
+	"odyle-stats":     {schedule: "55 23 * * *", manual: true, work: recordStats},
+}
+
+// nextDaily is when a daily schedule ("minute hour * * *", UTC like every job) runs next,
+// at or after the given time.
+func nextDaily(schedule string, at time.Time) time.Time {
+	var minute, hour int
+	_, _ = fmt.Sscanf(schedule, "%d %d", &minute, &hour)
+	at = at.UTC()
+	next := time.Date(at.Year(), at.Month(), at.Day(), hour, minute, 0, 0, time.UTC)
+	if next.Before(at) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
 }
 
 // runJob runs one job and records it. A job still running (a manual start during its

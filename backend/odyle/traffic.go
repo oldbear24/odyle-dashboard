@@ -59,8 +59,9 @@ type rejection struct {
 }
 
 type trafficMinute struct {
-	routes map[string]*routeTraffic
-	errors map[string]*rejection // by kind and message
+	routes  map[string]*routeTraffic
+	errors  map[string]*rejection // by kind and message
+	private int                   // requests from a private or loopback client address
 }
 
 type traffic struct {
@@ -73,10 +74,8 @@ func newTraffic() *traffic { return &traffic{minutes: map[int64]*trafficMinute{}
 
 func minuteOf(at time.Time) int64 { return int64(math.Floor(float64(at.UnixMilli()) / 60000)) }
 
-// record counts one handled request.
-func (t *traffic) record(at time.Time, kind, source string, ms int64, failure error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// minute is the entry of the minute at, made if needed (t.mu held).
+func (t *traffic) minute(at time.Time) *trafficMinute {
 	minute, previous := minuteOf(at), minuteOf(at)
 	if t.latest != 0 {
 		previous = t.latest
@@ -91,6 +90,22 @@ func (t *traffic) record(at time.Time, kind, source string, ms int64, failure er
 		entry = &trafficMinute{routes: map[string]*routeTraffic{}, errors: map[string]*rejection{}}
 		t.minutes[minute] = entry
 	}
+	return entry
+}
+
+// fromPrivate counts a handled request whose client address, the one rate limits count
+// it under, is private or loopback (proxy.go).
+func (t *traffic) fromPrivate(at time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.minute(at).private++
+}
+
+// record counts one handled request.
+func (t *traffic) record(at time.Time, kind, source string, ms int64, failure error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	entry := t.minute(at)
 	route := entry.routes[kind]
 	if route == nil {
 		route = newRouteTraffic(source)
@@ -143,15 +158,17 @@ func timing(o *object, r *routeTraffic) *object {
 }
 
 // summary is the last 60 minutes, oldest first, each with the accepted requests by source
-// and every rejected one; the routes and the rejection reasons of the whole hour.
+// and every rejected one; the routes and the rejection reasons of the whole hour, and how
+// many of its requests came from a private or loopback address.
 func (t *traffic) summary(at time.Time) *object {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := minuteOf(at)
-	minutes, routes, reasons, all := []*object{}, map[string]*routeTraffic{}, map[string]*rejection{}, newRouteTraffic("")
+	minutes, routes, reasons, all, private := []*object{}, map[string]*routeTraffic{}, map[string]*rejection{}, newRouteTraffic(""), 0
 	for m := now - trafficHour + 1; m <= now; m++ {
 		counts := map[string]int{}
 		if entry := t.minutes[m]; entry != nil {
+			private += entry.private
 			for kind, route := range entry.routes {
 				counts[route.source] += route.count - route.rejected
 				counts["rejected"] += route.rejected
@@ -211,5 +228,5 @@ func (t *traffic) summary(at time.Time) *object {
 	if len(errorList) > trafficReasons {
 		errorList = errorList[:trafficReasons]
 	}
-	return newObject().set("minutes", minutes).set("total", total).set("routes", routeList).set("errors", errorList)
+	return newObject().set("minutes", minutes).set("total", total).set("routes", routeList).set("errors", errorList).set("private", private)
 }

@@ -417,6 +417,8 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     // Typed line by line, as a superuser would: Enter must not be swallowed by the list it saves.
     await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple\n');
     assert.match(await page.locator('#odyle-inactive').locator('xpath=../..').innerText(), /365 days/);
+    // Before saving, the page counts the accounts the next clean-up would delete with that period.
+    await page.locator('#odyle-inactive').locator('xpath=../..').getByText(/With this period the next run at 03:17 UTC \(.+ here\) would delete/).waitFor();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
@@ -487,6 +489,9 @@ test('superusers search, open and export packets and read the server status', as
     const [heap] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Heap' }).click()]);
     assert.match(heap.suggestedFilename(), /^odyle-heap-.*\.pb\.gz$/);
     assert.deepEqual([...(await (await import('node:fs/promises')).readFile(await heap.path())).subarray(0, 2)], [0x1f, 0x8b]);
+    // Activation totals and the backups.
+    assert.match(await page.locator('.odyle-stat', { hasText: 'First reading' }).innerText(), /First reading\s+[1-9]/);
+    assert.match(await page.locator('.odyle-stat', { hasText: 'Schedule' }).innerText(), /Daily 03:00 UTC\s+keeps the newest 7/);
     await shot(page, 'admin-status');
     // A route links to its packets, the rejected ones from a reason.
     await reasons.getByRole('link', { name: 'Show packets' }).click();

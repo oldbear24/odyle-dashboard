@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,7 +148,17 @@ func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 		}
 	}
 	broadcast(e.App, remember(e.App, packet))
-	stateOf(e.App).traffic.record(time.Now(), kind, source, ms, failure)
+	tally(e, kind, source, ms, failure)
+}
+
+// tally counts a handled request for the Server status page, and whether the client
+// address rate limits count it under is private or loopback (proxy.go).
+func tally(e *core.RequestEvent, kind, source string, ms int64, failure error) {
+	at, t := time.Now(), stateOf(e.App).traffic
+	t.record(at, kind, source, ms, failure)
+	if privateAddress(e.RealIP()) {
+		t.fromPrivate(at)
+	}
 }
 
 // measure runs a route's handler exactly as before and hands its outcome to done. A
@@ -180,9 +191,7 @@ func observed(kind string, handle func(*core.RequestEvent) error) func(*core.Req
 // timed wraps an Odyle read (GET route): it is only counted for the Server status page,
 // never listed.
 func timed(name string, handle func(*core.RequestEvent) error) func(*core.RequestEvent) error {
-	return measure(handle, func(e *core.RequestEvent, failure error, ms int64) {
-		stateOf(e.App).traffic.record(time.Now(), "GET "+name, "read", ms, failure)
-	})
+	return measure(handle, func(e *core.RequestEvent, failure error, ms int64) { tally(e, "GET "+name, "read", ms, failure) })
 }
 
 // apps has one row per reader session. A running Windows app keeps one and touches it
@@ -259,7 +268,8 @@ func monitor(e *core.RequestEvent) error {
 }
 
 // Server status: the database's size, what it holds, the Windows apps connected by
-// version, the release lookup and the last hour's traffic (traffic.go).
+// version, the release lookup, the last hour's traffic (traffic.go), activation and
+// feature use (stats.go), the backups (backups.go) and the trusted proxy (proxy.go).
 func counts(app core.App) (*object, error) {
 	at, failed := time.Now(), error(nil)
 	since := func(d time.Duration) string { return stamp(at.Add(-d)) }
@@ -335,7 +345,31 @@ func status(e *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	return e.JSON(200, out.set("versions", connected).set("traffic", s.traffic.summary(time.Now())))
+	out.set("versions", connected).set("traffic", s.traffic.summary(time.Now()))
+	reached, err := activation(e.App)
+	if err != nil {
+		return err
+	}
+	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("proxy", proxyStatus(e.App)))
+}
+
+// retentionRoute answers how many accounts the inactive-account clean-up would delete on
+// its next run with the given period (?days=), before a superuser saves it.
+func retentionRoute(e *core.RequestEvent) error {
+	raw, err := strconv.ParseFloat(e.Request.URL.Query().Get("days"), 64)
+	var value any = raw
+	if err != nil {
+		value = nil
+	}
+	days, err := inactiveDays(value)
+	if err != nil {
+		return badRequest(message(err))
+	}
+	preview, err := retentionPreview(e.App, days, time.Now())
+	if err != nil {
+		return err
+	}
+	return e.JSON(200, preview)
 }
 
 func jobsJSON(app core.App, extra map[string]any) map[string]any {

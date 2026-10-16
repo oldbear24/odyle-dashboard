@@ -228,6 +228,19 @@ func adapterSettings(value any) (adapterLists, error) {
 	return lists, nil
 }
 
+// inactiveDays checks a period after which unused accounts are deleted: 0 keeps them,
+// otherwise 30 days to ten years.
+func inactiveDays(value any) (int64, error) {
+	days, err := integer(value, "Inactive account days", 0, 3650)
+	if err != nil {
+		return 0, err
+	}
+	if days > 0 && days < 30 {
+		return 0, errors.New("Delete inactive accounts after 30 days or more, or 0 to keep them.")
+	}
+	return days, nil
+}
+
 // writeSettings saves the given settings (all optional) and creates the record if a
 // superuser deleted it.
 func writeSettings(app core.App, b body) (settings, error) {
@@ -259,11 +272,8 @@ func writeSettings(app core.App, b body) (settings, error) {
 		next.WeeklyResetDay = day
 	}
 	if b.has("inactiveAccountDays") {
-		if next.InactiveAccountDays, err = integer(b["inactiveAccountDays"], "Inactive account days", 0, 3650); err != nil {
+		if next.InactiveAccountDays, err = inactiveDays(b["inactiveAccountDays"]); err != nil {
 			return settings{}, err
-		}
-		if next.InactiveAccountDays > 0 && next.InactiveAccountDays < 30 {
-			return settings{}, errors.New("Delete inactive accounts after 30 days or more, or 0 to keep them.")
 		}
 	}
 	if b.has("dungeons") {

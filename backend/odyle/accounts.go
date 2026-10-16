@@ -2244,17 +2244,25 @@ func historyOf(app core.App, id string) ([]any, string, error) {
 	return readings, hourlyBefore, nil
 }
 
+// The inactive-account clean-up deletes up to 200 accounts a night.
+const retentionBatch = 200
+
+// inactiveBefore matches accounts unused since the cutoff (stored form): by their last
+// activity, or by their creation when they never used Odyle.
+func inactiveBefore(cutoff string) dbx.Expression {
+	return dbx.NewExp("lastActiveAt < {:cutoff} AND (lastActiveAt != '' OR created < {:cutoff})", dbx.Params{"cutoff": cutoff})
+}
+
 // retention is the nightly job that deletes accounts unused for
-// odyle_settings.inactiveAccountDays days (0 keeps them), up to 200 a night. handOver
-// passes their rooms on first.
+// odyle_settings.inactiveAccountDays days (0 keeps them), up to 200 a night, longest
+// unused first. handOver passes their rooms on first.
 func retention(app core.App) (result, error) {
 	days := readSettings(app).InactiveAccountDays
 	if days == 0 {
 		return result{Skipped: "off"}, nil
 	}
-	cutoff, out := ago(time.Duration(days)*24*time.Hour), result{}
-	users, err := app.FindRecordsByFilter("users", "lastActiveAt < {:cutoff} && (lastActiveAt != '' || created < {:cutoff})", "lastActiveAt", 200, 0, dbx.Params{"cutoff": cutoff})
-	if err != nil {
+	out, users := result{}, []*core.Record{}
+	if err := app.RecordQuery("users").AndWhere(inactiveBefore(ago(time.Duration(days)*24*time.Hour))).OrderBy("lastActiveAt ASC", "id ASC").Limit(retentionBatch).All(&users); err != nil {
 		return result{}, err
 	}
 	for _, user := range users {
@@ -2272,4 +2280,18 @@ func retention(app core.App) (result, error) {
 		info(app, "Odyle deleted an inactive account", "user", user.Id)
 	}
 	return out, nil
+}
+
+// retentionPreview is what the clean-up would do on its next run with the given period,
+// if no account comes back before then: how many accounts are unused that long, and how
+// many of them that run deletes (the rest follow on the next nights).
+func retentionPreview(app core.App, days int64, at time.Time) (*object, error) {
+	next, inactive := nextDaily(jobs["odyle-retention"].schedule, at), int64(0)
+	if days > 0 {
+		var err error
+		if inactive, err = app.CountRecords("users", inactiveBefore(stamp(next.Add(-time.Duration(days)*24*time.Hour)))); err != nil {
+			return nil, err
+		}
+	}
+	return newObject().set("days", days).set("runAt", next.Format(isoLayout)).set("inactive", inactive).set("deleted", min(inactive, retentionBatch)), nil
 }

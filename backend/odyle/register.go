@@ -61,10 +61,26 @@ func Register(app core.App) {
 			return err
 		}
 		s := stateOf(e.App)
+		// Off-host backups and the trusted proxy come from the environment (backups.go,
+		// proxy.go); a wrong value is logged and shown on the Server status page.
+		backupSetup, proxySetup := configureBackups(e.App), configureProxy(e.App)
+		for _, problem := range []string{backupSetup, proxySetup} {
+			if problem != "" {
+				warn(e.App, "Odyle could not apply a setting from the environment", "error", problem)
+			}
+		}
 		s.mu.Lock()
 		s.startedAt = now()
+		s.backupSetup, s.proxySetup = backupSetup, proxySetup
 		s.mu.Unlock()
 		return configureDiscord(e.App)
+	})
+
+	// A new backup, scheduled or made by hand, shows on the Server status page at once.
+	app.OnBackupCreate().BindFunc(func(e *core.BackupEvent) error {
+		err := e.Next()
+		stateOf(e.App).backups.drop()
+		return err
 	})
 
 	// Every account deletion (by its owner, in the superuser dashboard or for inactivity)
@@ -105,7 +121,8 @@ func routes(se *core.ServeEvent) {
 		return e.JSON(200, map[string]any{"announcement": announcement(readSettings(e.App))})
 	}))
 	// Superuser dashboard → Odyle: connected Windows apps, live requests, server status,
-	// background jobs and the server-wide settings (monitor.go).
+	// background jobs and the server-wide settings with what a retention period would
+	// delete (monitor.go).
 	superuser := apis.RequireSuperuserAuth()
 	se.Router.GET("/api/odyle/admin/ui", uiVersion)
 	se.Router.GET("/api/odyle/admin/monitor", monitor).Bind(superuser)
@@ -114,6 +131,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/admin/jobs", jobsRoute).Bind(superuser)
 	se.Router.POST("/api/odyle/admin/jobs/{name}", runJobRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/settings", settingsRoute).Bind(superuser)
+	se.Router.GET("/api/odyle/admin/retention", retentionRoute).Bind(superuser)
 	// A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.
 	se.Router.POST("/api/odyle/admin/settings", saveSettingsRoute).Bind(superuser, apis.BodyLimit(65536))
 }

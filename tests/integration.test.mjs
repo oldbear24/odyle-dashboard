@@ -356,7 +356,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
   assert.equal((await jobs(null)).status, 401); assert.equal((await jobs(member)).status, 403); assert.equal((await run('odyle-expiry', member)).status, 403);
   const listed = (await jobs(operator)).data;
-  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off']]);
+  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-stats', true, 'active']]);
   assert.ok(Date.parse(listed.startedAt) <= Date.now());
   // A run by hand is recorded with its result; the account clean-up only runs on its schedule.
   const ran = await run('odyle-expiry'); assert.equal(ran.status, 200, JSON.stringify(ran.data));
@@ -406,7 +406,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.readerPaused, false);
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
-  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off']);
+  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active']);
   // A body id never replaces a packet's own number.
   const added = (await action('task', { title: 'Watched task', cadence: 'daily' }, member)).data.tasks.find(x => x.title === 'Watched task');
   assert.equal((await action('task', { id: added.id, done: true }, member)).status, 200);
@@ -451,6 +451,22 @@ test('superusers read the server status: stored data, connected app versions, th
   assert.ok(data.counts.readerSessions.connected >= 1 && data.counts.readerSessions.open >= data.counts.readerSessions.connected);
   for (const [name, keys] of Object.entries({ rooms: ['total', 'discordReminders'], pairedPcs: ['total'], plannedRuns: ['total', 'upcoming'], historyPoints: ['total'], tasks: ['total'] })) for (const key of keys) assert.equal(typeof data.counts[name][key], 'number', name + '.' + key);
   assert.equal(data.versions.find(v => v.version === '0.6.0.13')?.apps, 1);
+  // Activation and feature use: totals only, now and per stored day; the stored days are for superusers alone.
+  const steps = ['accounts', 'activeAccounts', 'pairedAccounts', 'readingAccounts', 'sharingAccounts', 'roomsReading', 'readings', 'roomsWithRuns', 'wishlistEntries', 'taskAccounts', 'discordRooms'];
+  for (const key of steps) assert.equal(typeof data.activation.now[key], 'number', key);
+  const reached = data.activation.now; assert.ok(reached.accounts >= reached.pairedAccounts && reached.pairedAccounts >= reached.readingAccounts && reached.readingAccounts >= 1);
+  assert.equal(reached.appVersions.find(v => v.version === '0.6.0.13')?.apps, 1);
+  const stored = await request('/api/odyle/admin/jobs/odyle-stats', {}, operator); assert.equal(stored.status, 200, JSON.stringify(stored.data)); assert.equal(stored.data.result.done, 1);
+  const recorded = (await status(operator)).data.activation; assert.equal(recorded.days[0].day, new Date().toISOString().slice(0, 10));
+  for (const key of steps) assert.equal(recorded.days[0][key], recorded.now[key], key);
+  assert.equal((await request('/api/collections/odyle_stats/records', undefined, member, 'GET')).status, 403);
+  // Backups run nightly and stay on the data volume until S3 storage is set; a new one shows at once.
+  assert.deepEqual([data.backups.schedule, data.backups.keep, data.backups.offHost, data.backups.setup, data.backups.error], ['0 3 * * *', 7, false, '', '']);
+  const made = await fetch(url + '/api/backups', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: operator.token }, body: JSON.stringify({ name: 'drill.zip' }) }); assert.equal(made.status, 204);
+  const backups = (await status(operator)).data.backups; assert.equal(backups.latest.name, 'drill.zip'); assert.ok(backups.latest.size > 0 && backups.count >= 1);
+  assert.ok(Math.abs(Date.parse(backups.latest.at) - Date.now()) < 60000);
+  // No proxy header is trusted, and the tests' loopback requests count as private ones.
+  assert.deepEqual(data.proxy, { headers: [], leftmost: false, setup: '' }); assert.ok(data.traffic.private >= 5 && data.traffic.private <= data.traffic.total.count);
   // The release lookup: GitHub's last answer and when it was asked.
   assert.equal(data.release.version, '0.5.0.2'); assert.equal(data.release.publishedAt, '2026-10-13T22:34:09Z'); assert.equal(data.release.error, ''); assert.equal(data.release.repository, 'oldbear24/odyle-windows');
   assert.ok(Date.parse(data.release.fetchedAt) <= Date.parse(data.release.checkedAt));
@@ -614,6 +630,13 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
   assert.equal((await request('/__test__/retention', {})).status, 200);
   assert.equal((await request('/api/odyle/tasks', undefined, idle, 'GET')).status, 200);
   assert.equal((await request('/__test__/inactive', { user: idle.record.id, days: 40 })).status, 200);
+  // Before a period is saved, the Game settings page shows how many accounts the next run would delete.
+  const preview = (days, auth = operator) => request('/api/odyle/admin/retention?days=' + days, undefined, auth, 'GET');
+  const counted = await preview(30); assert.equal(counted.status, 200, JSON.stringify(counted.data));
+  assert.ok(counted.data.inactive >= 1); assert.equal(counted.data.deleted, Math.min(counted.data.inactive, 200)); assert.match(counted.data.runAt, /T03:17:00\.000Z$/);
+  assert.equal((await preview(0)).data.inactive, 0);
+  for (const bad of [10, 4000, 'soon']) assert.equal((await preview(bad)).status, 400, String(bad));
+  assert.equal((await preview(30, idle)).status, 403);
   try {
     assert.equal((await settings({ inactiveAccountDays: 30 })).status, 200);
     assert.equal((await request('/__test__/retention', {})).status, 200);
