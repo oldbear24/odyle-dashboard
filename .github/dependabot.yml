@@ -14,6 +14,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # The web build uses Node's long-term support releases (even majors) only.
+    ignore:
+      - dependency-name: node
+        versions: ["23.x", "25.x", "27.x", "29.x"]
   - package-ecosystem: gomod
     directory: /backend
     schedule:

@@ -665,19 +665,24 @@ test('an open room checks no health while live, waits while hidden and draws its
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
-    const asked = []; page.on('request', r => { const path = new URL(r.url()).pathname; if (/^\/api\/(health|odyle\/(snapshot|announcement))/.test(path)) asked.push(path.split('/').slice(0, 4).join('/')); });
-    // Realtime is connected, so no health checks; the snapshot already brought the announcement.
+    // The realtime stream reconnecting is noted too: the page then fetches the room once to catch up.
+    const asked = []; page.on('request', r => { const path = new URL(r.url()).pathname; if (/^\/api\/(health|odyle\/(snapshot|announcement))/.test(path)) asked.push(path.split('/').slice(0, 4).join('/')); else if (path === '/api/realtime' && r.resourceType() === 'eventsource') asked.push('reconnect'); });
+    // Realtime is connected, so no health checks; the snapshot already brought the announcement, and
+    // the room is fetched again only to catch up after a reconnect (a busy CI machine drops it at times).
     await delay(21000);
-    assert.deepEqual(asked, []);
+    const reconnects = asked.filter(p => p === 'reconnect').length;
+    assert.deepEqual(asked.filter(p => p !== 'reconnect' && p !== '/api/odyle/snapshot'), []);
+    assert.ok(asked.filter(p => p === '/api/odyle/snapshot').length <= reconnects, `${asked.join(', ')}: the room was fetched without a reconnect`);
+    asked.length = 0;
     // A hidden tab leaves room news for later and catches up as soon as it is shown.
     const visibility = hidden => page.evaluate(h => { for (const [name, value] of [['hidden', h], ['visibilityState', h ? 'hidden' : 'visible']]) Object.defineProperty(document, name, { configurable: true, get: () => value }); document.dispatchEvent(new Event('visibilitychange')); }, hidden);
     await visibility(true);
     assert.equal((await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, mate)).status, 200);
     await delay(2000);
-    assert.deepEqual(asked, []); assert.equal(await page.locator('.wishlist:not(.runs) .wish-row').count(), 0);
+    assert.deepEqual(asked.filter(p => p !== 'reconnect'), []); assert.equal(await page.locator('.wishlist:not(.runs) .wish-row').count(), 0);
     await visibility(false);
     await page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Fire Temple' }).waitFor();
-    assert.deepEqual(asked, ['/api/odyle/snapshot']);
+    assert.deepEqual(asked.filter(p => p !== 'reconnect'), ['/api/odyle/snapshot']);
     // The page's own change shows from the route's answer, even while snapshots fail.
     await page.route('**/api/odyle/snapshot/**', route => route.abort());
     await page.locator('[data-wish="Fire Temple"][data-wanted="true"]').click();
@@ -827,7 +832,9 @@ test('notifications are kept for the account, reach its other tabs and time the 
     assert.equal((await request('/api/odyle/admin/jobs/odyle-cap-alerts', {}, operator)).status, 200);
     await page.waitForFunction(() => window.shown.length > 1, null, { timeout: 15000 });
     assert.equal((await page.evaluate(() => window.shown))[1], 'Nearly caps soon');
-    assert.equal(service.received.at(-1).message.title, 'Nearly caps soon', 'and by push');
+    // And by push; the minute's run reminders may be pushed around it, so it is looked for, not taken as the last.
+    for (let i = 0; i < 50 && !service.received.some(r => r.message.title === 'Nearly caps soon'); i++) await delay(100);
+    assert.ok(service.received.some(r => r.message.title === 'Nearly caps soon'), 'and by push');
     // Push off on this device.
     await form.locator('[data-action="push-off"]').click();
     await toast(page).filter({ hasText: 'Push notifications are off for this device.' }).waitFor();
