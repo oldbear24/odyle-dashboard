@@ -1,7 +1,8 @@
 import { status, timestamp } from './model.js';
 // Party readiness, the reference rules: tests/readiness.test.cjs runs them against
-// tests/readiness-vectors.json, which the Go and C# ports will share once a server or app
-// feature needs them. Odyle cannot be pooled. Each player brings one character, their
+// tests/readiness-vectors.json. The Windows app's mirror (Odyle.Core.PartyReadiness) runs a copy
+// of the same cases, and the integration suite checks the copy matches; a Go port can share them
+// once a server feature needs the rules. Odyle cannot be pooled. Each player brings one character, their
 // best live one, and the party can only do as many cubes as its lowest player allows.
 // Stale, offline and unread characters keep their saved values but count for nothing.
 
