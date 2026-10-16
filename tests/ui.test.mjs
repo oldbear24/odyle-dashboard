@@ -406,10 +406,23 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
   try {
     const card = page.locator('.member-card', { hasText: 'Pulse' });
     await card.locator('.status.offline, .status.stale').waitFor();
+    // Nobody is live: the card says why, and the summary keeps the last known party apart.
+    assert.match(await card.locator('.status-why').innerText(), /^The reader has not been heard from for \d+s$|^Last in game /);
+    const summary = page.locator('.party-explain');
+    assert.match(await summary.innerText(), /0 of 2 players live · Not counted: Live reader \(last in game 1m ago\), Live lead \(no character shared\)/);
+    assert.match(await summary.innerText(), /Last known: 3 cubes · lowest Live reader · Pulse 120 · values from \d+s ago · 1 of 2 players have a saved value\n?Not live: it does not count toward the party cubes\./);
+    assert.equal(await page.locator('.member-card').count(), 1, 'a member without a shared character has no card');
     const fetched = []; page.on('request', r => { if (r.url().includes('/api/odyle/snapshot/')) fetched.push(r.url()); });
     // Its next heartbeat makes it live again and a reading changes its value: both are pushed.
     assert.equal((await request('/api/odyle/heartbeat', { sessionId: session.sessionId, characterId: c.id }, reader)).status, 200);
     await card.locator('.status.live').waitFor({ timeout: 8000 });
+    // Live: it counts for its player, and the summary says who is still missing.
+    assert.equal(await card.locator('.counts-for').innerText(), 'Counts for Live reader');
+    assert.match(await page.locator('.party-explain').innerText(), /^1 of 2 players live · Not counted: Live lead \(no character shared\)/);
+    await page.locator('[data-action="live-only"][aria-pressed="false"]').click();
+    await page.locator('[data-action="live-only"][aria-pressed="true"]').waitFor();
+    assert.equal(await page.locator('.member-card').count(), 1);
+    await page.locator('[data-action="live-only"]').click();
     assert.equal((await request('/api/odyle/report', { ...reading, sequence: 2, value: 150, characterId: c.id }, reader)).status, 200);
     await card.locator('.energy strong', { hasText: '150' }).waitFor({ timeout: 5000 });
     assert.deepEqual(fetched, []);
