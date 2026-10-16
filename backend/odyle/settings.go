@@ -41,6 +41,58 @@ type dungeonEntry struct {
 
 var partySizes = []int64{0, 4, 5, 10, 20}
 
+// The Odyle clock's game rules: the natural pool regenerates at fixed UTC hours by tick Odyle
+// (unless a character's own regeneration readings showed another size) up to the smallest
+// cap its readings fit under (560, or 840 with the membership). Clients project from them
+// and never store the result; paused hides every estimate. Superusers keep them; a game
+// patch that moves the schedule is fixed here without a release.
+type clockRules struct {
+	TickHours []int64 `json:"tickHours"`
+	Tick      int64   `json:"tick"`
+	Caps      []int64 `json:"caps"`
+	Paused    bool    `json:"paused"`
+}
+
+func defaultClock() clockRules {
+	return clockRules{TickHours: []int64{1, 4, 7, 10, 13, 16, 19, 22}, Tick: 15, Caps: []int64{560, 840}}
+}
+
+// clockSettings checks the clock's rules: 1 to 24 different UTC hours, a tick of 1 to 1000
+// Odyle and 1 to 4 caps of 1 to 1,000,000, each larger than the one before.
+func clockSettings(value any) (clockRules, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return clockRules{}, errors.New("The Odyle clock must be an object.")
+	}
+	var c clockRules
+	if json.Unmarshal(raw, &c) != nil {
+		return clockRules{}, errors.New("The Odyle clock must be an object with tickHours, tick, caps and paused.")
+	}
+	if len(c.TickHours) == 0 || len(c.TickHours) > 24 {
+		return clockRules{}, errors.New("The regeneration happens at 1 to 24 UTC hours.")
+	}
+	seen := map[int64]bool{}
+	for _, h := range c.TickHours {
+		if h < 0 || h > 23 || seen[h] {
+			return clockRules{}, errors.New("Regeneration hours are different whole UTC hours from 0 to 23.")
+		}
+		seen[h] = true
+	}
+	slices.Sort(c.TickHours)
+	if c.Tick < 1 || c.Tick > 1000 {
+		return clockRules{}, errors.New("A regeneration tick is 1 to 1000 Odyle.")
+	}
+	if len(c.Caps) == 0 || len(c.Caps) > 4 {
+		return clockRules{}, errors.New("The natural pool has 1 to 4 caps.")
+	}
+	for i, cap := range c.Caps {
+		if cap < 1 || cap > 1000000 || i > 0 && cap <= c.Caps[i-1] {
+			return clockRules{}, errors.New("Caps are 1 to 1,000,000 Odyle, each larger than the one before.")
+		}
+	}
+	return c, nil
+}
+
 type settings struct {
 	OdylePerCube        int64          `json:"odylePerCube"`
 	DailyResetHour      int64          `json:"dailyResetHour"`
@@ -54,6 +106,7 @@ type settings struct {
 	PairingPaused       bool           `json:"pairingPaused"`
 	ReaderPaused        bool           `json:"readerPaused"`
 	Adapters            adapterLists   `json:"adapters"`
+	Clock               clockRules     `json:"clock"`
 }
 
 // The superuser settings answer lists the catalog's entries as `catalog` and keeps
@@ -68,7 +121,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock()}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -168,6 +221,12 @@ func loadSettings(app core.App) settings {
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
+	}
+	// Saved clock rules that no longer check out (or none yet) are the defaults.
+	if clock, err := clockSettings(parseJSON(s.GetString("clock"), "null")); err == nil {
+		out.Clock = clock
+	} else {
+		out.Clock = defaultClock()
 	}
 	if out.WeeklyResetDay == "" {
 		out.WeeklyResetDay = "wednesday"
@@ -435,6 +494,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("clock") {
+		if next.Clock, err = clockSettings(b["clock"]); err != nil {
+			return settings{}, err
+		}
+	}
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
@@ -447,6 +511,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("pairingPaused", next.PairingPaused)
 	record.Set("readerPaused", next.ReaderPaused)
 	record.Set("adapters", map[string]any{"extra": next.Adapters.Extra, "disabled": next.Adapters.Disabled})
+	record.Set("clock", next.Clock)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}

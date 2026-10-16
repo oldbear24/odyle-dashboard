@@ -176,6 +176,7 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 	c.Set("value", r.value)
 	// The game's two numbers, or none when this reading did not send them.
 	c.Set("parts", r.partsValue())
+	c.learn(r)
 	c.Set("confirmed", true)
 	c.SetValid(true)
 	c.Set("source", "packet")
@@ -183,6 +184,23 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 	c.Set("lastSeenAt", now())
 	c.Set("readingSession", session)
 	return changed
+}
+
+// learn keeps what the character's readings showed about its natural pool, for the Odyle
+// clock: the size of its last regeneration tick, and its fullest natural pool of the last
+// 30 days (an older one gives way to the next reading), which tells clients its cap.
+func (c *Character) learn(r reading) {
+	if r.kind == "regen" && r.delta > 0 && r.delta <= 1000 {
+		c.Set("regenTick", r.delta)
+	}
+	base, ok := r.parts["base"].(int64)
+	if !ok {
+		return
+	}
+	if base > c.GetInt64("naturalMax") || c.GetDateTime("naturalMaxAt").Time().Before(time.Now().Add(-30*24*time.Hour)) {
+		c.Set("naturalMax", base)
+		c.Set("naturalMaxAt", now())
+	}
 }
 
 // HistoryPoint is one change of a character's Odyle (character_readings), with the

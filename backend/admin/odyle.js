@@ -594,7 +594,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog', 'clock'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
@@ -602,6 +602,10 @@ export function settingsPage() {
   // set. Names match regardless of case and spacing, as the server matches them.
   const sizes = [0, 4, 5, 10, 20], key = name => String(name).trim().replace(/\s+/g, ' ').toLowerCase();
   const dungeons = () => state.form.catalog;
+  // The Odyle clock: lists of whole numbers typed as "1, 4, 7".
+  const clock = () => state.form.clock || {};
+  const numbers = value => String(value).split(/[\s,;]+/).filter(Boolean).map(part => integer(part)).filter(n => n !== null);
+  const listed = list => (list || []).join(', ');
   function addDungeon() {
     dungeons().push({ name: '', cost: 0, partySize: 0, category: '', unconfirmed: false });
     const at = dungeons().length - 1;
@@ -654,9 +658,20 @@ export function settingsPage() {
           t.div({ className: 'field' }, t.label({ htmlFor: 'odyle-dungeons' }, 'One dungeon per line'), t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'Krao Cave | 20 | 5 | Exploration | unconfirmed', value: () => paste.text, oninput: e => paste.text = e.target.value })),
           t.div({ className: 'field-help' }, 'Name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and columns copied from a spreadsheet work too. A dungeon already in the table takes the values of its line. docs/deployment.md suggests a list for Global.'),
           t.button({ type: 'button', className: 'btn sm m-t-sm', disabled: () => !lines(paste.text).length, onclick: addLines }, t.span({ className: 'txt' }, 'Add to the catalog'))) : null),
+      section('Odyle clock', 'The natural pool regenerates at fixed UTC hours up to a cap. Dashboards and the Windows app show from these rules when the next tick comes, when the pool is full and an estimate for characters not read right now; they never store it. Each character\'s own readings refine it: the size of its last regeneration tick, and the cap its fullest natural pool of the last 30 days fits under.'),
+      field('odyle-clock-hours', 'Regeneration hours (UTC)', t.input({ id: 'odyle-clock-hours', type: 'text', required: true, value: () => listed(clock().tickHours), onchange: e => state.form.clock = { ...clock(), tickHours: numbers(e.target.value) } }),
+        () => (clock().tickHours || []).length ? 'Ticks at ' + clock().tickHours.map(h => String(h).padStart(2, '0') + ':00').join(', ') + ' UTC; the first is ' + localHour(clock().tickHours[0]) + ' in your time zone.' : 'Whole UTC hours, separated by commas.'),
+      field('odyle-clock-tick', 'Odyle per tick', t.input({ id: 'odyle-clock-tick', type: 'number', min: 1, max: 1000, step: 1, required: true, value: () => clock().tick ?? '', oninput: e => state.form.clock = { ...clock(), tick: integer(e.target.value) } }),
+        'Used until a character\'s own regeneration ticks show another size.'),
+      field('odyle-clock-caps', 'Natural pool caps', t.input({ id: 'odyle-clock-caps', type: 'text', required: true, value: () => listed(clock().caps), onchange: e => state.form.clock = { ...clock(), caps: numbers(e.target.value) } }),
+        'Smallest first, for example 560 without the membership and 840 with it. A character counts under the smallest cap its fullest natural pool fits under.'),
+      t.div({ className: 'col-lg-12' }, t.div({ className: 'field form-field-toggle' },
+        t.input({ id: 'odyle-clock-paused', type: 'checkbox', checked: () => Boolean(clock().paused), onchange: e => state.form.clock = { ...clock(), paused: e.target.checked } }),
+        t.label({ htmlFor: 'odyle-clock-paused' }, 'Hide the Odyle clock')),
+        t.div({ className: 'field-help' }, 'Turns off every estimate (next tick, full at, projected values) on dashboards and in the Windows app, for example after a game patch moved the schedule.')),
       t.div({ className: 'col-lg-12' }, t.hr()),
       // Resets the game rules only; the retention period and the dungeon catalog stay.
-      buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay } },
+      buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay, clock: { ...defaults().clock } } },
         t.span({ className: 'txt' }, () => 'Use defaults (' + number(defaults()?.odylePerCube) + ' · ' + String(defaults()?.dailyResetHour ?? '').padStart(2, '0') + ':00 UTC · ' + capital(defaults()?.weeklyResetDay || '') + ')')))));
 }
 

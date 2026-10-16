@@ -1,3 +1,4 @@
+import { defaultClock, clockOf, clockLine } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp } from './model.js';
 import { connectionLink } from './connection.js';
@@ -28,7 +29,7 @@ const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.p
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
 let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog = [], rooms = [], characters = [], demo = false, online = false;
-let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40;
+let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40, clockRules = defaultClock;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
@@ -295,7 +296,7 @@ function card(c, index) {
     : self && !room ? `<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}`
       : owner() && c.membershipId && c.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(c.membershipId)}" data-name="${esc(c.displayName)}">${t('Remove member')}</button>` : '';
   const source = demo ? t('Sample') : c.source === 'packet' ? t('Packet') : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
-  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
+  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="card-top">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.role === 'owner' ? `<span class="leader-label">${t('LEADER')}</span>` : ''}</div><div class="member-server">${esc(c.displayName)} <span>·</span> ${esc(c.server || t('No characters in this room'))} ${esc((c.region || '').replace('GLOBAL_', ''))}</div></div><span class="status ${state}"><i></i>${labels[state]}</span></div><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle Energy')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}${known && clockOf(c, now, clockRules) ? `<div class="energy-clock">${esc(clockLine(clockOf(c, now, clockRules), now, fresh))}</div>` : ''}<div class="cube-line">${icon('diamond')}<span>${known ? `<strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}${fresh ? '' : ` · ${t('last saved')}`}` : t('No confirmed reading')}</span><span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : '—'}</span></div><div class="card-footer"><span>${source} · ${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}</span><span class="card-actions">${history}${action}</span></div></article>`;
 }
 let toastTimer;
 function toast(message) { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 6000); }
@@ -478,7 +479,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -499,7 +500,7 @@ async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
   if (ticket !== navigation) return;
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -587,7 +588,7 @@ async function refreshPage() {
   else if (shown === '/account') await refreshAccount();
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }

@@ -232,12 +232,17 @@ test('rooms plan, change and export runs, and members see each character history
   const session = (await request('/api/odyle/session', {}, lead)).data;
   const reading = { sessionId: session.sessionId, characterName: 'Charted', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
   const c = (await request('/api/odyle/report', { ...reading, sequence: 1, value: 20 }, lead)).data.character;
-  for (const [sequence, value] of [[2, 55], [3, 30], [4, 90]]) await request('/api/odyle/report', { ...reading, sequence, value, characterId: c.id }, lead);
+  for (const [sequence, value] of [[2, 55], [3, 30]]) await request('/api/odyle/report', { ...reading, sequence, value, characterId: c.id }, lead);
+  // A newer Windows app sends the game's two numbers and what the change was.
+  await request('/api/odyle/report', { ...reading, sequence: 4, value: 90, characterId: c.id, base: 60, bonus: 30, kind: 'item', delta: 60 }, lead);
   await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead);
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    // The card splits the value and says when the natural pool regenerates and is full.
+    assert.equal(await page.locator('.member-card .energy-split').innerText(), 'natural 60 · items 30');
+    assert.match(await page.locator('.member-card .energy-clock').innerText(), /^\+15 in (\d+h )?(\d+m|under a minute) · full ≈ /);
     await page.locator('[data-plan-wish="Fire Temple"]').click();
     assert.equal(await page.locator('#run-form [name=dungeon]').inputValue(), 'Fire Temple');
     // The start takes only what the server accepts; where a browser ignores the bounds, the form says why before sending.
@@ -265,6 +270,7 @@ test('rooms plan, change and export runs, and members see each character history
     await page.locator(`[data-history="${c.id}"]`).click();
     await page.locator('#modal .history-line').waitFor();
     assert.deepEqual(await page.locator('#modal .history-table tbody td:nth-child(2)').allInnerTexts(), ['90', '30', '55', '20']);
+    assert.deepEqual(await page.locator('#modal .history-kind').allInnerTexts(), ['item']);
     await shot(page, 'room-history');
     await page.keyboard.press('Escape');
     // Cancelling a run asks first.
@@ -763,10 +769,18 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.match(await page.locator('#odyle-inactive').locator('xpath=../..').innerText(), /365 days/);
     // Before saving, the page counts the accounts the next clean-up would delete with that period.
     await page.locator('#odyle-inactive').locator('xpath=../..').getByText(/With this period the next run at 03:17 UTC \(.+ here\) would delete/).waitFor();
+    // The Odyle clock's rules: hours typed in any order, a tick size and the caps.
+    assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '1, 4, 7, 10, 13, 16, 19, 22');
+    await page.locator('#odyle-clock-hours').fill('22, 2, 5'); await page.locator('#odyle-clock-hours').blur();
+    assert.match(await page.locator('#odyle-clock-hours').locator('xpath=../..').innerText(), /Ticks at 22:00, 02:00, 05:00 UTC/);
+    await page.locator('#odyle-clock-tick').fill('20');
+    await page.locator('#odyle-clock-caps').fill('600, 900'); await page.locator('#odyle-clock-caps').blur();
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
+    assert.deepEqual(saved.clock, { tickHours: [2, 5, 22], tick: 20, caps: [600, 900], paused: false });
+    assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '2, 5, 22');
     assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
@@ -783,7 +797,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.equal(visit.headers.get('clear-site-data'), '"cache"'); assert.match(visit.headers.get('set-cookie'), /^odyle_entry=1; Path=\/_\/;/);
     assert.equal(again.headers.get('clear-site-data'), null);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
-  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0 }, operator); }
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false } }, operator); }
 });
 test('superusers search, open and export packets and read the server status', async () => {
   const reader = await account('Status reader');
