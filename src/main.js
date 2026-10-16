@@ -561,6 +561,10 @@ async function ownNews(data) {
   if (demo || !data) return;
   const library = !room && shown !== '/tasks' && shown !== '/account';
   try {
+    // News for everyone: a changed announcement shows at once, and a new Windows release
+    // refreshes the download links and says so.
+    announced(data);
+    if (data.release?.version) { windowsReleaseAt = 0; await loadWindowsRelease(); toast(t('Odyle for Windows {version} is out. Running apps update themselves.', { version: data.release.version })); }
     // The open room hears of its own changes on its topic.
     if (data.refresh) { if (!room && !later()) await refreshPage(); }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();

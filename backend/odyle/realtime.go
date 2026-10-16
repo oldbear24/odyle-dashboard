@@ -23,7 +23,9 @@ import (
 //   - odyle.user.<account id>, that account only: {"refresh": true} when its own
 //     characters, rooms, tasks, Windows apps or profile changed, {"characters": […]}
 //     when only its characters did, and {"seen": {…}, "contact": {<reader session id>:
-//     <time>}} for its readers' heartbeats.
+//     <time>}} for its readers' heartbeats. News for everyone comes on each account's topic
+//     too: {"release": {version, publishedAt, url}} when a newer Windows release is out and
+//     {"announcement": {text, level} | null} when the announcement changed.
 //
 // Every room message carries "refresh", so a dashboard that only knows to fetch the
 // snapshot again keeps working. Changes are collected and delivered together a moment
@@ -258,6 +260,17 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 	for _, c := range clients {
 		if c.HasSubscription(topic) && clientAccount(c) == id {
 			post(c, topic, message)
+		}
+	}
+}
+
+// tellEveryone tells every signed-in client, on its own account's topic, news that concerns
+// everyone: a new Windows release or a changed announcement. Clients that know no such key
+// ignore it.
+func tellEveryone(app core.App, message map[string]any) {
+	for _, c := range app.SubscriptionsBroker().Clients() {
+		if id := clientAccount(c); id != "" && c.HasSubscription(userTopic+id) {
+			post(c, userTopic+id, message)
 		}
 	}
 }

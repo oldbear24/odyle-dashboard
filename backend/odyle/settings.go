@@ -142,6 +142,16 @@ func watchSettings(app core.App) {
 	app.OnRecordAfterCreateError("odyle_settings").BindFunc(dropFailed)
 	app.OnRecordAfterUpdateError("odyle_settings").BindFunc(dropFailed)
 	app.OnRecordAfterDeleteError("odyle_settings").BindFunc(dropFailed)
+	// A changed announcement reaches every open dashboard and running app at once.
+	announce := func(e *core.RecordEvent) error {
+		before, after := e.Record.Original(), e.Record
+		if before.GetString("announcement") != after.GetString("announcement") || before.GetString("announcementLevel") != after.GetString("announcementLevel") {
+			tellEveryone(e.App, map[string]any{"announcement": announcement(settings{Announcement: after.GetString("announcement"), AnnouncementLevel: after.GetString("announcementLevel")})})
+		}
+		return e.Next()
+	}
+	app.OnRecordAfterCreateSuccess("odyle_settings").BindFunc(announce)
+	app.OnRecordAfterUpdateSuccess("odyle_settings").BindFunc(announce)
 	dropCollection := func(e *core.CollectionEvent) error { stateOf(e.App).settings.drop(); return e.Next() }
 	app.OnCollectionAfterUpdateSuccess("odyle_settings").BindFunc(dropCollection)
 	app.OnCollectionAfterDeleteSuccess("odyle_settings").BindFunc(dropCollection)

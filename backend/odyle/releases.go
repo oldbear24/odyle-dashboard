@@ -14,10 +14,12 @@ import (
 )
 
 // The newest release of the Windows companion, so the dashboard can offer its download
-// with the version. The backend asks GitHub's API at most every ten minutes and serves
-// that answer to every browser: visitors never contact GitHub and the unauthenticated
-// API limit is never reached. When GitHub cannot be reached the last known release is
-// kept, and without one the dashboard still gets the stable "latest release" page link.
+// with the version. The backend asks GitHub's API every two minutes (the odyle-release job;
+// a run by hand asks at once) and serves that answer to every browser: visitors never
+// contact GitHub and the unauthenticated API limit (60 an hour) is never reached. A release
+// newer than the one known is news for every open dashboard and running app (tellEveryone).
+// When GitHub cannot be reached the last known release is kept, and without one the
+// dashboard still gets the stable "latest release" page link.
 
 func repository() string {
 	if v := os.Getenv("ODYLE_WINDOWS_REPOSITORY"); v != "" {
@@ -228,6 +230,7 @@ func lookUpRelease(app core.App, etag string, done chan struct{}) {
 		}
 		s := stateOf(app)
 		s.mu.Lock()
+		before, _ := s.release["version"].(string)
 		s.releaseChecked, s.releaseAt, s.releaseError, s.releaseInFlight = true, checked, "", nil
 		s.releaseNotBefore = found.notBefore
 		switch {
@@ -243,8 +246,40 @@ func lookUpRelease(app core.App, etag string, done chan struct{}) {
 		if err != nil {
 			warn(app, "Odyle release lookup failed", "error", err.Error())
 		}
+		// The first answer after a start is no news: clients fetched the release themselves.
+		if err == nil && found.release != nil && before != "" {
+			if version, _ := found.release["version"].(string); version != "" && version != before {
+				tellEveryone(app, map[string]any{"release": map[string]any{"version": version, "publishedAt": found.release["publishedAt"], "url": found.release["url"]}})
+			}
+		}
 	}()
 	found, err = fetchLatest(etag)
+}
+
+// checkRelease is the odyle-release job: GitHub is asked now, unless its rate limit says
+// to wait, and the job waits up to 20 seconds for the answer.
+func checkRelease(app core.App) (result, error) {
+	s := stateOf(app)
+	s.mu.Lock()
+	s.releaseChecked = false
+	s.mu.Unlock()
+	latestRelease(app)
+	s.mu.Lock()
+	lookup := s.releaseInFlight
+	s.mu.Unlock()
+	if lookup != nil {
+		select {
+		case <-lookup:
+		case <-time.After(20 * time.Second):
+			return result{}, fmt.Errorf("GitHub did not answer within 20 seconds")
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.releaseError != "" {
+		return result{}, errors.New(s.releaseError)
+	}
+	return result{Done: 1}, nil
 }
 
 // releaseLookup is the release cache as the Server status page shows it.

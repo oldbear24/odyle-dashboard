@@ -32,7 +32,7 @@ var shown = map[string][]string{
 	// The Windows app
 	"session":         {"previousSessionId", "appVersion"},
 	"report":          {"sessionId", "sequence", "characterId", "characterName", "server", "region", "value", "parserVersion"},
-	"heartbeat":       {"sessionId", "characterId"},
+	"heartbeat":       {"sessionId", "characterId", "reader", "game"},
 	"invalidate":      {"sessionId", "characterId"},
 	"character":       {"characterName", "server", "region"},
 	"pair":            {"name"},
@@ -242,7 +242,11 @@ func apps(app core.App) ([]map[string]any, error) {
 		if d := devices[s.Device()]; d != nil {
 			device = d.Name()
 		}
-		rows[i] = map[string]any{"sessionId": s.Id, "user": s.User(), "account": names[s.User()], "device": device, "appVersion": s.AppVersion(), "connectedAt": s.Created(), "lastContactAt": contactAt(app, s), "readings": s.Sequence(), "character": character}
+		var reader any
+		if r, ok := readerOf(app, s.Id, time.Now()); ok {
+			reader = map[string]any{"status": r.status, "since": stamp(r.since), "game": r.game}
+		}
+		rows[i] = map[string]any{"sessionId": s.Id, "user": s.User(), "account": names[s.User()], "device": device, "appVersion": s.AppVersion(), "connectedAt": s.Created(), "lastContactAt": contactAt(app, s), "readings": s.Sequence(), "character": character, "reader": reader}
 	}
 	key := func(row map[string]any) string {
 		return strings.ToLower(row["account"].(string)) + "\u0000" + row["connectedAt"].(string) + "\u0000" + row["sessionId"].(string)
@@ -351,7 +355,8 @@ func status(e *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("proxy", proxyStatus(e.App)))
+	readers, _ := readerHealth(e.App, time.Now())
+	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("proxy", proxyStatus(e.App)).set("readers", readers))
 }
 
 // retentionRoute answers how many accounts the inactive-account clean-up would delete on

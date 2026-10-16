@@ -56,6 +56,7 @@ func Register(app core.App) {
 	watchSubscriptions(app)
 	watchChanges(app)
 	watchPresence(app)
+	watchHealth(app)
 
 	// The Background jobs page counts from this server start.
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {
