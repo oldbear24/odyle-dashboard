@@ -11,7 +11,7 @@ The dashboard uses PocketBase's built-in Discord OAuth2 flow. First Discord sign
    - Hosted: `https://your-backend.example.com/api/oauth2-redirect`
 4. Copy `.env.backend.example` to `.env.backend` and put the real ID and secret there. This file is ignored by Git and excluded from Docker build context. It is loaded by `npm run backend` and inherited by PocketBase.
 5. Restart the backend. At start it enables the Discord provider using these backend environment variables. Alternatively, configure Discord directly in the PocketBase `users` collection's OAuth2 options; the backend keeps that configuration when the environment variables are absent.
-6. Open the dashboard and click **Continue with Discord**. Allow its sign-in popup. PocketBase exchanges the authorization code server-side; the browser saves only the application's account token, in its localStorage (shared by its tabs, kept until you sign out).
+6. Open the dashboard and click **Continue with Discord**. Allow its sign-in popup. Browsers built into other apps (an invite link opened inside Discord or Instagram on a phone) often block that window or lose its answer; the dashboard then shows its link, invite included, to copy into a real browser. PocketBase exchanges the authorization code server-side; the browser saves only the application's account token, in its localStorage (shared by its tabs, kept until you sign out).
 
 Docker Compose loads `.env.backend` into the `odyle` service when the file exists (`compose.yaml`, Compose 2.24 or newer). Keep the secret out of all `VITE_*` variables: those are embedded in the browser build. Both Discord variables must be set together.
 

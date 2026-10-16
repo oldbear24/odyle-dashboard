@@ -6,6 +6,11 @@ const two = n => String(n).padStart(2, '0');
 export function localInput(at) { const d = new Date(at); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`; }
 // The value of a datetime-local input for the next full hour, in local time.
 export function nextHour(now) { const d = new Date(now); d.setHours(d.getHours() + 1, 0, 0, 0); return localInput(d); }
+// The start times the server accepts (backend validation.go runStart): from an hour ago up
+// to 60 days ahead, in whole minutes, as the bounds of a datetime-local input. Some
+// browsers ignore the bounds, so forms check the time again before sending (forms.js).
+export const runWindow = now => ({ min: Math.ceil((now - 3600000) / 60000) * 60000, max: Math.floor((now + 60 * 86400000) / 60000) * 60000 });
+const bounds = (now, earliest = Infinity) => { const { min, max } = runWindow(now); return `min="${localInput(Math.min(min, earliest))}" max="${localInput(max)}"`; };
 // Compact spans: "2d 3h", "5h 12m", "45m" (Czech "2 d 3 h", "5 h 12 min", "45 min").
 export function span(minutes) {
   const days = Math.floor(minutes / 1440), hours = Math.floor(minutes / 60) % 24;
@@ -36,7 +41,7 @@ export function calendarFile({ id, dungeon, startsAt, note }, { room, going, now
 // run to their calendar. `live` holds the accounts with a live character in the room.
 export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, demo, discord }) {
   const name = id => id === myId ? t('You') : members.find(m => m.user === id)?.displayName || t('Member');
-  const form = viewer ? `<p class="wish-note">${t('Viewers can see planned runs but cannot plan or join them.')}</p>` : `<form id="run-form" class="wish-form run-form"><input name="dungeon" maxlength="60" list="run-dungeons" autocomplete="off" placeholder="${esc(t('Dungeon'))}" aria-label="${esc(t('Dungeon'))}" required><datalist id="run-dungeons">${suggestions.map(d => `<option value="${esc(d)}">`).join('')}</datalist><input name="startsAt" type="datetime-local" required aria-label="${esc(t('Start'))}" value="${nextHour(now)}"><input name="note" maxlength="120" autocomplete="off" placeholder="${esc(t('Note (optional)'))}" aria-label="${esc(t('Note'))}"><button class="button primary" type="submit">${icon('calendar')} ${t('Plan run')}</button></form>`;
+  const form = viewer ? `<p class="wish-note">${t('Viewers can see planned runs but cannot plan or join them.')}</p>` : `<form id="run-form" class="wish-form run-form"><input name="dungeon" maxlength="60" list="run-dungeons" autocomplete="off" placeholder="${esc(t('Dungeon'))}" aria-label="${esc(t('Dungeon'))}" required><datalist id="run-dungeons">${suggestions.map(d => `<option value="${esc(d)}">`).join('')}</datalist><input name="startsAt" type="datetime-local" required aria-label="${esc(t('Start'))}" value="${nextHour(now)}" ${bounds(now)}><input name="note" maxlength="120" autocomplete="off" placeholder="${esc(t('Note (optional)'))}" aria-label="${esc(t('Note'))}"><button class="button primary" type="submit">${icon('calendar')} ${t('Plan run')}</button></form>`;
   const rows = runs.map(r => {
     const at = timestamp(r.startsAt), going = r.attendees.includes(myId), mine = r.planner === myId;
     const people = r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}</span>`).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
@@ -48,7 +53,8 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
   }).join('');
   return `<section class="party-section wishlist runs"><div class="section-heading"><h2>${t('Planned runs')} <span>${runs.length}</span></h2><span class="refresh-label">${t('Soonest first · your local time')}${discord ? ` · ${t('Discord reminders on')}` : ''}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('No runs planned. Pick a dungeon and a time; the party joins with Going.')}</p>`}</div></section>`;
 }
-// The form that changes a run: dungeon, start (local time) and note.
-export function runEditForm(r, suggestions) {
-  return `<form id="run-edit-form" class="run-edit"><input type="hidden" name="runId" value="${esc(r.id)}"><label>${t('Dungeon')}<input name="dungeon" maxlength="60" list="run-edit-dungeons" autocomplete="off" required value="${esc(r.dungeon)}"></label><datalist id="run-edit-dungeons">${suggestions.map(d => `<option value="${esc(d)}">`).join('')}</datalist><label>${t('Start')}<input name="startsAt" type="datetime-local" required value="${localInput(timestamp(r.startsAt))}"></label><label>${t('Note (optional)')}<input name="note" maxlength="120" autocomplete="off" value="${esc(r.note)}"></label><button class="button primary" type="submit">${t('Save run')}</button></form>`;
+// The form that changes a run: dungeon, start (local time) and note. An unchanged start
+// stays valid even when it is past the window.
+export function runEditForm(r, suggestions, now = Date.now()) {
+  return `<form id="run-edit-form" class="run-edit"><input type="hidden" name="runId" value="${esc(r.id)}"><label>${t('Dungeon')}<input name="dungeon" maxlength="60" list="run-edit-dungeons" autocomplete="off" required value="${esc(r.dungeon)}"></label><datalist id="run-edit-dungeons">${suggestions.map(d => `<option value="${esc(d)}">`).join('')}</datalist><label>${t('Start')}<input name="startsAt" type="datetime-local" required value="${localInput(timestamp(r.startsAt))}" ${bounds(now, timestamp(r.startsAt))}></label><label>${t('Note (optional)')}<input name="note" maxlength="120" autocomplete="off" value="${esc(r.note)}"></label><button class="button primary" type="submit">${t('Save run')}</button></form>`;
 }

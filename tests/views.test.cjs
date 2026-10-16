@@ -14,6 +14,18 @@ test('invite links carry the code in the fragment and the owner\'s browser remem
   assert.deepEqual(savedInvites({ getItem: () => '{not json' }, 'room1', now), []);
   rememberInvites({ getItem: () => null, setItem: () => { throw new Error('quota'); } }, 'room1', [], now);
 });
+test('sign-in names browsers built into apps and its way out keeps the invite', async () => {
+  const { inAppBrowser, signInLink } = await import('../src/signin.js');
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)';
+  const browsers = [iphone + ' Version/17.5 Mobile/15E148 Safari/604.1', iphone + ' CriOS/120.0.6099.119 Mobile/15E148 Safari/604.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'];
+  const apps = [iphone + ' Mobile/15E148', iphone + ' Mobile/15E148 Instagram 312.0.0.32.112 (iPhone15,2; iOS 17_5; en_GB)', iphone + ' Mobile/15E148 [FBAN/FBIOS;FBAV/450.0.0.38.108]', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A.240505.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36', 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Line/14.5.0'];
+  assert.deepEqual(browsers.map(ua => inAppBrowser(ua)), [false, false, false, false]);
+  assert.deepEqual(apps.map(ua => inAppBrowser(ua)), [true, true, true, true, true]);
+  // The installed web app on iOS has no Safari mark either.
+  assert.equal(inAppBrowser(apps[0], true), false); assert.equal(inAppBrowser(), false);
+  assert.equal(signInLink('https://odyle.example/app/?fbclid=x#/join/ABCD-EFGH-2345'), 'https://odyle.example/app/#/join/ABCD-EFGH-2345');
+  assert.equal(signInLink('https://odyle.example/'), 'https://odyle.example/');
+});
 test('planned runs count down in local time and history charts round their axis', async () => {
   const { startsIn, nextHour, runsSection } = await import('../src/runs.js'), { niceMax, historyChart, historyList } = await import('../src/history.js');
   const now = Date.parse('2026-10-14T12:00:00Z');
@@ -22,6 +34,9 @@ test('planned runs count down in local time and history charts round their axis'
   assert.deepEqual([0, 7, 44, 291, 1200].map(niceMax), [10, 8, 50, 300, 1500]);
   const html = runsSection({ runs: [{ id: 'r1', dungeon: '<b>Fire</b>', startsAt: '2026-10-14 13:00:00.000Z', note: '', planner: 'u1', attendees: ['u1', 'u2'] }], members: [{ user: 'u2', displayName: 'Lumina' }], myId: 'u1', viewer: false, owner: false, live: new Set(['u2']), now, suggestions: ['Fire Temple'], demo: false });
   assert.match(html, /&lt;b&gt;Fire&lt;\/b&gt;/); assert.match(html, /data-going="false"/); assert.match(html, /data-cancel-run="r1"/); assert.match(html, /wish-person live/);
+  // The time input takes what the server accepts: an hour ago up to 60 days ahead.
+  const { localInput, runWindow } = await import('../src/runs.js'), { min, max } = runWindow(now);
+  assert.match(html, new RegExp(`name="startsAt" type="datetime-local"[^>]* min="${localInput(min)}" max="${localInput(max)}"`));
   const viewer = runsSection({ runs: [], members: [], myId: 'u3', viewer: true, owner: false, live: new Set(), now, suggestions: [], demo: false });
   assert.doesNotMatch(viewer, /run-form/);
   const readings = [{ value: 20, at: '2026-10-13 10:00:00.000Z' }, { value: 55, at: '2026-10-13 18:00:00.000Z' }, { value: 30, at: '2026-10-14 09:00:00.000Z' }];
@@ -42,7 +57,9 @@ test('runs go to calendars with a reminder, can be changed and count down in Cze
   for (const line of long.split('\r\n')) assert.ok(new TextEncoder().encode(line).length <= 75, line);
   assert.match(long, /\r\n ř/);
   // The change form starts from the run's values in local time.
-  const form = runEditForm(run, ['Fire Temple']); assert.match(form, /name="runId" value="r1"/); assert.match(form, new RegExp(`value="${localInput(Date.parse('2026-10-14T19:00:00Z'))}"`)); assert.match(form, /value="Potions; food, and\nmore"/);
+  const form = runEditForm(run, ['Fire Temple'], now); assert.match(form, /name="runId" value="r1"/);
+  // A run that started long ago can still be changed without moving its start.
+  assert.match(runEditForm({ ...run, startsAt: '2026-10-14 09:00:00.000Z' }, [], now), new RegExp(`min="${localInput(Date.parse('2026-10-14T09:00:00Z'))}"`)); assert.match(form, new RegExp(`value="${localInput(Date.parse('2026-10-14T19:00:00Z'))}"`)); assert.match(form, /value="Potions; food, and\nmore"/);
   const html = runsSection({ runs: [run], members: [], myId: 'u1', viewer: false, owner: false, live: new Set(), now, suggestions: [], demo: false, discord: true });
   assert.match(html, /data-edit-run="r1"/); assert.match(html, /data-calendar-run="r1"/); assert.match(html, /Discord reminders on/);
   assert.doesNotMatch(runsSection({ runs: [run], members: [], myId: 'u9', viewer: true, owner: false, live: new Set(), now, suggestions: [], demo: false }), /data-edit-run/);

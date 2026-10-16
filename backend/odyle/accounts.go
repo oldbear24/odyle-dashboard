@@ -363,7 +363,8 @@ func rooms(e *core.RequestEvent) error {
 // snapshot is a whole room in three queries: members, their accounts and all their
 // characters, instead of two lookups per member. Others see only the characters a
 // member linked to this room; members always see all of their own, each flagged with
-// whether it is shared here.
+// whether it is shared here. The announcement rides along, so an open dashboard room
+// needs no separate request for it.
 func snapshot(e *core.RequestEvent) error {
 	return run(e, func() error {
 		id := e.Request.PathValue("id")
@@ -420,7 +421,7 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": rules.Dungeons})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": rules.Dungeons, "announcement": announcement(rules)})
 	})
 }
 

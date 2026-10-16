@@ -103,12 +103,25 @@ test('owners invite with a link, manage the room and close it only after confirm
       assert.deepEqual(guest.errors, []);
     } finally { await guest.close(); }
 
+    // Replacing codes already sent asks first.
+    await page.reload(); await page.locator('[data-action="invite"]:visible').first().click();
+    await page.locator('#modal [data-action="generate-invites"]').click();
+    assert.match(await page.locator('#modal').innerText(), /Revoke the current codes\?[\s\S]*stop working/);
+    await page.locator('#modal [data-action="confirm-generate-invites"]').click();
+    await page.locator('#modal .invite-row').first().waitFor();
+    assert.notEqual(await page.locator('#modal [data-copied]').first().getAttribute('data-copy'), link);
+    await page.keyboard.press('Escape');
+
     // Room settings: rename, make the friend a viewer, then hand the room over.
-    await page.reload(); await page.locator('[data-action="room-settings"]').click();
+    await page.locator('[data-action="room-settings"]').click();
     await page.locator('#rename-form [name=name]').fill('Renamed UI room');
     await page.locator('#rename-form [type=submit]').click();
     await toast(page).filter({ hasText: 'Room renamed.' }).waitFor();
     await page.locator('#modal select[data-role]').selectOption('viewer');
+    // A role change asks first.
+    await page.locator('#modal [data-confirm-role]').waitFor();
+    assert.match(await page.locator('#modal').innerText(), /Make UI friend a viewer\?/);
+    await page.locator('#modal [data-confirm-role]').click();
     await toast(page).filter({ hasText: 'Role changed.' }).waitFor();
     assert.equal(await page.locator('#modal select[data-role]').inputValue(), 'viewer');
     await shot(page, 'room-settings');
@@ -147,6 +160,15 @@ test('rooms plan, change and export runs, and members see each character history
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
     await page.locator('[data-plan-wish="Fire Temple"]').click();
     assert.equal(await page.locator('#run-form [name=dungeon]').inputValue(), 'Fire Temple');
+    // The start takes only what the server accepts; where a browser ignores the bounds, the form says why before sending.
+    const start = page.locator('#run-form [name=startsAt]'), sent = [];
+    assert.match(await start.getAttribute('min'), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/); assert.match(await start.getAttribute('max'), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    page.on('request', r => { if (r.url().endsWith('/api/odyle/plan')) sent.push(r.url()); });
+    await start.evaluate(input => { input.removeAttribute('max'); input.value = new Date(Date.now() + 70 * 86400000).toISOString().slice(0, 16); });
+    await page.locator('#run-form [type=submit]').click();
+    assert.match(await page.locator('#run-form .form-error[role=alert]').innerText(), /from an hour ago up to 60 days ahead/);
+    assert.deepEqual(sent, []);
+    await start.evaluate(input => { input.value = input.defaultValue; });
     await page.locator('#run-form [name=note]').fill('Bring potions');
     await page.locator('#run-form [type=submit]').click();
     await page.locator('.runs .wish-row').waitFor();
@@ -198,6 +220,10 @@ test('members keep the wishlist together, share characters and viewers only watc
     // Characters join the room from the bar above the party and leave it from their card.
     await mates.page.locator(`.add-chip[data-share="${mine.id}"]`).click();
     await mates.page.locator(`.member-card [data-share="${mine.id}"][data-enabled="false"]`).waitFor();
+    // A blank dungeon is stopped in the form, before anything is sent.
+    await mates.page.locator('#wish-form [name=dungeon]').fill('   ');
+    await mates.page.locator('#wish-form [type=submit]').click();
+    assert.match(await mates.page.locator('#wish-form .form-error[role=alert]').innerText(), /Dungeon is required/);
     await mates.page.locator('#wish-form [name=dungeon]').fill('Fire Temple');
     await mates.page.locator('#wish-form [type=submit]').click();
     await mates.page.locator('.wishlist .wish-row').first().waitFor();
@@ -256,6 +282,35 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('an open room checks no health while live, waits while hidden and draws its own changes from their answers', async () => {
+  const [lead, mate] = await Promise.all([account('Quiet lead'), account('Quiet mate')]);
+  const created = (await request('/api/odyle/create', { name: 'Quiet room' }, lead)).data, roomId = created.room.id;
+  assert.equal((await request('/api/odyle/join', { code: created.invites[0].code }, mate)).status, 200);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    const asked = []; page.on('request', r => { const path = new URL(r.url()).pathname; if (/^\/api\/(health|odyle\/(snapshot|announcement))/.test(path)) asked.push(path.split('/').slice(0, 4).join('/')); });
+    // Realtime is connected, so no health checks; the snapshot already brought the announcement.
+    await delay(21000);
+    assert.deepEqual(asked, []);
+    // A hidden tab leaves room news for later and catches up as soon as it is shown.
+    const visibility = hidden => page.evaluate(h => { for (const [name, value] of [['hidden', h], ['visibilityState', h ? 'hidden' : 'visible']]) Object.defineProperty(document, name, { configurable: true, get: () => value }); document.dispatchEvent(new Event('visibilitychange')); }, hidden);
+    await visibility(true);
+    assert.equal((await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, mate)).status, 200);
+    await delay(2000);
+    assert.deepEqual(asked, []); assert.equal(await page.locator('.wishlist:not(.runs) .wish-row').count(), 0);
+    await visibility(false);
+    await page.locator('.wishlist:not(.runs) .wish-row', { hasText: 'Fire Temple' }).waitFor();
+    assert.deepEqual(asked, ['/api/odyle/snapshot']);
+    // The page's own change shows from the route's answer, even while snapshots fail.
+    await page.route('**/api/odyle/snapshot/**', route => route.abort());
+    await page.locator('[data-wish="Fire Temple"][data-wanted="true"]').click();
+    await page.locator('[data-wish="Fire Temple"][data-wanted="false"]').waitFor();
+    assert.match(await page.locator('.wishlist .wish-row').first().innerText(), /2 members need it/);
+    await page.unroute('**/api/odyle/snapshot/**');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 test('the daily and weekly checklist adds, ticks, renames, orders and removes tasks', async () => {
   const user = await account('Checklist owner');
   const { page, errors, close } = await open(user, '#/tasks');
@@ -276,6 +331,8 @@ test('the daily and weekly checklist adds, ticks, renames, orders and removes ta
     assert.deepEqual(await titles(), ['Arena x3', 'Daily dungeon']);
     await shot(page, 'tasks');
     await page.locator('.task-row', { hasText: 'Arena x3' }).locator('[data-remove-task]').click();
+    assert.match(await page.locator('#modal').innerText(), /Remove Arena x3\?/);
+    await page.locator('#modal [data-confirm-remove-task]').click();
     await page.waitForFunction(() => document.querySelectorAll('.task-panel:first-child .task-row').length === 1);
     assert.deepEqual((await request('/api/odyle/tasks', undefined, user, 'GET')).data.tasks.map(t => t.title), ['Daily dungeon']);
     assert.deepEqual(errors, []);
@@ -344,7 +401,8 @@ test('the account page renames, switches to Czech, exports data, deletes charact
 
 test('an unreachable server keeps the sign-in and the connection state follows it', async () => {
   const user = await account('Outage');
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // English whatever the machine's language, as the checks read English text.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-GB' });
   await context.addInitScript(session => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('odyle.account', session); } }, JSON.stringify({ token: user.token, record: user.record }));
   const page = await context.newPage();
   try {
@@ -357,12 +415,72 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     await page.unroute('**/api/**');
     await page.getByRole('heading', { name: 'Welcome, Outage.' }).waitFor({ timeout: 15000 });
     await page.locator('.topbar .connection.connected').waitFor();
-    // Losing the server later flips the indicator without a reload.
+    // Losing the server later flips the indicator without a reload. A server going away
+    // ends the realtime stream too, which otherwise stands in for the health check.
     await page.route('**/api/**', route => route.abort());
+    assert.equal((await request('/__test__/drop-realtime', {})).status, 200);
     await page.locator('.topbar .connection:not(.connected)').waitFor({ timeout: 30000 });
     await page.unroute('**/api/**');
     await page.locator('.topbar .connection.connected').waitFor({ timeout: 30000 });
   } finally { await context.close(); }
+});
+test('Discord sign-in offers this page in another browser when its window cannot work', async () => {
+  // An app's built-in browser that opens no windows: a note before anything is clicked, then the link to copy.
+  const embedded = await browser.newContext({ viewport: { width: Number(process.env.ODYLE_UI_WIDTH) || 1280, height: 900 }, locale: 'en-GB', userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A.240505.005; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36 Instagram 312.0.0.32.112' });
+  await embedded.addInitScript(() => { window.open = () => null; });
+  try {
+    const page = await embedded.newPage(), errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto(url + '/#/join/ABCD-EFGH-2345');
+    await page.locator('.in-app-note').waitFor();
+    await shot(page, 'signin-in-app');
+    await page.locator('[data-action="discord"]').click();
+    // The invite link stays whole, so the invite still works in the other browser.
+    assert.equal(await page.locator('#modal .link-field').inputValue(), url + '/#/join/ABCD-EFGH-2345');
+    assert.equal(await page.locator('#modal [data-copied]').getAttribute('data-copy'), url + '/#/join/ABCD-EFGH-2345');
+    assert.match(await page.locator('#modal').innerText(), /could not open here[\s\S]*keeps your invite/);
+    await shot(page, 'signin-elsewhere');
+    assert.deepEqual(errors, []);
+  } finally { await embedded.close(); }
+  // A desktop browser gets no note; once the Discord window is open, help waits under the button.
+  const { page, errors, close } = await open(null, '#/');
+  try {
+    await page.locator('[data-action="discord"]').waitFor();
+    assert.equal(await page.locator('.in-app-note').count(), 0); assert.equal(await page.locator('.signin-help').isVisible(), false);
+    await page.evaluate(() => { window.open = () => ({ location: {}, close() {} }); });
+    await page.locator('[data-action="discord"]').click();
+    await page.locator('.signin-help').waitFor();
+    // The test backend has no Discord sign-in configured, and the page says so.
+    await toast(page).filter({ hasText: 'Discord sign-in needs backend configuration' }).waitFor();
+    await page.locator('.signin-help [data-action="open-elsewhere"]').click();
+    assert.equal(await page.locator('#modal .link-field').inputValue(), url + '/#/');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('Discord sign-in opens its window, signs in and joins the room of an invite link', async () => {
+  // Stands in for Discord's token and user endpoints; PocketBase still exchanges the code and creates the account.
+  const oauth = createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/token' && req.method === 'POST') { req.resume(); res.end(JSON.stringify({ access_token: 'test-discord-access', token_type: 'Bearer', expires_in: 3600 })); }
+    else if (req.url === '/user' && req.headers.authorization === 'Bearer test-discord-access') res.end(JSON.stringify({ id: '100000000000000077', username: 'window-tester', global_name: 'Window Tester', email: 'window@test.invalid', verified: true }));
+    else { res.writeHead(401); res.end('{}'); }
+  });
+  await new Promise(r => oauth.listen(0, '127.0.0.1', r));
+  assert.equal((await request('/__test__/oauth-provider', { url: 'http://127.0.0.1:' + oauth.address().port })).status, 200);
+  const lead = await account('Window lead'), created = (await request('/api/odyle/create', { name: 'Window room' }, lead)).data;
+  const { page, errors, close } = await open(null, '#/join/' + created.invites[0].code);
+  try {
+    // Discord's authorize page sends the window straight back with a code for the state it was given.
+    await page.context().route('https://discord.com/**', route => { const asked = new URL(route.request().url()); return route.fulfill({ status: 302, headers: { location: asked.searchParams.get('redirect_uri') + '?code=test-code&state=' + asked.searchParams.get('state') } }); });
+    await page.locator('.join-note').waitFor();
+    const opened = page.waitForEvent('popup');
+    await page.locator('[data-action="discord"]').click();
+    await opened;
+    // Signed in with the Discord name, the invite joins at once.
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    assert.match(page.url(), /#\/room\/[a-z0-9]+$/); assert.match(await page.locator('.topbar .breadcrumb').innerText(), /Window room/);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('odyle.account')).record.displayName), 'Window Tester');
+    assert.deepEqual(errors, []);
+  } finally { await close(); oauth.close(); }
 });
 test('the service worker opens the dashboard without a connection', async () => {
   const { page, errors, close } = await open(null, '#/');
@@ -391,7 +509,10 @@ test('room owners connect Discord reminders and a bad webhook says why in the fo
     await toast(page).filter({ hasText: 'Discord reminders are on' }).waitFor();
     assert.equal(discordPosts, before + 1);
     await page.locator('#modal [data-action="discord-off"]').click();
+    assert.match(await page.locator('#modal').innerText(), /Stop Discord reminders\?/);
+    await page.locator('#modal [data-action="confirm-discord-off"]').click();
     await toast(page).filter({ hasText: 'Discord reminders are off.' }).waitFor();
+    assert.match(await page.locator('#modal').innerText(), /Post each planned run/);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

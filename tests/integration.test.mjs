@@ -363,7 +363,8 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const expiry = ran.data.jobs.find(j => j.name === 'odyle-expiry');
   assert.equal(expiry.manual, true); assert.equal(expiry.byHand, true); assert.equal(expiry.failed, 0); assert.equal(typeof ran.data.result.done, 'number'); assert.ok(expiry.runs >= 1); assert.ok(Date.parse(expiry.lastRunAt) <= Date.now());
   assert.equal((await run('odyle-retention')).status, 400); assert.equal((await run('odyle-nothing')).status, 404);
-  const base = (await settings()).data.settings;
+  const base = (await settings()).data.settings, noticeRoom = (await action('create', { name: 'Notice room' }, member)).data.room.id;
+  const snapshotNotice = async () => (await request('/api/odyle/snapshot/' + noticeRoom, undefined, member, 'GET')).data.announcement;
   try {
     for (const bad of [{ portraitsPaused: 'yes' }, { pairingPaused: 1 }, { readerPaused: 'on' },{ announcement: 5 }, { announcement: 'x'.repeat(301) }, { announcementLevel: 'loud' }, { adapters: ['test-fixture-v1'] }, { adapters: { extra: ['bad name'], disabled: [] } }, { adapters: { extra: [], disabled: ['test-fixture-v1'] } }, { adapters: { extra: Array.from({ length: 21 }, (_, i) => 'extra-' + i), disabled: [] } }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
     // Switches pause jobs and new pairings; the announcement is one line of text.
@@ -376,6 +377,8 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     const notice = { text: 'Maintenance at 10:00 UTC', level: 'warning' };
     assert.deepEqual((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, notice);
     assert.deepEqual((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, notice);
+    // Room snapshots carry it too, so an open room needs no separate request.
+    assert.deepEqual(await snapshotNotice(), notice);
     const link = await action('desktop-code', {}, member); assert.equal(link.status, 400); assert.equal(link.data.message, 'Pairing new PCs is paused for now. Try again later.');
     const pairing = await action('pair', { code: 'ABCDEFGH23456789', name: 'Paused PC' }); assert.equal(pairing.status, 400); assert.equal(pairing.data.message, 'Pairing new PCs is paused for now. Try again later.');
     const refused = (await request('/api/odyle/admin/monitor', undefined, operator, 'GET')).data.packets.find(p => p.kind === 'pair' && p.name === 'Paused PC');
@@ -406,6 +409,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.readerPaused, false);
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
+  assert.equal(await snapshotNotice(), null);
   assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active']);
   // A body id never replaces a packet's own number.
   const added = (await action('task', { title: 'Watched task', cadence: 'daily' }, member)).data.tasks.find(x => x.title === 'Watched task');
@@ -563,13 +567,15 @@ test('room owners rename rooms, change roles and hand rooms over; runs are plann
   } finally { await stream.close(); }
   // A player made viewer stops sharing; the owner cannot change themselves or members of other rooms.
   const own = (await action('character', { characterName: 'Mate main', server: 'Lumiel', region: 'GLOBAL_EU' }, mate)).data.character;
-  assert.equal((await action('sharing', { roomId, characterId: own.id, enabled: true }, mate)).status, 200);
+  const shared = await action('sharing', { roomId, characterId: own.id, enabled: true }, mate); assert.equal(shared.status, 200); assert.deepEqual(shared.data.sharedCharacters, [own.id]);
   const mateId = (await memberOf(mate)).id;
   assert.equal((await action('role', { roomId, memberId: mateId, role: 'viewer' }, mate)).status, 403);
   for (const bad of [{ role: 'owner' }, { role: 'admin' }]) assert.equal((await action('role', { roomId, memberId: mateId, ...bad }, lead)).status, 400);
   assert.equal((await action('role', { roomId, memberId: (await memberOf(lead)).id, role: 'viewer' }, lead)).status, 403);
   assert.equal((await action('role', { roomId, memberId: (await snapshot2(elsewhere, other)).members[0].id, role: 'viewer' }, lead)).status, 403);
-  assert.equal((await action('role', { roomId, memberId: mateId, role: 'viewer' }, lead)).status, 200);
+  const demoted = await action('role', { roomId, memberId: mateId, role: 'viewer' }, lead); assert.equal(demoted.status, 200);
+  // The answer is the membership as snapshots list it; dashboards apply it without fetching the room.
+  assert.deepEqual([demoted.data.membership.id, demoted.data.membership.role, demoted.data.membership.sharedCharacters], [mateId, 'viewer', []]);
   assert.deepEqual(await memberOf(mate).then(m => [m.role, m.sharedCharacters]), ['viewer', []]);
   assert.equal((await action('sharing', { roomId, characterId: own.id, enabled: true }, mate)).status, 403);
   assert.equal((await action('role', { roomId, memberId: mateId, role: 'reporter' }, lead)).status, 200);

@@ -8,8 +8,11 @@ import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { inviteLink, joinCode, savedInvites, rememberInvites, forgetInvites, forgetAllInvites } from './invites.js';
 import { historyChart, historyList, bindHistoryChart } from './history.js';
 import { runsSection, startsIn, runEditForm, calendarFile } from './runs.js';
+import { wishProblem, runProblem, moved } from './forms.js';
+import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
-import { applyRoomCharacters, applyCharacters, applySeen, applyContact } from './live.js';
+import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applyShared, applyMembership } from './live.js';
+import { party as partyOf, character as readinessOf } from './readiness.js';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -28,11 +31,12 @@ let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false,
 let windowsRelease = null, windowsReleaseAt = 0;
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '';
 let account = null, renderedAccount = '';
-// The message superusers set under Server controls, refreshed every minute at most. Hiding
-// it lasts until the text changes.
+// The message superusers set under Server controls, refreshed every minute at most: from
+// the rooms list or a room snapshot, which carry it, or on its own when neither came in
+// that minute. Hiding it lasts until the text changes.
 let announcement = null, announcementAt = 0;
 const hiddenAnnouncementKey = 'odyle.announcement.hidden';
-let timer;
+let timer = 0;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
 const owner = () => demo || room?.owner === pb.authStore.record?.id;
 const mine = () => me()?.characters || [];
@@ -57,9 +61,10 @@ function renderAnnouncement() { const el = document.querySelector('.announcement
 async function loadAnnouncement(force = false) {
   if (!force && Date.now() - announcementAt < 60000) return;
   announcementAt = Date.now();
-  const next = (await pb.send('/api/odyle/announcement')).announcement || null;
-  if (JSON.stringify(next) !== JSON.stringify(announcement)) { announcement = next; renderAnnouncement(); }
+  showAnnouncement((await pb.send('/api/odyle/announcement')).announcement || null);
 }
+function announced(data) { if (data && 'announcement' in data) { announcementAt = Date.now(); showAnnouncement(data.announcement || null); } }
+function showAnnouncement(next) { if (JSON.stringify(next) !== JSON.stringify(announcement)) { announcement = next; renderAnnouncement(); } }
 // The topbar's connection state follows every refresh, not only full redraws.
 function renderConnection() { const el = document.querySelector('.topbar .connection'); if (!el) return; el.classList.toggle('connected', online || demo); el.innerHTML = connectionLabel(); }
 function shell(content, active = 'overview') {
@@ -68,8 +73,12 @@ function shell(content, active = 'overview') {
   app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ ${esc(__APP_VERSION__)} · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
+// Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
+// installed web app looks like one but is not.
+const standalone = () => navigator.standalone === true || Boolean(window.matchMedia?.('(display-mode: standalone)').matches);
+const embedded = () => inAppBrowser(navigator.userAgent, standalone());
 function welcome(joining = false) {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${joining ? `<p class="join-note">${icon('link')} ${t('You were invited to a room. Sign in with Discord and you join it right away.')}</p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p></main>`);
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${joining ? `<p class="join-note">${icon('link')} ${t('You were invited to a room. Sign in with Discord and you join it right away.')}</p>` : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')}</p></main>`);
 }
 function libraryView() {
   shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR ADVENTURE, SAVED')}</div><h1>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })}<span class="mint">.</span></h1><p>${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section><section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2><button class="button secondary" data-action="reading">${icon('plus')} ${t('Connect reader')}</button></div><div class="member-grid">${characterCards()}</div></section></main>`, 'library');
@@ -143,7 +152,7 @@ function renderLibrary() {
   document.querySelector('.room-section h2 span').textContent = rooms.length; document.querySelector('.personal-characters h2 span').textContent = characters.length; renderSharing();
 }
 // Accounts with a live character in this room, for the dots on the wishlist and runs.
-function liveUsers(now) { return new Set(flattened().filter(c => c.characterName && status(c, now) === 'live').map(c => c.user)); }
+function liveUsers(now) { return new Set(partyOf(flattened(), now, room?.cost || perCube).live.map(c => c.user)); }
 // What members still need to run, most wanted first. A dot marks members with a
 // live character in this room, so the party sees what it could run right now.
 function wishlistSection(now) {
@@ -185,7 +194,7 @@ function taskPanel(cadence, now) {
     if (task.id === editingTask) return `<form id="task-edit-form" class="task-row task-edit" data-id="${esc(task.id)}"><input name="title" maxlength="60" autocomplete="off" required value="${name}" aria-label="${esc(t('New name of {task}', { task: task.title }))}"><button class="button primary" type="submit">${t('Save')}</button><button class="button secondary" type="button" data-action="cancel-task-edit">${t('Cancel')}</button></form>`;
     const move = (direction, glyph, label, hidden) => `<button class="task-tool" data-move-task="${esc(task.id)}" data-move="${direction}" title="${esc(label)}" aria-label="${esc(label)}" ${hidden ? 'disabled' : ''}>${glyph}</button>`;
     const tools = `<span class="task-tools">${move('up', '↑', t('Move {task} up', { task: task.title }), index === 0)}${move('down', '↓', t('Move {task} down', { task: task.title }), index === list.length - 1)}<button class="task-tool" data-edit-task="${esc(task.id)}" title="${esc(t('Rename {task}', { task: task.title }))}" aria-label="${esc(t('Rename {task}', { task: task.title }))}">✎</button></span>`;
-    return `<div class="task-row ${checked ? 'done' : ''}"><label class="task-main"><input type="checkbox" data-task="${esc(task.id)}" ${checked ? 'checked' : ''}><span class="task-box">${icon('tick')}</span><span class="task-text"><strong>${esc(task.title)}</strong><small>${checked ? `${t('Done')} <span data-age="${esc(task.doneAt)}">${age(task.doneAt, now)}</span>` : cadence === 'daily' ? t('Still to do today') : t('Still to do this week')}</small></span></label>${tools}<button class="task-remove" data-remove-task="${esc(task.id)}" title="${esc(t('Remove {task}', { task: task.title }))}" aria-label="${esc(t('Remove {task}', { task: task.title }))}">×</button></div>`;
+    return `<div class="task-row ${checked ? 'done' : ''}"><label class="task-main"><input type="checkbox" data-task="${esc(task.id)}" ${checked ? 'checked' : ''}><span class="task-box">${icon('tick')}</span><span class="task-text"><strong>${esc(task.title)}</strong><small>${checked ? `${t('Done')} <span data-age="${esc(task.doneAt)}">${age(task.doneAt, now)}</span>` : cadence === 'daily' ? t('Still to do today') : t('Still to do this week')}</small></span></label>${tools}<button class="task-remove" data-remove-task="${esc(task.id)}" data-name="${name}" title="${esc(t('Remove {task}', { task: task.title }))}" aria-label="${esc(t('Remove {task}', { task: task.title }))}">×</button></div>`;
   }).join('');
   const empty = cadence === 'daily' ? t('No daily tasks yet. Add what you run every day; it unchecks itself at the daily reset.') : t('No weekly tasks yet. Add what you clear once a week; it unchecks itself at the weekly reset.');
   return `<section class="party-section task-panel"><div class="section-heading"><h2>${label} <span>${done.length} / ${list.length}</span></h2><span class="refresh-label">${t('Resets in')} <span data-reset="${cadence}">${remaining(at - now)}</span> · ${esc(when)}</span></div><div class="wish-panel"><div class="task-progress"><i style="width:${list.length ? done.length / list.length * 100 : 0}%"></i></div>${rows ? `<div class="task-list">${rows}</div>` : `<p class="wish-empty">${empty}</p>`}<form id="task-form-${cadence}" class="wish-form"><input name="title" maxlength="60" autocomplete="off" placeholder="${esc(cadence === 'daily' ? t('Add a daily task') : t('Add a weekly task'))}" aria-label="${esc(cadence === 'daily' ? t('Daily task') : t('Weekly task'))}" required><button class="button primary" type="submit">${icon('plus')} ${t('Add')}</button></form></div></section>`;
@@ -224,18 +233,15 @@ async function accountPage(ticket) {
 }
 function dashboard() {
   rendered = signature();
-  const now = Date.now() + serverOffset, party = flattened(), actual = party.filter(c => c.characterName);
-  const live = actual.filter(c => status(c, now) === 'live'), ready = live.filter(c => c.value >= room.cost);
   // Odyle cannot be pooled. Each player brings one character (their best fresh one),
-  // and the party can only do as many cubes as its lowest player allows.
-  const players = Object.values(live.reduce((best, c) => (!best[c.user] || c.value > best[c.user].value ? { ...best, [c.user]: c } : best), {}));
-  const lowest = players.reduce((low, c) => !low || c.value < low.value ? c : low, null), cubes = lowest ? Math.floor(lowest.value / room.cost) : 0;
+  // and the party can only do as many cubes as its lowest player allows (readiness.js).
+  const now = Date.now() + serverOffset, party = flattened(), { characters: actual, ready, players, lowest, cubes } = partyOf(party, now, room.cost);
   const lowestName = lowest ? esc(lowest.displayName) + (lowest.characterName === lowest.displayName ? '' : ` · ${esc(lowest.characterName)}`) : '';
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
   keepingDrafts(() => shell(`<main class="dashboard"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR NEXT ADVENTURE')}</div><h1>${t('Party overview')}<span class="mint">.</span></h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${t('Every last confirmed value stays saved.')}</p></div><div class="heading-actions">${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Room settings') : t('Room')}</button>${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite a friend')}</button>` : ''}</div></section><section class="stats"><article><div class="stat-caption">${t('CHARACTER READINESS')} ${icon('people')}</div><div class="stat-number">${ready.length}<span>/ ${actual.length}</span></div><div class="stat-detail"><span class="mint">${t('Fresh characters with enough for a cube')}</span></div><div class="mini-track"><i style="width:${actual.length ? ready.length / actual.length * 100 : 0}%"></i></div></article><article><div class="stat-caption">${t('LOWEST PLAYER ODYLE')} ${icon('bolt')}</div><div class="stat-number">${lowest ? lowest.value.toLocaleString(locale()) : '—'}<span class="unit">${t('energy')}</span></div><div class="stat-detail">${lowest ? `${lowestName} · ${esc(tn(players.length, 'best character of {n} player', 'best character of each of {n} players'))}` : t('No current readings; old values stay on their cards')}</div></article><article><div class="stat-caption">${t('PARTY CUBES')} ${icon('diamond')}</div><div class="stat-number">${cubes}<span class="unit">${esc(tn(cubes, 'cube', 'cubes'))}</span></div><div class="stat-detail">${esc(t('Lowest count in the room · {cost} Odyle per cube', { cost: room.cost }))}</div></article></section>${demo ? '' : addBar()}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="refresh-label"><i></i>${demo ? t('Illustrative readings') : t('Live room updates')}</span></div><div class="member-grid">${party.map((c, i) => card(c, i)).join('')}<button class="empty-card" data-action="invite"><span class="empty-plus">${icon('plus')}</span><strong>${t('A spot for your next ally')}</strong><span>${t('Invite another Discord account')}</span></button></div></section>${wishlistSection(now)}${plannedRuns(now)}<section class="lower-grid"><article class="info-panel"><div class="info-heading"><span class="setup-icon">${icon('shield')}</span><div><h3>${t('Your data. Your call.')}</h3><p>${t('Account-owned characters. Room-scoped sharing.')}</p></div></div><p>${t('All characters keep their last confirmed Odyle. You choose which characters each room sees. Older values remain visible with their timestamp, while readiness uses only fresh readings.')}</p><button class="text-button" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></article><article class="next-panel"><div class="eyebrow">${t('BEFORE YOU HEAD OUT')}</div><h3>${t('Check the character you’re taking.')}</h3><p>${esc(tn(ready.length, '{n} character can currently claim a cube at {cost} Odyle.', '{n} characters can currently claim a cube at {cost} Odyle.', { cost: room.cost }))} ${t('A stale value remains stored but does not count as ready.')}</p><button class="button secondary" data-action="${demo ? 'help' : 'reading'}">${demo ? t('How readings work') : t('Connect packet reader')} ${icon('arrow')}</button></article></section></main>`));
 }
 function card(c, index) {
-  const now = Date.now() + serverOffset, state = status(c, now), fresh = state === 'live', known = c.confirmed && c.lastReadingAt, cost = room?.cost || perCube, cubes = known ? Math.floor(c.value / cost) : 0, ready = fresh && c.value >= cost;
+  const now = Date.now() + serverOffset, cost = room?.cost || perCube, { state, known, cubes, ready } = readinessOf(c, now, cost), fresh = state === 'live';
   const labels = { live: t('Live'), stale: t('Stale'), unknown: t('No reading'), offline: t('Offline') }, self = c.user === pb.authStore.record?.id && !demo;
   const history = c.id && c.characterName && (known || !demo) ? `<button data-history="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Odyle history of {name}', { name: c.characterName }))}">${t('History')}</button>` : '';
   const action = self && room && c.id ? `<button class="remove" data-share="${esc(c.id)}" data-enabled="false" data-name="${esc(c.characterName)}" ${c.role === 'viewer' ? 'disabled' : ''} title="${esc(t('Hide {name} from this room. Its saved values stay on your account.', { name: c.characterName }))}">${t('Remove from room')}</button>`
@@ -301,19 +307,42 @@ async function send(action, body = {}) {
   const data = await pb.send('/api/odyle/' + action, { method: 'POST', body });
   if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); return data;
 }
-async function refreshRoom() {
-  const id = room.id, snapshot = await pb.send('/api/odyle/snapshot/' + id);
+// One snapshot request at a time: news arriving while one loads, or a change this page
+// drew from its own answer meanwhile (changedRoom), loads it once more afterwards, so an
+// older answer never replaces newer state.
+let roomLoad = null, roomAgain = false, roomEdits = 0;
+function refreshRoom() {
+  roomAgain = true;
+  if (!roomLoad) roomLoad = loadRooms().finally(() => { roomLoad = null; });
+  return roomLoad;
+}
+async function loadRooms() { while (roomAgain && room) { roomAgain = false; await loadRoom(); } }
+async function loadRoom() {
+  const id = room.id, edits = roomEdits;
+  let snapshot;
+  try { snapshot = await pb.send('/api/odyle/snapshot/' + id); }
+  catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
+  if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
   room = snapshot.room; perCube = room.cost; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
-  characters = me()?.characters || characters;
+  characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
+// A change this page made in the room: the route's answer carries the new state, which
+// is drawn at once instead of fetching the snapshot again (realtime still tells the
+// room's members, this tab too, which then fetches it once).
+function changedRoom(update) {
+  roomEdits++; update(); characters = me()?.characters || characters;
+  if (!document.querySelector('#modal')?.open) renderDashboard();
+}
+// News that needs a fetch waits in a hidden tab, which fetches once when it is shown again (tick).
+function later() { if (!document.hidden) return false; lastPulse = 0; return true; }
 async function leaveRoomTopic() { const stops = roomTopics; roomTopics = []; for (const stop of stops) await stop().catch(() => { /* already gone */ }); }
 async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
   const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
   if (ticket !== navigation) return;
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; characters = mine; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -335,6 +364,7 @@ async function roomNews(id, data) {
   if (room?.id !== id) return;
   if (data?.removed) return leftRoom(id);
   if (Array.isArray(data?.characters) && applyRoomCharacters(members, data.characters)) { characters = me()?.characters || characters; return renderPage(); }
+  if (later()) return;
   try { await refreshRoom(); }
   catch (error) { if ([403, 404].includes(error.status)) return leftRoom(id); online = false; renderConnection(); }
 }
@@ -356,7 +386,7 @@ async function watchOwnTopic() {
     connects = pb.realtime.isConnected ? 1 : 0;
     connectTopic = await pb.realtime.subscribe('PB_CONNECT', () => {
       clearTimeout(disconnected); live = true;
-      if (connects++ > 0) refreshPage().then(renderPage, () => { online = false; renderConnection(); });
+      if (connects++ > 0 && !later()) refreshPage().then(renderPage, () => { online = false; renderConnection(); });
     });
     ownTopic = await pb.realtime.subscribe('odyle.user.' + id, data => ownNews(data));
     if (pb.realtime.isConnected) live = true;
@@ -374,8 +404,8 @@ async function ownNews(data) {
   const library = !room && shown !== '/tasks' && shown !== '/account';
   try {
     // The open room hears of its own changes on its topic.
-    if (data.refresh) { if (!room) await refreshPage(); }
-    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library) await refreshPage();
+    if (data.refresh) { if (!room && !later()) await refreshPage(); }
+    else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) await refreshPage();
     if (data.seen) applySeen(data.seen, characters);
     if (data.contact) applyContact(data.contact, account?.apps);
     renderPage();
@@ -388,7 +418,7 @@ async function refreshPage() {
   else if (shown === '/account') await refreshAccount();
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); }
+    if (!room) { rooms = list.rooms; characters = mine; perCube = list.odylePerCube || perCube; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
@@ -464,43 +494,70 @@ async function authenticated() {
   // A visit without a page in its URL resumes the last page of this browser.
   if (!/^#\//.test(location.hash)) history.replaceState(null, '', '#' + (remembered().path || '/'));
   clearInterval(timer); lastPulse = lastCheck = Date.now();
-  // Realtime pushes changes and heartbeats (openRoom, watchOwnTopic), so a page fetches its
-  // data again only every five minutes, in case something was missed, and every 15
-  // seconds while realtime is down. In between, a health check every 15 seconds keeps the
-  // connection label right, and the 5-second tick redraws ages and live/stale states.
-  timer = setInterval(async () => {
-    loadAnnouncement().catch(() => { /* the next minute tries again */ });
-    if (busy || demo) return;
-    remindRuns().catch(() => { /* the next tick tries again */ });
-    try {
-      if (Date.now() - renewedAt >= renewEvery) { renewedAt = Date.now(); await pb.collection('users').authRefresh(); }
-      if (Date.now() - lastPulse >= (live ? 300000 : 15000)) { lastPulse = lastCheck = Date.now(); await refreshPage(); }
-      else if (Date.now() - lastCheck >= 15000) {
-        lastCheck = Date.now(); const back = !online;
-        await pb.health.check(); online = true;
-        // Back after an outage: whatever happened meanwhile.
-        if (back) { lastPulse = Date.now(); await refreshPage(); }
-      }
-      renderPage();
-    } catch (error) { if (error?.status === 401) return expired(); online = false; }
-    finally { renderConnection(); }
-  }, 5000);
+  timer = setInterval(tick, 5000);
   await show(true).catch(failure);
+  // Rooms and snapshots carry the announcement; other pages fetch it.
+  loadAnnouncement().catch(() => { /* the next minute tries again */ });
 }
+// Realtime pushes changes and heartbeats (openRoom, watchOwnTopic), so a page fetches its
+// data again only every five minutes, in case something was missed, and every 15 seconds
+// while realtime is down. A health check every 15 seconds keeps the connection label
+// right while realtime is down or a request failed (a connected realtime stream shows
+// the server answers), and the 5-second tick redraws ages and live/stale states. A hidden
+// tab only renews its sign-in and keeps run reminders; news it cannot apply in place
+// waits (later), and the tab catches up as soon as it is shown.
+async function tick() {
+  if (!document.hidden) loadAnnouncement().catch(() => { /* the next minute tries again */ });
+  if (busy || demo) return;
+  remindRuns().catch(() => { /* the next tick tries again */ });
+  try {
+    if (Date.now() - renewedAt >= renewEvery) { renewedAt = Date.now(); await pb.collection('users').authRefresh(); }
+    if (document.hidden) return;
+    if (Date.now() - lastPulse >= (live ? 300000 : 15000)) { lastPulse = lastCheck = Date.now(); await refreshPage(); }
+    else if ((!live || !online) && Date.now() - lastCheck >= 15000) {
+      lastCheck = Date.now(); const back = !online;
+      await pb.health.check(); online = true;
+      // Back after an outage: whatever happened meanwhile.
+      if (back) { lastPulse = Date.now(); await refreshPage(); }
+    }
+    renderPage();
+  } catch (error) { if (error?.status === 401) return expired(); online = false; }
+  finally { renderConnection(); }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && timer) tick(); });
 function unreachable() {
-  clearInterval(timer); online = false;
+  clearInterval(timer); timer = 0; online = false;
   shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('STILL SIGNED IN')}</div><h1>${t('The Odyle server is out of reach')}<span class="mint">.</span></h1><p class="intro">${t('Your sign-in is kept. The dashboard tries again every ten seconds and opens your page as soon as the server answers.')}</p><button class="button secondary" data-action="retry">${t('Try again now')} ${icon('arrow')}</button></main>`);
   retryTimer = setTimeout(() => authenticated().catch(failure), 10000);
 }
+// The Discord window opens within the click, before anything is awaited, as browsers
+// block windows opened later (the SDK opens its own the same way); null when blocked.
+function signInWindow() {
+  const width = Math.min(1024, window.innerWidth), height = Math.min(768, window.innerHeight);
+  try { return window.open('', 'popup_window', `width=${width},height=${height},top=${(window.innerHeight - height) / 2},left=${(window.innerWidth - width) / 2},resizable,menubar=no`); } catch { return null; }
+}
+// This page's link to open in another browser when the Discord window cannot work here
+// (why: 'blocked', 'interrupted', 'app' or nothing). An invite link keeps its code.
+function signInElsewhere(why = '') {
+  const link = signInLink(location.href), joining = Boolean(joinCode(currentPath()));
+  const reason = { blocked: t('The Discord sign-in window could not open here.'), interrupted: t('The sign-in was interrupted before Discord answered.'), app: t('Discord sign-in often fails in browsers built into other apps.') }[why];
+  modal(t('Open Odyle in your browser'), `<p>${reason ? reason + ' ' : ''}${t('Open this link in Safari, Chrome or another browser and sign in there.')}${joining ? ' ' + t('The link keeps your invite: you join the room right after signing in.') : ''}</p><div class="link-copy"><input class="link-field" readonly value="${esc(link)}" aria-label="${esc(t('Link to this page'))}"><button class="button primary" data-copy="${esc(link)}" data-copied="${esc(t('Link copied.'))}">${icon('copy')} ${t('Copy link')}</button></div><p class="signin-tip">${t('In an app, its ⋯ or ⋮ menu or the share button usually has Open in browser.')}${why === 'blocked' ? ' ' + t('On a computer, allow pop-ups for this site and try again.') : ''}</p>`);
+}
 async function discordLogin() {
+  const popup = signInWindow();
+  if (!popup) return signInElsewhere('blocked');
+  document.querySelector('.signin-help')?.removeAttribute('hidden');
   let auth;
-  // The SDK opens its popup immediately; keep this call within the click gesture.
-  try { auth = await pb.collection('users').authWithOAuth2({ provider: 'discord', createData: { displayName: 'Adventurer' } }); }
+  try { auth = await pb.collection('users').authWithOAuth2({ provider: 'discord', createData: { displayName: 'Adventurer' }, urlCallback: url => { popup.location.href = url; } }); }
   catch (error) {
+    popup.close();
     const methods = await pb.collection('users').listAuthMethods();
     if (!methods.oauth2?.providers?.some(p => p.name === 'discord')) return toast(t('Discord sign-in needs backend configuration. See docs/discord-setup.md.'));
+    // The page lost its realtime connection while Discord had the window, as a phone does with pages in the background.
+    if (error?.originalError?.message === 'realtime connection interrupted') return signInElsewhere('interrupted');
     throw error;
   }
+  popup.close();
   // The Discord name replaces the placeholder of a new account; the profile route checks it.
   if (auth.record.displayName === 'Adventurer' && auth.meta?.name) {
     try { pb.authStore.save(pb.authStore.token, (await send('profile', { displayName: String(auth.meta.name).slice(0, 40) })).record); } catch { /* keeps Adventurer; Account & data renames it */ }
@@ -509,7 +566,7 @@ async function discordLogin() {
 }
 async function logout() {
   // Invite codes stay usable for 30 minutes; a shared computer must not keep them.
-  await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); clearTimeout(retryTimer); pb.authStore.clear(); forget(); forgetAllInvites(storage); clearRoom(); rooms = []; characters = []; tasks = []; account = null; online = false;
+  await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); pb.authStore.clear(); forget(); forgetAllInvites(storage); clearRoom(); rooms = []; characters = []; tasks = []; account = null; online = false;
   await go('/', true);
 }
 function demoSession() {
@@ -532,22 +589,24 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); await go('/room/' + result.room.id); }
     else if (form.id === 'wish-form') {
       if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to keep a dungeon wishlist in your own room.'));
-      await send('wishlist', { roomId: room.id, dungeon: data.dungeon, wanted: true }); form.reset(); await refreshRoom();
+      const problem = wishProblem(data.dungeon, { catalog: dungeons, wishlist, myId: pb.authStore.record?.id }); if (problem) return formError(form, problem);
+      const result = await send('wishlist', { roomId: room.id, dungeon: data.dungeon, wanted: true }); form.reset(); changedRoom(() => { wishlist = result.wishlist; });
     }
     else if (form.id === 'run-form') {
       if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to plan runs with your party.'));
-      const startsAt = new Date(data.startsAt);
-      if (Number.isNaN(startsAt.getTime())) return formError(form, t('Choose when the run starts.'));
-      await send('plan', { roomId: room.id, dungeon: data.dungeon, startsAt: startsAt.toISOString(), note: data.note }); form.reset(); await refreshRoom();
+      const problem = runProblem(data, { now: Date.now() + serverOffset, catalog: dungeons, runs }); if (problem) return formError(form, problem);
+      const result = await send('plan', { roomId: room.id, dungeon: data.dungeon, startsAt: new Date(data.startsAt).toISOString(), note: data.note }); form.reset(); changedRoom(() => { runs = result.runs; });
     }
     else if (form.id === 'run-edit-form') {
-      const startsAt = new Date(data.startsAt);
-      if (Number.isNaN(startsAt.getTime())) return formError(form, t('Choose when the run starts.'));
-      await send('plan', { roomId: room.id, id: data.runId, dungeon: data.dungeon, startsAt: startsAt.toISOString(), note: data.note }); closeModal(); await refreshRoom(); toast(t('Run updated.'));
+      const run = runs.find(r => r.id === data.runId); if (!run) return formError(form, t('This run is no longer planned.'));
+      const problem = runProblem(data, { now: Date.now() + serverOffset, catalog: dungeons, run }); if (problem) return formError(form, problem);
+      // An unchanged start is not sent: the form shows whole minutes, and a run that started over an hour ago keeps its time.
+      const changes = { roomId: room.id, id: run.id, dungeon: data.dungeon, note: data.note, ...(moved(run, data.startsAt) ? { startsAt: new Date(data.startsAt).toISOString() } : {}) };
+      const result = await send('plan', changes); closeModal(); changedRoom(() => { runs = result.runs; }); toast(t('Run updated.'));
     }
-    else if (form.id === 'discord-form') { await send('discord-webhook', { roomId: room.id, webhook: data.webhook, language: language() }); await refreshRoom(); roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
+    else if (form.id === 'discord-form') { const result = await send('discord-webhook', { roomId: room.id, webhook: data.webhook, language: language() }); changedRoom(() => { room = result.room; }); roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
-    else if (form.id === 'rename-form') { await send('rename', { roomId: room.id, name: data.name }); await refreshRoom(); roomSettings(); toast(t('Room renamed.')); }
+    else if (form.id === 'rename-form') { const result = await send('rename', { roomId: room.id, name: data.name }); changedRoom(() => { room = result.room; }); roomSettings(); toast(t('Room renamed.')); }
     else if (form.id === 'profile-form') {
       const result = await send('profile', { displayName: data.displayName });
       pb.authStore.save(pb.authStore.token, result.record); account.account.displayName = result.record.displayName; accountRender(); toast(t('Display name saved.'));
@@ -561,7 +620,7 @@ app.addEventListener('click', async e => {
   try {
     if (el.matches('.brand')) { e.preventDefault(); return await go('/'); }
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
-    if (el.dataset.copy) { await navigator.clipboard.writeText(el.dataset.copy); return toast(el.dataset.copied || t('Code copied.')); }
+    if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
@@ -569,7 +628,7 @@ app.addEventListener('click', async e => {
       const roomId = el.dataset.roomId || room.id; el.disabled = true;
       const enabled = el.dataset.enabled === 'true', name = el.dataset.name;
       let result; try { result = await send('sharing', { roomId, characterId: el.dataset.share, enabled }); } finally { el.disabled = false; }
-      if (room) { await refreshRoom(); if (!enabled && name) toast(t('{name} was removed from this room. Its saved values stay on your account.', { name })); return; }
+      if (room) { changedRoom(() => applyShared(me(), result.sharedCharacters)); if (!enabled && name) toast(t('{name} was removed from this room. Its saved values stay on your account.', { name })); return; }
       rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: result.sharedCharacters.length > 0 } : r);
       return renderSharing();
     }
@@ -579,36 +638,43 @@ app.addEventListener('click', async e => {
     if (el.dataset.confirmDeleteCharacter) { await send('delete-character', { characterId: el.dataset.confirmDeleteCharacter }); closeModal(); toast(t('Character deleted.')); return await show(true); }
     if (el.dataset.editTask) { editingTask = el.dataset.editTask; tasksView(); return document.querySelector('#task-edit-form input')?.select(); }
     if (el.dataset.moveTask) { el.disabled = true; applyTasks(await send('task', { id: el.dataset.moveTask, move: el.dataset.move })); tasksView(); return document.querySelector(`[data-move-task="${el.dataset.moveTask}"][data-move="${el.dataset.move}"]:not(:disabled)`)?.focus(); }
-    if (el.dataset.removeTask) { el.disabled = true; try { applyTasks(await send('task', { id: el.dataset.removeTask, remove: true })); tasksView(); } finally { el.disabled = false; } return; }
+    if (el.dataset.removeTask) return ask(esc(t('Remove {task}?', { task: el.dataset.name })), t('It leaves your checklist for good. You can add it again at any time.'), t('Remove task'), { 'confirm-remove-task': el.dataset.removeTask });
+    if (el.dataset.confirmRemoveTask) { applyTasks(await send('task', { id: el.dataset.confirmRemoveTask, remove: true })); closeModal(); return tasksView(); }
     if (el.dataset.wish) {
-      el.disabled = true; try { await send('wishlist', { roomId: room.id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
-      return await refreshRoom();
+      let result; el.disabled = true; try { result = await send('wishlist', { roomId: room.id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
+      return changedRoom(() => { wishlist = result.wishlist; });
     }
     if (el.dataset.planWish) {
       const form = document.querySelector('#run-form'); if (!form) return;
       form.elements.dungeon.value = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
     }
     if (el.dataset.run) {
-      el.disabled = true; try { await send('plan', { roomId: room.id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
-      return await refreshRoom();
+      let result; el.disabled = true; try { result = await send('plan', { roomId: room.id, id: el.dataset.run, going: el.dataset.going === 'true' }); } finally { el.disabled = false; }
+      return changedRoom(() => { runs = result.runs; });
     }
-    if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, dungeons.length ? dungeons : [...new Set(wishlist.map(w => w.dungeon))])); return; }
+    if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, dungeons.length ? dungeons : [...new Set(wishlist.map(w => w.dungeon))], Date.now() + serverOffset)); return; }
     if (el.dataset.calendarRun) {
       const r = runs.find(x => x.id === el.dataset.calendarRun); if (!r) return;
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
       return download(calendarFile(r, { room: room.name, going, now: Date.now() + serverOffset }), `odyle-${r.dungeon.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'run'}.ics`, 'text/calendar');
     }
     if (el.dataset.cancelRun) return ask(esc(t('Cancel {dungeon}?', { dungeon: el.dataset.name })), t('The run disappears for everyone who planned to go.'), t('Cancel run'), { 'confirm-cancel-run': el.dataset.cancelRun });
-    if (el.dataset.confirmCancelRun) { await send('plan', { roomId: room.id, id: el.dataset.confirmCancelRun, remove: true }); closeModal(); return await refreshRoom(); }
+    if (el.dataset.confirmCancelRun) { const result = await send('plan', { roomId: room.id, id: el.dataset.confirmCancelRun, remove: true }); closeModal(); return changedRoom(() => { runs = result.runs; }); }
     if (el.dataset.clearWish) return ask(t('Clear from the wishlist?'), t('This takes <strong>{dungeon}</strong> off the wishlist for every member, for example after the party ran it. Anyone can add it again.', { dungeon: esc(el.dataset.clearWish) }), t('Clear for everyone'), { 'confirm-clear': el.dataset.clearWish });
-    if (el.dataset.confirmClear) { await send('wishlist', { roomId: room.id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); closeModal(); return await refreshRoom(); }
+    if (el.dataset.confirmClear) { const result = await send('wishlist', { roomId: room.id, dungeon: el.dataset.confirmClear, wanted: false, everyone: true }); closeModal(); return changedRoom(() => { wishlist = result.wishlist; }); }
     if (el.dataset.confirmRemove) { await send('revoke', { roomId: room.id, memberId: el.dataset.confirmRemove }); closeModal(); return await refreshRoom(); }
+    if (el.dataset.confirmRole) {
+      const { membership } = await send('role', { roomId: room.id, memberId: el.dataset.confirmRole, role: el.dataset.newRole });
+      changedRoom(() => applyMembership(members, membership)); roomSettings(); return toast(t('Role changed.'));
+    }
     if (el.dataset.confirmTransfer) { await send('transfer', { roomId: room.id, memberId: el.dataset.confirmTransfer }); closeModal(); await refreshRoom(); return toast(t('You handed the room over. You are now a player in it.')); }
     switch (el.dataset.action) {
       case 'discord': await discordLogin(); break;
       case 'retry': await authenticated(); break;
       case 'cancel-task-edit': editingTask = ''; tasksView(); break;
-      case 'discord-off': await send('discord-webhook', { roomId: room.id, webhook: '' }); await refreshRoom(); roomSettings(); toast(t('Discord reminders are off.')); break;
+      case 'discord-off': ask(t('Stop Discord reminders?'), t('Planned runs are no longer posted to your Discord channel. Odyle forgets the webhook URL; to turn reminders on again, paste one from Discord.'), t('Stop reminders'), { action: 'confirm-discord-off' }); break;
+      case 'confirm-discord-off': { const result = await send('discord-webhook', { roomId: room.id, webhook: '' }); changedRoom(() => { room = result.room; }); roomSettings(); toast(t('Discord reminders are off.')); break; }
+      case 'open-elsewhere': signInElsewhere(embedded() ? 'app' : ''); break;
       case 'reminders': await toggleReminders(); accountRender(); break;
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
@@ -620,8 +686,10 @@ app.addEventListener('click', async e => {
       case 'invite': inviteDialog(); break;
       case 'room-settings': roomSettings(); break;
       case 'reading': await desktopDialog(); break;
-      case 'add-all': await send('sharing', { roomId: room.id, enabled: true }); await refreshRoom(); break;
-      case 'generate-invites': invites = (await send('invites', { roomId: room.id })).invites; rememberInvites(storage, room.id, invites); inviteDialog(); break;
+      case 'add-all': { const result = await send('sharing', { roomId: room.id, enabled: true }); changedRoom(() => applyShared(me(), result.sharedCharacters)); break; }
+      // Codes already sent stop working, so replacing them asks first.
+      case 'generate-invites': if (invites.length) { ask(t('Revoke the current codes?'), t('Invite links and codes already sent stop working at once, and new ones replace them. Members already in the room stay.'), t('Revoke & generate'), { action: 'confirm-generate-invites' }); break; } // falls through
+      case 'confirm-generate-invites': invites = (await send('invites', { roomId: room.id })).invites; rememberInvites(storage, room.id, invites); inviteDialog(); break;
       case 'desktop': await desktopDialog(); break;
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [
@@ -650,6 +718,15 @@ app.addEventListener('click', async e => {
     }
   } catch (error) { failure(error); }
 });
+// The clipboard API is missing or refused in some browsers (in-app ones, plain HTTP); a
+// selected text field copies there. False when neither works.
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* tried below */ }
+  const field = document.createElement('textarea');
+  field.value = text; field.readOnly = true; field.style.cssText = 'position:fixed;top:0;opacity:0';
+  (document.querySelector('#modal[open]') || document.body).append(field); field.select();
+  try { return document.execCommand('copy'); } catch { return false; } finally { field.remove(); }
+}
 function download(text, name, type) {
   const url = URL.createObjectURL(new Blob([text], { type })), link = document.createElement('a');
   link.href = url; link.download = name; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -688,10 +765,11 @@ app.addEventListener('change', async e => {
     try { await useLanguage(el.value); } catch (error) { return failure(error); }
     document.documentElement.lang = language(); document.title = t('Odyle — Party command'); storage.setItem(languageKey, language()); return rerender();
   }
+  // A role change asks first; keeping the role closes the dialog with nothing changed.
   if (el.matches?.('select[data-role]')) {
-    try { await send('role', { roomId: room.id, memberId: el.dataset.role, role: el.value }); await refreshRoom(); roomSettings(); toast(t('Role changed.')); }
-    catch (error) { failure(error); roomSettings(); }
-    return;
+    const name = members.find(m => m.id === el.dataset.role)?.displayName || t('this member'), data = { 'confirm-role': el.dataset.role, 'new-role': el.value };
+    if (el.value === 'viewer') return ask(esc(t('Make {name} a viewer?', { name })), esc(t('Viewers only watch: the characters {name} shares here leave the party, and have to be added again after a change back to player.', { name })), t('Make viewer'), data);
+    return ask(esc(t('Make {name} a player?', { name })), esc(t('{name} can then add characters to this room, plan runs and join them.', { name })), t('Make player'), data);
   }
   // Ticking a task saves the time it was done; it shows as done until the next reset.
   if (!el.matches?.('input[data-task]')) return;
@@ -700,6 +778,7 @@ app.addEventListener('change', async e => {
   catch (error) { el.checked = !done; el.disabled = false; failure(error); }
 });
 app.addEventListener('click', e => { if (e.target.closest('#toast')) e.target.closest('#toast').classList.remove('show'); });
+app.addEventListener('focusin', e => { if (e.target.matches?.('.link-field')) e.target.select(); });
 // A closed dialog may have held back room changes (rename, roles); draw them now.
 app.addEventListener('close', e => { if (e.target.id === 'modal' && room && !demo) renderDashboard(); }, true);
 // A picture that fails to load (removed meanwhile, server unreachable) uncovers the initials.
@@ -710,7 +789,7 @@ app.addEventListener('error', e => { if (e.target.matches?.('.portrait img')) e.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => { /* runs without offline files */ });
 useLanguage(detect(storage.getItem(languageKey), navigator.languages || [navigator.language])).catch(() => useLanguage('en')).then(() => {
   document.documentElement.lang = language(); document.title = t('Odyle — Party command');
+  if (pb.authStore.isValid) return authenticated().catch(failure);
   loadAnnouncement(true).catch(() => { /* an older backend or no connection: no banner */ });
-  if (pb.authStore.isValid) authenticated().catch(failure);
-  else show().catch(failure);
+  show().catch(failure);
 });

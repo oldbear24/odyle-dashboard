@@ -124,6 +124,14 @@ func fixtures(se *core.ServeEvent) {
 		sightings(e.App).deliver(e.App)
 		return map[string]any{}, nil
 	})
+	// Ends every realtime connection, as a server going away does; clients reconnect.
+	fixture(se, "drop-realtime", func(e *core.RequestEvent, _ body) (any, error) {
+		broker := e.App.SubscriptionsBroker()
+		for id := range broker.Clients() {
+			broker.Unregister(id)
+		}
+		return map[string]any{}, nil
+	})
 	// Runs the expiry job and reports which of the given invite codes it kept.
 	fixture(se, "cleanup", func(e *core.RequestEvent, b body) (any, error) {
 		if _, err := cleanup(e.App); err != nil {
