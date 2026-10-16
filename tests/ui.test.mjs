@@ -533,8 +533,11 @@ test('notifications are kept for the account, reach its other tabs and time the 
   // This browser's push service is one on this machine (test backends may post there).
   const { page, errors, close } = await open(lead, '#/account'), other = await open(lead, '#/account'), service = await pushService();
   try {
+    // Notifications allowed: headless browsers may report them blocked even when granted, so the
+    // page is told they are, and what it shows is recorded below.
     await page.context().grantPermissions(['notifications'], { origin: url });
     await page.context().addInitScript(([endpoint, keys]) => {
+      if (window.Notification) { Object.defineProperty(Notification, 'permission', { get: () => 'granted' }); Notification.requestPermission = async () => 'granted'; }
       if (!window.PushManager) return;
       let current = null;
       const subscription = { endpoint, toJSON: () => ({ endpoint, keys }), unsubscribe: async () => { current = null; return true; } };
