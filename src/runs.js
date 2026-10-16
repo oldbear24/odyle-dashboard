@@ -56,9 +56,9 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
       if (!c) return `<span class="wish-person"><i></i>${esc(name(row.user))}</span>`;
       const cubes = upcoming ? row.cubesAtStart : row.cubes, label = `${name(row.user)}${c.characterName !== c.displayName ? ' · ' + c.characterName : ''} · ${tn(cubes, '{n} cube', '{n} cubes')}`;
       const hint = (row.picked ? t('Picked for this run') + ' · ' : '') + (fresh ? t('Live in this room now') : t('saved {age}', { age: age(c.lastReadingAt, now) })) + (upcoming && row.cubesAtStart !== row.cubes ? ' · ' + t('{n} at the start, with the Odyle clock', { n: row.cubesAtStart }) : '');
-      return `<span class="wish-person ${fresh ? 'live' : ''} ${row.claims ? '' : 'short'}" title="${esc(hint)}"><i></i>${esc(label)}</span>`;
+      return `<span class="wish-person ${fresh ? 'live' : ''} ${row.claims ? '' : 'short'}" title="${esc(hint)}"><i></i>${esc(label)}${fresh ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`;
     };
-    const people = (ready ? ready.rows.map(person) : r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
+    const people = (ready ? ready.rows.map(person) : r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
     const claim = ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '';
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.

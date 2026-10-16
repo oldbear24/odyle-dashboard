@@ -64,7 +64,20 @@ function portrait(c, index, size = '') {
   return `<span class="portrait ${colors[index % colors.length]} ${size}">${esc(name.slice(0, 2).toUpperCase())}${photo}<span class="portrait-rune">${icon('diamond')}</span></span>`;
 }
 const ownCards = () => characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
-const navItem = (action, active, name, label, marker = '') => `<button data-action="${action}" class="nav-item ${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)} ${label}${marker}</button>`;
+// Items that lead to a page are links (they open in a new tab too); the others open a dialog.
+// The label is a tooltip where the sidebar shows only icons.
+const navItem = (action, active, name, label, marker = '') => {
+  const href = navHref(action), current = active === action ? ' aria-current="page"' : '', inner = `${icon(name)} <span class="nav-label">${label}</span>${marker}`;
+  return href ? `<a href="${href}" data-action="${action}" class="nav-item ${active === action ? 'active' : ''}" title="${esc(label)}"${current}>${inner}</a>` : `<button data-action="${action}" class="nav-item" title="${esc(label)}">${inner}</button>`;
+};
+// Where a navigation item leads: the open (or last) room, the library, the checklist, the armory, the account.
+function navHref(action) {
+  const signedIn = pb.authStore.isValid && !demo;
+  if (action === 'overview') return demo ? '#/demo' : room ? '#/room/' + room.id : signedIn && remembered().room ? '#/room/' + remembered().room : '#/';
+  return { library: '#/', tasks: signedIn ? '#/tasks' : '#/', armory: '#/armory', account: signedIn ? '#/account' : '#/' }[action] || '';
+}
+// On phones a bar at the bottom holds the pages; Invitations and Reader & privacy sit in the avatar menu.
+const bottomNav = active => `<nav class="bottom-nav" aria-label="${esc(t('Pages'))}">${[['overview', 'grid', t('Overview')], ['library', 'people', t('Rooms')], ['tasks', 'check', t('Daily')], ['armory', 'search', t('Armory')], ['account', 'user', t('Account')]].map(([action, name, label]) => `<a href="${navHref(action)}" data-action="${action}" class="${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span>${label}</span></a>`).join('')}</nav>`;
 const connectionLabel = () => `<i></i>${demo ? t('Demo workspace') : online ? t('Connected') : t('Not connected')}`;
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
@@ -82,6 +95,8 @@ async function loadAnnouncement(force = false) {
   if (!force && Date.now() - announcementAt < 60000) return;
   announcementAt = Date.now();
   showAnnouncement((await pb.send('/api/odyle/announcement')).announcement || null);
+  // Signed out nothing else asks the server; its answer shows it is reachable.
+  if (!online && !pb.authStore.isValid) { online = true; renderConnection(); }
 }
 function announced(data) { if (data && 'announcement' in data) { announcementAt = Date.now(); showAnnouncement(data.announcement || null); } }
 function showAnnouncement(next) { if (JSON.stringify(next) !== JSON.stringify(announcement)) { announcement = next; renderAnnouncement(); } }
@@ -90,7 +105,7 @@ function renderConnection() { const el = document.querySelector('.topbar .connec
 function shell(content, active = 'overview', crumb = '') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent;
-  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
+  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb"><a href="#/">${t('Workspace')}</a> <span>/</span> <a href="#${esc(currentPath())}" aria-current="page"><strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></a></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · ${t('Live packet readings')}</span></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -239,7 +254,7 @@ function wishlistSection(now) {
   const rows = wishlist.map(w => {
     // Runs need a dungeon the catalog lists, when there is one; Plan picks it in the run form.
     const mine = w.users.includes(myId), count = w.users.length, listed = entryOf(catalog, w.dungeon), plannable = !catalog.length || listed;
-    const people = w.users.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}</span>`).join('');
+    const people = w.users.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`).join('');
     const actions = demo ? '' : (mine ? `<button data-wish="${esc(w.dungeon)}" data-wanted="false" title="${esc(t('Take yourself off {dungeon}', { dungeon: w.dungeon }))}">${t('Remove me')}</button>` : viewer ? '' : `<button data-wish="${esc(w.dungeon)}" data-wanted="true">${icon('plus')} ${t('Need it too')}</button>`)
       + (viewer || !plannable ? '' : `<button data-plan-wish="${esc(listed?.name ?? w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
       + (owner() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="${esc(t('Clear {dungeon} for everyone', { dungeon: w.dungeon }))}">${t('Clear')}</button>` : '');
@@ -421,7 +436,7 @@ function toast(message) { const el = document.querySelector('#toast'); if (!el) 
 function formError(form, message) { form.querySelector('.form-error')?.remove(); form.insertAdjacentHTML('beforeend', `<p class="form-error" role="alert">${esc(message)}</p>`); }
 // Backend and SDK errors arrive in English; t() shows them in the page's language.
 const failed = error => toast(t(error?.message || 'Request could not be completed.'));
-function modal(title, body, wide = false) { const el = document.querySelector('#modal'); el.className = wide ? 'wide' : ''; el.innerHTML = `<div class="modal-head"><h2>${title}</h2><button data-action="close-dialog" class="close-button" aria-label="${esc(t('Close dialog'))}">×</button></div>${body}`; if (!el.open) el.showModal(); }
+function modal(title, body, wide = false) { const el = document.querySelector('#modal'); el.className = wide ? 'wide' : ''; el.innerHTML = `<div class="modal-head"><h2 id="modal-title">${title}</h2><button data-action="close-dialog" class="close-button" aria-label="${esc(t('Close dialog'))}">×</button></div>${body}`; if (!el.open) el.showModal(); }
 const closeModal = () => document.querySelector('#modal')?.close();
 const signInPrompt = text => modal(t('Sign in to continue'), `<p>${text}</p><button class="button discord-button" data-action="exit-demo">${t('Sign in with Discord')}</button>`);
 // Asks before a change; Keep it closes the dialog, or goes back to the one named.
@@ -1070,6 +1085,7 @@ app.addEventListener('click', async e => {
       case 'add-all': { const id = room.id, result = await send('sharing', { roomId: id, enabled: true }); changedRoom(id, () => applyShared(me(), result.sharedCharacters)); break; }
       case 'desktop': await desktopDialog(true); break;
       case 'hide-update-note': seenVersion(); break;
+      case 'skip': { const main = document.querySelector('.main main'); if (main) { main.setAttribute('tabindex', '-1'); main.focus(); } break; }
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [
         t('Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.'),
@@ -1081,7 +1097,7 @@ app.addEventListener('click', async e => {
         t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
         scopeText(),
       ].map(p => `<p>${p}</p>`).join('')); break;
-      case 'session': if (!pb.authStore.isValid || demo) await go('/'); else modal(t('Your Discord account'), `<p>${esc(pb.authStore.record.displayName)} · ${t('Rooms and characters remain saved after sign-out.')}</p><div class="modal-actions"><button class="button secondary" data-action="account">${t('Account & data')}</button><button class="button secondary" data-action="library">${t('My rooms & characters')}</button><button class="button secondary" data-action="tasks">${t('Daily & weekly tasks')}</button><button class="button secondary" data-action="armory">${t('Armory')}</button><button class="button secondary" data-action="desktop">${t('Pair Windows app')}</button></div><button class="text-button" data-action="logout">${t('Sign out of this browser')}</button>`); break;
+      case 'session': if (!pb.authStore.isValid || demo) await go('/'); else modal(t('Your Discord account'), `<p>${esc(pb.authStore.record.displayName)} · ${t('Rooms and characters remain saved after sign-out.')}</p><div class="modal-actions"><button class="button secondary" data-action="account">${t('Account & data')}</button><button class="button secondary" data-action="library">${t('My rooms & characters')}</button><button class="button secondary" data-action="tasks">${t('Daily & weekly tasks')}</button><button class="button secondary" data-action="armory">${t('Armory')}</button><button class="button secondary" data-action="invite">${t('Invitations')}</button><button class="button secondary" data-action="help">${t('Reader & privacy')}</button><button class="button secondary" data-action="desktop">${t('Pair Windows app')}</button></div><button class="text-button" data-action="logout">${t('Sign out of this browser')}</button>`); break;
       case 'leave-room': ask(esc(t('Leave {room}?', { room: room.name })), t('You lose access to this room, your wishlist entries and your place on planned runs. Your characters stay on your account; you need a new invite to come back.'), t('Leave room'), { action: 'confirm-leave' }); break;
       case 'close-room': ask(esc(t('Close {room}?', { room: room.name })), t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.'), t('Close room for everyone'), { action: 'confirm-close' }); break;
       case 'confirm-leave': case 'confirm-close': { const id = room.id, closing = el.dataset.action === 'confirm-close'; await send(closing ? 'close' : 'leave', { roomId: id }); closeModal(); forget(id); if (closing) forgetInvites(storage, id); await go('/'); toast(closing ? t('Room closed. Your saved characters are retained.') : t('You left the room. Your saved characters are retained.')); break; }

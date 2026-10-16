@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import AxeBuilder from '@axe-core/playwright';
 import { createServer } from 'node:http';
 const url = 'http://127.0.0.1:18091';
 const dashboardVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
@@ -283,14 +284,14 @@ test('rooms plan, change and export runs, and members see each character history
     assert.match(await page.locator('.runs [data-starts]').innerText(), /^(in |starting now)/);
     // The run counts its attendees at its cost: the lead brings their best character, or the one they pick.
     assert.equal(await page.locator('.runs .run-claim').innerText(), '1 of 1 can claim a cube at the start · 40 Odyle');
-    assert.equal(await page.locator('.runs .wish-people .wish-person').innerText(), 'You · Second · 3 cubes');
+    assert.match(await page.locator('.runs .wish-people .wish-person').innerText(), /^You · Second · 3 cubes(\n\(live\))?$/);
     await page.locator('.runs [data-run][data-going="false"]').click();
     await page.locator('.runs .run-nobody').waitFor();
     await page.locator('.runs [data-run][data-going="true"]').click();
     assert.deepEqual(await page.locator('#modal .pick-chips .add-chip').allInnerTexts(), ['Charted · 90', 'Second · 150', 'Any: my best']);
     await page.locator('#modal .pick-chips .add-chip', { hasText: 'Charted' }).click();
     await page.locator('.runs .wish-people .wish-person', { hasText: 'Charted' }).waitFor();
-    assert.equal(await page.locator('.runs .wish-people .wish-person').innerText(), 'You · Charted · 2 cubes');
+    assert.match(await page.locator('.runs .wish-people .wish-person').innerText(), /^You · Charted · 2 cubes(\n\(live\))?$/);
     assert.match(await page.locator('.runs .wish-people .wish-person').getAttribute('title'), /^Picked for this run · /);
     // The planner changes the run in a dialog and anyone can put it in their calendar.
     await page.locator('.runs [data-edit-run]').click();
@@ -642,6 +643,66 @@ test('after an update the dashboard says so once, and What\'s new lists the chan
     assert.equal(await page.evaluate(() => localStorage.getItem('odyle.seenVersion')), dashboardVersion);
     assert.deepEqual(errors, []);
   } finally { await close(); }
+});
+
+test('phones get around with the bar at the bottom, and the pages are links, labelled and readable', async () => {
+  // Signed out, a public answer shows the server is reachable.
+  const visitor = await open(null, '#/');
+  try { await visitor.page.locator('.topbar .connection.connected', { hasText: 'Connected' }).waitFor(); } finally { await visitor.close(); }
+  const lead = await account('Phone lead');
+  const created = (await request('/api/odyle/create', { name: 'Phone room' }, lead)).data, roomId = created.room.id;
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    // The skip link comes first and moves the focus to the page.
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'skip-link');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(() => document.activeElement.tagName), 'MAIN');
+    // Wide: the sidebar's pages are links (they open in a new tab too), the breadcrumb leads home, a dialog is named by its heading.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.equal(await page.locator('.sidebar a.nav-item[data-action="tasks"]').getAttribute('href'), '#/tasks');
+    assert.equal(await page.locator('.sidebar a.nav-item[data-action="overview"]').getAttribute('href'), '#/room/' + roomId);
+    assert.equal(await page.locator('.breadcrumb a').first().getAttribute('href'), '#/');
+    await page.locator('.sidebar [data-action="help"]').click();
+    assert.equal(await page.locator('#modal').getAttribute('aria-labelledby'), 'modal-title');
+    assert.equal(await page.locator('#modal-title').innerText(), 'Saved characters, fresh readings');
+    await page.keyboard.press('Escape');
+    // A phone: no sidebar, a bar at the bottom with the pages, nothing smaller than 11 px.
+    await page.setViewportSize({ width: 390, height: 800 });
+    assert.equal(await page.locator('.sidebar').isVisible(), false);
+    const bar = page.locator('.bottom-nav');
+    assert.deepEqual(await bar.locator('a').allInnerTexts(), ['Overview', 'Rooms', 'Daily', 'Armory', 'Account']);
+    const smallest = await page.evaluate(() => Math.min(...[...document.querySelectorAll('.stat-caption, .stat-detail, .refresh-label, .connection, .breadcrumb, footer, .card-footer, .bottom-nav a')].map(e => parseFloat(getComputedStyle(e).fontSize))));
+    assert.ok(smallest >= 11, `smallest text ${smallest}px`);
+    await shot(page, 'phone-room');
+    for (const [label, hash, ready] of [['Rooms', '#/', '.personal-characters'], ['Overview', '#/room/' + roomId, '.member-grid'], ['Daily', '#/tasks', '.tasks-page'], ['Armory', '#/armory', '#armory-form'], ['Account', '#/account', '.account-page']]) {
+      await bar.locator('a', { hasText: label }).click();
+      await page.waitForURL(url + '/' + hash); await page.locator(ready).waitFor();
+      assert.equal(await bar.locator('a.active').count() <= 1, true);
+    }
+    // Invitations and Reader & privacy are in the avatar menu.
+    await page.locator('.avatar').click();
+    assert.ok(await page.locator('#modal [data-action="invite"]').isVisible() && await page.locator('#modal [data-action="help"]').isVisible());
+    await page.keyboard.press('Escape');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+test('the main pages pass the axe accessibility check, signed out and in', async () => {
+  const lead = await account('Axe lead');
+  const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
+  const pages = [[null, '#/'], [null, '#/armory'], [null, '#/changelog'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
+  const found = [];
+  for (const [auth, path] of pages) {
+    const { page, close } = await open(auth, path);
+    try {
+      await page.locator('main').first().waitFor(); await delay(500);
+      const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+      for (const v of result.violations.filter(v => ['serious', 'critical'].includes(v.impact))) found.push(`${auth ? 'signed in' : 'signed out'} ${path}: ${v.id} (${v.nodes.length}) ${v.nodes.slice(0, 2).map(n => n.target.join(' ')).join(' | ')}`);
+    } finally { await close(); }
+  }
+  assert.deepEqual(found, []);
 });
 
 test('a changed announcement shows on an open page at once, without asking the server', async () => {
