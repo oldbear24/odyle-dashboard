@@ -625,6 +625,8 @@ export default {
   'natural pool full · each tick of {tick} is lost': 'přirozená zásoba plná · každých {tick} propadá',
   '+{tick} in {time}': '+{tick} za {time}',
   'full ≈ {when}': 'plno ≈ {when}',
+  'natural pool at {base}: full if its cap is {cap}': 'přirozená zásoba {base}: plná, pokud je strop {cap}',
+  '{when} at {cap}': '{when} při {cap}',
   'natural {base} · items {bonus}': 'přirozená {base} · z předmětů {bonus}',
   'regeneration': 'regenerace',
   'spent': 'utraceno',

@@ -1017,9 +1017,12 @@ func report(e *core.RequestEvent) error {
 			// keeps the identity the game gave it.
 			character.SetIdentity(data.identity)
 		}
+		// A login reading checks the Odyle clock against the reading before it.
+		before, prevAt := viewOf[Character](character.Original()), character.GetDateTime("lastReadingAt").Time()
 		// Every change (the first reading included) is also kept in the character's history,
 		// with the adapter that decoded it.
 		changed := character.Read(data, session.Id)
+		checkClock(app, before, prevAt, data, time.Now())
 		if err := app.Save(character); err != nil {
 			return nil, err
 		}

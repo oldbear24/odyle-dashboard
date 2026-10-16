@@ -304,6 +304,7 @@ export function statusPage() {
   const reached = () => state.data.activation?.now || {}, days = () => state.data.activation?.days || [];
   const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
   const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
+  const clock = () => readers().clock || { checked: 0, matched: 0, checkedToday: 0, missedToday: 0 };
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -398,6 +399,7 @@ export function statusPage() {
         proxy().headers.length ? ' although ' + proxy().headers.join(', ') + ' is trusted. Check that your reverse proxy sets it with the client\'s address.'
           : ' and no proxy header is trusted, so rate limits count everyone behind your reverse proxy as one client. Set ODYLE_TRUSTED_PROXY_HEADERS to the header your proxy writes (docs/deployment.md).') : null,
       () => readers().stuck ? t.div({ className: 'alert warning m-b-sm' }, number(readers().stuck) + ' of ' + number(readers().connected) + (readers().connected === 1 ? ' app' : ' apps') + ' connected to the game have read no Odyle for 10 minutes' + (readers().games.length ? ' (' + readers().games.map(g => g.game).join(', ') + ')' : '') + '. After a game patch, pause the readers or switch the adapter off under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ', then follow the patch-day runbook in the Windows app\'s docs/packet-reader.md.') : null,
+      () => clock().checkedToday >= 5 && clock().missedToday * 2 > clock().checkedToday ? t.div({ className: 'alert warning m-b-sm' }, number(clock().missedToday) + ' of ' + number(clock().checkedToday) + ' login readings in the last 24 hours did not match the Odyle clock. A game patch may have changed the regeneration: check its rules under ', t.a({ href: '#/odyle/settings' }, 'Game settings'), ', or hide the Odyle clock there until they are right.') : null,
       () => readers().refusedAdapters.length ? t.div({ className: 'alert warning m-b-sm' }, 'Readings arrive under ' + readers().refusedAdapters.join(', ') + ', which this backend refuses, so they are not saved. Accept it under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ' or deploy the backend that lists it.') : null,
       () => [backups().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
       t.div({ className: 'odyle-stats m-b-base' },
@@ -469,6 +471,7 @@ export function statusPage() {
         stat('Reporting', () => number(readers().reporting), () => Object.entries(readers().statuses).map(([s, n]) => number(n) + ' ' + (readerLabels[s] || s)).join(' · ') || 'no reports yet; apps send them from the next Windows release on'),
         stat('Listening without Odyle', () => number(readers().stuck), () => 'for 10 minutes, of ' + number(readers().connected) + ' connected to the game'),
         stat('Game builds', () => readers().games.length ? readers().games.map(g => g.game.replace(/^Steam build /, '')).join(', ') : '—', () => readers().games.length ? readers().games.map(g => number(g.apps) + ' on ' + g.game).join(' · ') : 'Steam builds the apps read'),
+        stat('Odyle clock', () => clock().checked ? Math.round(clock().matched / clock().checked * 100) + '%' : '—', () => clock().checked ? number(clock().matched) + ' of ' + number(clock().checked) + ' login readings of the last 7 days matched its projection' : 'login readings after a tick, compared with its projection'),
         stat('Operator alerts', () => readers().alerts ? 'on' : 'off', () => readers().alerts ? 'Discord, by the Reader health job every 5 minutes' : 'set ODYLE_ALERT_WEBHOOK to a Discord webhook')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
