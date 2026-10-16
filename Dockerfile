@@ -5,6 +5,8 @@ COPY package*.json ./
 RUN npm ci
 # What's new bundles the changelog (src/main.js imports CHANGELOG.md).
 COPY index.html vite.config.js CHANGELOG.md ./
+# The privacy notice is a page of the dashboard (src/privacy.js).
+COPY docs/privacy.md ./docs/privacy.md
 COPY src ./src
 COPY public ./public
 ARG VITE_POCKETBASE_URL

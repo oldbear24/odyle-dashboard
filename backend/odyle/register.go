@@ -151,7 +151,7 @@ func routes(se *core.ServeEvent) {
 // The cookie that marks browsers which dropped their cache of the superuser dashboard.
 var entryCookie = regexp.MustCompile(`(?:^|;\s*)odyle_entry=1(?:;|$)`)
 
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 // hardening adds browser hardening to the dashboard pages and files it serves. API and
 // admin responses are left alone: the OAuth redirect page and the PocketBase UI need

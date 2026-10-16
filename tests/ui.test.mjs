@@ -444,6 +444,8 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
   assert.equal((await request('/api/odyle/sharing', { roomId: created.room.id, characterId: c.id, enabled: true }, reader)).status, 200);
   // The reader went quiet a minute ago.
   assert.equal((await request('/__test__/age-seen', { id: c.id, seconds: 60 })).status, 200);
+  // The room news of the join and the sharing is out before the page subscribes (see below).
+  await delay(1000);
   const { page, errors, close } = await open(lead, '#/room/' + created.room.id);
   try {
     const card = page.locator('.member-card', { hasText: 'Pulse' });
@@ -704,7 +706,7 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
 test('the main pages pass the axe accessibility check, signed out and in', async () => {
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
-  const pages = [[null, '#/'], [null, '#/armory'], [null, '#/changelog'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);
@@ -735,6 +737,9 @@ test('an open room checks no health while live, waits while hidden and draws its
   const [lead, mate] = await Promise.all([account('Quiet lead'), account('Quiet mate')]);
   const created = (await request('/api/odyle/create', { name: 'Quiet room' }, lead)).data, roomId = created.room.id;
   assert.equal((await request('/api/odyle/join', { code: created.invites[0].code }, mate)).status, 200);
+  // The join's room news (sent 150 ms later) is out before the page subscribes; on a slow
+  // machine it could otherwise arrive after, and the page would rightly fetch the room once.
+  await delay(1000);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
@@ -1080,6 +1085,26 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     await page.unroute('**/api/**');
     await page.locator('.topbar .connection.connected').waitFor({ timeout: 30000 });
   } finally { await context.close(); }
+});
+test('the privacy notice is a page of the dashboard, and no page loads anything from another site (#39)', async () => {
+  const { page, errors, close } = await open(null, '#/');
+  const elsewhere = [];
+  page.on('request', request => { if (new URL(request.url()).host !== '127.0.0.1:18091') elsewhere.push(request.url()); });
+  try {
+    await page.locator('.welcome-note a[href="#/privacy"]').click();
+    await page.getByRole('heading', { name: 'Privacy.' }).waitFor();
+    const text = await page.locator('.privacy-text').innerText();
+    assert.match(text, /odyle\.account/); assert.match(text, /odyle\.taskScope/); assert.match(text, /no font service or tracker sees your address/);
+    assert.equal(await page.locator('.privacy-help a[href="https://github.com/oldbear24/odyle-dashboard/issues"]').count(), 1);
+    assert.equal(await page.locator('footer a[href="#/privacy"]').count(), 1);
+    // The fonts come with the dashboard.
+    await page.evaluate(() => document.fonts.ready);
+    assert.deepEqual(await page.evaluate(() => [document.fonts.check('16px "DM Sans Variable"'), document.fonts.check('16px "Manrope Variable"')]), [true, true]);
+    await page.goto(url + '/#/armory'); await page.locator('#armory-form').waitFor();
+    await shot(page, 'privacy');
+    assert.deepEqual(elsewhere, []);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
 test('Discord sign-in offers this page in another browser when its window cannot work', async () => {
   // An app's built-in browser that opens no windows: a note before anything is clicked, then the link to copy.

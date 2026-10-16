@@ -16,7 +16,7 @@ Odyle uses semantic versions, **MAJOR.MINOR.PATCH**. The version lives in `packa
 
 - Reset the lower parts: 0.6.3 plus a feature is 0.7.0; 0.7.0 plus a breaking change is 1.0.0.
 - One pull request with several changes bumps once, by the largest. Pull requests open side by side each bump from the version on `main`; before the second one merges, bump it again above the first, or its release fails. A pull request stacked on another bumps from that one's version.
-- What does not ship needs no bump and makes no release: `docs/`, Markdown files, `tests/`, `.github/`, `scripts/`, `*_test.go`, `compose.yaml` (an example for operators, in no release), lint and editor settings (`scripts/version.mjs` has the exact list).
+- What does not ship needs no bump and makes no release: `docs/` (except `docs/privacy.md`, which the dashboard shows), Markdown files, `tests/`, `.github/`, `scripts/`, `*_test.go`, `compose.yaml` (an example for operators, in no release), lint and editor settings (`scripts/version.mjs` has the exact list).
 - Change the version with an edit of that one line (or `npm version <x.y.z> --no-git-tag-version`, then undo any other reformatting it does).
 - Name the bump in the pull request description ("Version 0.6.0 → 0.7.0: new features").
 - Add the version's section to `CHANGELOG.md` in the same pull request: `## 0.7.0 · <date>`, then `### New`, `### Changed` and/or `### Fixed` with `- ` entries written for players (what they can now do or what works again), not commit messages. The release notes and the dashboard's **What's new** page show it; the version check fails without it.
