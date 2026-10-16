@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.14.0 · 2026-10-17
+
+### New
+- **Copy for Discord** on each planned run: a message with the dungeon, a time Discord shows in everyone's own time zone, who is going and a link back to the room, ready to paste in any channel. No webhook needed.
+
 ## 0.13.0 · 2026-10-17
 
 ### New

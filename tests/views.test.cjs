@@ -114,3 +114,12 @@ test('run reminders come once, at the smallest reminder time a run is within, an
   assert.equal(quietAt(night, Date.parse('2026-10-16T05:00:00Z')), false); assert.equal(quietAt({ quiet: { from: '', to: '' } }, now), false);
   assert.deepEqual([5, 60, 90, 1440].map(leadLabel), ['5 min', '1 h', '90 min', '24 h']);
 });
+
+test('a run copies as a Discord message nobody can format or ping with (#35)', async () => {
+  const { discordText } = await import('../src/runs.js');
+  const run = { dungeon: 'Fire *Temple*', startsAt: '2026-10-17 18:00:00.000Z', note: 'Bring <@1234567> and @everyone_pots' };
+  const unix = Date.parse('2026-10-17T18:00:00Z') / 1000;
+  assert.equal(discordText(run, { going: ['Lumina', 'Kaelen_x'], partySize: 4, link: 'https://odyle.example/#/room/r1' }),
+    String.raw`**Fire \*Temple\*** · <t:` + unix + String.raw`:F> (<t:` + unix + String.raw`:R>) · Going (2/4): Lumina, Kaelen\_x · Bring \<\@1234567\> and \@everyone\_pots · https://odyle.example/#/room/r1`);
+  assert.equal(discordText({ ...run, note: '' }, {}), String.raw`**Fire \*Temple\*** · <t:` + unix + String.raw`:F> (<t:` + unix + String.raw`:R>) · Going (0)`);
+});

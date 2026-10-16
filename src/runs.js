@@ -32,6 +32,19 @@ function fold(line) {
   for (const char of line) { const bytes = new TextEncoder().encode(char).length; if (size + bytes > (out.length ? 74 : 75)) { out.push(current); current = ''; size = 0; } current += char; size += bytes; }
   return [...out, current].join('\r\n ');
 }
+// A run as a Discord message anyone in the room can paste (#35), no webhook needed: Discord
+// shows <t:…> in every reader's own time zone. Names and the note are escaped, so they can
+// neither format the message nor ping anyone (Discord markdown, <@…> and @everyone).
+// "**Fire Temple** · <t:…:F> (<t:…:R>) · Going (3/5): A, B, C · note · link".
+const discordMarkdown = /([\\*_~`|>#[\]()<@])/g;
+export function discordText({ dungeon, startsAt, note }, { going = [], partySize = 0, link = '' } = {}) {
+  const unix = Math.floor(timestamp(startsAt) / 1000), md = text => String(text).replace(discordMarkdown, '\\$1');
+  const count = partySize > 0 ? `${going.length}/${partySize}` : String(going.length);
+  const parts = [`**${md(dungeon)}**`, `<t:${unix}:F> (<t:${unix}:R>)`, `${t('Going')} (${count})${going.length ? ': ' + going.map(md).join(', ') : ''}`];
+  if (note) parts.push(md(note));
+  if (link) parts.push(link);
+  return parts.join(' · ');
+}
 export function calendarFile({ id, dungeon, startsAt, note }, { room, going, now }) {
   const start = timestamp(startsAt), summary = room ? `${dungeon} · ${room}` : dungeon, details = [note, going.length ? t('Going: {names}', { names: going.join(', ') }) : ''].filter(Boolean).join('\n');
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Odyle//Party dashboard//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${id}@odyle`, `DTSTAMP:${utc(now)}`, `DTSTART:${utc(start)}`, `DTEND:${utc(start + 3600000)}`, `SUMMARY:${ics(summary)}`, ...(details ? [`DESCRIPTION:${ics(details)}`] : []),
@@ -65,6 +78,7 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     const wrapUp = !demo && !viewer && at <= now && (mine || owner || going);
     const actions = wrapUp ? `<button data-run-done="${esc(r.id)}" data-name="${esc(r.dungeon)}">${icon('tick')} ${t('Done')}</button><button data-run-again="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-at="${esc(r.startsAt)}">${t('Plan again next week')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-missed="true">${t('Didn’t happen')}</button>`
       : (demo ? '' : (viewer ? '' : `<button data-run="${esc(r.id)}" data-going="${!going}">${going ? t('Not going') : `${icon('plus')} ${t('Going')}`}</button>`)
+      + (demo ? '' : `<button data-copy-run="${esc(r.id)}" title="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}" aria-label="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}">${icon('copy')}</button>`)
       + `<button data-calendar-run="${esc(r.id)}" title="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}" aria-label="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}">${icon('calendar')}</button>`
       + ((mine || owner) && !viewer ? `<button data-edit-run="${esc(r.id)}">${t('Edit')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}">${t('Cancel')}</button>` : ''));
     const when = new Date(at).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });

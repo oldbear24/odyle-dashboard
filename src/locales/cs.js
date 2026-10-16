@@ -710,6 +710,8 @@ export default {
   'A mention in Discord when a room posts a run I am going to': 'Zmínka na Discordu, když místnost pošle běh, na který jdu',
   'Only in rooms whose owner connected Discord, with the Discord account you sign in with. Not in your quiet hours.': 'Jen v místnostech, kde vlastník připojil Discord, s účtem Discordu, kterým se přihlašujete. Ne v tichých hodinách.',
   'Choose reminder times from the list.': 'Vyberte časy připomínek ze seznamu.',
+  'Copy {dungeon} for Discord': 'Zkopírovat {dungeon} pro Discord',
+  'Copied for Discord: paste it in any channel.': 'Zkopírováno pro Discord: vložte to do libovolného kanálu.',
   'Stop Discord reminders': 'Vypnout připomínky na Discordu',
   'Discord reminders are on. Check the channel for the test message.': 'Připomínky na Discordu jsou zapnuté. Zkontroluj v kanálu testovací zprávu.',
   'Discord reminders are off.': 'Připomínky na Discordu jsou vypnuté.',
