@@ -334,7 +334,7 @@ func join(e *core.RequestEvent) error {
 // rooms answers with one query for the memberships, one for their rooms and one for
 // the settings; serverNow lets the dashboard correct its clock without a heartbeat
 // round trip. The Windows app shows the announcement from here, as it refreshes rooms
-// every 15 seconds anyway.
+// every 15 seconds anyway, and learns whether packet readers are paused.
 func rooms(e *core.RequestEvent) error {
 	return run(e, func() error {
 		rules := readSettings(e.App)
@@ -356,7 +356,7 @@ func rooms(e *core.RequestEvent) error {
 			j["role"], j["sharedCharacters"], j["sharing"] = m.Role(), linked, len(linked) > 0
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "rooms": out})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "rooms": out})
 	})
 }
 
@@ -771,7 +771,8 @@ func appVersion(value any) string {
 // session opens a reader session. A paired app sends its device key, so removing the
 // PC ends this session too; a key the server no longer knows means the pairing ended
 // (401, and the app pairs again). Newer apps also send their version, for the
-// superuser dashboard's Apps page.
+// superuser dashboard's Apps page. Sessions open while packet readers are paused, so
+// the app learns of the pause from the answer.
 func session(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		var device *Device
@@ -821,7 +822,7 @@ func session(e *core.RequestEvent) error {
 		if err := app.Save(s); err != nil {
 			return nil, err
 		}
-		return map[string]any{"sessionId": s.Id, "sequence": 0}, nil
+		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused}, nil
 	})
 }
 
@@ -863,9 +864,14 @@ func sameCharacter(app core.App, userId string, data identity) ([]*Character, er
 	return charactersWhere(app, "user = {:user} && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }
 
-// report saves a reading of the Windows app.
+// report saves a reading of the Windows app. While superusers pause packet readers
+// (Server controls) every reading is refused with 503; apps that know the switch stop
+// capturing until it is off, older ones keep sending and are refused.
 func report(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		if readSettings(app).ReaderPaused {
+			return nil, unavailable("Packet readers are paused by the server operators.")
+		}
 		session, err := ownSession(app, user.Id, b.str("sessionId"))
 		if err != nil {
 			return nil, err
@@ -893,7 +899,8 @@ func report(e *core.RequestEvent) error {
 			// keeps the identity the game gave it.
 			character.SetIdentity(data.identity)
 		}
-		// Every change (the first reading included) is also kept in the character's history.
+		// Every change (the first reading included) is also kept in the character's history,
+		// with the adapter that decoded it.
 		changed := character.Read(data, session.Id)
 		if err := app.Save(character); err != nil {
 			return nil, err
@@ -905,6 +912,7 @@ func report(e *core.RequestEvent) error {
 			}
 			point.Set("character", character.Id)
 			point.Set("value", data.value)
+			point.Set("adapter", data.parserVersion)
 			if err := app.Save(point); err != nil {
 				return nil, err
 			}
@@ -968,7 +976,8 @@ func sharing(e *core.RequestEvent) error {
 
 // heartbeat is presence only: the session is in contact and the character it reads is
 // seen. Both are kept in memory and written every ten seconds (presence.go); the
-// character's rooms and its owner hear of it over realtime, without a snapshot.
+// character's rooms and its owner hear of it over realtime, without a snapshot. The
+// answer tells the app whether packet readers are paused; heartbeats work either way.
 func heartbeat(e *core.RequestEvent) error {
 	return run(e, func() error {
 		b, err := requestBody(e)
@@ -992,7 +1001,7 @@ func heartbeat(e *core.RequestEvent) error {
 			}
 			beat(e.App, session, read, time.Now())
 		}
-		return e.JSON(200, map[string]any{"serverNow": now()})
+		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused})
 	})
 }
 
@@ -2184,17 +2193,55 @@ func history(e *core.RequestEvent) error {
 				return forbidden("This character is not shared with you.")
 			}
 		}
-		found, err := e.App.FindRecordsByFilter("character_readings", "character = {:id} && created >= {:since}", "-created", 500, 0, dbx.Params{"id": id, "since": ago(30 * 24 * time.Hour)})
+		readings, hourlyBefore, err := historyOf(e.App, id)
 		if err != nil {
 			return err
 		}
-		points := views[HistoryPoint](found)
-		readings := make([]any, len(points))
-		for i, p := range points {
-			readings[len(points)-1-i] = p.JSON()
+		var thinned any
+		if hourlyBefore != "" {
+			thinned = hourlyBefore
 		}
-		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed()}, "readings": readings, "serverNow": now()})
+		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed()}, "readings": readings, "hourlyBefore": thinned, "serverNow": now()})
 	})
+}
+
+// historyExact is how many of a character's latest changes its history lists one by
+// one. Before the oldest of them, the 30 days continue as the last change of each hour,
+// so a busy character keeps the start of its month and an answer holds at most 1,721
+// points (30 days touch 721 hours).
+const historyExact = 1000
+
+// historyOf is a character's changes of the last 30 days, oldest first, and the time of
+// the oldest change listed one by one when earlier ones were thinned to one an hour
+// (empty when every change is listed).
+func historyOf(app core.App, id string) ([]any, string, error) {
+	since := ago(30 * 24 * time.Hour)
+	found, err := app.FindRecordsByFilter("character_readings", "character = {:id} && created >= {:since}", "-created", historyExact+1, 0, dbx.Params{"id": id, "since": since})
+	if err != nil {
+		return nil, "", err
+	}
+	points, readings, hourlyBefore := views[HistoryPoint](found), []any{}, ""
+	if len(points) > historyExact {
+		points = points[:historyExact]
+		hourlyBefore = points[historyExact-1].At()
+		// The bare value and adapter come from the row of MAX(created), each hour's last change.
+		var hours []struct {
+			Value   int64  `db:"value"`
+			Adapter string `db:"adapter"`
+			At      string `db:"at"`
+		}
+		if err := app.DB().NewQuery("SELECT value, adapter, MAX(created) AS at FROM character_readings WHERE character = {:id} AND created >= {:since} AND created < {:before} GROUP BY substr(created, 1, 13) ORDER BY at").
+			Bind(dbx.Params{"id": id, "since": since, "before": hourlyBefore}).All(&hours); err != nil {
+			return nil, "", err
+		}
+		for _, h := range hours {
+			readings = append(readings, historyJSON(h.Value, h.At, h.Adapter))
+		}
+	}
+	for i := len(points) - 1; i >= 0; i-- {
+		readings = append(readings, points[i].JSON())
+	}
+	return readings, hourlyBefore, nil
 }
 
 // retention is the nightly job that deletes accounts unused for

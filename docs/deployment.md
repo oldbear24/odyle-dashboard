@@ -61,6 +61,17 @@ image: ghcr.io/oldbear24/odyle-dashboard:latest
 - Invites can be reused during their 30-minute lifetime. Rotate them to stop new joins; remove a member to revoke existing access. Rooms allow up to 50 members, including viewers.
 - Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
 
+## Wind-down and reader pause
+
+When the packet reader has to stop for everyone at once, for example because NCSOFT objects to it, stop it from the server first; no release is needed:
+
+1. **Pause the readers.** On the PocketBase dashboard's **Odyle → Server controls**, switch on **Pause packet readers** and save. Within about 20 seconds every paired Windows app that knows the switch stops capturing, closes Npcap and says so on its card. Readings that still arrive, from apps released before the switch, are refused (503). Heartbeats continue and characters turn stale; saved values and history stay.
+2. **Tell the players.** On the same page, post a **Warning** announcement: what happened, that reading is paused and what comes next. It shows above every dashboard page and on the Windows app card.
+3. **For a lasting stop**, ship a Windows release without packet capture (it still pairs, lists the party and ticks tasks), and keep the pause on until **Server status** shows the apps in contact on that version.
+4. **Never fall back to typed values.** Odyle comes only from game packets: no manual entry, imports or overrides to keep rooms going. Rooms keep showing the last saved values with their age.
+
+Switching the pause off lets the apps capture again by themselves within about 20 seconds. To stop only a decoder that reads wrong values, switch its adapter off under **Packet adapters** instead: its readings are refused while the apps keep running (see [New packet adapters](api.md#new-packet-adapters)).
+
 ## Upgrading from the JavaScript backend
 
 Releases before the Go backend ran the stock PocketBase binary with `pb_hooks` and `pb_migrations`. The Go backend uses the same data directory: keep the volume (or `pb_data`), replace the image (or the `pocketbase` binary with `odyle`) and remove `pb_hooks` and `pb_migrations`. Its migrations keep the names of the JavaScript ones, so a migrated database runs none of them again, and accounts, sign-ins, paired PCs, portraits and settings carry over. Command-line flags of the stock binary that are gone: `--hooksDir`, `--hooksWatch`, `--hooksPool`, `--migrationsDir` and `--automigrate`. A stock PocketBase or PocketHost instance cannot run the backend any more; deploy the image or a release archive.

@@ -13,7 +13,8 @@ import (
 // Collections → odyle_settings. Launch defaults: 40 Odyle per cube, resets at 07:00 UTC
 // and weekly on Wednesday (the Global service), inactive accounts are kept for good and
 // the dungeon catalog is empty, so wishlists and runs take any name. No announcement,
-// nothing paused, and the packet adapters of protocols.go are the accepted ones.
+// nothing paused (packet readers included), and the packet adapters of protocols.go
+// are the accepted ones.
 
 var weekDays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
 var levels = []string{"info", "warning"}
@@ -34,6 +35,7 @@ type settings struct {
 	PortraitsPaused     bool         `json:"portraitsPaused"`
 	RemindersPaused     bool         `json:"remindersPaused"`
 	PairingPaused       bool         `json:"pairingPaused"`
+	ReaderPaused        bool         `json:"readerPaused"`
 	Adapters            adapterLists `json:"adapters"`
 }
 
@@ -125,7 +127,7 @@ func loadSettings(app core.App) settings {
 	}
 	out := settings{OdylePerCube: s.GetInt64("odylePerCube"), DailyResetHour: s.GetInt64("dailyResetHour"), WeeklyResetDay: s.GetString("weeklyResetDay"), InactiveAccountDays: s.GetInt64("inactiveAccountDays"),
 		Dungeons: stringList(parseJSON(s.GetString("dungeons"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
-		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused")}
+		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
 	}
@@ -290,7 +292,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	for _, s := range []struct {
 		key    string
 		target *bool
-	}{{"portraitsPaused", &next.PortraitsPaused}, {"remindersPaused", &next.RemindersPaused}, {"pairingPaused", &next.PairingPaused}} {
+	}{{"portraitsPaused", &next.PortraitsPaused}, {"remindersPaused", &next.RemindersPaused}, {"pairingPaused", &next.PairingPaused}, {"readerPaused", &next.ReaderPaused}} {
 		if b.has(s.key) {
 			on, ok := b.boolean(s.key)
 			if !ok {
@@ -314,6 +316,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("portraitsPaused", next.PortraitsPaused)
 	record.Set("remindersPaused", next.RemindersPaused)
 	record.Set("pairingPaused", next.PairingPaused)
+	record.Set("readerPaused", next.ReaderPaused)
 	record.Set("adapters", map[string]any{"extra": next.Adapters.Extra, "disabled": next.Adapters.Disabled})
 	if err := app.Save(record); err != nil {
 		return settings{}, err

@@ -188,7 +188,7 @@ test('characters get their official portrait from the game; players cannot chang
   assert.match((await own()).portrait, /\.png$/);
   await refresh();
   const game = await own(); assert.match(game.portrait, /\.png$/);
-  assert.equal('portraitHash' in game || 'portraitCheckedAt' in game, false);
+  assert.equal('portraitHash' in game || 'portraitCheckedAt' in game || 'portraitMisses' in game, false);
   assert.equal(game.confirmed, false); assert.equal(game.lastReadingAt, '');
   const served = await file(game.portrait); assert.equal(served.status, 200); assert.equal(served.headers.get('content-type'), 'image/png');
   assert.deepEqual(Buffer.from(await served.arrayBuffer()), Buffer.concat([png, Buffer.from([1])]));
@@ -333,7 +333,7 @@ test('superusers watch connected apps and their packets live and edit the server
   } finally { await stream.close(); }
   // Server-wide settings: validated, partial changes keep the rest, and every client follows.
   const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
-  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, adapters: { extra: [], disabled: [] } };
+  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, adapters: { extra: [], disabled: [] } };
   assert.deepEqual((await settings()).data.settings, initial);
   assert.equal((await settings({ odylePerCube: 50 }, reader)).status, 403); assert.equal((await settings(undefined, reader)).status, 403);
   for (const bad of [{ odylePerCube: 0 }, { odylePerCube: 1001 }, { odylePerCube: '50' }, { dailyResetHour: 24 }, { dailyResetHour: 1.5 }, { weeklyResetDay: 'someday' }, { inactiveAccountDays: 10 }, { inactiveAccountDays: -1 }, { dungeons: 'Fire Temple' }, { dungeons: [''] }, { dungeons: ['x'.repeat(61)] }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
@@ -365,7 +365,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await run('odyle-retention')).status, 400); assert.equal((await run('odyle-nothing')).status, 404);
   const base = (await settings()).data.settings;
   try {
-    for (const bad of [{ portraitsPaused: 'yes' }, { pairingPaused: 1 }, { announcement: 5 }, { announcement: 'x'.repeat(301) }, { announcementLevel: 'loud' }, { adapters: ['test-fixture-v1'] }, { adapters: { extra: ['bad name'], disabled: [] } }, { adapters: { extra: [], disabled: ['test-fixture-v1'] } }, { adapters: { extra: Array.from({ length: 21 }, (_, i) => 'extra-' + i), disabled: [] } }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
+    for (const bad of [{ portraitsPaused: 'yes' }, { pairingPaused: 1 }, { readerPaused: 'on' },{ announcement: 5 }, { announcement: 'x'.repeat(301) }, { announcementLevel: 'loud' }, { adapters: ['test-fixture-v1'] }, { adapters: { extra: ['bad name'], disabled: [] } }, { adapters: { extra: [], disabled: ['test-fixture-v1'] } }, { adapters: { extra: Array.from({ length: 21 }, (_, i) => 'extra-' + i), disabled: [] } }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
     // Switches pause jobs and new pairings; the announcement is one line of text.
     const saved = await settings({ portraitsPaused: true, remindersPaused: true, pairingPaused: true, announcement: '  Maintenance\n at 10:00   UTC  ', announcementLevel: 'warning' }); assert.equal(saved.status, 200, JSON.stringify(saved.data));
     assert.deepEqual(saved.data.settings, { ...base, portraitsPaused: true, remindersPaused: true, pairingPaused: true, announcement: 'Maintenance at 10:00 UTC', announcementLevel: 'warning' });
@@ -380,6 +380,16 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     const pairing = await action('pair', { code: 'ABCDEFGH23456789', name: 'Paused PC' }); assert.equal(pairing.status, 400); assert.equal(pairing.data.message, 'Pairing new PCs is paused for now. Try again later.');
     const refused = (await request('/api/odyle/admin/monitor', undefined, operator, 'GET')).data.packets.find(p => p.kind === 'pair' && p.name === 'Paused PC');
     assert.equal(refused.ok, false); assert.equal(refused.error, 'Pairing new PCs is paused for now. Try again later.'); assert.equal(JSON.stringify(refused).includes('ABCDEFGH23456789'), false);
+    // Paused packet readers: apps hear of it from rooms, sessions and heartbeats, readings are refused, and they resume once it is off.
+    assert.equal((await settings({ readerPaused: true })).data.settings.readerPaused, true);
+    const reader = (await action('session', {}, member)).data; assert.equal(reader.readerPaused, true);
+    assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.readerPaused, true);
+    const beat = await action('heartbeat', { sessionId: reader.sessionId }, member); assert.equal(beat.status, 200); assert.equal(beat.data.readerPaused, true);
+    const held = { sessionId: reader.sessionId, sequence: 1, characterName: 'Held back', server: 'Lumiel', region: 'GLOBAL_EU', value: 25, source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+    const paused = await action('report', held, member); assert.equal(paused.status, 503); assert.equal(paused.data.message, 'Packet readers are paused by the server operators.');
+    assert.equal((await settings({ readerPaused: false })).status, 200);
+    assert.equal((await action('heartbeat', { sessionId: reader.sessionId }, member)).data.readerPaused, false);
+    assert.equal((await action('report', held, member)).status, 200);
     // Packet adapters: a new decoder shows up rejected, can be accepted before a deploy and a built-in one stopped.
     const session = (await action('session', {}, member)).data;
     const reading = (sequence, parserVersion) => action('report', { sessionId: session.sessionId, sequence, characterName: 'Adapted', server: 'Lumiel', region: 'GLOBAL_EU', value: 100 + sequence, source: 'packet', parserVersion, confirmed: true }, member);
@@ -391,8 +401,9 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     assert.equal((await reading(3, 'test-fixture-v1')).status, 400);
     assert.deepEqual((await settings()).data.acceptedAdapters, ['next-decoder-v2']);
   } finally {
-    assert.equal((await settings({ portraitsPaused: false, remindersPaused: false, pairingPaused: false, announcement: '', announcementLevel: 'info', adapters: { extra: [], disabled: [] } })).status, 200);
+    assert.equal((await settings({ portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, announcement: '', announcementLevel: 'info', adapters: { extra: [], disabled: [] } })).status, 200);
   }
+  assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.readerPaused, false);
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
   assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off']);
@@ -470,6 +481,8 @@ test('accounts see their history, delete characters, export their data, sign out
   const history = (id, auth) => request('/api/odyle/history/' + id, undefined, auth, 'GET');
   const own = await history(kept.id, holder); assert.equal(own.status, 200, JSON.stringify(own.data));
   assert.deepEqual(own.data.readings.map(r => r.value), [100, 140]); assert.equal(own.data.character.characterName, 'Historian');
+  // Each change names the adapter that decoded it; a quiet character's changes are all listed one by one.
+  assert.deepEqual(own.data.readings.map(r => r.adapter), ['test-fixture-v1', 'test-fixture-v1']); assert.equal(own.data.hourlyBefore, null);
   // Rooms the character is shared in see it too, viewers included; nobody else does.
   assert.deepEqual((await history(kept.id, watcher)).data.readings.map(r => r.value), [100, 140]);
   assert.equal((await history(kept.id, stranger)).status, 403); assert.equal((await history(spare.id, heir)).status, 403);
@@ -485,7 +498,7 @@ test('accounts see their history, delete characters, export their data, sign out
   assert.equal((await request('/api/odyle/account', undefined, null, 'GET')).status, 401);
   const exported = (await request('/api/odyle/export', undefined, holder, 'GET')).data;
   assert.equal(exported.account.id, holder.record.id); assert.ok(exported.account.lastActiveAt);
-  assert.deepEqual(exported.characters.map(c => [c.characterName, c.history.map(h => h.value)]), [['Historian', [100, 140]], ['Spare', []]]);
+  assert.deepEqual(exported.characters.map(c => [c.characterName, c.history.map(h => [h.value, h.adapter])]), [['Historian', [[100, 'test-fixture-v1'], [140, 'test-fixture-v1']]], ['Spare', []]]);
   assert.deepEqual(exported.rooms.map(r => [r.name, r.role, r.sharedCharacters]), [['Inherited room', 'owner', [kept.id]]]);
   assert.deepEqual(exported.readerSessions.map(s => s.id), [session.sessionId]); assert.equal(JSON.stringify(exported).includes(holder.token), false);
   // Deleting a character takes it out of every room, with its history.

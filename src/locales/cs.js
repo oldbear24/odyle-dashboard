@@ -405,6 +405,7 @@ export default {
   'Up to 20 extra packet adapters.': 'Nejvýš 20 dalších adaptérů paketů.',
   'Keep at least one packet adapter accepted, or no reading can be saved.': 'Nech přijímaný aspoň jeden adaptér paketů, jinak nepůjde uložit žádnou hodnotu.',
   'Pairing new PCs is paused for now. Try again later.': 'Párování nových počítačů je teď pozastavené. Zkus to později.',
+  'Packet readers are paused by the server operators.': 'Čtečky paketů teď pozastavili provozovatelé serveru.',
   'There is no such job.': 'Taková úloha neexistuje.',
   'This job only runs on its schedule.': 'Tahle úloha běží jen podle svého plánu.',
   'This job is running right now. Try again in a moment.': 'Úloha právě běží. Zkus to za chvíli.',

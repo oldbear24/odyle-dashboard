@@ -423,7 +423,7 @@ export function statusPage() {
 // What each background job does; the backend's odyle/jobs.go holds the schedules and the records.
 const jobInfo = {
   'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes expired invites, pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
-  'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones saved while portraits were paused, missing ones hourly, the rest daily. New characters are looked up as soon as they are saved.' },
+  'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones not looked up yet, the others daily. A character the search does not list is tried again after an hour, six hours and a day, then weekly; characters no reader has seen for 60 days wait until one does. New characters are looked up as soon as they are saved, up to ten at a time.' },
   'odyle-reminders': { label: 'Discord reminders', schedule: () => 'Every minute', unit: 'reminders posted', about: 'Posts planned runs to their room\'s Discord channel 15 minutes before they start.' },
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
 };
@@ -532,7 +532,7 @@ export function controlsPage() {
   app.store.title = 'Server controls';
   // extra is the extra adapter list as typed; form.adapters.extra is the list it saves.
   const text = store({ extra: '' });
-  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
+  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const builtIn = () => state.data?.builtInAdapters || [];
   const adapters = next => state.form.adapters = { ...state.form.adapters, ...next };
@@ -558,6 +558,7 @@ export function controlsPage() {
       switchField('portraitsPaused', 'Pause portrait refresh', 'Stops asking PLAYNC for character portraits. New characters get theirs once it runs again.'),
       switchField('remindersPaused', 'Pause Discord reminders', 'No planned run is posted to Discord. Runs that start while paused are not announced afterwards; saving a webhook still posts its test message.'),
       switchField('pairingPaused', 'Pause new pairings', 'The dashboard stops creating connection links and Windows apps cannot pair. PCs already paired keep signing in and reading.'),
+      switchField('readerPaused', 'Pause packet readers', 'Paired Windows apps stop reading game packets and close Npcap within about 20 seconds, say so on their card and resume by themselves once this is off. Readings sent meanwhile are refused; apps from before this switch keep capturing, but their readings are refused too.'),
       section('Packet adapters', 'The Windows app names its decoder with every reading, and only readings from accepted adapters are stored. Built-in adapters come with the backend code; accept a new decoder here before the next deploy, or stop one that reads wrong values.'),
       t.div({ className: 'col-lg-4' }, t.div({ className: 'txt-bold m-b-xs' }, 'Built-in adapters'),
         builtIn().map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
