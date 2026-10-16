@@ -19,6 +19,9 @@ import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, o
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder } from './partyview.js';
 import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
+import changelogText from '../CHANGELOG.md?raw';
+import { parseChangelog } from './changelog.js';
+import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
 import './style.css';
 import './accounts.css';
@@ -63,6 +66,12 @@ function portrait(c, index, size = '') {
 const ownCards = () => characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
 const navItem = (action, active, name, label, marker = '') => `<button data-action="${action}" class="nav-item ${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)} ${label}${marker}</button>`;
 const connectionLabel = () => `<i></i>${demo ? t('Demo workspace') : online ? t('Connected') : t('Not connected')}`;
+// After an update the dashboard says so once (whatsnew.js). A browser that never had the
+// dashboard open starts at this version; one that did, but from before What's new, hears of it.
+const seenKey = 'odyle.seenVersion';
+try { if (!storage.getItem(seenKey)) storage.setItem(seenKey, storage.getItem('odyle.location') || storage.getItem('odyle.account') ? 'earlier' : __APP_VERSION__); } catch { /* storage blocked */ }
+const updateNote = () => shown !== '/changelog' && updated(storage.getItem(seenKey), __APP_VERSION__) ? updatedNote(__APP_VERSION__) : '';
+function seenVersion() { try { storage.setItem(seenKey, __APP_VERSION__); } catch { /* storage blocked */ } document.querySelector('.update-note')?.remove(); }
 function announcementBar() {
   if (!announcement || storage.getItem(hiddenAnnouncementKey) === announcement.text) return '<div class="announcement-slot"></div>';
   const warning = announcement.level === 'warning';
@@ -81,7 +90,7 @@ function renderConnection() { const el = document.querySelector('.topbar .connec
 function shell(content, active = 'overview', crumb = '') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent;
-  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ ${esc(__APP_VERSION__)} · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
+  app.innerHTML = `<aside class="sidebar"><a href="#/" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span>odyle<span class="brand-dot">.</span></span></a><div class="workspace-label">${t('PARTY COMMAND')}</div><nav>${navItem('overview', active, 'grid', t('Overview'), ' <span class="nav-marker"></span>')}${navItem('library', active, 'people', t('My rooms & characters'))}${navItem('tasks', active, 'check', t('Daily & weekly'))}${navItem('armory', active, 'search', t('Armory'))}${navItem('invite', '', 'plus', t('Invitations'))}${navItem('account', active, 'user', t('Account & data'))}${navItem('help', '', 'shield', t('Reader & privacy'))}</nav><div class="sidebar-bottom"><span class="game-mark">A<span>2</span></span><div>AION 2 <span>${t('Global · Community tool')}</span></div></div></aside><div class="main"><header class="topbar"><span class="breadcrumb">${t('Workspace')} <span>/</span> <strong>${esc(crumb || room?.name || (pb.authStore.isValid ? t('My account') : t('Welcome')))}</strong></span><div class="topbar-right"><span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span><button class="avatar" data-action="session" aria-label="${esc(t('Session details'))}">${esc((pb.authStore.record?.displayName || 'O').slice(0, 1).toUpperCase())}</button></div></header>${announcementBar()}${updateNote()}${content}<footer><span>${icon('shield')} ${t('Your characters, saved. Your party, private.')}</span><span>Odyle Party <span class="muted">/ <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a> · ${t('Live packet readings')}</span></span></footer></div><div id="toast" role="status" aria-live="polite"></div><dialog id="modal"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -349,6 +358,17 @@ async function armoryPage(path, ticket, refresh = false) {
   const exact = results.filter(hit => hit.name.toLowerCase() === name.toLowerCase());
   if (exact.length === 1) return go(profilePath(exact[0]), true);
   armoryResults = results; armoryRender();
+}
+// What's new (#/changelog): the bundled changelog and the newest Windows release's changes.
+const changelog = parseChangelog(changelogText);
+function changelogRender() {
+  const app = windowsApp(windowsRelease);
+  shell(whatsNew(changelog, __APP_VERSION__, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog', t('What\'s new'));
+}
+async function changelogPage(ticket) {
+  seenVersion(); changelogRender();
+  await loadWindowsRelease();
+  if (ticket === navigation) changelogRender();
 }
 async function tasksPage(ticket) {
   await leaveRoomTopic(); clearRoom(); editingTask = '';
@@ -691,7 +711,7 @@ async function refreshPage() {
   if (room) await refreshRoom();
   else if (shown === '/tasks') await refreshTasks();
   else if (shown === '/account') await refreshAccount();
-  else if (shown?.startsWith('/armory')) await pb.health.check(); // the armory asks for its own lookups
+  else if (shown?.startsWith('/armory') || shown === '/changelog') await pb.health.check(); // nothing of the account to fetch
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
     if (!room) { rooms = list.rooms; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
@@ -711,6 +731,7 @@ function renderPage() {
 function rerender() {
   if (demo) return demoSession();
   if (shown?.startsWith('/armory')) return armoryRender();
+  if (shown === '/changelog') return changelogRender();
   if (room) return dashboard();
   if (shown === '/tasks') return tasksView();
   if (shown === '/account' && account) return accountRender();
@@ -727,13 +748,14 @@ const memoryKey = 'odyle.location';
 function remembered() { try { return JSON.parse(storage.getItem(memoryKey)) || {}; } catch { return {}; } }
 function remember(path) { try { storage.setItem(memoryKey, JSON.stringify({ path, room: path.startsWith('/room/') ? path.slice(6) : remembered().room })); } catch { /* storage full or blocked */ } }
 function forget(id) { try { if (!id) storage.removeItem(memoryKey); else if (remembered().room === id) storage.setItem(memoryKey, JSON.stringify({ path: '/' })); } catch { /* storage blocked */ } }
-function currentPath() { const armory = location.hash.slice(1); if (armoryRoute.test(armory)) return armory; const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account)?)$/); return match ? match[1] : '/'; }
+function currentPath() { const armory = location.hash.slice(1); if (armoryRoute.test(armory)) return armory; const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog)?)$/); return match ? match[1] : '/'; }
 async function show(force = false) {
   const path = currentPath();
   if (path === shown && !force) return;
   shown = path; const ticket = ++navigation;
   if (path === '/demo') { await leaveRoomTopic(); return demoSession(); }
   if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
+  if (path === '/changelog') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return changelogPage(ticket); }
   clearTimeout(armoryTimer);
   const code = joinCode(path);
   if (!pb.authStore.isValid) { await leaveRoomTopic(); clearRoom(); return welcome(code); }
@@ -1047,6 +1069,7 @@ app.addEventListener('click', async e => {
       case 'new-pairing': if (pairing) { forgetPairing(storage); await openLink(pairing); } break;
       case 'add-all': { const id = room.id, result = await send('sharing', { roomId: id, enabled: true }); changedRoom(id, () => applyShared(me(), result.sharedCharacters)); break; }
       case 'desktop': await desktopDialog(true); break;
+      case 'hide-update-note': seenVersion(); break;
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), [
         t('Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.'),

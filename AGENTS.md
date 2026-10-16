@@ -19,6 +19,7 @@ Odyle uses semantic versions, **MAJOR.MINOR.PATCH**. The version lives in `packa
 - What does not ship needs no bump and makes no release: `docs/`, Markdown files, `tests/`, `.github/`, `scripts/`, `*_test.go`, lint and editor settings (`scripts/version.mjs` has the exact list).
 - Change the version with an edit of that one line (or `npm version <x.y.z> --no-git-tag-version`, then undo any other reformatting it does).
 - Name the bump in the pull request description ("Version 0.6.0 → 0.7.0: new features").
+- Add the version's section to `CHANGELOG.md` in the same pull request: `## 0.7.0 · <date>`, then `### New`, `### Changed` and/or `### Fixed` with `- ` entries written for players (what they can now do or what works again), not commit messages. The release notes and the dashboard's **What's new** page show it; the version check fails without it.
 
 `node scripts/version.mjs check` runs in the checks of every pull request and branch: it fails when shipped files changed and the version is not higher than on `main`. The release workflow runs `node scripts/version.mjs release`: it fails when shipped code changed since an already released version, or when the version is not above every earlier release (the releases before semantic versions were tagged `0.5.0.<run number>`, up to `v0.5.0.24`).
 

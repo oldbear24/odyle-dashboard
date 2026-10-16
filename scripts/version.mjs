@@ -3,14 +3,16 @@
 //
 //   node scripts/version.mjs check [base]   a pull request or branch: when it changes what
 //                                           ships, its version must be higher than base's
-//                                           (default: where it left origin/main)
-//   node scripts/version.mjs release        the release workflow: writes version= and
+//                                           (default: where it left origin/main), and
+//                                           CHANGELOG.md must describe it
+//   node scripts/version.mjs release       the release workflow: writes version= and
 //                                           release= to $GITHUB_OUTPUT. No release when
 //                                           nothing that ships changed since the latest
 //                                           release; a failure when shipped code changed
 //                                           without a version above every earlier release
 import { execFileSync } from 'node:child_process';
 import { readFileSync, appendFileSync } from 'node:fs';
+import { changelogProblem } from '../src/changelog.js';
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 const lines = text => text.split('\n').filter(Boolean);
@@ -34,7 +36,12 @@ if (mode === 'check') {
   const changed = shipped(lines(git('diff', '--name-only', base, 'HEAD')));
   if (!changed.length) console.log(`Nothing that ships changed; the version stays ${version}.`);
   else if (compare(version, before) <= 0) fail(`${changed.length} shipped file(s) changed (${list(changed)}) but the version is still ${version}. Bump package.json's version by what changed: MAJOR for a breaking change, MINOR for a feature, PATCH for a fix (AGENTS.md, Versioning).`);
-  else console.log(`Version ${before} → ${version} for ${changed.length} shipped file(s).`);
+  else {
+    // A new version says what it changed, for players (CHANGELOG.md).
+    const problem = changelogProblem(readFileSync('CHANGELOG.md', 'utf8'), version);
+    if (problem) fail(problem);
+    console.log(`Version ${before} → ${version} for ${changed.length} shipped file(s), described in CHANGELOG.md.`);
+  }
 } else if (mode === 'release') {
   const tags = lines(git('tag', '--list', 'v*')).filter(t => /^v\d+(\.\d+){1,3}$/.test(t)).sort(compare), latest = tags.at(-1);
   const changed = latest ? shipped(lines(git('diff', '--name-only', latest, 'HEAD'))) : ['(no release yet)'];
