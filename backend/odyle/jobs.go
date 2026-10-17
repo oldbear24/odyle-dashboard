@@ -51,7 +51,7 @@ type job struct {
 	work     func(core.App) (result, error)
 }
 
-var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-old-characters", "odyle-stats", "odyle-health", "odyle-release", "odyle-cap-alerts", "odyle-push", "odyle-armory"}
+var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-old-characters", "odyle-stats", "odyle-health", "odyle-release", "odyle-cap-alerts", "odyle-push", "odyle-party-ready", "odyle-armory"}
 
 var jobs = map[string]job{
 	"odyle-expiry":         {schedule: "*/5 * * * *", manual: true, work: cleanup},
@@ -64,6 +64,7 @@ var jobs = map[string]job{
 	"odyle-release":        {schedule: "*/2 * * * *", manual: true, work: checkRelease},
 	"odyle-cap-alerts":     {schedule: "5 * * * *", manual: true, work: capAlerts},
 	"odyle-push":           {schedule: "* * * * *", manual: true, work: pushReminders},
+	"odyle-party-ready":    {schedule: "* * * * *", manual: true, work: partyReady},
 	"odyle-armory":         {schedule: "41 4 * * *", manual: true, work: cleanArmory},
 }
 

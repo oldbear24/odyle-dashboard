@@ -4,7 +4,7 @@ import { timestamp } from './model.js';
 // The account's notification settings (backend notifications.go): which notifications,
 // where, and quiet hours in the account's time zone. Every browser and Windows app follows
 // them; only the permission to show notifications belongs to each browser.
-export const defaultNotifications = { channels: { tray: true, browser: true, push: true, discord: false }, leadMinutes: [15], kinds: { runs: true, cap: false, tasks: true }, capTicks: 1, quiet: { from: '', to: '', timeZone: '' }, saved: false };
+export const defaultNotifications = { channels: { tray: true, browser: true, push: true, discord: false }, leadMinutes: [15], kinds: { runs: true, cap: false, tasks: true, ready: true }, capTicks: 1, quiet: { from: '', to: '', timeZone: '' }, saved: false };
 // How many regeneration ticks before the cap a cap alert comes (0: when the pool is full).
 export const capTickChoices = [[0, 'when it is full'], [1, 'one tick before'], [2, 'two ticks before'], [4, 'four ticks before']];
 // Reminder times offered on the account page; a saved time outside them is offered too.

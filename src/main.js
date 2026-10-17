@@ -807,6 +807,7 @@ async function ownNews(data) {
     if (data.seen) applySeen(data.seen, characters);
     // Cap alerts of the account's characters (the job checked the quiet hours).
     if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
+    if (Array.isArray(data.partyReady)) await showPartyReady(data.partyReady);
     // Notification settings saved in another tab or app.
     if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
     if (data.contact) {
@@ -1061,7 +1062,7 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'notifications-form') {
       const leads = new FormData(form).getAll('lead').map(Number);
       if (!leads.length || leads.length > 3) { formError(form, t('Choose one to three reminder times.')); return; }
-      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push), discord: Boolean(data.discord) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap), tasks: Boolean(data.tasks) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
+      const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push), discord: Boolean(data.discord) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap), tasks: Boolean(data.tasks), ready: Boolean(data.ready) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
       account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
     }
     else if (form.id === 'membership-form') {
@@ -1284,6 +1285,12 @@ async function showCapAlerts(alerts) {
   const settings = account?.notifications || notificationsSeen || defaultNotifications;
   if (!settings.kinds.cap || !settings.channels.browser || reminderState() !== 'on') return;
   for (const alert of alerts) { const { title, body } = capAlertText(alert); await notice(title, { body, tag: 'cap-' + alert.characterId + '-' + alert.state, icon: 'icon-192.png' }); }
+}
+// Everyone going to a run can claim a cube (#48): one notice per run and start, like a push.
+async function showPartyReady(notices) {
+  const settings = account?.notifications || notificationsSeen || defaultNotifications;
+  if (settings.kinds.ready === false || !settings.channels.browser || reminderState() !== 'on') return;
+  for (const n of notices) await notice(t('{dungeon}: the party is ready', { dungeon: n.dungeon }), { body: t('All {n} going can claim a cube · {room}', { n: n.of, room: n.room }), tag: 'ready-' + n.runId + '@' + n.startsAt, icon: 'icon-192.png' });
 }
 let upcomingAt = 0, notificationsSeen = null;
 // Web Push on this device (backend push.go): the browser subscribes at its push service with
