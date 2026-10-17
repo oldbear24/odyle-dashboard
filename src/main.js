@@ -56,6 +56,8 @@ let readers = [];
 // the rooms list or a room snapshot, which carry it, or on its own when neither came in
 // that minute. Hiding it lasts until the text changes.
 let announcement = null, announcementAt = 0;
+// Whether the operator paused Discord reminders (the snapshot says so; Room settings tells the owner, #49).
+let remindersPaused = false;
 const hiddenAnnouncementKey = 'odyle.announcement.hidden';
 let timer = 0;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
@@ -576,7 +578,7 @@ function roomSettings() {
     + section(t('Close this room'), `<p>${t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.')}</p><button class="button danger" data-action="close-room">${t('Close this room')}</button>`, 'danger-zone'), true);
 }
 // The owner connects a Discord channel and chooses when runs are posted there (discord.js).
-const discordSettings = () => discordView(room, Date.now() + serverOffset);
+const discordSettings = () => discordView(room, Date.now() + serverOffset, remindersPaused);
 // Demo characters get a made-up history so the chart can be tried without signing in.
 function demoHistory(id) {
   const c = members.flatMap(m => m.characters || []).find(x => x.id === id), now = Date.now(), readings = [];
@@ -700,7 +702,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }

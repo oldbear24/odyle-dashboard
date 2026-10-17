@@ -62,7 +62,7 @@ footer{display:flex;justify-content:space-between;align-items:center;gap:6px 16p
 /* Runs and the wishlist side by side where there is room */
 .room-columns{display:grid;gap:0 20px;align-items:start}@media(min-width:1700px){.room-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 /* The account page: the short cards in one column beside Notifications */
-.account-grid{align-items:start}.account-column{display:grid;gap:10px;align-content:start;min-width:0}
+.account-grid{align-items:start}.account-usage{margin:-4px 0 10px;font-size:12px;color:var(--muted);line-height:1.5}.update-due{color:#f3c27a}.account-column{display:grid;gap:10px;align-content:start;min-width:0}
 /* Dialogs in sections (Room settings): one subject each, the one that cannot be undone last */
 .modal-section{padding:14px 0;border-top:1px solid #2c3a31}.modal-section:first-of-type{border-top:0;padding-top:2px}.modal-section .modal-sub{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:14px}.modal-section>p:last-child{margin-bottom:0}.modal-section>p{margin-bottom:10px}
 .modal-count{font-family:'DM Sans Variable','DM Sans',sans-serif;font-size:11px;font-weight:500;border:1px solid #3c4941;color:#a2b1a7;border-radius:4px;padding:1px 6px}.modal-section .rename-form label{margin:0}.danger-zone .button{width:auto}

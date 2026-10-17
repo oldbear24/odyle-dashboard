@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.22.0 · 2026-10-17
+
+### New
+- **Account & data** shows what you use against the limits (rooms you lead, rooms, PCs, characters) and since when you are a member, and, when the server deletes unused accounts, the date yours would go if you stayed away.
+- Each paired PC says which Odyle for Windows it runs, and **update available** when a newer one is out.
+- When the server's operator pauses reminders, Account & data and Room settings say so.
+
 ## 0.21.0 · 2026-10-17
 
 ### New

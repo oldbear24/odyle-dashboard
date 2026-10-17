@@ -88,6 +88,14 @@ test('the account page lists paired PCs with their reader and keeps the notifica
   assert.match(html, /name="cap"\s+>/); assert.match(html, /<option value="1" selected>one tick before/);
   const saved = accountView({ account: { displayName: 'L' }, characters: 0, limits: { characters: 30 }, reminders: 'blocked', now, devices: [], apps: [],
     notifications: { channels: { tray: false, browser: true, push: true }, leadMinutes: [45, 15], kinds: { runs: true, cap: false }, quiet: { from: '23:00', to: '07:00', timeZone: 'Europe/Prague' }, saved: true } });
+  // Usage against the limits, the inactive-account date, each app's version and the operator's pause (#49).
+  const counted = accountView({ account: { displayName: 'L', created: '2026-01-05 10:00:00.000Z' }, characters: 3, limits: { characters: 30, ownedRooms: 20, memberships: 50, desktopDevices: 10 }, usage: { ownedRooms: 1, memberships: 2, desktopDevices: 1, characters: 3 }, retention: { inactiveAccountDays: 90, deleteAfter: '2027-01-12 10:00:00.000Z' }, paused: { reminders: true }, latestVersion: '0.16.0', now,
+    devices: [{ id: 'd1', name: 'DESK-PC', pairedAt: '2026-10-01 10:00:00.000Z' }], apps: [{ sessionId: 's1', device: 'd1', character: 'Lumina', appVersion: '0.15.0', connectedAt: '2026-10-14 11:00:00.000Z', lastContactAt: '2026-10-14 11:59:50.000Z' }] });
+  assert.match(counted, /Rooms you lead 1\/20 · rooms 2\/50 · PCs 1\/10 · characters 3\/30 · member since 5 Jan 2026/);
+  assert.match(counted, /unused for 90 days are deleted\. Yours would be on 12 Jan 2027/);
+  assert.match(counted, /Odyle 0\.15\.0 · <span class="update-due">update available<\/span>/);
+  assert.match(counted, /operator has paused planned-run reminders/);
+  assert.doesNotMatch(html, /update available|operator has paused|Rooms you lead/);
   assert.match(saved, /blocked for this site/); assert.doesNotMatch(saved, /data-action="reminders"/);
   assert.match(saved, /name="tray"\s+>/); assert.match(saved, /value="45" checked><span>45 min/); assert.match(saved, /name="quietFrom" value="23:00"/); assert.match(saved, /in Europe\/Prague/);
 });
