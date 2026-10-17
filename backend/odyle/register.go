@@ -29,7 +29,7 @@ var accountActions = []action{
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle},
-	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip},
+	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
@@ -121,6 +121,9 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/history/{id}", timed("history", history)).Bind(signedIn)
 	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
+	// The private calendar feed (#35): its token is in the address, so a request that succeeds is
+	// not written to the activity log.
+	se.Router.GET("/api/odyle/calendar/{file}", timed("calendar", calendarFile)).Bind(apis.SkipSuccessActivityLog())
 	se.Router.GET("/api/odyle/account", timed("account", account)).Bind(signedIn)
 	se.Router.GET("/api/odyle/export", timed("export", exportData)).Bind(signedIn)
 	// Public: the newest Windows companion release, cached from GitHub (no account data involved).

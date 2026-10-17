@@ -275,3 +275,17 @@ test('the slot machine mostly wins nothing: three different faces, and a quiet o
   assert.match(lost, /No win this time\./); assert.match(lost, /class="slot-odds">A spin wins 15 % of the time/);
   assert.match(lost, /data-action="slot-sound" aria-pressed="true"[^>]*>🔊/); assert.match(slotsView({ state, name: 'L', sound: false }), /aria-pressed="false"[^>]*>🔇/);
 });
+test('runs carry their event link, and the account page makes, shows once and stops a calendar feed', async () => {
+  const { runsSection, discordText, runEditForm } = await import('../src/runs.js'), { calendarCard } = await import('../src/account.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const run = { id: 'r', dungeon: 'Fire Temple', startsAt: '2026-10-14T20:00:00.000Z', attendees: ['a'], planner: 'a', note: '', link: 'https://raid-helper.dev/event/1' };
+  const members = [{ user: 'a', displayName: 'A', role: 'owner' }];
+  assert.match(runsSection({ runs: [run], members, myId: 'a', viewer: false, owner: true, live: new Set(), now }), /<a class="run-event" href="https:\/\/raid-helper.dev\/event\/1" target="_blank" rel="noopener noreferrer">Event ↗<\/a>/);
+  assert.doesNotMatch(runsSection({ runs: [{ ...run, link: 'javascript:alert(1)' }], members, myId: 'a', viewer: false, owner: true, live: new Set(), now }), /run-event/);
+  assert.match(discordText(run, { going: ['A'], event: run.link, link: 'https://odyle.example/#/room/x' }), / · https:\/\/raid-helper.dev\/event\/1 · https:\/\/odyle.example/);
+  assert.match(runEditForm(run, {}, now), /name="link" type="url"[^>]*value="https:\/\/raid-helper.dev\/event\/1"/);
+  const off = calendarCard({ on: false });
+  assert.match(off, /data-action="calendar-on">Make a calendar link/); assert.doesNotMatch(off, /calendar-off/);
+  const made = calendarCard({ on: true, since: '2026-10-14 12:00:00.000Z' }, 'https://odyle.example/api/odyle/calendar/abc.ics');
+  assert.match(made, /value="https:\/\/odyle.example\/api\/odyle\/calendar\/abc.ics"/); assert.match(made, /href="webcal:\/\/odyle.example\/api\/odyle\/calendar\/abc.ics"/); assert.match(made, /data-action="calendar-off"/);
+  assert.match(calendarCard({ on: true, since: '2026-10-14 12:00:00.000Z' }), /Your feed is on since/);
+});

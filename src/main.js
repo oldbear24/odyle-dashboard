@@ -497,7 +497,9 @@ async function tasksPage(ticket) {
 // The account page redraws when its apps change or go online, late or offline; ages tick in place.
 const contactState = at => { const quiet = Date.now() + serverOffset - timestamp(at); return quiet < 45000 ? 'online' : quiet < 90000 ? 'late' : 'offline'; };
 const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device, contactState(a.lastContactAt)]), account?.devices?.map(d => [d.id, d.name])]);
-function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset }), 'account')); }
+function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset, calendarLink }), 'account')); }
+// The calendar feed's address, shown once after it was made (#35).
+let calendarLink = '';
 async function refreshAccount() {
   const data = await pb.send('/api/odyle/account');
   if (shown !== '/account') return;
@@ -1085,7 +1087,7 @@ app.addEventListener('submit', async e => {
       const run = runs.find(r => r.id === data.runId); if (!run) return formError(form, t('This run is no longer planned.'));
       const problem = runProblem(data, { now: Date.now() + serverOffset, catalog: dungeons, run }); if (problem) return formError(form, problem);
       // An unchanged start is not sent: the form shows whole minutes, and a run that started over an hour ago keeps its time.
-      const changes = { roomId: room.id, id: run.id, dungeon: data.dungeon, note: data.note, ...(moved(run, data.startsAt) ? { startsAt: new Date(data.startsAt).toISOString() } : {}) };
+      const changes = { roomId: room.id, id: run.id, dungeon: data.dungeon, note: data.note, link: data.link || '', ...(moved(run, data.startsAt) ? { startsAt: new Date(data.startsAt).toISOString() } : {}) };
       const result = await send('plan', changes); closeModal(); changedRoom(changes.roomId, () => { runs = result.runs; }); toast(t('Run updated.'));
     }
     else if (form.id === 'discord-options-form') {
@@ -1175,6 +1177,7 @@ app.addEventListener('click', async e => {
       return changedRoom(id, () => { wishlist = result.wishlist; });
     }
     if (el.dataset.slotEquip !== undefined && el.dataset.kind) { slotState = await send('slot-equip', { kind: el.dataset.kind, id: el.dataset.slotEquip }); return slotsRender(); }
+    if (el.dataset.copyCalendar) { await navigator.clipboard.writeText(el.dataset.copyCalendar).then(() => toast(t('Calendar link copied.')), () => toast(t('Copy the link from the field.'))); return; }
     if (el.dataset.planWish) {
       const form = document.querySelector('#run-form'); if (!form) return;
       form.elements.dungeon.value = el.dataset.planWish; form.dataset.fromWish = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
@@ -1198,7 +1201,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.copyRun) {
       const r = runs.find(x => x.id === el.dataset.copyRun); if (!r) return;
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
-      const text = discordText(r, { going, partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: `${location.origin}${location.pathname}#/room/${room.id}` });
+      const text = discordText(r, { going, partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: `${location.origin}${location.pathname}#/room/${room.id}`, event: r.link || '' });
       return toast(await copyText(text) ? t('Copied for Discord: paste it in any channel.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     }
     if (el.dataset.calendarRun) {
@@ -1254,6 +1257,8 @@ app.addEventListener('click', async e => {
       case 'push-test': { const result = await send('push-test', {}); account.push = result.push; toast(tn(result.sent, 'Sent a test to {n} device.', 'Sent a test to {n} devices.')); break; }
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
+      case 'calendar-on': { const made = await send('calendar', { enabled: true }); calendarLink = location.origin + made.path; account.calendar = made.calendar; accountRender(); break; }
+      case 'calendar-off': { const made = await send('calendar', { enabled: false }); calendarLink = ''; account.calendar = made.calendar; accountRender(); toast(t('Calendar feed stopped.')); break; }
       case 'slot-spin': await spinSlot(); break;
       case 'slot-sound': { try { storage.setItem(slotSoundKey, slotSound() ? 'off' : 'on'); } catch { /* storage blocked: stays on */ } slotsRender(); break; }
       case 'calendar-all': download(calendarOfRuns(nextRunsList, Date.now() + serverOffset), 'odyle-runs.ics', 'text/calendar'); break;

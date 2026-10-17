@@ -37,7 +37,15 @@ function membershipCard(answer = '') {
   return `<form id="membership-form" class="setup-card"><h2>${t('Membership')}</h2><p>${t('Does your game account have the membership? The Odyle clock then knows the natural pool\'s cap: 840 with it, 560 without. Rooms see only that cap on the characters you share, never this answer.')}</p>
 <fieldset class="membership-choices"><legend class="sr-only">${t('Membership')}</legend>${choice('yes', t('Yes, I have the membership'))}${choice('no', t('No membership'))}${choice('', t('Not sure · the clock goes by my readings'))}</fieldset><button class="button primary" type="submit">${t('Save membership')}</button></form>`;
 }
-export function accountView({ account, apps, devices = [], characters, limits, usage = null, retention = null, paused = {}, latestVersion = '', reminders = 'off', notifications = defaultNotifications, push = { state: 'unsupported', devices: [] }, membership = '', now }) {
+// The private calendar feed of the runs you go to (#35): made here, its address shown once
+// (calendarLink, just after making it), stopped here.
+export function calendarCard(calendar = { on: false }, link = '') {
+  const webcal = link.replace(/^https?:/, 'webcal:');
+  const body = link ? `<label>${t('Your calendar link')}<input class="calendar-link" readonly value="${esc(link)}"></label><div class="calendar-actions"><button class="button secondary small" type="button" data-copy-calendar="${esc(link)}">${t('Copy link')}</button><a class="button secondary small" href="${esc(webcal)}">${t('Open in a calendar app')}</a></div><small class="account-note">${t('Shown once. Paste it into Google Calendar (Other calendars → From URL), Outlook or Apple Calendar.')}</small>`
+    : calendar.on ? `<p>${esc(t('Your feed is on since {date}. Make a new link to see it again; the old one stops working.', { date: new Date(Date.parse(String(calendar.since).replace(' ', 'T'))).toLocaleDateString(locale()) }))}</p>` : '';
+  return `<div class="setup-card calendar-card"><h2>${t('Calendar feed')}</h2><p>${t('The runs you are going to, in Google, Outlook or Apple Calendar, kept up to date. The link is private: whoever has it sees the dungeon, room and time of your runs, never notes.')}</p>${body}<div class="calendar-actions"><button class="button ${calendar.on ? 'secondary' : 'primary'} small" type="button" data-action="calendar-on">${calendar.on ? t('Make a new link') : t('Make a calendar link')}</button>${calendar.on ? `<button class="text-button" type="button" data-action="calendar-off">${t('Stop the feed')}</button>` : ''}</div></div>`;
+}
+export function accountView({ account, apps, devices = [], characters, limits, usage = null, retention = null, paused = {}, latestVersion = '', reminders = 'off', notifications = defaultNotifications, push = { state: 'unsupported', devices: [] }, membership = '', now, calendar = { on: false }, calendarLink = '' }) {
   const day = at => new Date(timestamp(at)).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' });
   // Which app each PC runs, and whether a newer release is out (#49).
   const version = a => a?.appVersion ? ` · Odyle ${esc(a.appVersion)}${behind(a.appVersion, latestVersion) ? ` · <span class="update-due">${t('update available')}</span>` : ''}` : '';
@@ -56,7 +64,7 @@ export function accountView({ account, apps, devices = [], characters, limits, u
 <div class="account-grid">
 <div class="account-column"><form id="profile-form" class="setup-card"><h2>${t('Display name')}</h2><p>${t('Room members see this name next to your characters.')}</p><label>${t('Display name')}<input name="displayName" maxlength="40" autocomplete="nickname" required value="${esc(account.displayName)}"></label><button class="button primary" type="submit">${t('Save name')}</button></form>
 <div class="setup-card"><h2>${t('Language')}</h2><p>${t('Used for the whole dashboard in this browser.')}</p><label>${t('Language')}<select id="language-select">${languages.map(l => `<option value="${l.code}" ${l.code === language() ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label></div>
-${membershipCard(membership)}</div>
+${membershipCard(membership)}${calendarCard(calendar, calendarLink)}</div>
 ${notificationsCard(notifications, reminders, push, paused.reminders)}
 </div>
 <section class="party-section"><div class="section-heading"><h2>${t('Windows apps')} <span>${pcRows.length + others.length}</span></h2><button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div><div class="wish-panel">${appRows ? `<div class="wish-list">${appRows}</div>` : `<p class="wish-empty">${t('No Windows app is paired with this account.')}</p>`}<p class="wish-note account-foot">${t('Lost a PC? Remove it above: it stops reading within a minute and needs a new connection link. Shared your account by mistake? Sign out everywhere: every browser and Windows app loses access and needs to sign in or pair again. This browser stays signed in.')} <button class="text-button" data-action="sign-out-everywhere">${t('Sign out everywhere')} ${icon('arrow')}</button></p></div></section>
