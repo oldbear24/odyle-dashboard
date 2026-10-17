@@ -8,9 +8,9 @@ import { t, tn, locale } from './i18n.js';
 import { age, escape as esc } from './model.js';
 import { icon } from './icons.js';
 
-export const regionNames = () => ({ GLOBAL_NA: t('North America'), GLOBAL_EU: t('Europe'), GLOBAL_SA: t('South America'), GLOBAL_ASIA: t('Asia') });
+export const regionNames = () => ({ GLOBAL_NA: t('North America East'), GLOBAL_NAW: t('North America West'), GLOBAL_EU: t('Europe'), GLOBAL_SA: t('South America'), GLOBAL_ASIA: t('Asia') });
 // PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes.
-export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NA|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2})?$/;
+export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2})?$/;
 export const profilePath = hit => `/armory/${hit.region}/${hit.serverId}/${hit.characterId}`;
 // A character's own profile, once the daily lookup found it on PLAYNC (officialId), else "".
 export const officialPath = c => {

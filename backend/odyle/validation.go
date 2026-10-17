@@ -30,7 +30,8 @@ func integer(value any, name string, min, max int64) (int64, error) {
 	return int64(f), nil
 }
 
-var regions = []string{"GLOBAL_EU", "GLOBAL_NA", "GLOBAL_SA", "GLOBAL_ASIA"}
+// GLOBAL_NA is NA-East (and NA characters saved before the split), GLOBAL_NAW NA-West (odyle-windows#4).
+var regions = []string{"GLOBAL_EU", "GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_SA", "GLOBAL_ASIA"}
 
 type identity struct{ characterName, server, region string }
 

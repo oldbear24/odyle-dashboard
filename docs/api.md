@@ -255,7 +255,9 @@ Superusers can pause every packet reader at once under **Server controls** (`rea
 
 Public routes for the armory, signed in or not, with their own rate limits per address: 20 searches and 60 armory requests a minute. Everything comes from PLAYNC's official character pages ([Armory](armory.md)); no route writes armory data.
 
-`GET /api/odyle/armory/servers` answers `{ regions: [{ region, elyos, asmodian }] }`: the four Odyle regions (`GLOBAL_NA`, `GLOBAL_EU`, `GLOBAL_SA`, `GLOBAL_ASIA`) with their server names by race.
+`GET /api/odyle/armory/servers` answers `{ regions: [{ region, elyos, asmodian }] }`: the five Odyle regions (`GLOBAL_NA`, `GLOBAL_NAW`, `GLOBAL_EU`, `GLOBAL_SA`, `GLOBAL_ASIA`) with their server names by race.
+
+**NA-East and NA-West** (odyle-windows#4): the two North American regions have servers of the same names (Siel is 1101 in the East and 1201 in the West). `GLOBAL_NA` is NA-East, and also every NA character saved before the split; `GLOBAL_NAW` is NA-West (from dashboard 0.21.0 and Windows 0.16.0, which sends it for server ids 12xx and 22xx when the server lists it under `/api/odyle/armory/servers`, and `GLOBAL_NA` otherwise). The migration 1791763245 moves the characters PLAYNC's search already found in NA-West (`officialRegion` `naw`), and the daily lookup moves the others when it finds them there, unless the account also has the character under NA-West. The lookup asks only NA-West for `GLOBAL_NAW`, and NA-East then NA-West for `GLOBAL_NA`.
 
 `GET /api/odyle/armory/search?name=&server=&region=` takes a character name (2 to 16 letters or digits), a server name and an Odyle region, as characters keep them. It answers `{ results: [{ name, level, race, server, serverId, region, characterId }] }`: up to 20 characters PLAYNC's search lists, those named exactly so first. `region` is PLAYNC's search region (`nae`, `naw`, `eu`, `la`, `as`; North America searches both of its own), and `characterId` is decoded. A bad name or an unknown server answers 400. Paused, busy or with PLAYNC's search not answering, it answers 503.
 

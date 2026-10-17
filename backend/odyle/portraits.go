@@ -25,7 +25,8 @@ import (
 // Server ids follow the game protocol (see odyle-windows GameIdentity.cs):
 // race * 1000 + region * 100 + list index + 1. Saved characters keep only the
 // server name and region, so the id is rebuilt here. NA has two search regions
-// (East 1xx, West 2xx) and both are tried, West also when East failed.
+// (East 1xx, West 2xx): GLOBAL_NAW is West, and GLOBAL_NA tries East, then West, since NA
+// characters saved before the split may be either.
 var elyos = strings.Split("Siel,Nezekan,Vaizel,Kaisinel,Yustiel,Ariel,Fregion,Meslamtaeda,Hithanya,Nania,Tahabata,Luteros,Phernos,Daminu,Kasika,Bakarma,Tsenka,Kochi,Ishtar,Tiamat,Poeta,Verteron,Nathara,Talisra,Zumion,Nahid,Asahr,Caelid,Laveis,Perion,Dramata,Reda,Auldor,Vakron,Narun,Gartua,Chloris,Ione,Teina,Dymones,Bargott,Atheron,Ruthilis,Siliator,Idris,Satia,Estian,Rahu,Rhanman,Hebran", ",")
 var asmodian = strings.Split("Israphel,Zikel,Triniel,Lumiel,Marchutan,Azphel,Ereshkigal,Beritra,Nemon,Hadala,Ludra,Ulgorn,Munin,Odar,Zemurru,Kromede,Quai,Baba,Fafnir,Indnath,Ishalgen,Altgard,Agnita,Atiel,Valdemar,Lagta,Gerod,Urd,Ecco,Giselle,Kashapa,Stof,Berk,Nuakum,Grisilla,Santras,Reuben,Hugo,Kraki,Hystan,Rathman,Sigebert,Nazmun,Gelcos,Paton,Pelleir,Elvida,Ketu,Pydeon,Notun", ",")
 
@@ -34,7 +35,7 @@ type searchRegion struct {
 	code  string
 }
 
-var searchRegions = map[string][]searchRegion{"GLOBAL_NA": {{1, "nae"}, {2, "naw"}}, "GLOBAL_EU": {{3, "eu"}}, "GLOBAL_SA": {{4, "la"}}, "GLOBAL_ASIA": {{5, "as"}}}
+var searchRegions = map[string][]searchRegion{"GLOBAL_NA": {{1, "nae"}, {2, "naw"}}, "GLOBAL_NAW": {{2, "naw"}}, "GLOBAL_EU": {{3, "eu"}}, "GLOBAL_SA": {{4, "la"}}, "GLOBAL_ASIA": {{5, "as"}}}
 
 func searchURL() string {
 	if v := os.Getenv("PLAYNC_SEARCH_URL"); v != "" {

@@ -3,7 +3,7 @@ import { defaultNotifications, dueReminders, quietAt, capAlertText } from './not
 import { discordSettings as discordView, chosenTimes } from './discord.js';
 import { defaultClock, clockOf, clockLine, capMismatch } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
-import { status, age, escape as esc, timestamp, classOf } from './model.js';
+import { status, age, escape as esc, timestamp, classOf, regionLabel } from './model.js';
 import { connectionLink } from './connection.js';
 import { windowsApp } from './release.js';
 import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour, scopes, inScope, left, templatesForm } from './tasks.js';
@@ -217,7 +217,7 @@ function downloadPanel() {
 function sharingMatrix() {
   if (!characters.length) return `<p class="intro">${t('Characters appear here once the Windows reader sees them in game.')}</p>`;
   if (!rooms.length) return `<p class="intro">${t('Create or join a room, then choose which characters it sees.')}</p>`;
-  return characters.map((c, i) => `<div class="share-row"><div class="share-character">${portrait(c, i, 'mini')}<div><strong>${esc(c.characterName)}</strong><small>${esc(c.server)} · ${esc(c.region.replace('GLOBAL_', ''))}</small></div></div><div class="share-rooms">${rooms.map(r => {
+  return characters.map((c, i) => `<div class="share-row"><div class="share-character">${portrait(c, i, 'mini')}<div><strong>${esc(c.characterName)}</strong><small>${esc(c.server)} · ${esc(regionLabel(c.region))}</small></div></div><div class="share-rooms">${rooms.map(r => {
     const on = r.sharedCharacters?.includes(c.id), viewer = r.role === 'viewer';
     return `<button class="share-chip ${on ? 'on' : ''}" data-share="${esc(c.id)}" data-room-id="${esc(r.id)}" data-enabled="${!on}" aria-pressed="${on}" ${viewer ? 'disabled' : ''} title="${viewer ? esc(t('Viewers cannot share characters in this room')) : esc(on ? t('Hide {name} in {room}', { name: c.characterName, room: r.name }) : t('Show {name} in {room}', { name: c.characterName, room: r.name }))}"><i></i>${esc(r.name)}</button>`;
   }).join('')}</div></div>`).join('') + `<div class="share-row share-new-row"><div class="share-character"><div><strong>${t('New characters')}</strong><small>${t('shared on their own where this is on')}</small></div></div><div class="share-rooms">${rooms.map(r => shareNewChip(r.id, r.name, r.shareNew, r.role === 'viewer')).join('')}</div></div><p class="share-note">${t('New characters start private, except in rooms where New characters is on. Switched-off characters keep their saved values.')}</p>`;
@@ -497,11 +497,11 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
     : self && !room ? `<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}`
       : owner() && c.membershipId && c.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(c.membershipId)}" data-name="${esc(c.displayName)}" title="${esc(t('Remove {name} from this room', { name: c.displayName }))}">${t('Remove')}</button>` : '';
   // The profile itself once the daily lookup found the character on PLAYNC, else a search by name.
-  const armoryPath = officialPath(c) || (c.characterName && /^[A-Za-z]{2,20}$/.test(c.server || '') && /^GLOBAL_(NA|EU|SA|ASIA)$/.test(c.region || '') ? findPath(c.region, c.server, c.characterName) : '');
+  const armoryPath = officialPath(c) || (c.characterName && /^[A-Za-z]{2,20}$/.test(c.server || '') && /^GLOBAL_(NAW?|EU|SA|ASIA)$/.test(c.region || '') ? findPath(c.region, c.server, c.characterName) : '');
   const armory = !demo && armoryPath ? `<a class="card-link icon-only" href="#${esc(armoryPath)}" title="${esc(t('Gear and stats of {name} on PLAYNC', { name: c.characterName }))}">${icon('search')}<span class="sr-only">${t('Armory')}</span></a>` : '';
   // A packet reading needs no label; samples, old manual values and characters waiting for the game say so.
   const source = demo ? t('Sample') : c.source === 'packet' ? '' : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
-  const player = room && c.displayName && c.displayName !== c.characterName ? c.displayName : '', where = [c.server, (c.region || '').replace('GLOBAL_', '')].filter(Boolean).join(' ');
+  const player = room && c.displayName && c.displayName !== c.characterName ? c.displayName : '', where = [c.server, regionLabel(c.region)].filter(Boolean).join(' ');
   const meta = [player, classOf(c), where].filter(Boolean).map(esc).join(' · '), clock = known && clockOf(c, now, clockRules);
   const leader = c.role === 'owner' && room ? `<span class="leader-label" title="${esc(t('Room leader'))}">${icon('crown')}<span class="sr-only">${t('leader')}</span></span>` : '';
   const counts = counted?.has(c.id) ? `<span class="counts-for" title="${esc(t('Counts for {name}', { name: c.displayName }))}">${icon('diamond')}${t('counts')}</span>` : '';

@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.21.0 · 2026-10-17
+
+### New
+- **NA-East and NA-West are told apart.** Both have servers of the same names (Siel, Lumiel…), so two characters of the same name, one in each, used to become one. Cards and the armory say NA-E or NA-W. Characters already saved move to NA-West once the daily lookup finds them there (with Odyle for Windows 0.16 or newer for new readings).
+
 ## 0.20.0 · 2026-10-17
 
 ### Changed
