@@ -141,7 +141,7 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     const players = members.filter(m => m.role !== 'viewer').map(m => m.user), silent = players.filter(u => !r.attendees.includes(u) && !(r.cant || []).includes(u)).length;
     const invited = at > now ? (r.invited || []) : [];
     const answers = (r.cant || []).length || (at > now && silent) || invited.length ? `<small class="run-answers">${[invited.length ? esc(t('Invited: {names}', { names: invited.map(name).join(', ') })) : '', (r.cant || []).length ? esc(t('Can’t: {names}', { names: r.cant.map(name).join(', ') })) : '', at > now && silent ? esc(tn(silent, '{n} has not answered', '{n} have not answered')) : ''].filter(Boolean).join(' · ')}</small>` : '';
-    const roll = calling && ready.rows.length ? `<small class="run-claim roll-call-line">${esc(t('Roll call: {line}', { line: rollCallLine(ready.rows) }))}</small>` : '';
+    const roll = calling && ready.rows.length ? `<small class="roll-call-line">${esc(t('Roll call: {line}', { line: rollCallLine(ready.rows) }))}</small>` : '';
     const claim = warning + answers + roll + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.
