@@ -62,8 +62,10 @@ const hiddenAnnouncementKey = 'odyle.announcement.hidden';
 let timer = 0;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
 const owner = () => demo || room?.owner === pb.authStore.record?.id;
+// The owner or an officer (#43): invites, every run, clearing the wishlist for everyone and Discord reminders.
+const manager = () => owner() || me()?.role === 'officer';
 const mine = () => me()?.characters || [];
-const roleName = role => role === 'owner' ? t('leader') : role === 'viewer' ? t('viewer') : t('player');
+const roleName = role => role === 'owner' ? t('leader') : role === 'officer' ? t('officer') : role === 'viewer' ? t('viewer') : t('player');
 const colors = ['jade', 'amber', 'blue', 'pink', 'violet'];
 // The official game portrait (downloaded by the backend) sits over the initials,
 // which remain as the fallback while it loads, if it fails or when there is none.
@@ -297,7 +299,7 @@ function wishlistSection(now) {
     const people = w.users.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`).join('');
     const actions = demo ? '' : (mine ? `<button data-wish="${esc(w.dungeon)}" data-wanted="false" title="${esc(t('Take yourself off {dungeon}', { dungeon: w.dungeon }))}">${t('Remove me')}</button>` : viewer ? '' : `<button data-wish="${esc(w.dungeon)}" data-wanted="true">${icon('plus')} ${t('Need it too')}</button>`)
       + (viewer || !plannable ? '' : `<button data-plan-wish="${esc(listed?.name ?? w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
-      + (owner() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="${esc(t('Clear {dungeon} for everyone', { dungeon: w.dungeon }))}">${t('Clear')}</button>` : '');
+      + (manager() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="${esc(t('Clear {dungeon} for everyone', { dungeon: w.dungeon }))}">${t('Clear')}</button>` : '');
     return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${esc(tn(count, '{n} member needs it', '{n} members need it'))} · ${esc(wanted(w.since, now))}</small>${facts(w.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
   }).join('');
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
@@ -307,7 +309,7 @@ function plannedRuns(now) {
   // A run counts at its dungeon's own cost when the catalog has one.
   const costOf = r => entryOf(catalog, r.dungeon)?.cost || cost;
   const players = [...new Set(entries.filter(c => c.role !== 'viewer').map(c => c.user))].map(user => broughtBy(user, entries, now).character);
-  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: owner(), live: liveUsers(now), now, suggestions, catalog, perCube: cost, facts: dungeonInfo(now), demo, discord: room?.discordReminders,
+  return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: manager(), live: liveUsers(now), now, suggestions, catalog, perCube: cost, facts: dungeonInfo(now), demo, discord: room?.discordReminders,
     readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules) });
 }
 // Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
@@ -481,7 +483,7 @@ function dashboard() {
   const explained = explain(party, now, cost, estimate), { characters: actual, counted } = explained;
   const estimated = Boolean(explained.lastKnown && clockOf(explained.lastKnown.lowest, now, clockRules)?.projected);
   const shown = readyOrder(actual, now, cost).filter(c => !liveOnly() || status(c, now) === 'live');
-  const hidden = actual.length - shown.length, actions = `${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite')}</button>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Settings') : t('Room')}</button>`;
+  const hidden = actual.length - shown.length, actions = `${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}${manager() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite')}</button>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Settings') : t('Room')}</button>`;
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
   keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p></div><div class="heading-actions">${actions}</div></section>${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${shown.map((c, i) => card(c, i, counted, cost)).join('')}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section><div class="room-columns">${plannedRuns(now)}${wishlistSection(now)}</div></main>`));
 }
@@ -536,7 +538,7 @@ let inviteDraws = 0;
 async function inviteDialog(listed) {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to create a persistent room.'));
   if (!pb.authStore.isValid) return signInPrompt(t('Sign in with Discord to create a room and invite your friends.'));
-  if (!room || !owner()) return invitePicker();
+  if (!room || !manager()) return invitePicker();
   const id = room.id, now = Date.now() + serverOffset, draw = ++inviteDraws, askedAt = Date.now();
   modal(t('Invite another Discord account'), inviteDialogBody(listed ? withCodes(storage, id, listed, now) : null, location.href, now));
   if (listed) return;
@@ -554,7 +556,7 @@ async function invitePicker() {
     const leader = members.find(m => m.role === 'owner')?.displayName;
     return modal(t('Invite friends'), `<p>${esc(leader ? t('Only the leader of {room}, {name}, can invite to it. Ask them for an invite link.', { room: room.name, name: leader }) : t('Only the room’s leader can invite to it. Ask them for an invite link.'))}</p><button class="button secondary" data-action="close-dialog">${t('Got it')}</button>`);
   }
-  const listed = (await pb.send('/api/odyle/rooms')).rooms || [], led = listed.filter(r => r.role === 'owner');
+  const listed = (await pb.send('/api/odyle/rooms')).rooms || [], led = listed.filter(r => r.role === 'owner' || r.role === 'officer');
   if (led.length === 1) return openInvites(led[0].id);
   if (!led.length) return modal(t('Invite friends'), `<p>${listed.length ? t('Only a room’s leader can invite to it. Ask the leader of your room for an invite link, or create a room of your own.') : t('Create a room first, then invite your friends to it.')}</p><button class="button primary" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button>`);
   modal(t('Invite to which room?'), `<p>${t('Choose a room you lead. Friends you invite join only that room.')}</p><div class="room-list room-picker">${led.map(r => `<button class="room-item" data-invite-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))}</small></span>${icon('arrow')}</button>`).join('')}</div>`);
@@ -568,12 +570,14 @@ function roomSettings() {
   const section = (title, body, cls = '') => `<section class="modal-section ${cls}">${title ? `<h3 class="modal-sub">${title}</h3>` : ''}${body}</section>`;
   // New characters this member saves can reach this room by themselves.
   const newOnes = section(t('Your new characters'), `<p>${t('Characters you save from now on start private. With this on, they are shared in this room by themselves.')}</p><div class="share-rooms">${shareNewChip(room.id, room.name, me()?.shareNew, me()?.role === 'viewer', t('Share them in this room'))}</div>`);
-  if (!owner()) return modal(esc(room.name), newOnes + (room.discordReminders ? section(t('Discord reminders'), `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>`) : '') + section(t('Leave this room'), `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p><button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`, 'danger-zone'), true);
+  // Officers keep the Discord reminders too.
+  const discordPart = me()?.role === 'officer' ? section('', discordSettings()) : room.discordReminders ? section(t('Discord reminders'), `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>`) : '';
+  if (!owner()) return modal(esc(room.name), newOnes + discordPart + section(t('Leave this room'), `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p><button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`, 'danger-zone'), true);
   const myId = pb.authStore.record?.id, listed = [...members].sort((a, b) => (b.user === myId) - (a.user === myId));
   const rows = listed.map(m => m.user === myId ? `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${t('Leader (you)')}</small></div></div>`
-    : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
+    : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="officer" ${m.role === 'officer' ? 'selected' : ''}>${t('Officer')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
   modal(t('Room settings'), section(t('Room name'), `<form id="rename-form" class="rename-form"><label><span class="sr-only">${t('Room name')}</span><input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form>`)
-    + section(`${t('Members')} <span class="modal-count">${members.length}</span>`, `<p>${t('Players share characters and plan runs; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>`)
+    + section(`${t('Members')} <span class="modal-count">${members.length}</span>`, `<p>${t('Players share characters and plan runs; officers also invite, change any run and keep the Discord reminders; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>`)
     + section('', discordSettings()) + newOnes
     + section(t('Close this room'), `<p>${t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.')}</p><button class="button danger" data-action="close-room">${t('Close this room')}</button>`, 'danger-zone'), true);
 }
@@ -1346,6 +1350,7 @@ app.addEventListener('change', async e => {
   if (el.matches?.('select[data-role]')) {
     const name = members.find(m => m.id === el.dataset.role)?.displayName || t('this member'), data = { 'confirm-role': el.dataset.role, 'new-role': el.value };
     if (el.value === 'viewer') return ask(esc(t('Make {name} a viewer?', { name })), esc(t('Viewers only watch: the characters {name} shares here leave the party, and have to be added again after a change back to player.', { name })), t('Make viewer'), data);
+    if (el.value === 'officer') return ask(esc(t('Make {name} an officer?', { name })), esc(t('{name} can then invite people, change or cancel any run, clear a dungeon off everyone’s wishlist and keep the Discord reminders. Renaming and closing the room, roles and handing it over stay with you.', { name })), t('Make officer'), data);
     return ask(esc(t('Make {name} a player?', { name })), esc(t('{name} can then add characters to this room, plan runs and join them.', { name })), t('Make player'), data);
   }
   // Ticking a task saves the time it was done; it shows as done until the next reset.
