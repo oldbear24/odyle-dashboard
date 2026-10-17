@@ -482,7 +482,7 @@ export default {
   'Plan again next week': 'Naplánovat znovu za týden',
   'A run can be marked done once it has started.': 'Run jde označit jako hotový, až začne.',
   'Only its planner, an attendee, an officer or the room owner can mark this run done.': 'Run může označit jako hotový jen jeho plánovač, účastník, důstojník nebo majitel místnosti.',
-  'Send going (true or false), the changes to the run, done, again or remove: true.': 'Pošli going (true nebo false), změny runu, done, again nebo remove: true.',
+  'Send going or cant (true or false), the changes to the run, done, again or remove: true.': 'Pošli going nebo cant (true nebo false), změny runu, done, again nebo remove: true.',
   'Armory': 'Zbrojnice',
   'Europe': 'Evropa',
   'South America': 'Jižní Amerika',

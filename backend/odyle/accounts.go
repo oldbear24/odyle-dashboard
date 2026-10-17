@@ -2070,7 +2070,7 @@ func plan(e *core.RequestEvent) error {
 					return nil, err
 				}
 			default:
-				return nil, badRequest("Send going (true or false), the changes to the run, done, again or remove: true.")
+				return nil, badRequest("Send going or cant (true or false), the changes to the run, done, again or remove: true.")
 			}
 		} else {
 			if viewer {
