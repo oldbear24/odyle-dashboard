@@ -3,6 +3,7 @@ package odyle
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -109,6 +110,10 @@ type settings struct {
 	Adapters            adapterLists   `json:"adapters"`
 	Clock               clockRules     `json:"clock"`
 	TaskTemplates       []taskTemplate `json:"taskTemplates"`
+	// Windows versions held back (odyle-windows#19): apps from 0.18.0 never install one, and an
+	// app running one moves to the latest release, older or not. Rolling a bad release back is
+	// blocking it here and marking it a pre-release on GitHub (docs/runbook.md).
+	WindowsBlocked []string `json:"windowsBlocked"`
 }
 
 // The superuser settings answer lists the catalog's entries as `catalog` and keeps
@@ -123,7 +128,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock()}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock()}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -203,6 +208,10 @@ func watchSettings(app core.App) {
 		if before.GetString("announcement") != after.GetString("announcement") || before.GetString("announcementLevel") != after.GetString("announcementLevel") {
 			tellEveryone(e.App, map[string]any{"announcement": announcement(settings{Announcement: after.GetString("announcement"), AnnouncementLevel: after.GetString("announcementLevel")})})
 		}
+		// Running apps learn a held-back version at once, so one running it moves off it.
+		if blocked := stringList(parseJSON(after.GetString("windowsBlocked"), "[]")); fmt.Sprint(stringList(parseJSON(before.GetString("windowsBlocked"), "[]"))) != fmt.Sprint(blocked) {
+			tellEveryone(e.App, map[string]any{"windowsBlocked": blocked})
+		}
 		return e.Next()
 	}
 	app.OnRecordAfterCreateSuccess("odyle_settings").BindFunc(announce)
@@ -238,7 +247,30 @@ func loadSettings(app core.App) settings {
 	}
 	lists, _ := parseJSON(s.GetString("adapters"), "{}").(map[string]any)
 	out.Adapters = adapterLists{Extra: stringList(lists["extra"]), Disabled: stringList(lists["disabled"])}
+	out.WindowsBlocked = stringList(parseJSON(s.GetString("windowsBlocked"), "[]"))
 	return out
+}
+
+// windowsVersions checks the held-back Windows versions: up to 20 versions like 0.18.0.
+var windowsVersion = regexp.MustCompile(`^\d{1,4}\.\d{1,4}\.\d{1,4}$`)
+
+func windowsVersions(value any) ([]string, error) {
+	raw, ok := value.([]any)
+	if !ok || len(raw) > 20 {
+		return nil, errors.New("Held-back Windows versions must be a list of up to 20 versions.")
+	}
+	out := []string{}
+	for _, item := range raw {
+		text, _ := item.(string)
+		text = strings.TrimPrefix(trim(text), "v")
+		if !windowsVersion.MatchString(text) {
+			return nil, errors.New("Hold back Windows versions like 0.18.0, one per line.")
+		}
+		if !contains(out, text) {
+			out = append(out, text)
+		}
+	}
+	return out, nil
 }
 
 // catalogEntry reads one dungeon of the catalog: a name alone, as the catalog was saved
@@ -506,6 +538,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("windowsBlocked") {
+		if next.WindowsBlocked, err = windowsVersions(b["windowsBlocked"]); err != nil {
+			return settings{}, err
+		}
+	}
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
@@ -521,6 +558,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("adapters", map[string]any{"extra": next.Adapters.Extra, "disabled": next.Adapters.Disabled})
 	record.Set("clock", next.Clock)
 	record.Set("taskTemplates", next.TaskTemplates)
+	record.Set("windowsBlocked", next.WindowsBlocked)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}

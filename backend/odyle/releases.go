@@ -330,5 +330,11 @@ func windowsRelease(e *core.RequestEvent) error {
 	if release := latestRelease(e.App); release != nil {
 		latest = release
 	}
-	return e.JSON(200, map[string]any{"repository": repository(), "releasesUrl": "https://github.com/" + repository() + "/releases/latest", "latest": latest})
+	// blocked: the versions the operator holds back (odyle-windows#19); apps never install one and
+	// move off one they run.
+	blocked := readSettings(e.App).WindowsBlocked
+	if blocked == nil {
+		blocked = []string{}
+	}
+	return e.JSON(200, map[string]any{"repository": repository(), "releasesUrl": "https://github.com/" + repository() + "/releases/latest", "latest": latest, "blocked": blocked})
 }
