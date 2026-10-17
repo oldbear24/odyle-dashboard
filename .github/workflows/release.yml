@@ -89,6 +89,13 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The image starts on a data volume the previous release made and answers its healthcheck
+      # (scripts/image-smoke.sh) before anything is pushed; "latest" is still the previous release here.
+      # Built with Docker's own builder, before Buildx is set up, so the image is there to run.
+      - name: Container image upgrade
+        run: |
+          docker build -t odyle-candidate --build-arg VERSION=${{ needs.build.outputs.version }} --build-arg COMMIT=${{ github.sha }} .
+          bash scripts/image-smoke.sh odyle-candidate "ghcr.io/${GITHUB_REPOSITORY,,}:latest"
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
