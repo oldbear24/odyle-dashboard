@@ -43,7 +43,7 @@ export function noticeHtml(markdown) {
 export function privacyPage(markdown) {
   const english = language() === 'cs' ? `<p class="privacy-language">${t('The notice is in English.')}</p>` : '';
   const link = (href, label) => `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
-  return `<main class="dashboard privacy-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOUR DATA')}</div><h1>${t('Privacy')}<span class="mint">.</span></h1><p>${t('What Odyle keeps, where it goes and how long it stays.')}</p></div></section>`
+  return `<main class="dashboard privacy-page"><section class="heading"><div><h1>${t('Privacy')}<span class="mint">.</span></h1><p>${t('What Odyle keeps, where it goes and how long it stays.')}</p></div></section>`
     + `<section class="setup-card privacy-help"><h2>${icon('info')} ${t('Questions or problems?')}</h2><p>${t('Odyle is open source. Report a problem or ask a question where everyone can see it, or read the code yourself:')}</p><p class="privacy-links">${link(projectLinks.issues, t('Report a problem or ask'))} · ${link(projectLinks.dashboard, t('Dashboard and server'))} · ${link(projectLinks.windows, t('Windows app'))}</p><p>${t('Account & data downloads everything stored for your account and deletes it.')}</p></section>`
     + `${english}<article class="privacy-text">${noticeHtml(markdown)}</article></main>`;
 }

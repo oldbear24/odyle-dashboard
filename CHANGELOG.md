@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.17.0 · 2026-10-17
+
+### New
+- **Room switch**: the sidebar (on phones the bar at the top) names the room you are in and opens any of your rooms in one click, or the way to create or join one.
+- **Account menu** behind your name: Account & data, pairing the Windows app, invitations, Reader & privacy, What's new and signing out, in a small menu instead of a dialog.
+
+### Changed
+- **A new room page**: the room's name is its heading, and one panel shows the party's cubes, who is ready, who is live and the lowest player, with who is not counted under it.
+- **Characters are rows**: name, class and level, status, Odyle with its natural and item parts, regeneration, cubes and actions on one line on wide screens, nothing cut off. Medium screens use two lines, phones a compact block.
+- Shorter navigation: Party, Rooms & characters, Tasks and Armory, each on one line; the reader's state sits at the bottom of the sidebar.
+- Less on every page: no small-caps lines over the headings and no panels repeating the help under the party; planned runs and the wishlist sit side by side on wide screens.
+- The account page puts its short cards in one column beside Notifications.
+
 ## 0.16.0 · 2026-10-17
 
 ### New

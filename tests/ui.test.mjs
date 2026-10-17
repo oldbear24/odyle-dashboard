@@ -68,17 +68,16 @@ async function open(auth, path = '#/', language = 'en') {
 }
 const shot = async (page, name) => { if (shots) await page.screenshot({ path: join(shots, name + '.png'), fullPage: true }); };
 const toast = page => page.locator('#toast.show');
-// The sidebar on wide screens, the account menu behind the avatar on phones.
+// A page in the sidebar (wide) or the bottom bar (phones); anything else is in the account menu.
 async function navigate(page, action) {
-  const item = page.locator(`.sidebar [data-action="${action}"]`);
-  if (await item.isVisible()) return item.click();
-  await page.locator('.avatar').click(); await page.locator(`#modal [data-action="${action}"]`).click();
+  for (const where of ['.sidebar nav', '.bottom-nav']) { const item = page.locator(`${where} [data-action="${action}"]`); if (await item.isVisible()) return item.click(); }
+  await page.locator('.account-menu:visible summary').click(); await page.locator(`.account-menu:visible [data-action="${action}"]`).click();
 }
 
 test('the demo workspace shows the party, wishlist, planned runs and a character history', async () => {
   const { page, errors, close } = await open(null, '#/demo');
   try {
-    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await page.locator('.room-page h1').waitFor();
     assert.equal(await page.locator('.runs .wish-row').count(), 1);
     assert.match(await page.locator('.runs .wish-row').innerText(), /Fire Temple/);
     assert.equal(await page.locator('.wishlist:not(.runs) .wish-row').count(), 3);
@@ -123,12 +122,12 @@ test('owners invite with a link, manage the room and close it only after confirm
       await shot(guest.page, 'invite-landing');
       await guest.page.evaluate(session => localStorage.setItem('odyle.account', session), JSON.stringify({ token: friend.token, record: friend.record }));
       await guest.page.reload();
-      await guest.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+      await guest.page.locator('.room-page h1').waitFor();
       await toast(guest.page).filter({ hasText: 'You joined UI room as a player.' }).waitFor();
       assert.match(guest.page.url(), /#\/room\/[a-z0-9]+$/);
       assert.equal(await guest.page.locator('[data-action="invite"].button').count(), 0);
       // Only the leader invites; the others are told whom to ask.
-      await guest.page.locator('.empty-card[data-action="invite"]').click();
+      await navigate(guest.page, 'invite');
       assert.match(await guest.page.locator('#modal').innerText(), /Only the leader of UI room, UI lead, can invite/);
       assert.deepEqual(guest.errors, []);
     } finally { await guest.close(); }
@@ -157,7 +156,7 @@ test('owners invite with a link, manage the room and close it only after confirm
     // Another browser lists the same links, but only the browser that made a link can copy it.
     const elsewhere = await open(lead, new URL(page.url()).hash);
     try {
-      await elsewhere.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+      await elsewhere.page.locator('.room-page h1').waitFor();
       await elsewhere.page.locator('[data-action="invite"]:visible').first().click();
       await elsewhere.page.locator('#modal .invite-row').nth(1).waitFor();
       assert.equal(await elsewhere.page.locator('#modal [data-copied]').count(), 0);
@@ -224,25 +223,24 @@ test('an invite link that no longer works says why, and Invitations finds the ro
     await page.locator('.invite-page-actions [data-action="library"]').click();
     await page.getByRole('heading', { name: 'Welcome, Link friend.' }).waitFor();
     // Invitations without a room you lead says what to do instead of a dead end.
-    if (await page.locator('.sidebar [data-action="invite"]').isVisible()) {
-      await page.locator('.sidebar [data-action="invite"]').click();
-      await page.locator('#modal').filter({ hasText: 'Create a room first' }).waitFor();
-    }
+    await navigate(page, 'invite');
+    await page.locator('#modal').filter({ hasText: 'Create a room first' }).waitFor();
     assert.deepEqual(errors, []);
   } finally { await close(); }
   // A leader of two rooms picks the room, which opens with its invite links.
   const leader = await open(lead, '#/');
   try {
     await leader.page.getByRole('heading', { name: 'Welcome, Link lead.' }).waitFor();
-    if (await leader.page.locator('.sidebar [data-action="invite"]').isVisible()) {
-      await leader.page.locator('.sidebar [data-action="invite"]').click();
-      await leader.page.locator('#modal [data-invite-room]').first().waitFor();
-      assert.match(await leader.page.locator('#modal').innerText(), /Invite to which room\?[\s\S]*First link room[\s\S]*Second link room|Invite to which room\?[\s\S]*Second link room[\s\S]*First link room/);
-      await leader.page.locator('#modal [data-invite-room]').filter({ hasText: 'First link room' }).click();
-      await leader.page.locator('#modal .invite-row').first().waitFor();
-      assert.match(await leader.page.locator('.topbar .breadcrumb').innerText(), /First link room/);
-      assert.match(leader.page.url(), new RegExp('#/room/' + first.room.id + '$'));
-    }
+    await navigate(leader.page, 'invite');
+    await leader.page.locator('#modal [data-invite-room]').first().waitFor();
+    assert.match(await leader.page.locator('#modal').innerText(), /Invite to which room\?[\s\S]*First link room[\s\S]*Second link room|Invite to which room\?[\s\S]*Second link room[\s\S]*First link room/);
+    await leader.page.locator('#modal [data-invite-room]').filter({ hasText: 'First link room' }).click();
+    await leader.page.locator('#modal .invite-row').first().waitFor();
+    assert.equal(await leader.page.locator('.room-page h1').innerText(), 'First link room');
+    // The room switch lists both rooms and names the open one.
+    assert.match(await leader.page.locator('.room-switch:visible summary').innerText(), /First link room/);
+    assert.deepEqual((await leader.page.locator('.room-switch:visible .room-option strong').allTextContents()).sort(), ['First link room', 'Second link room']);
+    assert.match(leader.page.url(), new RegExp('#/room/' + first.room.id + '$'));
     assert.deepEqual(leader.errors, []);
   } finally { await leader.close(); }
 });
@@ -264,7 +262,7 @@ test('rooms plan, change and export runs, and members see each character history
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
-    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await page.locator('.room-page h1').waitFor();
     // The card splits the value and says when the natural pool regenerates and is full.
     assert.equal(await page.locator('.member-card .energy-split').innerText(), 'natural 60 · items 30');
     assert.match(await page.locator('.member-card .energy-clock').innerText(), /^\+15 in (\d+h )?(\d+m|under a minute) · full ≈ /);
@@ -326,7 +324,7 @@ test('rooms plan, change and export runs, and members see each character history
   // Another member reads the history of a character shared in the room; an outsider is sent home.
   const other = await open(mate, '#/room/' + roomId);
   try {
-    await other.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await other.page.locator('.room-page h1').waitFor();
     await other.page.locator(`[data-history="${c.id}"]`).click();
     await other.page.locator('#modal .history-line').waitFor();
     assert.equal(await other.page.locator('#modal .history-table tbody tr').count(), 4);
@@ -346,7 +344,7 @@ test('members keep the wishlist together, share characters and viewers only watc
     await mates.page.getByRole('heading', { name: 'Welcome, Wish mate.' }).waitFor();
     await mates.page.locator('#join-form [name=code]').fill(created.invites[0].code.match(/.{4}/g).join(' '));
     await mates.page.locator('#join-form [type=submit]').click();
-    await mates.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await mates.page.locator('.room-page h1').waitFor();
     // Characters join the room from the bar above the party and leave it from their card.
     await mates.page.locator(`.add-chip[data-share="${mine.id}"]`).click();
     await mates.page.locator(`.member-card [data-share="${mine.id}"][data-enabled="false"]`).waitFor();
@@ -381,9 +379,9 @@ test('members keep the wishlist together, share characters and viewers only watc
   assert.equal((await request('/api/odyle/join', { code: created.invites[1].code }, watcher)).status, 200);
   const viewer = await open(watcher, '#/room/' + roomId);
   try {
-    await viewer.page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await viewer.page.locator('.room-page h1').waitFor();
     assert.equal(await viewer.page.locator('#wish-form, #run-form').count(), 0);
-    assert.match(await viewer.page.locator('.wishlist').first().innerText(), /Viewers can see the wishlist/);
+    assert.match(await viewer.page.locator('.wishlist:not(.runs)').innerText(), /Viewers can see the wishlist/);
     assert.match(await viewer.page.locator('.sharing-bar').innerText(), /Viewers cannot add characters/);
     assert.deepEqual(viewer.errors, []);
   } finally { await viewer.close(); }
@@ -400,7 +398,7 @@ test('with a dungeon catalog rooms pick dungeons from it and show what a cube co
   assert.equal((await request('/api/odyle/admin/settings', { dungeons: catalog }, operator)).status, 200);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
-    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await page.locator('.room-page h1').waitFor();
     // The wishlist picks from the catalog, each dungeon with what a cube of it costs.
     const wish = page.locator('#wish-form select[name=dungeon]');
     assert.deepEqual(await wish.locator('option').allInnerTexts(), ['Choose a dungeon you still need to run', 'Krao Cave · 20 Odyle', 'Fire Temple · 40 Odyle', 'Abyssal Forge: Ludra · 80 Odyle']);
@@ -453,7 +451,10 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
     // Nobody is live: the card says why, and the summary keeps the last known party apart.
     assert.match(await card.locator('.status-why').innerText(), /^The reader has not been heard from for \d+s$|^Last in game /);
     const summary = page.locator('.party-explain');
-    assert.match(await summary.innerText(), /0 of 2 players live · Not counted: Live reader \(last in game 1m ago\), Live lead \(no character shared\)/);
+    assert.equal(await summary.locator('.party-line.coverage').innerText(), 'Not counted: Live reader, Live lead (no character shared)');
+    assert.match(await summary.locator('.party-line.coverage').getAttribute('title'), /^Live reader: last in game \d+[sm] ago\nLive lead: no character shared$/);
+    const liveMetric = summary.locator('.metric').filter({ has: page.locator('.metric-label', { hasText: /^Live$/ }) });
+    assert.match(await liveMetric.innerText(), /^Live\n0\s*\/ 2\nplayers in game$/i);
     assert.match(await summary.innerText(), /Last known: 3 cubes · lowest Live reader · Pulse 120 · values from \d+s ago · 1 of 2 players have a saved value\n?Not live: it does not count toward the party cubes\./);
     assert.equal(await page.locator('.member-card').count(), 1, 'a member without a shared character has no card');
     const fetched = []; page.on('request', r => { if (r.url().includes('/api/odyle/snapshot/')) fetched.push(r.url()); });
@@ -461,8 +462,9 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
     assert.equal((await request('/api/odyle/heartbeat', { sessionId: session.sessionId, characterId: c.id }, reader)).status, 200);
     await card.locator('.status.live').waitFor({ timeout: 8000 });
     // Live: it counts for its player, and the summary says who is still missing.
-    assert.equal(await card.locator('.counts-for').innerText(), 'Counts for Live reader');
-    assert.match(await page.locator('.party-explain').innerText(), /^1 of 2 players live · Not counted: Live lead \(no character shared\)/);
+    assert.equal(await card.locator('.counts-for').getAttribute('title'), 'Counts for Live reader');
+    assert.equal(await page.locator('.party-explain .party-line.coverage').innerText(), 'Not counted: Live lead (no character shared)');
+    assert.match(await liveMetric.innerText(), /^Live\n1\s*\/ 2\n/i);
     await page.locator('[data-action="live-only"][aria-pressed="false"]').click();
     await page.locator('[data-action="live-only"][aria-pressed="true"]').waitFor();
     assert.equal(await page.locator('.member-card').count(), 1);
@@ -555,7 +557,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
   assert.equal((await request('/api/odyle/sharing', { roomId: created.room.id, characterId: c.id, enabled: true }, player)).status, 200);
   const room = await open(player, '#/room/' + created.room.id);
   try {
-    await room.page.locator('.member-card', { hasText: 'Armorer' }).locator('.member-class', { hasText: 'Chanter · Lv 45' }).waitFor({ timeout: 15000 });
+    await room.page.locator('.member-card', { hasText: 'Armorer' }).locator('.member-meta', { hasText: 'Chanter · Lv 45' }).waitFor({ timeout: 15000 });
     await shot(room.page, 'armory-card');
     const link = room.page.locator('.member-card', { hasText: 'Armorer' }).locator('a.card-link', { hasText: 'Armory' });
     assert.equal(await link.getAttribute('href'), '#/armory/eu/2304/' + armorer[0]);
@@ -662,23 +664,24 @@ test('after an update the dashboard says so once, and What\'s new lists the chan
 test('phones get around with the bar at the bottom, and the pages are links, labelled and readable', async () => {
   // Signed out, a public answer shows the server is reachable.
   const visitor = await open(null, '#/');
-  try { await visitor.page.locator('.topbar .connection.connected', { hasText: 'Connected' }).waitFor(); } finally { await visitor.close(); }
+  try { await visitor.page.locator('.connection.connected:visible', { hasText: 'Connected' }).waitFor(); } finally { await visitor.close(); }
   const lead = await account('Phone lead');
   const created = (await request('/api/odyle/create', { name: 'Phone room' }, lead)).data, roomId = created.room.id;
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
-    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await page.locator('.room-page h1').waitFor();
     // The skip link comes first and moves the focus to the page.
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement.className), 'skip-link');
     await page.keyboard.press('Enter');
     assert.equal(await page.evaluate(() => document.activeElement.tagName), 'MAIN');
-    // Wide: the sidebar's pages are links (they open in a new tab too), the breadcrumb leads home, a dialog is named by its heading.
+    // Wide: the sidebar's pages are links (they open in a new tab too), the brand leads home, a dialog is named by its heading.
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.equal(await page.locator('.sidebar a.nav-item[data-action="tasks"]').getAttribute('href'), '#/tasks');
     assert.equal(await page.locator('.sidebar a.nav-item[data-action="overview"]').getAttribute('href'), '#/room/' + roomId);
-    assert.equal(await page.locator('.breadcrumb a').first().getAttribute('href'), '#/');
-    await page.locator('.sidebar [data-action="help"]').click();
+    assert.deepEqual(await page.locator('.sidebar nav a').allInnerTexts(), ['Party', 'Rooms & characters', 'Tasks', 'Armory']);
+    assert.equal(await page.locator('.sidebar .brand').getAttribute('href'), '#/');
+    await navigate(page, 'help');
     assert.equal(await page.locator('#modal').getAttribute('aria-labelledby'), 'modal-title');
     assert.equal(await page.locator('#modal-title').innerText(), 'Saved characters, fresh readings');
     await page.keyboard.press('Escape');
@@ -686,19 +689,20 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
     await page.setViewportSize({ width: 390, height: 800 });
     assert.equal(await page.locator('.sidebar').isVisible(), false);
     const bar = page.locator('.bottom-nav');
-    assert.deepEqual(await bar.locator('a').allInnerTexts(), ['Overview', 'Rooms', 'Daily', 'Armory', 'Account']);
-    const smallest = await page.evaluate(() => Math.min(...[...document.querySelectorAll('.stat-caption, .stat-detail, .refresh-label, .connection, .breadcrumb, footer, .card-footer, .bottom-nav a')].map(e => parseFloat(getComputedStyle(e).fontSize))));
+    assert.deepEqual(await bar.locator('a').allInnerTexts(), ['Party', 'Rooms', 'Tasks', 'Armory', 'Account']);
+    const smallest = await page.evaluate(() => Math.min(...[...document.querySelectorAll('.metric-label, .metric small, .party-line, .refresh-label, .room-switch-text small, footer, .member-meta, .status-why, .row-changed, .card-actions button, .bottom-nav a')].map(e => parseFloat(getComputedStyle(e).fontSize))));
     assert.ok(smallest >= 11, `smallest text ${smallest}px`);
     await shot(page, 'phone-room');
-    for (const [label, hash, ready] of [['Rooms', '#/', '.personal-characters'], ['Overview', '#/room/' + roomId, '.member-grid'], ['Daily', '#/tasks', '.tasks-page'], ['Armory', '#/armory', '#armory-form'], ['Account', '#/account', '.account-page']]) {
+    for (const [label, hash, ready] of [['Rooms', '#/', '.personal-characters'], ['Party', '#/room/' + roomId, '.member-grid'], ['Tasks', '#/tasks', '.tasks-page'], ['Armory', '#/armory', '#armory-form'], ['Account', '#/account', '.account-page']]) {
       await bar.locator('a', { hasText: label }).click();
       await page.waitForURL(url + '/' + hash); await page.locator(ready).waitFor();
       assert.equal(await bar.locator('a.active').count() <= 1, true);
     }
-    // Invitations and Reader & privacy are in the avatar menu.
-    await page.locator('.avatar').click();
-    assert.ok(await page.locator('#modal [data-action="invite"]').isVisible() && await page.locator('#modal [data-action="help"]').isVisible());
+    // Invitations and Reader & privacy are in the account menu at the top; it closes on Escape.
+    await page.locator('.topbar .account-menu summary').click();
+    assert.ok(await page.locator('.topbar .account-menu [data-action="invite"]').isVisible() && await page.locator('.topbar .account-menu [data-action="help"]').isVisible());
     await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.topbar .account-menu[open]').count(), 0);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -742,7 +746,7 @@ test('an open room checks no health while live, waits while hidden and draws its
   await delay(1000);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
-    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
+    await page.locator('.room-page h1').waitFor();
     // The realtime stream reconnecting is noted too: the page then fetches the room once to catch up.
     const asked = []; page.on('request', r => { const path = new URL(r.url()).pathname; if (/^\/api\/(health|odyle\/(snapshot|announcement))/.test(path)) asked.push(path.split('/').slice(0, 4).join('/')); else if (path === '/api/realtime' && r.resourceType() === 'eventsource') asked.push('reconnect'); });
     // Realtime is connected, so no health checks; the snapshot already brought the announcement, and
@@ -777,7 +781,7 @@ test('an open room checks no health while live, waits while hidden and draws its
     await navigate(page, 'library');
     await page.locator('.heading-actions [data-action="desktop"]').waitFor();
     await answer; await delay(300);
-    assert.equal(new URL(page.url()).hash, '#/'); assert.equal(await page.getByRole('heading', { name: 'Party overview.' }).count(), 0);
+    assert.equal(new URL(page.url()).hash, '#/'); assert.equal(await page.locator('.room-page h1').count(), 0);
     assert.equal(await page.locator('#modal[open] #rename-form').count(), 0);
     await page.locator('.heading-actions [data-action="desktop"]').waitFor();
     await page.unroute('**/api/odyle/rename');
@@ -1045,7 +1049,9 @@ test('pairing shows one link with a countdown, confirms the PC it paired and nam
     const created = (await request('/api/odyle/create', { name: 'Reading room' }, user)).data;
     await request('/api/odyle/heartbeat', { sessionId: session.sessionId }, app);
     await page.goto(url + '/#/room/' + created.room.id);
-    await page.locator('.next-panel .reader-online', { hasText: 'Reader online on UI-DESK' }).waitFor();
+    // The sidebar says which PC reads; on phones the account menu does.
+    if (!await page.locator('.sidebar').isVisible()) await page.locator('.account-menu:visible summary').click();
+    await page.locator('.reader-online:visible', { hasText: 'Reader online on UI-DESK' }).first().waitFor();
     await shot(page, 'room-reader-online');
     // Paused pairing still opens the dialog: it says why and keeps the downloads.
     const operator = (await request('/__test__/superuser', {})).data;
@@ -1076,14 +1082,14 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     assert.ok(await page.evaluate(() => localStorage.getItem('odyle.account')));
     await page.unroute('**/api/**');
     await page.getByRole('heading', { name: 'Welcome, Outage.' }).waitFor({ timeout: 15000 });
-    await page.locator('.topbar .connection.connected').waitFor();
+    await page.locator('.connection.connected:visible').waitFor();
     // Losing the server later flips the indicator without a reload. A server going away
     // ends the realtime stream too, which otherwise stands in for the health check.
     await page.route('**/api/**', route => route.abort());
     assert.equal((await request('/__test__/drop-realtime', {})).status, 200);
-    await page.locator('.topbar .connection:not(.connected)').waitFor({ timeout: 30000 });
+    await page.locator('.connection:not(.connected):visible').waitFor({ timeout: 30000 });
     await page.unroute('**/api/**');
-    await page.locator('.topbar .connection.connected').waitFor({ timeout: 30000 });
+    await page.locator('.connection.connected:visible').waitFor({ timeout: 30000 });
   } finally { await context.close(); }
 });
 test('the privacy notice is a page of the dashboard, and no page loads anything from another site (#39)', async () => {
@@ -1159,8 +1165,8 @@ test('Discord sign-in opens its window, signs in and joins the room of an invite
     await page.locator('[data-action="discord"]').click();
     await opened;
     // Signed in with the Discord name, the invite joins at once.
-    await page.getByRole('heading', { name: 'Party overview.' }).waitFor();
-    assert.match(page.url(), /#\/room\/[a-z0-9]+$/); assert.match(await page.locator('.topbar .breadcrumb').innerText(), /Window room/);
+    await page.locator('.room-page h1').waitFor();
+    assert.match(page.url(), /#\/room\/[a-z0-9]+$/); assert.equal(await page.locator('.room-page h1').innerText(), 'Window room');
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('odyle.account')).record.displayName), 'Window Tester');
     assert.deepEqual(errors, []);
   } finally { await close(); oauth.close(); }
