@@ -41,6 +41,16 @@ Prefer rolling forward: a fixed version is usually a push away. When the running
    Then set the previous tag in `compose.yaml` and `docker compose up -d`. A migration's down step drops what it added: the fields and collections of that version and their data.
 3. **When the data is damaged**, restore the backup made before the upgrade instead ([Restore](deployment.md#restore-in-the-superuser-dashboard)); changes made since are lost.
 
+## Hold back or roll back a Windows release
+
+Every push to main of odyle-windows publishes a release that installed apps update to within a day (at their next start, or at once when the backend hears of it).
+
+1. **Hold a bad release back**: **Server controls → Windows app updates → Hold back versions**, add its version (for example `0.18.0`) and save. Apps from 0.18.0 that have not installed it yet never will, and drop a copy they downloaded already.
+2. **Roll back** the apps that installed it: also mark its GitHub release as a **pre-release** (Releases → the version → Edit → *Set as a pre-release*), so the previous release is `latest` again. Apps running the held-back version then install the latest one within a minute, although it is older; the dashboard's download card offers it too.
+3. Fix forward with a new version; once it is out, the held-back version can stay on the list (it never comes back) or be removed.
+
+Apps from before 0.18.0, and apps that are not paired, only follow GitHub: marking the release a pre-release stops new installs of it there, but cannot move such apps back.
+
 ## A game patch broke reading
 
 After the game's Wednesday maintenance the decoder may stop matching the game's packets.

@@ -711,8 +711,8 @@ export function settingsPage() {
 export function controlsPage() {
   app.store.title = 'Server controls';
   // extra is the extra adapter list as typed; form.adapters.extra is the list it saves.
-  const text = store({ extra: '' });
-  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'adapters'], form => text.extra = form.adapters.extra.join('\n'));
+  const text = store({ extra: '', blocked: '' });
+  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'adapters', 'windowsBlocked'], form => { text.extra = form.adapters.extra.join('\n'); text.blocked = (form.windowsBlocked || []).join('\n'); });
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const builtIn = () => state.data?.builtInAdapters || [];
   const adapters = next => state.form.adapters = { ...state.form.adapters, ...next };
@@ -752,6 +752,9 @@ export function controlsPage() {
           t.thead(null, t.tr(null, t.th(null, 'Adapter'), t.th({ className: 'txt-right' }, 'Saved'), t.th({ className: 'txt-right' }, 'Rejected'), t.th(null, 'Last'), t.th({ className: 'txt-right' }, ''))),
           t.tbody(null, () => state.data.seenAdapters.map(seenRow)))) : t.div({ className: 'txt-hint txt-sm' }, 'No readings among the latest 200 packets.'),
         t.div({ className: 'field-help' }, 'Rejected counts readings refused for any reason, an outdated sequence included.')),
+      section('Windows app updates', 'Hold back a Windows release that misbehaves. Apps from 0.18.0 never install a held-back version, and an app running one installs the latest release instead, older or not, within a minute. To roll back, hold the bad version here and mark its GitHub release as a pre-release, so the previous one is the latest again (docs/runbook.md).'),
+      field('odyle-windows-blocked', 'Hold back versions', t.textarea({ id: 'odyle-windows-blocked', rows: 2, placeholder: 'One version per line, for example 0.18.0', value: () => text.blocked, oninput: e => { text.blocked = e.target.value; state.form.windowsBlocked = lines(e.target.value); } }),
+        'Versions like 0.18.0, up to 20. Unpaired apps and apps from before 0.18.0 do not know this list.', 8),
       t.div({ className: 'col-lg-12' }, t.hr()),
       buttons()));
 }

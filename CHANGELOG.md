@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.26.0 · 2026-10-17
+
+### New
+- The server's operators can **hold back a Windows app version** that misbehaves: Odyle for Windows 0.18.0 and later never installs it, and moves back to the latest good release if it already runs it.
+
 ## 0.25.0 · 2026-10-17
 
 ### New

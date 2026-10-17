@@ -888,6 +888,8 @@ export default {
   'Daily and weekly tasks': 'Denní a týdenní úkoly',
   'Two hours before a reset, list the tasks still open': 'Dvě hodiny před resetem vypsat úkoly, které ještě nejsou hotové',
   'In the Windows app\'s tray, once per reset, and never when everything is done.': 'V trayi Windows aplikace, jednou za reset, a nikdy, když je všechno hotové.',
+  'Held-back Windows versions must be a list of up to 20 versions.': 'Pozdržené verze pro Windows musí být seznam nejvýš 20 verzí.',
+  'Hold back Windows versions like 0.18.0, one per line.': 'Pozdržené verze pro Windows piš jako 0.18.0, jednu na řádek.',
   'Party': 'Parta',
   'Rooms & characters': 'Místnosti a postavy',
   'Tasks': 'Úkoly',
