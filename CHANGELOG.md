@@ -2,6 +2,15 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.18.1 · 2026-10-17
+
+### Changed
+- **Rooms & characters** is the heading of its page, like the item that opens it.
+- Once you have a room, creating or joining another sits folded under your rooms; **Create or join a room** in the room menu opens it.
+
+### Fixed
+- Short pages such as Daily & weekly and the armory start at the top instead of halfway down.
+
 ## 0.18.0 · 2026-10-17
 
 ### New
