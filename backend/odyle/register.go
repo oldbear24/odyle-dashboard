@@ -29,6 +29,7 @@ var accountActions = []action{
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle},
+	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its

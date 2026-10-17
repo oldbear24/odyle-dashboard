@@ -12,6 +12,7 @@ import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
 import { historyChart, historyList, bindHistoryChart, weeklyLedger, ledgerTable } from './history.js';
 import { setupTracker } from './setup.js';
+import { slotsView, lookName, frameClass } from './slots.js';
 import { runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
@@ -77,7 +78,7 @@ const colors = ['jade', 'amber', 'blue', 'pink', 'violet'];
 function portrait(c, index, size = '') {
   const name = c.characterName || c.displayName, url = !demo && c.portrait ? pb.files.getURL(c, c.portrait) : '';
   const photo = url ? `<span class="portrait-photo"><img src="${esc(url)}" alt="" loading="lazy"></span>` : '';
-  return `<span class="portrait ${colors[index % colors.length]} ${size}">${esc(name.slice(0, 2).toUpperCase())}${photo}<span class="portrait-rune">${icon('diamond')}</span></span>`;
+  return `<span class="portrait ${colors[index % colors.length]} ${size}${frameClass(c.look)}">${esc(name.slice(0, 2).toUpperCase())}${photo}<span class="portrait-rune">${icon('diamond')}</span></span>`;
 }
 const ownCards = () => characters.map((c, i) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
 // The pages, as links (they open in a new tab too): in the sidebar on wide screens, in the bar
@@ -248,7 +249,7 @@ async function newCharacterPrompt(c) {
 }
 // The party shows only characters added (shared) to this room, the member's own
 // included; their other characters wait in the add bar above the party.
-function flattened() { return members.flatMap(m => { const added = (m.characters || []).filter(c => c.shared ?? m.sharing); return added.length ? added.map(c => ({ ...c, sharing: true, user: m.user, membershipId: m.id, role: m.role, displayName: m.displayName })) : [{ ...m, id: '', characterName: '', confirmed: false, lastReadingAt: '', source: 'packet' }]; }); }
+function flattened() { return members.flatMap(m => { const added = (m.characters || []).filter(c => c.shared ?? m.sharing); return added.length ? added.map(c => ({ ...c, sharing: true, user: m.user, membershipId: m.id, role: m.role, displayName: m.displayName, look: m.look })) : [{ ...m, id: '', characterName: '', confirmed: false, lastReadingAt: '', source: 'packet' }]; }); }
 function addBar() {
   if (me()?.role === 'viewer') return `<div class="sharing-bar"><span>${t('Viewers cannot add characters to this room.')}</span></div>`;
   const missing = mine().filter(c => !c.shared);
@@ -461,6 +462,29 @@ async function changelogPage(ticket) {
   await loadWindowsRelease();
   if (ticket === navigation) changelogRender();
 }
+// The slot machine (#107, slots.js): the logo clicked seven times within three seconds opens it.
+let slotState = null, slotSpinning = false, slotLast = null, logoClicks = [];
+const slotsRender = () => shell(slotsView({ state: slotState, spinning: slotSpinning, last: slotLast, name: pb.authStore.record?.displayName || '' }), 'slots');
+async function slotsPage(ticket) {
+  slotLast = null; slotsRender();
+  const state = await send('slots');
+  if (ticket !== navigation) return;
+  slotState = state; slotsRender();
+}
+async function spinSlot() {
+  if (slotSpinning || !slotState || slotState.spins < 1) return;
+  slotSpinning = true; slotLast = null; slotsRender();
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  try {
+    const [result] = await Promise.all([send('slot-spin'), new Promise(done => setTimeout(done, still ? 0 : 1400))]);
+    slotState = result; slotLast = { won: result.won, duplicate: result.duplicate };
+  } finally { slotSpinning = false; if (shown === '/slots') slotsRender(); }
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest?.('a.brand') || !pb.authStore.isValid || demo) return;
+  const now = Date.now(); logoClicks = [...logoClicks.filter(at => now - at < 3000), now];
+  if (logoClicks.length >= 7) { logoClicks = []; e.preventDefault(); go('/slots'); }
+});
 async function tasksPage(ticket) {
   await leaveRoomTopic(); clearRoom(); editingTask = '';
   await refreshTasks(); if (ticket !== navigation) return; tasksView();
@@ -515,7 +539,8 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
   // A packet reading needs no label; samples, old manual values and characters waiting for the game say so.
   const source = demo ? t('Sample') : c.source === 'packet' ? '' : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
   const player = room && c.displayName && c.displayName !== c.characterName ? c.displayName : '', where = [c.server, regionLabel(c.region)].filter(Boolean).join(' ');
-  const meta = [player, classOf(c), where].filter(Boolean).map(esc).join(' · '), clock = known && clockOf(c, now, clockRules);
+  // The player's slot-machine look (#107): name colour and badge next to their name.
+  const meta = [player ? lookName(player, c.look) : '', ...[classOf(c), where].filter(Boolean).map(esc)].filter(Boolean).join(' · '), clock = known && clockOf(c, now, clockRules);
   const leader = c.role === 'owner' && room ? `<span class="leader-label" title="${esc(t('Room leader'))}">${icon('crown')}<span class="sr-only">${t('leader')}</span></span>` : '';
   const counts = counted?.has(c.id) ? `<span class="counts-for" title="${esc(t('Counts for {name}', { name: c.displayName }))}">${icon('diamond')}${t('counts')}</span>` : '';
   const changed = `${source ? `${source} · ` : ''}${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}`;
@@ -856,6 +881,7 @@ function rerender() {
   if (demo) return demoSession();
   if (shown?.startsWith('/armory')) return armoryRender();
   if (shown === '/changelog') return changelogRender();
+  if (shown === '/slots' && pb.authStore.isValid) return slotsRender();
   if (shown === '/privacy') return privacyRender();
   if (room) return dashboard();
   if (shown === '/tasks') return tasksView();
@@ -882,6 +908,7 @@ async function show(force = false) {
   if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
   if (path === '/changelog') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return changelogPage(ticket); }
   if (path === '/privacy') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return privacyRender(); }
+  if (path === '/slots' && pb.authStore.isValid) { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return slotsPage(ticket); }
   clearTimeout(armoryTimer);
   const code = joinCode(path);
   if (!pb.authStore.isValid) { await leaveRoomTopic(); clearRoom(); return welcome(code); }
@@ -1139,6 +1166,7 @@ app.addEventListener('click', async e => {
       const id = room.id; let result; el.disabled = true; try { result = await send('wishlist', { roomId: id, dungeon: el.dataset.wish, wanted: el.dataset.wanted === 'true' }); } finally { el.disabled = false; }
       return changedRoom(id, () => { wishlist = result.wishlist; });
     }
+    if (el.dataset.slotEquip !== undefined && el.dataset.kind) { slotState = await send('slot-equip', { kind: el.dataset.kind, id: el.dataset.slotEquip }); return slotsRender(); }
     if (el.dataset.planWish) {
       const form = document.querySelector('#run-form'); if (!form) return;
       form.elements.dungeon.value = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
@@ -1218,6 +1246,7 @@ app.addEventListener('click', async e => {
       case 'push-test': { const result = await send('push-test', {}); account.push = result.push; toast(tn(result.sent, 'Sent a test to {n} device.', 'Sent a test to {n} devices.')); break; }
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
+      case 'slot-spin': await spinSlot(); break;
       case 'calendar-all': download(calendarOfRuns(nextRunsList, Date.now() + serverOffset), 'odyle-runs.ics', 'text/calendar'); break;
       case 'new-room': { await go('/'); const setup = document.querySelector('.room-setup'); if (setup) { setup.open = true; setup.querySelector('input')?.focus(); } break; }
       case 'tasks': await go('/tasks'); break;

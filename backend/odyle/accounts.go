@@ -559,6 +559,11 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		// Equipped slot-machine items (#107), shown next to each member's name.
+		looks, err := looksOf(e.App, userIds)
+		if err != nil {
+			return err
+		}
 		owned := map[string][]*Character{}
 		if len(userIds) > 0 {
 			found, err := e.App.FindAllRecords("characters", dbx.In("user", anys(userIds)...))
@@ -585,6 +590,9 @@ func snapshot(e *core.RequestEvent) error {
 			}
 			j := m.PublicExport()
 			j["sharing"], j["displayName"], j["characters"] = len(m.Shared()) > 0, names[m.User()], visible
+			if look := looks[m.User()]; look != nil {
+				j["look"] = look
+			}
 			out[i] = j
 		}
 		wishes, err := wishlistOf(e.App, id, members)
@@ -1152,6 +1160,10 @@ func report(e *core.RequestEvent) error {
 		session.Set("sequence", data.sequence)
 		session.Extend()
 		if err := app.Save(session); err != nil {
+			return nil, err
+		}
+		// The slot machine (#107): the first accepted reading of the day earns its account a spin.
+		if err := grantDailySpin(app, character, time.Now()); err != nil {
 			return nil, err
 		}
 		// Rooms and the owner hear of the character from its record hooks (realtime.go).
@@ -2599,6 +2611,7 @@ func exportData(e *core.RequestEvent) error {
 			"membership":        user.GetString("membership"),
 			"pushSubscriptions": pushExport(e.App, user.Id),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
+			"slotMachine":       map[string]any{"spins": user.GetInt("spins"), "collection": wardrobeOf(user.Record)},
 			"characters":        exportedCharacters,
 			"rooms":             joined,
 			"tasks":             checklist,
