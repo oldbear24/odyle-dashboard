@@ -65,7 +65,7 @@ export function ledgerTable(rows, { hourlyBefore = null } = {}) {
   const number = v => v.toLocaleString(locale()), label = row => row.current ? t('This week') : t('Week from {date}', { date: new Date(row.start).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) });
   const body = rows.map(row => `<tr><td>${esc(label(row))}</td><td>${row.spent ? esc(t('{odyle} · ≈{cubes}', { odyle: number(row.spent), cubes: tn(row.cubes, '{n} cube', '{n} cubes') })) : '–'}</td><td>${row.regen ? '+' + number(row.regen) : '–'}</td><td>${row.items || row.other ? '+' + number(row.items + row.other) : '–'}</td></tr>`).join('');
   const note = t('From the changes the reader saw: a spend on a PC without the reader shows as a drop at the next reading.') + (hourlyBefore ? ' ' + t('Before {date} only the last change of each hour is kept, so those weeks are incomplete.', { date: new Date(timestamp(hourlyBefore)).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) }) : '');
-  return `<h3 class="modal-sub">${t('By week')}</h3><table class="history-table ledger"><thead><tr><th>${t('Week')}</th><th>${t('Spent')}</th><th>${t('Regeneration')}</th><th>${t('Items and other')}</th></tr></thead><tbody>${body}</tbody></table><small class="account-note">${esc(note)}</small>`;
+  return `<h3 class="modal-sub">${t('By week')}</h3><table class="history-ledger"><thead><tr><th>${t('Week')}</th><th>${t('Spent')}</th><th>${t('Regeneration')}</th><th>${t('Items and other')}</th></tr></thead><tbody>${body}</tbody></table><small class="account-note">${esc(note)}</small>`;
 }
 // Crosshair and tooltip: the pointer picks the nearest change on the time axis.
 export function bindHistoryChart(figure) {
