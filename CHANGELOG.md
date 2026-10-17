@@ -2,6 +2,16 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.20.0 · 2026-10-17
+
+### Changed
+- A character no Windows reader has read or seen for 12 months is deleted with its history by a nightly job. Playing it again with the reader saves it anew.
+- **Privacy** names who runs Odyle and how to reach them, and says what your e-mail is used for: only the alert when your account signs in from a new device.
+- The armory calls item level **GP**, as players do.
+
+### Fixed
+- The armory's combat power and GP panel is laid out again (it lost its layout in 0.17.0).
+
 ## 0.19.0 · 2026-10-17
 
 ### New

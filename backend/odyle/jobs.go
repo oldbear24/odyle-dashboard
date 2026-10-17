@@ -51,19 +51,20 @@ type job struct {
 	work     func(core.App) (result, error)
 }
 
-var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-stats", "odyle-health", "odyle-release", "odyle-cap-alerts", "odyle-push", "odyle-armory"}
+var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-old-characters", "odyle-stats", "odyle-health", "odyle-release", "odyle-cap-alerts", "odyle-push", "odyle-armory"}
 
 var jobs = map[string]job{
-	"odyle-expiry":     {schedule: "*/5 * * * *", manual: true, work: cleanup},
-	"odyle-portraits":  {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.PortraitsPaused }, work: refreshPortraits},
-	"odyle-reminders":  {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.RemindersPaused }, work: remindRuns},
-	"odyle-retention":  {schedule: "17 3 * * *", manual: false, work: retention},
-	"odyle-stats":      {schedule: "55 23 * * *", manual: true, work: recordStats},
-	"odyle-health":     {schedule: "*/5 * * * *", manual: true, work: checkHealth},
-	"odyle-release":    {schedule: "*/2 * * * *", manual: true, work: checkRelease},
-	"odyle-cap-alerts": {schedule: "5 * * * *", manual: true, work: capAlerts},
-	"odyle-push":       {schedule: "* * * * *", manual: true, work: pushReminders},
-	"odyle-armory":     {schedule: "41 4 * * *", manual: true, work: cleanArmory},
+	"odyle-expiry":         {schedule: "*/5 * * * *", manual: true, work: cleanup},
+	"odyle-portraits":      {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.PortraitsPaused }, work: refreshPortraits},
+	"odyle-reminders":      {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.RemindersPaused }, work: remindRuns},
+	"odyle-retention":      {schedule: "17 3 * * *", manual: false, work: retention},
+	"odyle-old-characters": {schedule: "29 3 * * *", manual: true, work: oldCharacters},
+	"odyle-stats":          {schedule: "55 23 * * *", manual: true, work: recordStats},
+	"odyle-health":         {schedule: "*/5 * * * *", manual: true, work: checkHealth},
+	"odyle-release":        {schedule: "*/2 * * * *", manual: true, work: checkRelease},
+	"odyle-cap-alerts":     {schedule: "5 * * * *", manual: true, work: capAlerts},
+	"odyle-push":           {schedule: "* * * * *", manual: true, work: pushReminders},
+	"odyle-armory":         {schedule: "41 4 * * *", manual: true, work: cleanArmory},
 }
 
 // nextDaily is when a daily schedule ("minute hour * * *", UTC like every job) runs next,
