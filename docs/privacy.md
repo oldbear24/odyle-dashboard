@@ -1,6 +1,8 @@
 # Privacy and persistence
 
-Discord authenticates the application account. PocketBase stores the provider identity mapping and account email/display name needed for sign-in, plus memberships and each character's region/server, name, Odyle total and observation timestamps. The room API exposes display names and opted-in character data, not account emails, authentication secrets or Discord tokens.
+Odyle is an unofficial fan project run by **oldbear24**. Questions or requests about your data: open an issue at [github.com/oldbear24/odyle-dashboard/issues](https://github.com/oldbear24/odyle-dashboard/issues). For anything you would rather not post in public, a security problem included, report it privately on GitHub under the repository's **Security** tab (**Report a vulnerability**).
+
+Discord authenticates the application account. PocketBase stores the provider identity mapping and account email/display name needed for sign-in, plus memberships and each character's region/server, name, Odyle total and observation timestamps. The room API exposes display names and opted-in character data, not account emails, authentication secrets or Discord tokens. The email is used for one thing only: telling you when your account signs in from a new device. Nobody else sees it.
 
 The membership answer (whether your game account has the membership: yes, no or not sure) is kept with the account until you change it or delete the account, and is in the export. Rooms never see the answer; they see the natural pool's cap it gives the characters you share with them (840 or 560), which the Odyle clock uses. It changes no value read from the game.
 
@@ -33,3 +35,5 @@ Operators: the PocketBase dashboard's Odyle page shows superusers which accounts
 Request/IP logs and analytics are disabled by default. The dashboard loads nothing from other sites: its fonts and icons come with it, and its content security policy lets the browser reach only the Odyle server, so no font service or tracker sees your address.
 
 Backups: the server backs up its whole database every night (accounts with their Discord sign-in identity and email, characters and their history, rooms, wishlists, runs, tasks, paired PCs, settings and portraits) and keeps the newest seven, on the server's own disk or, when the operator sets it up, in private S3-compatible storage. Deleting a character or an account removes it from the live database at once, but it stays in the backups made before, so for up to seven days by default; restoring a backup brings back the data as it was then. Only the operators can open the backups. Provider client secrets stay on the backend; never include them in browser environment variables or source control.
+
+Characters nobody plays: a character that no Windows reader has read or seen for 12 months is deleted with its Odyle history by a nightly job, and its rooms stop showing it. Playing it again with the reader saves it anew; the game names it as before.

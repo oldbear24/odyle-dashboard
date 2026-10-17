@@ -2645,6 +2645,45 @@ func retention(app core.App) (result, error) {
 	return out, nil
 }
 
+// Characters nobody has read for a year are deleted with their history (#39): no verified reading,
+// no heartbeat and not saved within 365 days. Up to 500 a night, longest unread first; playing the
+// character again with the reader saves it anew.
+const (
+	characterRetention = 365 * 24 * time.Hour
+	oldCharacterBatch  = 500
+)
+
+// unreadBefore matches characters with no reading, heartbeat or creation since the cutoff (stored
+// form); a field never set is empty and so before any cutoff.
+func unreadBefore(cutoff string) dbx.Expression {
+	return dbx.NewExp("lastSeenAt < {:cutoff} AND lastReadingAt < {:cutoff} AND created < {:cutoff}", dbx.Params{"cutoff": cutoff})
+}
+
+// oldCharacters is the nightly job that deletes characters unread for a year.
+func oldCharacters(app core.App) (result, error) {
+	out, characters := result{}, []*core.Record{}
+	if err := app.RecordQuery("characters").AndWhere(unreadBefore(ago(characterRetention))).OrderBy("created ASC", "id ASC").Limit(oldCharacterBatch).All(&characters); err != nil {
+		return result{}, err
+	}
+	for _, c := range characters {
+		roomIds, err := roomsFor(app, c.GetString("user"))
+		if err == nil {
+			err = app.Delete(c)
+		}
+		if err != nil {
+			out.fail("Character " + c.Id + ": " + message(err))
+			warn(app, "Odyle could not delete a character unread for a year", "character", c.Id, "error", message(err))
+			continue
+		}
+		notify(app, roomIds)
+		out.Done++
+	}
+	if out.Done > 0 {
+		info(app, "Odyle deleted characters unread for a year", "count", out.Done)
+	}
+	return out, nil
+}
+
 // retentionPreview is what the clean-up would do on its next run with the given period,
 // if no account comes back before then: how many accounts are unused that long, and how
 // many of them that run deletes (the rest follow on the next nights).
