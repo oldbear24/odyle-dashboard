@@ -62,3 +62,12 @@ footer{display:flex;justify-content:space-between;align-items:center;gap:6px 16p
 .room-columns{display:grid;gap:0 20px;align-items:start}@media(min-width:1700px){.room-columns{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 /* The account page: the short cards in one column beside Notifications */
 .account-grid{align-items:start}.account-column{display:grid;gap:10px;align-content:start;min-width:0}
+/* Dialogs in sections (Room settings): one subject each, the one that cannot be undone last */
+.modal-section{padding:14px 0;border-top:1px solid #2c3a31}.modal-section:first-of-type{border-top:0;padding-top:2px}.modal-section .modal-sub{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:14px}.modal-section>p:last-child{margin-bottom:0}.modal-section>p{margin-bottom:10px}
+.modal-count{font-family:'DM Sans Variable','DM Sans',sans-serif;font-size:11px;font-weight:500;border:1px solid #3c4941;color:#a2b1a7;border-radius:4px;padding:1px 6px}.modal-section .rename-form label{margin:0}.danger-zone .button{width:auto}
+.member-row strong{font-size:13px}.member-row small{font-size:11px}.member-row select{font-size:12px;padding:5px 8px}.member-row button{font-size:11px;padding:5px 9px;border-radius:6px}
+/* Wishlist and runs: readable small print; in a narrow column the people get their own line */
+.wish-name small,.run-when small,.run-nobody,.run-claim{font-size:11px}.wish-actions button{font-size:11px;padding:4px 9px;border-radius:6px}.wish-person{max-width:280px}
+@container (max-width:860px){.wish-row{flex-wrap:wrap;row-gap:6px}.wish-name{width:auto;flex:1}.wish-people{order:3;flex-basis:100%}.run-row .wish-people{padding-left:144px}}
+@container (max-width:560px){.run-row .wish-people{padding-left:0}}
+.wish-form input,.wish-form select{font-size:13px;padding:8px 10px}

@@ -14,6 +14,8 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - Shorter navigation: Party, Rooms & characters, Tasks and Armory, each on one line; the reader's state sits at the bottom of the sidebar.
 - Less on every page: no small-caps lines over the headings and no panels repeating the help under the party; planned runs and the wishlist sit side by side on wide screens.
 - The account page puts its short cards in one column beside Notifications.
+- **Room settings** is one section per subject: name, members (you first), Discord reminders, your new characters and, last, closing the room.
+- Planned runs and the wishlist use readable small print, and in a narrow column the people going take their own line instead of being cut off.
 
 ## 0.16.0 · 2026-10-17
 

@@ -152,7 +152,6 @@ export default {
   'Sample data': 'Ukázková data',
   'Room settings': 'Nastavení místnosti',
   'Room': 'Místnost',
-  'Invite a friend': 'Pozvat kamaráda',
   'energy': 'energie',
   'Party characters': 'Postavy party',
   // Character cards
@@ -859,6 +858,8 @@ export default {
   'Hide': 'Skrýt',
   'Remove {name} from this room': 'Odebrat {name} z místnosti',
   'Sign out': 'Odhlásit se',
+  'Your new characters': 'Tvoje nové postavy',
+  'Share them in this room': 'Sdílet je v této místnosti',
   'Party': 'Parta',
   'Rooms & characters': 'Místnosti a postavy',
   'Tasks': 'Úkoly',

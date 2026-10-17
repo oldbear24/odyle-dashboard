@@ -178,7 +178,7 @@ test('owners invite with a link, manage the room and close it only after confirm
     assert.equal(await page.locator('#modal select[data-role]').inputValue(), 'viewer');
     await shot(page, 'room-settings');
     await page.locator('#modal [data-action="close-room"]').click();
-    assert.match(await page.locator('#modal').innerText(), /cannot be undone/);
+    assert.match(await page.locator('#modal').innerText(), /^Close Renamed UI room\?[\s\S]*cannot be undone/);
     await page.locator('#modal [data-action="close-dialog"]').last().click();
     assert.equal((await request('/api/odyle/rooms', undefined, lead, 'GET')).data.rooms.length, 1, 'cancelled close keeps the room');
     await page.locator('[data-action="room-settings"]').click();
