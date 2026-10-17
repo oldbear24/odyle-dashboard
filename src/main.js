@@ -893,9 +893,16 @@ function go(path, replace = false) {
 window.addEventListener('hashchange', () => show().catch(failure));
 
 // Tokens last seven days. An open dashboard renews its token every six hours and
-// returns to the sign-in page once the server no longer accepts it.
+// returns to the sign-in page once the server no longer accepts it. A refusal of a request
+// sent with a token this browser has since replaced (Sign out everywhere: the account's news
+// can come before the answer with the new token) is no such thing, so the token on hand is
+// asked first; only its refusal signs out, and an unreachable server keeps the sign-in.
 const renewEvery = 6 * 3600000;
-async function expired() { await logout(); toast(t('Your sign-in expired. Sign in again with Discord.')); }
+async function expired() {
+  try { await pb.collection('users').authRefresh(); renewedAt = Date.now(); return; }
+  catch (error) { if (![401, 403].includes(error?.status)) return; }
+  await logout(); toast(t('Your sign-in expired. Sign in again with Discord.'));
+}
 function failure(error) { if (error?.status === 401 && pb.authStore.token) return expired(); failed(error); }
 // Only a refused token ends the sign-in. An unreachable server (a deploy, a restart,
 // a network drop) keeps it: the page says so and tries again by itself.

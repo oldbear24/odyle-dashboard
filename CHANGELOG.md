@@ -14,6 +14,9 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - "Party can open N cubes" counts the best players up to the dungeon's party size when more are live.
 - On phones the history chart no longer stops the page from scrolling.
 
+### Fixed
+- **Sign out everywhere** no longer signs out the browser you clicked it in as well, now and then.
+
 ## 0.17.0 · 2026-10-17
 
 ### New
