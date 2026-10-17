@@ -48,6 +48,8 @@ test('the pairing dialog shows the link, says why pairing is refused and confirm
   const shown = pairingSlot({ step: 'link', link, left: 254000 });
   assert.match(shown, new RegExp(`class="link-field" readonly value="${link}"`)); assert.match(shown, new RegExp(`data-copy="${link}"`));
   assert.match(shown, /<strong data-pair-expires>4:14<\/strong>/); assert.match(shown, /data-action="new-pairing"/);
+  // Open in Odyle hands the same link to the Windows app.
+  assert.match(shown, new RegExp(`href="odyle://pair\\?link=${encodeURIComponent(link).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}">`));
   assert.match(pairingSlot({ step: 'expired' }), /expired[\s\S]*data-action="new-pairing"/);
   const paused = pairingSlot({ step: 'refused', problem: 'Pairing new PCs is paused for now. Try again later.', paused: true });
   assert.match(paused, /role="alert">Pairing new PCs is paused/); assert.match(paused, /download and install the app now/);

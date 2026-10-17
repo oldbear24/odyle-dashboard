@@ -1040,6 +1040,8 @@ test('pairing shows one link with a countdown, confirms the PC it paired and nam
   try {
     await page.locator('.personal-characters .reader-button', { hasText: 'Connect reader' }).click();
     const first = await linkOf(); assert.match(first, /#odyle-pair=[A-Z2-9]{16}$/);
+    // Open in Odyle hands the same link to the Windows app.
+    assert.equal(await page.locator('#modal .pairing-open a').getAttribute('href'), 'odyle://pair?link=' + encodeURIComponent(first));
     assert.match(await page.locator('#modal .scope-note').innerText(), /unofficial fan project/);
     // The countdown runs while the dialog is open.
     const left = await page.locator('#modal [data-pair-expires]').innerText(); assert.match(left, /^[45]:\d\d$/);

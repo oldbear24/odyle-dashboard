@@ -868,6 +868,8 @@ export default {
   'wanted for {n} day|wanted for {n} days': ['na seznamu {n} den', 'na seznamu {n} dny', 'na seznamu {n} dní'],
   'added today': 'přidáno dnes',
   '(best {n} of {all})': '(nejlepších {n} z {all})',
+  'Open in Odyle': 'Otevřít v Odyle',
+  'Odyle 0.15 or newer on this PC: your browser asks to open it, then Odyle asks before pairing.': 'Odyle 0.15 nebo novější na tomto PC: prohlížeč se zeptá, jestli ho otevřít, a Odyle se zeptá před spárováním.',
   'Party': 'Parta',
   'Rooms & characters': 'Místnosti a postavy',
   'Tasks': 'Úkoly',
