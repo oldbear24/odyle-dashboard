@@ -77,6 +77,18 @@ The snapshot's `wishlist` is grouped by dungeon, most wanted first, then oldest:
 
 `users` are account ids in the order they added the dungeon; clients take display names from `members`. Every change sends the room's realtime refresh, edits in the PocketBase dashboard included. The `room_wishes` collection has no API rules; use the routes above.
 
+### Slot machine
+
+An easter egg of the dashboard (#107, dashboard 0.32.0): the Odyle logo clicked seven times within three seconds opens `#/slots`. Playing earns spins: the first accepted reading of each character in a daily period (the daily reset hour, UTC) gives its account one spin (`characters.spinDay`, single-field updates, so one a day however many readings come); the first visit gives three welcome spins. Each spin wins a cosmetic item, rolled on the server with `crypto/rand`: a rarity (common 60 %, rare 27 %, epic 10 %, legendary 3 %), then one of its items. A duplicate gives a shard, and three shards give a spin back. Nothing is bought and nothing touches Odyle, characters or parties.
+
+| Route | Body | Effect |
+| --- | --- | --- |
+| POST `/api/odyle/slots` | — | `{ spins, shards, shardsForSpin, owned, equipped, catalog }`; the first call gives the welcome spins |
+| POST `/api/odyle/slot-spin` | — | One spin: the same answer plus `won` (`{ id, kind, rarity, name, value }`) and `duplicate`; 400 without spins |
+| POST `/api/odyle/slot-equip` | `{ kind, id }` | Wears an owned item of that `kind` (`color`, `frame` or `badge`), or none with an empty `id` |
+
+`users.spins` and `users.cosmetics` are hidden from every other answer. Room snapshots give each member who wears something a `look` (`{ color?, frame?, badge? }`, the items' values: a CSS colour or gradient, a frame style name, an emoji), shown next to their name in the party rows. The data export lists the account's spins and collection.
+
 ### Planned runs
 
 Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:

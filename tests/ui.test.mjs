@@ -1261,6 +1261,26 @@ test('an expired sign-in returns to the welcome page', async () => {
   const { page, close } = await open({ ...user, token: user.token.slice(0, -4) + 'AAAA' }, '#/tasks');
   try { await page.locator('[data-action="discord"]').waitFor(); assert.equal(await page.evaluate(() => localStorage.getItem('odyle.account')), null); } finally { await close(); }
 });
+test('the logo clicked seven times opens the slot machine, whose spins win cosmetics (#107)', async () => {
+  const user = await account('Lucky');
+  const { page, errors, close } = await open(user, '#/');
+  try {
+    const logo = page.locator('a.brand:visible').first();
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
+    for (let i = 0; i < 7; i++) await logo.click();
+    await page.waitForURL(/#\/slots$/);
+    await page.locator('.slot-machine').waitFor();
+    assert.match(await page.locator('.slot-spins').innerText(), /3 spins left/);
+    await page.locator('[data-action="slot-spin"]').click();
+    await page.locator('.slot-result').filter({ hasText: /You won|already yours/ }).waitFor();
+    assert.match(await page.locator('.slot-spins').innerText(), /2 spins left/);
+    assert.ok(await page.locator('.slot-item:not(.locked)').count() >= 1);
+    await page.locator('[data-slot-equip]:not([data-slot-equip=""])').first().click();
+    await page.locator('.slot-item.worn').waitFor();
+    await shot(page, 'slots');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 // A PocketBase dashboard tab signed in as the test superuser.
 async function superuser() {
   const password = 'ui-test-' + Date.now() + '-Password', operator = (await request('/__test__/superuser', { password })).data;

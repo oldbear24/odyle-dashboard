@@ -243,3 +243,19 @@ test('the history adds up each reset week: spent, regeneration and items', async
   assert.match(html, /Week from 7 Oct/); assert.match(html, /only the last change of each hour is kept/);
   assert.deepEqual(weeklyLedger(readings.slice(0, 1), { now, cost: 40 }), []);
 });
+test('the slot machine page shows spins, an honest result and the collection; looks are safe', async () => {
+  const { slotsView, lookName, frameClass, lookOf } = await import('../src/slots.js');
+  const catalog = [{ id: 'color-gold', kind: 'color', rarity: 'epic', name: 'Gold', value: '#f3c94a' }, { id: 'frame-moss', kind: 'frame', rarity: 'common', name: 'Moss', value: 'moss' }, { id: 'badge-crown', kind: 'badge', rarity: 'legendary', name: 'Crown', value: '👑' }];
+  const state = { spins: 2, shards: 1, shardsForSpin: 3, owned: ['color-gold', 'frame-moss'], equipped: { color: 'color-gold' }, catalog };
+  const html = slotsView({ state, name: 'Lumina', last: { won: catalog[0], duplicate: false } });
+  assert.match(html, /2 spins left · Shards 1\/3/); assert.match(html, /You won Gold · Epic!/);
+  assert.equal((html.match(/<span>🐉<\/span>/g) || []).length, 3, 'the reels show the rarity won, all three alike');
+  assert.match(html, /data-slot-equip="" data-kind="color">Take off/); assert.match(html, /data-slot-equip="frame-moss" data-kind="frame">Wear/);
+  assert.match(html, /slot-item rarity-legendary locked/); assert.doesNotMatch(html, /👑/, 'items not found yet stay hidden');
+  assert.match(slotsView({ state: { ...state, spins: 0 }, name: 'L' }), /data-action="slot-spin" disabled/);
+  assert.deepEqual(lookOf(state), { color: '#f3c94a' });
+  assert.equal(lookName('<b>', { color: '#f3c94a', badge: '👑' }), '<span class="look-name" style="color:#f3c94a">&lt;b&gt;</span><span class="look-badge" aria-hidden="true">👑</span>');
+  assert.equal(lookName('Kaelen', { color: 'red;background:url(x)' }), 'Kaelen', 'only catalog-shaped colours reach a style');
+  assert.match(lookName('A', { color: 'linear-gradient(90deg,#5ee0b0,#9fd3ff)' }), /background-clip:text/);
+  assert.equal(frameClass({ frame: 'golden' }), ' frame-golden'); assert.equal(frameClass({ frame: 'x" onclick="' }), '');
+});

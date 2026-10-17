@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.32.0 · 2026-10-17
+
+### New
+- **A secret** for players who read with Odyle every day: something now hides behind the logo. Those who find it can win things to wear in their rooms.
+
 ## 0.31.0 · 2026-10-17
 
 ### New
