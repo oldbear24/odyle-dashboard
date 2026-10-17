@@ -17,19 +17,23 @@ test('listed dungeons match like the server matches names and cost Odyle per cub
 });
 test('a listed dungeon names its cost, party size and the cubes the party can open', async () => {
   const { dungeonFacts } = await catalogOf(), { useLanguage } = await import('../src/i18n.js');
-  // The party at a cost: its lowest live player holds 170 Odyle.
-  const asked = [], party = cost => { asked.push(cost); return { lowest: { value: 170 }, cubes: Math.floor(170 / cost) }; };
+  // The party at a cost: one live player, with 170 Odyle.
+  const asked = [], party = cost => { asked.push(cost); return { players: [{ value: 170 }] }; };
   assert.equal(dungeonFacts(catalog[2], { perCube: 40, party }), '<small class="dungeon-facts">80 Odyle per cube · 10 players · <span class="dungeon-cubes">party can open 2 cubes</span></small>');
   assert.equal(dungeonFacts(catalog[1], { perCube: 40, party }), '<small class="dungeon-facts">40 Odyle per cube · <span class="dungeon-cubes">party can open 4 cubes</span></small>');
   assert.match(dungeonFacts(catalog[0], { perCube: 40, party }), /20 Odyle per cube \(unconfirmed\) · 5 players · .*party can open 8 cubes/);
   assert.deepEqual(asked, [80, 40, 20]);
   // Nobody live: no cube count. A dungeon the catalog does not list: no line at all.
-  const empty = () => ({ lowest: null, cubes: 0 });
+  const empty = () => ({ players: [] });
   assert.equal(dungeonFacts(catalog[2], { perCube: 40, party: empty }), '<small class="dungeon-facts">80 Odyle per cube · 10 players</small>');
   assert.equal(dungeonFacts(null, { perCube: 40, party }), '');
+  // More live players than the dungeon takes: the best of them go, and their lowest decides.
+  const six = () => ({ players: [60, 300, 170, 250, 120, 200].map(value => ({ value })) });
+  assert.match(dungeonFacts(catalog[0], { perCube: 40, party: six }), /party can open 6 cubes \(best 5 of 6\)</);
+  assert.match(dungeonFacts(catalog[1], { perCube: 40, party: six }), /party can open 1 cube</);
   try {
     await useLanguage('cs');
-    assert.match(dungeonFacts(catalog[0], { perCube: 40, party: () => ({ lowest: { value: 20 }, cubes: 1 }) }), /20 Odyle za kostku \(nepotvrzeno\) · 5 hráčů · .*parta otevře 1 kostku/);
+    assert.match(dungeonFacts(catalog[0], { perCube: 40, party: () => ({ players: [{ value: 20 }] }) }), /20 Odyle za kostku \(nepotvrzeno\) · 5 hráčů · .*parta otevře 1 kostku/);
   } finally { await useLanguage('en'); }
 });
 test('forms pick a listed dungeon when there is a catalog and take any name otherwise', async () => {

@@ -5,7 +5,7 @@ dialog .button+.button,dialog .button+.text-button{margin-top:8px}dialog.wide{ma
 .member-rows{border:1px solid #354b3a;border-radius:7px;background:#111c15;max-height:280px;overflow:auto}
 .member-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #26352b}.member-row:last-child{border-bottom:0}.member-row>div{flex:1;min-width:0}.member-row strong{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.member-row small{display:block;font-size:10px;color:#87988c}
 .member-row select{width:auto;margin:0;padding:4px 6px;font-size:11px}.member-row button{border:1px solid #344038;background:transparent;color:#b4cdbd;font-size:10px;padding:4px 8px;border-radius:4px;white-space:nowrap}.member-row button:hover{border-color:#61866b;color:var(--mint)}.member-row button.remove:hover,.wish-actions button.remove:not(:disabled):hover{border-color:#694146;color:#ffb9be}
-.history-chart{position:relative;margin:4px 0 10px}.history-chart svg{display:block;width:100%;height:auto;touch-action:none}
+.history-chart{position:relative;margin:4px 0 10px}.history-chart svg{display:block;width:100%;height:auto;touch-action:pan-y}
 .history-grid{stroke:#26332c;stroke-width:1}.history-axis{fill:#89958f;font-size:9px;font-family:'DM Sans Variable','DM Sans',sans-serif}.history-cost{stroke:#56695c;stroke-width:1}
 .history-area{fill:#b5f2cd;fill-opacity:.1}.history-line{fill:none;stroke:#b5f2cd;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .history-dot,.history-focus{fill:#b5f2cd;stroke:#1a241d;stroke-width:2}.history-cross{stroke:#7d9082;stroke-width:1}.history-hit{fill:transparent;cursor:crosshair}

@@ -19,7 +19,7 @@ import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applySha
 import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, onlineReader, countdown, readerLabel, pairingSlot } from './pairing.js';
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder } from './partyview.js';
-import { dungeonKey, entryOf, dungeonFacts, dungeonField } from './catalog.js';
+import { dungeonKey, entryOf, cubeCost, dungeonFacts, dungeonField } from './catalog.js';
 import changelogText from '../CHANGELOG.md?raw';
 import privacyText from '../docs/privacy.md?raw';
 import { privacyPage } from './privacy.js';
@@ -278,6 +278,8 @@ function dungeonInfo(now) {
   const party = at => { if (!parties.has(at)) parties.set(at, partyOf(entries, now, at)); return parties.get(at); };
   return name => dungeonFacts(entryOf(catalog, name), { perCube: cost, party });
 }
+// How long a dungeon has been on the wishlist, from its first entry.
+const wanted = (since, now) => { const days = Math.floor((now - timestamp(since)) / 86400000); return since && days >= 1 ? tn(days, 'wanted for {n} day', 'wanted for {n} days') : t('added today'); };
 // What members still need to run, most wanted first. A dot marks members with a
 // live character in this room, so the party sees what it could run right now.
 function wishlistSection(now) {
@@ -294,7 +296,7 @@ function wishlistSection(now) {
     const actions = demo ? '' : (mine ? `<button data-wish="${esc(w.dungeon)}" data-wanted="false" title="${esc(t('Take yourself off {dungeon}', { dungeon: w.dungeon }))}">${t('Remove me')}</button>` : viewer ? '' : `<button data-wish="${esc(w.dungeon)}" data-wanted="true">${icon('plus')} ${t('Need it too')}</button>`)
       + (viewer || !plannable ? '' : `<button data-plan-wish="${esc(listed?.name ?? w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
       + (owner() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="${esc(t('Clear {dungeon} for everyone', { dungeon: w.dungeon }))}">${t('Clear')}</button>` : '');
-    return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${esc(tn(count, '{n} member needs it', '{n} members need it'))}</small>${facts(w.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
+    return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${esc(tn(count, '{n} member needs it', '{n} members need it'))} · ${esc(wanted(w.since, now))}</small>${facts(w.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
   }).join('');
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
 }
@@ -470,19 +472,25 @@ function dashboard() {
   // and the party can only do as many cubes as its lowest player allows (readiness.js).
   // Saved values of characters not live are projected by the Odyle clock for the last known party.
   const now = Date.now() + serverOffset, party = flattened(), estimate = c => status(c, now) === 'live' ? c.value : clockOf(c, now, clockRules)?.total ?? c.value;
-  const explained = explain(party, now, room.cost, estimate), { characters: actual, counted } = explained;
+  // The numbers count at the cost of the room's next run (or one still under way) when the
+  // catalog lists its dungeon (#12): what the party can do there.
+  const next = runs.filter(r => timestamp(r.startsAt) > now - 3 * 3600000).sort((a, b) => timestamp(a.startsAt) - timestamp(b.startsAt))[0], listed = next && entryOf(catalog, next.dungeon);
+  const focus = listed ? { dungeon: next.dungeon, cost: cubeCost(listed, room.cost) } : null, cost = focus?.cost || room.cost;
+  const explained = explain(party, now, cost, estimate), { characters: actual, counted } = explained;
   const estimated = Boolean(explained.lastKnown && clockOf(explained.lastKnown.lowest, now, clockRules)?.projected);
-  const shown = readyOrder(actual, now, room.cost).filter(c => !liveOnly() || status(c, now) === 'live');
+  const shown = readyOrder(actual, now, cost).filter(c => !liveOnly() || status(c, now) === 'live');
   const hidden = actual.length - shown.length, actions = `${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}${owner() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite')}</button>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Settings') : t('Room')}</button>`;
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
-  keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}</p></div><div class="heading-actions">${actions}</div></section>${partySummary(explained, now, { estimated })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${shown.map((c, i) => card(c, i, counted)).join('')}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section><div class="room-columns">${plannedRuns(now)}${wishlistSection(now)}</div></main>`));
+  keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p></div><div class="heading-actions">${actions}</div></section>${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${shown.map((c, i) => card(c, i, counted, cost)).join('')}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section><div class="room-columns">${plannedRuns(now)}${wishlistSection(now)}</div></main>`));
 }
 // Column names over the character rows on wide screens.
 const listHead = () => `<div class="party-head" aria-hidden="true"><span>${t('Character')}</span><span>${t('Status')}</span><span>${t('Odyle')}</span><span>${t('Regeneration')}</span><span>${t('Cubes')}</span><span></span></div>`;
 // Only live characters on the room page, a choice of this browser.
 const liveOnlyKey = 'odyle.liveOnly', liveOnly = () => storage.getItem(liveOnlyKey) === 'on';
-function card(c, index, counted = null) {
-  const now = Date.now() + serverOffset, cost = room?.cost || perCube, { state, known, cubes, ready } = readinessOf(c, now, cost), fresh = state === 'live';
+function card(c, index, counted = null, cost = room?.cost || perCube) {
+  const now = Date.now() + serverOffset, { state, known, cubes, ready } = readinessOf(c, now, cost), fresh = state === 'live';
+  // The Windows app read the character without its Odyle record, which comes at level 22 (odyle-windows#6).
+  const locked = c.odyleLocked && !known;
   const labels = { live: t('Live'), stale: t('Stale'), unknown: t('No reading'), offline: t('Offline') }, self = c.user === pb.authStore.record?.id && !demo;
   const history = c.id && c.characterName && (known || !demo) ? `<button data-history="${esc(c.id)}" data-name="${esc(c.characterName)}" class="icon-only" title="${esc(t('Odyle history of {name}', { name: c.characterName }))}">${icon('chart')}<span class="sr-only">${t('History')}</span></button>` : '';
   const action = self && room && c.id ? `<button class="remove" data-share="${esc(c.id)}" data-enabled="false" data-name="${esc(c.characterName)}" ${c.role === 'viewer' ? 'disabled' : ''} title="${esc(t('Hide {name} from this room. Its saved values stay on your account.', { name: c.characterName }))}">${t('Hide')}</button>`
@@ -500,9 +508,9 @@ function card(c, index, counted = null) {
   const changed = `${source ? `${source} · ` : ''}${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}`;
   return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''}"><div class="row-id">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${leader}</div><div class="member-meta"${classOf(c) ? ` title="${esc(t('Class and level from PLAYNC, checked daily'))}"` : ''}>${meta}</div></div></div>`
     + `<div class="row-state"><span class="status ${state}"><i></i>${labels[state]}</span>${c.characterName && !fresh ? `<span class="status-why">${esc(statusReason(c, now))}</span>` : ''}</div>`
-    + `<div class="row-energy"><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}<div class="row-changed">${changed}</div></div>`
+    + `<div class="row-energy"><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}<div class="row-changed">${locked ? t('No Odyle yet · it unlocks at level 22') : changed}</div></div>`
     + `<div class="row-clock">${clock ? `<div class="energy-clock">${esc(clockLine(clock, now, fresh))}</div>` : ''}${self && capMismatch(c) ? `<div class="energy-clock cap-mismatch">${esc(t('Its natural pool held {max}, more than {cap}: has the membership started? Account & data → Membership.', { max: c.naturalMax.toLocaleString(locale()), cap: c.answeredCap.toLocaleString(locale()) }))}</div>` : ''}</div>`
-    + `<div class="row-cubes cube-line">${known ? `<span><strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}</span>` : `<span>${t('No confirmed reading')}</span>`}<span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : known ? t('last saved') : ''}</span>${counts}</div>`
+    + `<div class="row-cubes cube-line">${known ? `<span><strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}</span>` : `<span>${locked ? t('No Odyle yet') : t('No confirmed reading')}</span>`}<span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : known ? t('last saved') : ''}</span>${counts}</div>`
     + `<div class="card-actions">${armory}${history}${action}</div></article>`;
 }
 let toastTimer;
@@ -577,11 +585,14 @@ function demoHistory(id) {
   readings[readings.length - 1].value = c?.value || value;
   return { readings };
 }
+// The history in the dialog, for Show all.
+let shownHistory = null;
 async function historyDialog(id, name) {
   const data = demo ? demoHistory(id) : await pb.send('/api/odyle/history/' + id);
   if (!demo && data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
   const now = Date.now() + serverOffset, cost = room?.cost || perCube;
-  modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${data.readings.length ? historyList(data.readings, 12, data.hourlyBefore) : ''}`, true);
+  modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${data.readings.length ? `<div class="history-rows">${historyList(data.readings, 12, data.hourlyBefore)}</div>` : ''}`, true);
+  shownHistory = data;
   bindHistoryChart(document.querySelector('#modal .history-chart'));
 }
 // The pairing dialog (Pair Windows app, Connect reader; pairing.js). It shows this
@@ -759,7 +770,8 @@ async function watchOwnTopic() {
       if (connects++ > 0 && !later()) refreshPage().then(renderPage, () => { online = false; renderConnection(); });
     });
     ownTopic = await pb.realtime.subscribe('odyle.user.' + id, data => ownNews(data));
-    primeTasks();
+    // The task badge; the checklist page loads the tasks itself.
+    if (shown !== '/tasks') primeTasks();
     if (pb.realtime.isConnected) live = true;
   } catch { ownTopicUser = ''; live = false; }
 }
@@ -1063,6 +1075,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
+    if (el.matches('[data-history-all]')) { const rows = document.querySelector('#modal .history-rows'); if (rows && shownHistory) rows.innerHTML = historyList(shownHistory.readings, Infinity, shownHistory.hourlyBefore); return; }
     if (el.dataset.armoryUnmark) { keepBookmarks(removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });

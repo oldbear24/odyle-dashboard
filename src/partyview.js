@@ -8,9 +8,9 @@ const cubeCount = cubes => tn(cubes, '{n} cube', '{n} cubes');
 const player = c => c.characterName && c.characterName !== c.displayName ? `${c.displayName} · ${c.characterName}` : c.displayName;
 
 // The room's numbers and the lines under them, as HTML.
-export function partySummary(x, now, { estimated = false } = {}) {
+export function partySummary(x, now, { estimated = false, focus = null } = {}) {
   const metric = (label, value, of, detail, cls = '') => `<div class="metric ${cls}"><span class="metric-label">${esc(label)}</span><strong>${value}${of === null ? '' : `<span>/ ${of}</span>`}</strong><small>${esc(detail)}</small></div>`;
-  const metrics = [metric(t('Party cubes'), x.cubes, null, t('the lowest player decides'), 'is-main'), metric(t('Ready now'), x.ready.length, x.characters.length, t('characters with a cube of Odyle')),
+  const metrics = [metric(t('Party cubes'), x.cubes, null, focus ? t('for {dungeon} · {cost} Odyle', focus) : t('the lowest player decides'), 'is-main'), metric(t('Ready now'), x.ready.length, x.characters.length, t('characters with a cube of Odyle')),
     metric(t('Live'), x.players.length, x.members, t('players in game')), metric(t('Lowest'), x.lowest ? Math.floor(x.lowest.value).toLocaleString(locale()) : '—', null, x.lowest ? player(x.lowest) : t('nobody live'))];
   const lines = [];
   if (x.players.length >= 2 && x.lowest) {

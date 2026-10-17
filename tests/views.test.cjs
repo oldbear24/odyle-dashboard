@@ -45,8 +45,10 @@ test('planned runs count down in local time and history charts round their axis'
   assert.match(historyChart([], { now, cost: 40 }), /No changes/);
   assert.deepEqual([...historyList(readings).matchAll(/<td>([^<]*)<\/td><td>([^<]*)<\/td><\/tr>/g)].map(m => [m[1], m[2]]), [['30', '−25'], ['55', '+35'], ['20', '—']]);
   // Points before hourlyBefore are each hour's last change, so the count left out is a floor.
-  assert.match(historyList(readings, 2), /<p class="history-more">1 earlier change not listed<\/p>/);
-  assert.match(historyList(readings, 1, '2026-10-13 18:00:00.000Z'), /<p class="history-more">At least 2 earlier changes not listed<\/p>/);
+  // Show all lists every change.
+  assert.match(historyList(readings, 2), /<p class="history-more">1 earlier change not listed <button class="text-button" type="button" data-history-all>Show all<\/button><\/p>/);
+  assert.equal([...historyList(readings, Infinity).matchAll(/<tr><td>/g)].length, 3);
+  assert.match(historyList(readings, 1, '2026-10-13 18:00:00.000Z'), /<p class="history-more">At least 2 earlier changes not listed <button/);
   // Newer Windows apps say what each change was.
   const kinds = historyList([{ value: 910, at: '2026-10-14 22:00:00.000Z', kind: 'regen' }, { value: 830, at: '2026-10-14 22:04:00.000Z', kind: 'spend' }, { value: 870, at: '2026-10-14 22:10:00.000Z', kind: 'item' }, { value: 870, at: '2026-10-14 23:00:00.000Z', kind: 'snapshot' }]);
   assert.deepEqual([...kinds.matchAll(/<span class="history-kind">([^<]*)<\/span>/g)].map(m => m[1]), ['item', 'spent', 'regeneration']);
