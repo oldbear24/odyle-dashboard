@@ -26,7 +26,7 @@ export function deliveryLine(room, now) {
   return null;
 }
 
-export function discordSettings(room, now) {
+export function discordSettings(room, now, paused = false) {
   const on = Boolean(room.discordReminders), leads = leadsOf(room), line = deliveryLine(room, now);
   const posting = on && room.discordName ? ' ' + t('Posting as {name}, in {language}.', { name: room.discordName, language: room.discordLanguage === 'cs' ? t('Czech') : t('English') }) : '';
   const intro = on ? t('Reminders are on: each planned run is posted to your Discord channel {when}.', { when: postTimes(room) }) + posting
@@ -35,7 +35,8 @@ export function discordSettings(room, now) {
   const choices = discordLeadChoices.map(m => `<label class="chip-check"><input type="checkbox" name="lead" value="${m}" ${leads.includes(m) ? 'checked' : ''}><span>${esc(leadLabel(m))}</span></label>`).join('');
   const options = `<form id="discord-options-form" class="discord-options"><div class="lead-choices" role="group" aria-label="${esc(t('Reminder times'))}">${choices}</div><label class="check-row"><input type="checkbox" name="startPost" ${room.discordStartPost ? 'checked' : ''}> <span>${t('Also post when a run starts')}</span></label><small class="account-note">${t('Up to three times before each run. Going members who turned on Discord mentions in their notifications are pinged in the first post.')}</small>${on ? `<button class="button secondary small" type="submit">${t('Save times')}</button>` : ''}</form>`;
   const connect = `<form id="discord-form" class="rename-form"><label>${on ? t('Replace the webhook URL') : t('Webhook URL')}<input name="webhook" type="url" autocomplete="off" required placeholder="https://discord.com/api/webhooks/…"></label><button class="button secondary" type="submit">${on ? t('Replace') : t('Connect')}</button></form>`;
-  return `<h3 class="modal-sub">${t('Discord reminders')}</h3><p>${esc(intro)}</p>${status}${options}${connect}${on ? `<button class="text-button" data-action="discord-off">${t('Stop Discord reminders')}</button>` : ''}`;
+  const hold = paused ? `<p class="discord-status warn" role="status">${t('The server\'s operator has paused Discord reminders for now; planned runs are posted again once they turn them back on.')}</p>` : '';
+  return `<h3 class="modal-sub">${t('Discord reminders')}</h3><p>${esc(intro)}</p>${hold}${status}${options}${connect}${on ? `<button class="text-button" data-action="discord-off">${t('Stop Discord reminders')}</button>` : ''}`;
 }
 
 // The times chosen in the form: one to three leads, or an error to show.

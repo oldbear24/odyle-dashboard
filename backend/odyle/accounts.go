@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Per-account caps. They only stop runaway or abusive clients: players keep a handful
@@ -567,7 +568,7 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused})
 	})
 }
 
@@ -2282,9 +2283,28 @@ func account(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		owned, err := e.App.CountRecords("party_rooms", dbx.HashExp{"owner": user.Id})
+		if err != nil {
+			return err
+		}
+		memberships, err := e.App.CountRecords("room_members", dbx.HashExp{"user": user.Id})
+		if err != nil {
+			return err
+		}
 		apps := make([]any, len(sessions))
 		for i, s := range sessions {
-			apps[i] = map[string]any{"sessionId": s.Id, "connectedAt": s.Created(), "lastContactAt": contactAt(e.App, s), "character": reading[s.Id], "device": s.Device()}
+			apps[i] = map[string]any{"sessionId": s.Id, "connectedAt": s.Created(), "lastContactAt": contactAt(e.App, s), "character": reading[s.Id], "device": s.Device(), "appVersion": s.AppVersion()}
+		}
+		// When the inactive-account clean-up would delete this account if it stayed away (#49).
+		rules, deleteAfter := readSettings(e.App), ""
+		if rules.InactiveAccountDays > 0 {
+			since := user.LastActiveAt()
+			if since == "" {
+				since = user.Created()
+			}
+			if at, err := types.ParseDateTime(since); err == nil {
+				deleteAfter = at.Time().Add(time.Duration(rules.InactiveAccountDays) * 24 * time.Hour).UTC().Format(isoLayout)
+			}
 		}
 		paired := make([]any, len(devices))
 		for i, d := range devices {
@@ -2296,6 +2316,10 @@ func account(e *core.RequestEvent) error {
 			"membership":    user.GetString("membership"),
 			"push":          pushState(e.App, user.Id),
 			"limits":        limits,
+			"usage":         map[string]any{"ownedRooms": owned, "memberships": memberships, "desktopDevices": len(devices), "characters": characters},
+			"retention":     map[string]any{"inactiveAccountDays": rules.InactiveAccountDays, "deleteAfter": deleteAfter},
+			"paused":        map[string]any{"pairing": rules.PairingPaused, "reminders": rules.RemindersPaused},
+			"latestVersion": latestVersion(e.App),
 			"serverNow":     now(),
 			"characters":    characters,
 			"apps":          apps,

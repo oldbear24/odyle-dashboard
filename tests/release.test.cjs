@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 test('the Windows app links name the newest release and fall back to the latest-release page', async () => {
   const { windowsApp, packageSize } = await import('../src/release.js');
+  const { behind } = await import('../src/release.js');
+  assert.deepEqual([['0.15.0', '0.16.0'], ['0.16.0', '0.16.0'], ['0.16.1', '0.16.0'], ['0.9.0', '0.10.0'], ['0.6.0.18', '0.7.0'], ['', '0.16.0'], ['0.16.0', '']].map(([v, l]) => behind(v, l)), [true, false, false, true, true, false, false]);
   const info = { repository: 'oldbear24/odyle-windows', releasesUrl: 'https://github.com/oldbear24/odyle-windows/releases/latest', latest: { version: '0.5.0.2', tag: 'v0.5.0.2', url: 'https://github.com/oldbear24/odyle-windows/releases/tag/v0.5.0.2', publishedAt: '2026-10-13T22:34:09Z', packages: {
     small: { name: 'odyle-0.5.0.2-win-x64.zip', size: 217557, url: 'https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64.zip' },
     selfContained: { name: 'odyle-0.5.0.2-win-x64-self-contained.zip', size: 71595826, url: 'https://github.com/oldbear24/odyle-windows/releases/download/v0.5.0.2/odyle-0.5.0.2-win-x64-self-contained.zip' },
