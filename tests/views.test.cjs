@@ -221,3 +221,25 @@ test('runs take Can’t answers, say who has not answered and count Going agains
   assert.match(html('b'), /data-cant-run="r" data-cant="false" aria-pressed="true" class="answered"/);
   assert.equal(goingCountOf({ dungeon: 'Unknown', attendees: ['a', 'b'] }, []), '2 going');
 });
+test('the history adds up each reset week: spent, regeneration and items', async () => {
+  const { weeklyLedger, ledgerTable } = await import('../src/history.js'), now = Date.parse('2026-10-16T12:00:00Z');
+  // Weekly reset: Wednesday 07:00 UTC (2026-10-14).
+  const readings = [
+    { at: '2026-10-12 10:00:00.000Z', value: 500 },
+    { at: '2026-10-12 13:00:00.000Z', value: 515, kind: 'regen', delta: 15 },
+    { at: '2026-10-13 20:00:00.000Z', value: 435, kind: 'spend', delta: -80 },
+    { at: '2026-10-14 10:00:00.000Z', value: 450, kind: 'regen', delta: 15 },
+    { at: '2026-10-15 09:00:00.000Z', value: 550, kind: 'item', delta: 100 },
+    { at: '2026-10-15 21:00:00.000Z', value: 470 },
+    { at: '2026-10-16 08:00:00.000Z', value: 490 },
+  ];
+  const rows = weeklyLedger(readings, { now, cost: 40 });
+  assert.deepEqual(rows.map(r => [new Date(r.start).toISOString(), r.current, r.spent, r.cubes, r.regen, r.items, r.other]), [
+    ['2026-10-14T07:00:00.000Z', true, 80, 2, 15, 100, 20],
+    ['2026-10-07T07:00:00.000Z', false, 80, 2, 15, 0, 0],
+  ]);
+  const html = ledgerTable(rows, { hourlyBefore: '2026-10-10 00:00:00.000Z' });
+  assert.match(html, /<td>This week<\/td><td>80 · ≈2 cubes<\/td><td>\+15<\/td><td>\+120<\/td>/);
+  assert.match(html, /Week from 7 Oct/); assert.match(html, /only the last change of each hour is kept/);
+  assert.deepEqual(weeklyLedger(readings.slice(0, 1), { now, cost: 40 }), []);
+});
