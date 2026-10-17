@@ -58,6 +58,8 @@ let readers = [];
 let announcement = null, announcementAt = 0;
 // Whether the operator paused Discord reminders (the snapshot says so; Room settings tells the owner, #49).
 let remindersPaused = false;
+// The game's weekly maintenance window from the snapshot (#47); runs inside it say so.
+let maintenance = null;
 const hiddenAnnouncementKey = 'odyle.announcement.hidden';
 let timer = 0;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
@@ -310,7 +312,7 @@ function plannedRuns(now) {
   const costOf = r => entryOf(catalog, r.dungeon)?.cost || cost;
   const players = [...new Set(entries.filter(c => c.role !== 'viewer').map(c => c.user))].map(user => broughtBy(user, entries, now).character);
   return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: manager(), live: liveUsers(now), now, suggestions, catalog, perCube: cost, facts: dungeonInfo(now), demo, discord: room?.discordReminders,
-    readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules) });
+    readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, maintenance, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules) });
 }
 // Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
 // changed checkbox, and the focus; what the user did not change shows what the redraw brings.
@@ -706,7 +708,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }

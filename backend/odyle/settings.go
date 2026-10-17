@@ -114,6 +114,33 @@ type settings struct {
 	// app running one moves to the latest release, older or not. Rolling a bad release back is
 	// blocking it here and marking it a pre-release on GitHub (docs/runbook.md).
 	WindowsBlocked []string `json:"windowsBlocked"`
+	// The game's regular weekly maintenance (#47): runs planned inside it are marked. Day ""
+	// means none is set.
+	Maintenance maintenanceWindow `json:"maintenance"`
+}
+
+type maintenanceWindow struct {
+	Day   string `json:"day"`   // sunday to saturday, or "" for none
+	Hour  int64  `json:"hour"`  // its start, UTC
+	Hours int64  `json:"hours"` // how long it lasts, 1 to 12
+}
+
+// checkMaintenance reads the weekly maintenance window: { day, hour, hours }, or a day of "" for none.
+func checkMaintenance(value any) (maintenanceWindow, error) {
+	v, ok := value.(map[string]any)
+	if !ok {
+		return maintenanceWindow{}, errors.New("The weekly maintenance must be a day, a start hour and a length.")
+	}
+	day, _ := v["day"].(string)
+	if day == "" {
+		return maintenanceWindow{}, nil
+	}
+	hour, okHour := v["hour"].(float64)
+	hours, okHours := v["hours"].(float64)
+	if !contains(weekDays, day) || !okHour || !okHours || hour != float64(int64(hour)) || hours != float64(int64(hours)) || hour < 0 || hour > 23 || hours < 1 || hours > 12 {
+		return maintenanceWindow{}, errors.New("The weekly maintenance is a day, a start hour from 0 to 23 (UTC) and 1 to 12 hours.")
+	}
+	return maintenanceWindow{Day: day, Hour: int64(hour), Hours: int64(hours)}, nil
 }
 
 // The superuser settings answer lists the catalog's entries as `catalog` and keeps
@@ -245,6 +272,8 @@ func loadSettings(app core.App) settings {
 	if !contains(levels, out.AnnouncementLevel) {
 		out.AnnouncementLevel = "info"
 	}
+	// A stored window that no longer checks out is none.
+	out.Maintenance, _ = checkMaintenance(parseJSON(s.GetString("maintenance"), "{}"))
 	lists, _ := parseJSON(s.GetString("adapters"), "{}").(map[string]any)
 	out.Adapters = adapterLists{Extra: stringList(lists["extra"]), Disabled: stringList(lists["disabled"])}
 	out.WindowsBlocked = stringList(parseJSON(s.GetString("windowsBlocked"), "[]"))
@@ -469,6 +498,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("maintenance") {
+		if next.Maintenance, err = checkMaintenance(b["maintenance"]); err != nil {
+			return settings{}, err
+		}
+	}
 	if b.has("weeklyResetDay") {
 		day, _ := b.text("weeklyResetDay")
 		if !contains(weekDays, day) {
@@ -546,6 +580,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
+	record.Set("maintenance", next.Maintenance)
 	record.Set("inactiveAccountDays", next.InactiveAccountDays)
 	record.Set("dungeons", next.Dungeons)
 	record.Set("announcement", next.Announcement)

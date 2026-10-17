@@ -57,7 +57,20 @@ export function calendarFile({ id, dungeon, startsAt, note }, { room, going, now
 // dungeon's cost and the cubes the party can open to its runs.
 // readiness(run) is runready.js runReadiness for the run (null: names only); start is the
 // earliest time everyone can claim a cube (runready.js earliestClaim), offered to the plan form.
-export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, catalog = [], perCube = 40, facts = () => '', demo, discord, readiness = null, costOf = () => perCube, start = null }) {
+// The game's weekly maintenance (#47): whether a run (an hour from its start) overlaps it, and
+// the window of that week in local time. window: { day, hour, hours } in UTC, or null.
+const weekDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+export function maintenanceAt(at, window) {
+  const day = weekDays.indexOf(window?.day);
+  if (day < 0) return null;
+  const start = new Date(at), base = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate() - ((start.getUTCDay() - day + 7) % 7), window.hour);
+  for (const from of [base - 7 * 86400000, base, base + 7 * 86400000]) {
+    const to = from + window.hours * 3600000;
+    if (at < to && at + 3600000 > from) return { from, to };
+  }
+  return null;
+}
+export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, catalog = [], perCube = 40, facts = () => '', demo, discord, readiness = null, costOf = () => perCube, start = null, maintenance = null }) {
   const name = id => id === myId ? t('You') : members.find(m => m.user === id)?.displayName || t('Member');
   const form = viewer ? `<p class="wish-note">${t('Viewers can see planned runs but cannot plan or join them.')}</p>` : `<form id="run-form" class="wish-form run-form">${dungeonField({ catalog, suggestions, list: 'run-dungeons', placeholder: catalog.length ? t('Choose a dungeon') : t('Dungeon'), perCube })}<input name="startsAt" type="datetime-local" required aria-label="${esc(t('Start'))}" value="${nextHour(now)}" ${bounds(now)}><input name="note" maxlength="120" autocomplete="off" placeholder="${esc(t('Note (optional)'))}" aria-label="${esc(t('Note'))}"><button class="button primary" type="submit">${icon('calendar')} ${t('Plan run')}</button></form>${viewer || start === null ? '' : start <= now ? `<p class="wish-note run-hint">${t('Everyone can claim a cube now.')}</p>` : `<p class="wish-note run-hint">${esc(t('Everyone can claim a cube from {when} (an estimate of the Odyle clock).', { when: new Date(start).toLocaleString(locale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }))} <button class="text-button" type="button" data-use-start="${esc(localInput(start))}">${t('Use this time')}</button></p>`}`;
   const rows = runs.map(r => {
@@ -72,7 +85,9 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
       return `<span class="wish-person ${fresh ? 'live' : ''} ${row.claims ? '' : 'short'}" title="${esc(hint)}"><i></i>${esc(label)}${fresh ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`;
     };
     const people = (ready ? ready.rows.map(person) : r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
-    const claim = ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '';
+    const down = at > now ? maintenanceAt(at, maintenance) : null, clock = ms => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+    const warning = down ? `<small class="run-warning">${esc(t('During the weekly maintenance of the game ({from}–{to}, your time)', { from: clock(down.from), to: clock(down.to) }))}</small>` : '';
+    const claim = warning + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.
     const wrapUp = !demo && !viewer && at <= now && (mine || owner || going);

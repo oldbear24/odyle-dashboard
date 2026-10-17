@@ -609,7 +609,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'inactiveAccountDays', 'catalog', 'clock', 'taskTemplates'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'catalog', 'clock', 'taskTemplates'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
@@ -669,6 +669,12 @@ export function settingsPage() {
         () => Number.isInteger(state.form.dailyResetHour) && state.form.dailyResetHour >= 0 && state.form.dailyResetHour < 24 ? 'Daily tasks uncheck at ' + String(state.form.dailyResetHour).padStart(2, '0') + ':00 UTC, ' + localHour(state.form.dailyResetHour) + ' in your time zone.' : 'An hour from 0 to 23.'),
       field('odyle-weekly-reset', 'Weekly reset day', app.components.select({ id: 'odyle-weekly-reset', required: true, options: days.map(d => ({ label: capital(d), value: d })), value: () => state.form.weeklyResetDay, onchange: e => state.form.weeklyResetDay = e?.[0]?.value }),
         'Weekly tasks uncheck on this day at the daily reset hour.'),
+      field('odyle-maintenance-day', 'Weekly maintenance', app.components.select({ id: 'odyle-maintenance-day', options: [{ label: 'None', value: '' }, ...days.map(d => ({ label: capital(d), value: d }))], value: () => state.form.maintenance?.day || '', onchange: e => state.form.maintenance = { hour: 6, hours: 3, ...state.form.maintenance, day: e?.[0]?.value || '' } }),
+        'The game\'s regular maintenance. Planned runs that fall into it say so in every room.'),
+      field('odyle-maintenance-hour', 'Maintenance starts (hour, UTC)', t.input({ id: 'odyle-maintenance-hour', type: 'number', min: 0, max: 23, step: 1, disabled: () => !state.form.maintenance?.day, value: () => state.form.maintenance?.day ? state.form.maintenance.hour : '', oninput: e => state.form.maintenance = { ...state.form.maintenance, hour: integer(e.target.value) } }),
+        () => state.form.maintenance?.day ? 'Starts at ' + String(state.form.maintenance.hour).padStart(2, '0') + ':00 UTC, ' + localHour(state.form.maintenance.hour) + ' in your time zone.' : 'Set a day first.'),
+      field('odyle-maintenance-hours', 'Maintenance lasts (hours)', t.input({ id: 'odyle-maintenance-hours', type: 'number', min: 1, max: 12, step: 1, disabled: () => !state.form.maintenance?.day, value: () => state.form.maintenance?.day ? state.form.maintenance.hours : '', oninput: e => state.form.maintenance = { ...state.form.maintenance, hours: integer(e.target.value) } }),
+        'From 1 to 12 hours.'),
       field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => { state.form.inactiveAccountDays = integer(e.target.value); countInactive(state.form.inactiveAccountDays); } }),
         () => state.form.inactiveAccountDays ? ['Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close. ', deletion()] : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
       section('Dungeon catalog', 'The dungeons rooms choose from for wishlists and planned runs, with what opening one cube of each costs. Rooms show the cost and how many cubes the party can open.'),
