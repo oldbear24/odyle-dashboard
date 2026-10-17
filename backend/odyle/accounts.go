@@ -1829,7 +1829,13 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 				cant = append(cant, user)
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant}
+		invited := []string{}
+		for _, id := range r.Invited() {
+			if user := users[id]; user != "" && !contains(r.Attendees(), id) && !contains(r.Cant(), id) {
+				invited = append(invited, user)
+			}
+		}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited}
 	}
 	return out, nil
 }
@@ -1859,6 +1865,45 @@ type plannedRun struct {
 	Picks     map[string]string `json:"picks"`
 	// Cant: the accounts that answered they cannot come (#45); additive, older clients ignore it.
 	Cant []string `json:"cant"`
+	// Invited: the accounts a run planned from the wishlist invited that have not answered yet (#45).
+	Invited []string `json:"invited"`
+}
+
+// runInvite is what an invited member is told (#45): on their account's topic, so open
+// dashboards and Windows apps can show it, unless they turned run notices off.
+type runInvite struct {
+	RunId    string `json:"runId"`
+	RoomId   string `json:"roomId"`
+	Room     string `json:"room"`
+	Dungeon  string `json:"dungeon"`
+	StartsAt string `json:"startsAt"`
+	By       string `json:"by"`
+}
+
+func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record) error {
+	if len(invited) == 0 {
+		return nil
+	}
+	room, err := findAs[Room](app, "party_rooms", r.Room())
+	if err != nil {
+		return err
+	}
+	members, err := app.FindRecordsByIds("room_members", invited)
+	if err != nil {
+		return err
+	}
+	invite := runInvite{RunId: r.Id, RoomId: room.Id, Room: room.Name(), Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), By: planner.GetString("displayName")}
+	for _, m := range views[Member](members) {
+		user, err := app.FindRecordById("users", m.User())
+		if err != nil {
+			continue
+		}
+		if n := notificationsOf(user); !n.Kinds.Runs {
+			continue
+		}
+		changes(app).user(app, user.Id, func(news *userNews) { news.invites = append(news.invites, invite) })
+	}
+	return nil
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
@@ -2116,7 +2161,24 @@ func plan(e *core.RequestEvent) error {
 			r.SetStart(startsAt)
 			r.SetNote(n)
 			r.SetAttendees([]string{m.Id})
+			// Planned from the wishlist (#45): the members who want the dungeon are invited.
+			invited := []string{}
+			if b.isTrue("fromWish") {
+				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": name.key})
+				if err != nil {
+					return nil, err
+				}
+				for _, w := range wishes {
+					if member := w.GetString("member"); member != m.Id && !contains(invited, member) {
+						invited = append(invited, member)
+					}
+				}
+			}
+			r.Set("invited", invited)
 			if err := app.Save(r); err != nil {
+				return nil, err
+			}
+			if err := inviteToRun(app, r, invited, user); err != nil {
 				return nil, err
 			}
 		}

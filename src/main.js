@@ -841,6 +841,7 @@ async function ownNews(data) {
     // Cap alerts of the account's characters (the job checked the quiet hours).
     if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
     if (Array.isArray(data.partyReady)) await showPartyReady(data.partyReady);
+    if (Array.isArray(data.invites)) await showInvites(data.invites);
     // Notification settings saved in another tab or app.
     if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
     if (data.contact) {
@@ -1071,7 +1072,9 @@ app.addEventListener('submit', async e => {
     else if (form.id === 'run-form') {
       if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to plan runs with your party.'));
       const problem = runProblem(data, { now: Date.now() + serverOffset, catalog: dungeons, runs }); if (problem) return formError(form, problem);
-      const id = room.id, result = await send('plan', { roomId: id, dungeon: data.dungeon, startsAt: new Date(data.startsAt).toISOString(), note: data.note }); form.reset(); changedRoom(id, () => { runs = result.runs; });
+      // Planned from the wishlist (and still that dungeon): its members are invited (#45).
+      const fromWish = Boolean(form.dataset.fromWish) && form.dataset.fromWish === data.dungeon;
+      const id = room.id, result = await send('plan', { roomId: id, dungeon: data.dungeon, startsAt: new Date(data.startsAt).toISOString(), note: data.note, ...(fromWish ? { fromWish: true } : {}) }); form.reset(); delete form.dataset.fromWish; changedRoom(id, () => { runs = result.runs; });
     }
     else if (form.id === 'run-edit-form') {
       const run = runs.find(r => r.id === data.runId); if (!run) return formError(form, t('This run is no longer planned.'));
@@ -1169,7 +1172,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.slotEquip !== undefined && el.dataset.kind) { slotState = await send('slot-equip', { kind: el.dataset.kind, id: el.dataset.slotEquip }); return slotsRender(); }
     if (el.dataset.planWish) {
       const form = document.querySelector('#run-form'); if (!form) return;
-      form.elements.dungeon.value = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
+      form.elements.dungeon.value = el.dataset.planWish; form.dataset.fromWish = el.dataset.planWish; form.scrollIntoView({ behavior: 'smooth', block: 'center' }); return form.elements.startsAt.focus();
     }
     // Going with one of several characters shared here asks which one first.
     if (el.dataset.run && el.dataset.going === 'true' && !el.dataset.character && mine().filter(c => c.shared).length > 1) {
@@ -1327,6 +1330,12 @@ async function showCapAlerts(alerts) {
   const settings = account?.notifications || notificationsSeen || defaultNotifications;
   if (!settings.kinds.cap || !settings.channels.browser || reminderState() !== 'on') return;
   for (const alert of alerts) { const { title, body } = capAlertText(alert); await notice(title, { body, tag: 'cap-' + alert.characterId + '-' + alert.state, icon: 'icon-192.png' }); }
+}
+// A run planned from the wishlist invites those who wanted its dungeon (#45).
+async function showInvites(invites) {
+  const settings = account?.notifications || notificationsSeen || defaultNotifications;
+  if (!settings.kinds.runs || !settings.channels.browser || reminderState() !== 'on') return;
+  for (const n of invites) await notice(t('{by} invites you to {dungeon}', { by: n.by, dungeon: n.dungeon }), { body: t('{room} · {when}', { room: n.room, when: new Date(timestamp(n.startsAt)).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }), tag: 'invite-' + n.runId, icon: 'icon-192.png' });
 }
 // Everyone going to a run can claim a cube (#48): one notice per run and start, like a push.
 async function showPartyReady(notices) {

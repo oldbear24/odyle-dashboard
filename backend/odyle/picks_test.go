@@ -92,3 +92,42 @@ func TestMembersAnswerTheyCannotCome(t *testing.T) {
 	answer(`"cant":"maybe"`, 400)
 	ask(t, app, http.MethodPost, "/api/odyle/plan", tokenOf(t, watcher), `{`+in+`,"cant":true}`, 403)
 }
+
+// Wishlist invites (#45): a run planned from the wishlist invites the members who want its
+// dungeon (the planner aside); one who answers drops off the invited list, and a run planned
+// without it invites nobody.
+func TestRunsPlannedFromTheWishlistInviteItsWishers(t *testing.T) {
+	app := newTestApp(t)
+	lead, mate, other := newUser(t, app, "Lead"), newUser(t, app, "Mate"), newUser(t, app, "Other")
+	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Raid", "cost": 40})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": other.Id, "role": "reporter"})
+	in := `"roomId":"` + room.Id + `"`
+	for _, u := range []map[string]string{tokenOf(t, lead), tokenOf(t, mate)} {
+		ask(t, app, http.MethodPost, "/api/odyle/wishlist", u, `{`+in+`,"dungeon":"Fire Temple","wanted":true}`, 200)
+	}
+	start := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+	runOf := func(got map[string]any, dungeon string) map[string]any {
+		t.Helper()
+		for _, r := range got["runs"].([]any) {
+			if r.(map[string]any)["dungeon"] == dungeon {
+				return r.(map[string]any)
+			}
+		}
+		t.Fatalf("no %s run: %v", dungeon, got)
+		return nil
+	}
+	planned := runOf(ask(t, app, http.MethodPost, "/api/odyle/plan", tokenOf(t, lead), `{`+in+`,"dungeon":"Fire Temple","startsAt":"`+start+`","fromWish":true}`, 200), "Fire Temple")
+	if fmt.Sprint(planned["invited"]) != "["+mate.Id+"]" {
+		t.Fatalf("invited %v", planned["invited"])
+	}
+	answered := runOf(ask(t, app, http.MethodPost, "/api/odyle/plan", tokenOf(t, mate), `{`+in+`,"id":"`+planned["id"].(string)+`","going":true}`, 200), "Fire Temple")
+	if fmt.Sprint(answered["invited"]) != "[]" {
+		t.Fatalf("the invitee who answered is still listed: %v", answered["invited"])
+	}
+	plain := runOf(ask(t, app, http.MethodPost, "/api/odyle/plan", tokenOf(t, lead), `{`+in+`,"dungeon":"Ice Temple","startsAt":"`+start+`"}`, 200), "Ice Temple")
+	if fmt.Sprint(plain["invited"]) != "[]" {
+		t.Fatalf("a run not from the wishlist invited %v", plain["invited"])
+	}
+}
