@@ -67,3 +67,12 @@ See [Backups and restore](deployment.md#backups-and-restore): restore in the sup
 - The server keeps running the version it has. With `latest` and no automatic pulls nothing changes until someone deploys; pin a version (above) to be sure.
 - Players' Windows apps keep their pairing and update only from published releases.
 - Another superuser can do everything in this runbook: post announcements, pause readers or features, switch adapters off, and back up or restore. Give that access deliberately: a superuser sees every account.
+
+### Who holds the keys
+
+As of 17 October 2026 the maintainer (oldbear24) is the only one with access; there is no second key-holder yet (owner's decision, #41). A successor or second key-holder needs:
+
+- Admin on the two GitHub repositories (oldbear24/odyle-dashboard and oldbear24/odyle-windows). `main` is protected: changes go through a pull request with green checks, so an admin has to switch the protection off under Settings → Branches for an emergency push.
+- The server: shell access to the host running the container, and the PocketBase superuser login.
+- The Discord application that signs players in, and the backup location.
+- Private vulnerability reports arrive on GitHub (Security → Advisories); SECURITY.md points reporters there.
