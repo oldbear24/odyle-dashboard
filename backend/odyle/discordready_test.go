@@ -88,3 +88,29 @@ func TestDiscordPostsCountWhoCanClaimACube(t *testing.T) {
 		t.Fatalf("edited again after turning it off")
 	}
 }
+
+// The posts' language alone (#50): later posts use it and the room's open posts are edited into
+// it; a language other than English or Czech is refused.
+func TestRoomOwnersChangeTheLanguageOfDiscordPosts(t *testing.T) {
+	app := newTestApp(t)
+	hook := newDiscordStand(t)
+	lead := newUser(t, app, "Leader")
+	room, leader := discordRoom(t, app, lead, hook.url, map[string]any{"discordLeads": []int64{60}, "discordLanguage": "en"})
+	saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(50 * time.Minute)), "plannedBy": leader.Id, "attendees": []string{leader.Id}})
+	if out := remindOnce(t, app); out.Done != 1 || !strings.Contains(asJSON(t, hook.of("POST")[0].body), "Going (1)") {
+		t.Fatalf("first post: %v", out)
+	}
+	auth := tokenOf(t, lead)
+	answer := ask(t, app, "POST", "/api/odyle/discord-webhook", auth, `{"roomId":"`+room.Id+`","language":"cs"}`, 200)
+	if got := answer["room"].(map[string]any); got["discordLanguage"] != "cs" || got["discordReminders"] != true {
+		t.Fatalf("room %v", got)
+	}
+	if remindOnce(t, app); len(hook.of("PATCH")) != 1 || !strings.Contains(asJSON(t, hook.of("PATCH")[0].body), "Jdou (1)") {
+		t.Fatalf("the open post is edited into Czech: %d edits", len(hook.of("PATCH")))
+	}
+	ask(t, app, "POST", "/api/odyle/discord-webhook", auth, `{"roomId":"`+room.Id+`","language":"de"}`, 400)
+	ask(t, app, "POST", "/api/odyle/discord-webhook", auth, `{"roomId":"`+room.Id+`","language":"cs"}`, 200)
+	if remindOnce(t, app); len(hook.of("PATCH")) != 1 {
+		t.Fatalf("the same language edits nothing")
+	}
+}

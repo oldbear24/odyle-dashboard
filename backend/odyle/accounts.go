@@ -2161,6 +2161,17 @@ func discordWebhook(e *core.RequestEvent) error {
 		if ready, ok := b.boolean("readiness"); ok {
 			room.Set("discordReadiness", ready)
 		}
+		// The posts' language alone (#50): later posts use it, and the room's posts still showing
+		// a run are edited into it.
+		relabel := false
+		if !b.has("webhook") && b.has("language") {
+			l, _ := b.text("language")
+			if l != "en" && l != "cs" {
+				return badRequest("Choose English or Czech for the Discord posts.")
+			}
+			relabel = room.DiscordWebhook() != "" && l != room.DiscordLanguage()
+			room.Set("discordLanguage", l)
+		}
 		if b.has("webhook") {
 			url, err := webhook(b["webhook"])
 			if err != nil {
@@ -2183,6 +2194,11 @@ func discordWebhook(e *core.RequestEvent) error {
 		}
 		if err := e.App.Save(room); err != nil {
 			return err
+		}
+		if relabel {
+			if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET dirty = TRUE WHERE room = {:room} AND messageId != '' AND ended = ''").Bind(dbx.Params{"room": room.Id}).Execute(); err != nil {
+				warn(e.App, "Odyle could not mark Discord posts for an edit", "room", room.Id, "error", err.Error())
+			}
 		}
 		notify(e.App, []string{room.Id})
 		return e.JSON(200, map[string]any{"room": roomJSON(room, odylePerCube(e.App))})

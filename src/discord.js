@@ -2,7 +2,7 @@
 // chooses when runs are posted; the backend posts each run, edits the post after a change and
 // marks it when the run is cancelled or done (backend/odyle/discord.go). The webhook URL never
 // comes back from the server; its name in Discord and how the last delivery went do.
-import { t } from './i18n.js';
+import { t, language } from './i18n.js';
 import { age, escape as esc } from './model.js';
 import { leadLabel } from './notify.js';
 
@@ -26,6 +26,8 @@ export function deliveryLine(room, now) {
   return null;
 }
 
+// The language a room's posts use: the room's, else (not connected yet) this dashboard's (#50).
+const postLanguage = room => room?.discordReminders && room.discordLanguage ? room.discordLanguage : language() === 'cs' ? 'cs' : 'en';
 export function discordSettings(room, now, paused = false) {
   const on = Boolean(room.discordReminders), leads = leadsOf(room), line = deliveryLine(room, now);
   const posting = on && room.discordName ? ' ' + t('Posting as {name}, in {language}.', { name: room.discordName, language: room.discordLanguage === 'cs' ? t('Czech') : t('English') }) : '';
@@ -33,7 +35,7 @@ export function discordSettings(room, now, paused = false) {
     : t('Post each planned run to a Discord channel before it starts, with a link back to the room; the post follows changes and shows when a run is cancelled. In Discord, open the channel settings → Integrations → Webhooks, create one and paste its URL here.');
   const status = line ? `<p class="discord-status ${line.tone}" role="status">${esc(line.text)}</p>` : '';
   const choices = discordLeadChoices.map(m => `<label class="chip-check"><input type="checkbox" name="lead" value="${m}" ${leads.includes(m) ? 'checked' : ''}><span>${esc(leadLabel(m))}</span></label>`).join('');
-  const options = `<form id="discord-options-form" class="discord-options"><div class="lead-choices" role="group" aria-label="${esc(t('Reminder times'))}">${choices}</div><label class="check-row"><input type="checkbox" name="startPost" ${room.discordStartPost ? 'checked' : ''}> <span>${t('Also post when a run starts')}</span></label><small class="account-note">${t('Up to three times before each run. Going members who turned on Discord mentions in their notifications are pinged in the first post.')}</small><label class="check-row"><input type="checkbox" name="readiness" ${room.discordReadiness ? 'checked' : ''}> <span>${t('Show how many of those going can claim a cube')}</span></label><small class="account-note">${t('Counts only, never names or Odyle values: the channel may include people outside the room. The post follows changes up to the start.')}</small>${on ? `<button class="button secondary small" type="submit">${t('Save')}</button>` : ''}</form>`;
+  const options = `<form id="discord-options-form" class="discord-options"><div class="lead-choices" role="group" aria-label="${esc(t('Reminder times'))}">${choices}</div><label class="check-row"><input type="checkbox" name="startPost" ${room.discordStartPost ? 'checked' : ''}> <span>${t('Also post when a run starts')}</span></label><small class="account-note">${t('Up to three times before each run. Going members who turned on Discord mentions in their notifications are pinged in the first post.')}</small><label class="discord-language">${t('Language of the posts')}<select name="language"><option value="en" ${postLanguage(room) === 'en' ? 'selected' : ''}>${t('English')}</option><option value="cs" ${postLanguage(room) === 'cs' ? 'selected' : ''}>${t('Czech')}</option></select></label><label class="check-row"><input type="checkbox" name="readiness" ${room.discordReadiness ? 'checked' : ''}> <span>${t('Show how many of those going can claim a cube')}</span></label><small class="account-note">${t('Counts only, never names or Odyle values: the channel may include people outside the room. The post follows changes up to the start.')}</small>${on ? `<button class="button secondary small" type="submit">${t('Save')}</button>` : ''}</form>`;
   const connect = `<form id="discord-form" class="rename-form"><label>${on ? t('Replace the webhook URL') : t('Webhook URL')}<input name="webhook" type="url" autocomplete="off" required placeholder="https://discord.com/api/webhooks/…"></label><button class="button secondary" type="submit">${on ? t('Replace') : t('Connect')}</button></form>`;
   const hold = paused ? `<p class="discord-status warn" role="status">${t('The server\'s operator has paused Discord reminders for now; planned runs are posted again once they turn them back on.')}</p>` : '';
   return `<h3 class="modal-sub">${t('Discord reminders')}</h3><p>${esc(intro)}</p>${hold}${status}${options}${connect}${on ? `<button class="text-button" data-action="discord-off">${t('Stop Discord reminders')}</button>` : ''}`;
@@ -43,5 +45,6 @@ export function discordSettings(room, now, paused = false) {
 export function chosenTimes(form) {
   const leads = [...form.querySelectorAll('input[name="lead"]:checked')].map(input => Number(input.value));
   if (!leads.length || leads.length > 3) return { error: t('Choose one to three reminder times.') };
-  return { leads, startPost: Boolean(form.querySelector('input[name="startPost"]')?.checked), readiness: Boolean(form.querySelector('input[name="readiness"]')?.checked) };
+  const chosen = form.querySelector('select[name="language"]')?.value;
+  return { leads, startPost: Boolean(form.querySelector('input[name="startPost"]')?.checked), ...(chosen ? { language: chosen } : {}), readiness: Boolean(form.querySelector('input[name="readiness"]')?.checked) };
 }

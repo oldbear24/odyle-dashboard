@@ -25,6 +25,8 @@ test('room settings say when runs are posted and how the webhook last fared', as
   // Readiness in the posts (#46): the room's choice, counts only.
   assert.match(on, /name="readiness"\s+>/); assert.match(discordSettings({ discordReminders: true, discordReadiness: true }, now), /name="readiness" checked/);
   assert.match(on, /Counts only, never names or Odyle values/);
+  // The posts' language (#50): the room's once connected, else this dashboard's; the form sends it.
+  assert.match(on, /name="language"[\s\S]*value="cs" selected/); assert.match(discordSettings({ discordReminders: false }, now), /value="en" selected/);
   const off = discordSettings({ discordReminders: false }, now);
   assert.doesNotMatch(off, />Save<\/button>|discord-off/);
   assert.match(off, /Post each planned run to a Discord channel before it starts/);

@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.27.0 · 2026-10-17
+
+### New
+- **Room settings → Discord reminders** shows the language of the room's posts and lets its owner change it (English or Czech); posts still showing a run follow at once. Before, it was quietly the language the dashboard had when the channel was connected.
+
 ## 0.26.0 · 2026-10-17
 
 ### New
