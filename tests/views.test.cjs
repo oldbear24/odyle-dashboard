@@ -157,3 +157,10 @@ test('a run planned into the weekly maintenance says so', async () => {
   assert.match(section('2026-10-21T07:00:00.000Z'), /class="run-warning">During the weekly maintenance of the game \(/);
   assert.doesNotMatch(section('2026-10-21T12:00:00.000Z'), /run-warning/);
 });
+test('the Notifications card has the party-ready switch, on until turned off', async () => {
+  const { accountView } = await import('../src/account.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const view = notifications => accountView({ account: { displayName: 'L' }, characters: 0, limits: { characters: 30 }, now, devices: [], apps: [], ...(notifications ? { notifications } : {}) });
+  assert.match(view(), /name="ready" checked/); assert.match(view(), /once everyone going plays live with enough Odyle for a cube/);
+  const saved = { channels: { tray: true, browser: true, push: true }, leadMinutes: [15], kinds: { runs: true, cap: false }, quiet: { from: '', to: '', timeZone: '' }, saved: true };
+  assert.match(view(saved), /name="ready" checked/); assert.match(view({ ...saved, kinds: { ...saved.kinds, ready: false } }), /name="ready"\s+>/);
+});

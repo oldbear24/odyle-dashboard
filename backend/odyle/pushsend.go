@@ -32,6 +32,8 @@ var pushTexts = map[string]map[string]string{
 		"minutes":   "%d min",
 		"hours":     "%d h",
 		"hoursMins": "%d h %d min",
+		"ready":     "%s: the party is ready",
+		"readyBody": "All %d going can claim a cube · %s",
 	},
 	"cs": {
 		"run":       "%s začíná za %s",
@@ -46,7 +48,14 @@ var pushTexts = map[string]map[string]string{
 		"minutes":   "%d min",
 		"hours":     "%d h",
 		"hoursMins": "%d h %d min",
+		"ready":     "%s: parta je připravená",
+		"readyBody": "Všech %d jdoucích si vezme kostku · %s",
 	},
+}
+
+// partyReadyPush words a party-ready notice; its tag is the one open dashboards use.
+func partyReadyPush(language string, n partyNotice) pushMessage {
+	return pushMessage{Title: pushText(language, "ready", n.Dungeon), Body: pushText(language, "readyBody", n.Of, n.Room), Tag: "ready-" + n.RunId + "@" + n.StartsAt, Page: "#/room/" + n.RoomId}
 }
 
 func pushText(language, key string, args ...any) string {

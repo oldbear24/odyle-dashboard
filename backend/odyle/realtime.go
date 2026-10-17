@@ -58,6 +58,8 @@ type userNews struct {
 	notifications *notificationSettings
 	// cap alerts of its characters (capalerts.go)
 	capAlerts []capAlert
+	// runs whose party is ready (partyready.go)
+	partyReady []partyNotice
 }
 
 // outbox collects news until its delivery.
@@ -251,6 +253,9 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 	}
 	if len(n.capAlerts) > 0 {
 		message["capAlerts"] = n.capAlerts
+	}
+	if len(n.partyReady) > 0 {
+		message["partyReady"] = n.partyReady
 	}
 	for _, kind := range []struct {
 		key   string
