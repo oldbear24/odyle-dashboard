@@ -194,3 +194,19 @@ test('a member without a character in the room sees the steps to get one there',
   assert.match(last, /Step 4 of 4/); assert.match(last, /add-chips/); assert.doesNotMatch(last, /class="download"/); assert.equal((last.match(/setup-step done/g) || []).length, 3);
   assert.equal(setupTracker({ paired: true, online: true, saved: true, shared: true }), '');
 });
+test('around its start a run calls the roll: each attendee in words and a count', async () => {
+  const { runsSection, rollCallOf, rollCallLine, inRollCall } = await import('../src/runs.js'), now = Date.parse('2026-10-14T20:00:00Z');
+  const at = ms => new Date(ms).toISOString();
+  // From 15 minutes before the start to 30 minutes after it.
+  assert.deepEqual([16, 15, -30, -31].map(minutes => inRollCall(now + minutes * 60000, now)), [false, true, true, false]);
+  const live = { characterName: 'Lumina', displayName: 'Lumina', lastReadingAt: at(now - 60000) };
+  const rows = [{ user: 'a', character: live, state: 'live', claims: true, cubes: 2, cubesAtStart: 2 }, { user: 'b', character: { ...live, characterName: 'Kaelen', displayName: 'Kaelen' }, state: 'live', claims: false, cubes: 0, cubesAtStart: 0 }, { user: 'c', character: { ...live, characterName: 'Nyx', displayName: 'Nyx' }, state: 'offline', claims: true, cubes: 1, cubesAtStart: 1 }, { user: 'd', character: null, state: 'unknown', claims: false }];
+  assert.deepEqual(rows.map(rollCallOf), ['ready', 'short', 'away', 'none']);
+  assert.equal(rollCallLine(rows), '1 ready · 1 short · 1 not in game · 1 without a character');
+  const members = ['a', 'b', 'c', 'd'].map(user => ({ user, displayName: user.toUpperCase() }));
+  const section = start => runsSection({ runs: [{ id: 'r', dungeon: 'Fire Temple', startsAt: at(start), attendees: ['a', 'b', 'c', 'd'], planner: 'a', note: '' }], members, myId: 'a', viewer: false, owner: false, live: new Set(), now, readiness: () => ({ rows, claim: 2, of: 4 }) });
+  const calling = section(now + 10 * 60000);
+  assert.match(calling, /Roll call: 1 ready · 1 short · 1 not in game · 1 without a character/);
+  assert.match(calling, /class="roll-call ready">ready</); assert.match(calling, /D · <b class="roll-call none">no character</);
+  assert.doesNotMatch(section(now + 60 * 60000), /roll-call/, 'an hour ahead: no roll call yet');
+});

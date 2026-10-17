@@ -8,6 +8,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - **Rooms & characters** lists **Your next runs**: the runs you are going to in the next two weeks, each opening its room, and **Add all to calendar** for all of them in one file.
 - Each room there says its members, who plays live now, the cubes the party can open now and its next run, instead of the cost per cube.
 - Until you have saved a character, a room shows four steps to get one into its party: install and pair the Windows app (with what to do when Windows warns, and Npcap), keep it running, log in to the character once, and add it here. With characters saved, the room offers them to add as before.
+- **Planned runs call the roll** from 15 minutes before the start to 30 minutes after: each attendee shows ready, short, not in game or no character, and a line counts them ("Roll call: 3 ready · 1 short").
 
 ## 0.29.1 · 2026-10-17
 
