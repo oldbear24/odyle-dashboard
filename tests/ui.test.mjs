@@ -1272,11 +1272,17 @@ test('the logo clicked seven times opens the slot machine, whose spins win cosme
     await page.locator('.slot-machine').waitFor();
     assert.match(await page.locator('.slot-spins').innerText(), /3 spins left/);
     await page.locator('[data-action="slot-spin"]').click();
-    await page.locator('.slot-result').filter({ hasText: /You won|already yours/ }).waitFor();
+    // Most spins win nothing; a win can be worn.
+    await page.locator('.slot-result').filter({ hasText: /You won|already yours|No win this time/ }).waitFor();
     assert.match(await page.locator('.slot-spins').innerText(), /2 spins left/);
-    assert.ok(await page.locator('.slot-item:not(.locked)').count() >= 1);
-    await page.locator('[data-slot-equip]:not([data-slot-equip=""])').first().click();
-    await page.locator('.slot-item.worn').waitFor();
+    if (await page.locator('[data-slot-equip]:not([data-slot-equip=""])').count()) {
+      await page.locator('[data-slot-equip]:not([data-slot-equip=""])').first().click();
+      await page.locator('.slot-item.worn').waitFor();
+    }
+    // The sound switch is remembered in this browser.
+    await page.locator('[data-action="slot-sound"]').click();
+    await page.locator('[data-action="slot-sound"][aria-pressed="false"]').waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('odyle.slotSound')), 'off');
     await shot(page, 'slots');
     assert.deepEqual(errors, []);
   } finally { await close(); }

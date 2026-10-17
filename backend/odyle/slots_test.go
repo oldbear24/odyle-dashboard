@@ -41,27 +41,40 @@ func TestTheSlotMachineEarnsSpinsAndWinsCosmetics(t *testing.T) {
 	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins+2) {
 		t.Fatalf("two characters read today: %v", got["spins"])
 	}
-	// Spending every spin wins items or shards; none is left after.
-	owned, shards := 0, 0.0
+	// Spending every spin: most win nothing, a win is an item or a shard; none is left after.
 	for i := 0; i < welcomeSpins+2; i++ {
 		got := post("slot-spin", `{}`, 200)
-		won := got["won"].(map[string]any)
-		if won["id"] == "" || got["duplicate"] == nil {
+		if got["lost"] == true {
+			if got["won"] != nil {
+				t.Fatalf("a lost spin won %v", got["won"])
+			}
+			continue
+		}
+		if won, _ := got["won"].(map[string]any); won["id"] == "" || got["duplicate"] == nil {
 			t.Fatalf("spin %d: %v", i, got)
 		}
-		owned, shards = len(got["owned"].([]any)), got["shards"].(float64)
-	}
-	if owned == 0 || owned+int(shards) > welcomeSpins+2+1 {
-		t.Fatalf("owned %d, shards %v", owned, shards)
 	}
 	left := post("slots", `{}`, 200)
-	if left["spins"].(float64) > 1 {
-		t.Fatalf("spins left: %v", left["spins"])
+	if left["spins"].(float64) > 1 || left["winChance"] != float64(slotWinChance) {
+		t.Fatalf("spins left: %v, chance %v", left["spins"], left["winChance"])
 	}
 	if left["spins"] == float64(0) {
 		post("slot-spin", `{}`, 400)
 	}
-	// Wearing an owned item; rooms see it next to the name.
+	// Wearing an owned item; rooms see it next to the name. (Spins rarely win, so the test gives one.)
+	if len(left["owned"].([]any)) == 0 {
+		u, err := app.FindRecordById("users", player.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := wardrobeOf(u)
+		w.Owned = append(w.Owned, "badge-crown")
+		u.Set("cosmetics", w)
+		if err := app.Save(u); err != nil {
+			t.Fatal(err)
+		}
+		left = post("slots", `{}`, 200)
+	}
 	first := left["owned"].([]any)[0].(string)
 	item, _ := cosmeticById(first)
 	post("slot-equip", `{"kind":"`+item.Kind+`","id":"`+first+`"}`, 200)

@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.33.1 · 2026-10-17
+
+### Changed
+- The slot machine is a real gamble now: a spin wins only 15 % of the time, and the reels show three different symbols when it wins nothing. It plays sounds as the reels spin, win or lose (🔊 turns them off), and its odds line is smaller.
+
 ## 0.33.0 · 2026-10-17
 
 ### New

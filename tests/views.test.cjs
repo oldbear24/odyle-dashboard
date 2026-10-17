@@ -267,3 +267,11 @@ test('a run planned from the wishlist lists who it invited until they answer', a
   assert.match(html, /Invited: B · 2 have not answered/);
   assert.doesNotMatch(runsSection({ runs: [{ ...run, startsAt: '2026-10-14T11:00:00.000Z' }], members, myId: 'a', viewer: false, owner: false, live: new Set(), now }), /Invited:/, 'not once it started');
 });
+test('the slot machine mostly wins nothing: three different faces, and a quiet odds line and sound switch', async () => {
+  const { slotsView, missFaces } = await import('../src/slots.js');
+  for (let seed = 0; seed < 64; seed++) assert.equal(new Set(missFaces(seed)).size, 3, 'a spin that wins nothing never shows two alike');
+  const state = { spins: 1, shards: 0, shardsForSpin: 3, winChance: 15, owned: [], equipped: {}, catalog: [] };
+  const lost = slotsView({ state, name: 'L', last: { lost: true, won: null, seed: 5 } });
+  assert.match(lost, /No win this time\./); assert.match(lost, /class="slot-odds">A spin wins 15 % of the time/);
+  assert.match(lost, /data-action="slot-sound" aria-pressed="true"[^>]*>🔊/); assert.match(slotsView({ state, name: 'L', sound: false }), /aria-pressed="false"[^>]*>🔇/);
+});
