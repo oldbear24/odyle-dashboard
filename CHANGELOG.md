@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.25.0 · 2026-10-17
+
+### New
+- **Account & data → Notifications** has a switch for **daily and weekly tasks**: two hours before a reset, Odyle for Windows (0.17.0 and later) lists in its tray the tasks you have not ticked yet. It is on until you turn it off.
+
 ## 0.24.0 · 2026-10-17
 
 ### New

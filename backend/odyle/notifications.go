@@ -30,6 +30,9 @@ type notificationChannels struct {
 type notificationKinds struct {
 	Runs bool `json:"runs"`
 	Cap  bool `json:"cap"`
+	// Tasks: the tasks still open two hours before a reset, in the Windows app's tray (#48); on
+	// until turned off, so settings saved before it (and older clients) leave it on.
+	Tasks *bool `json:"tasks"`
 }
 
 // From and To are "HH:MM" (both empty: no quiet hours); a span over midnight wraps.
@@ -50,7 +53,8 @@ type notificationSettings struct {
 
 func defaultNotifications() notificationSettings {
 	one := int64(1)
-	return notificationSettings{Channels: notificationChannels{Tray: true, Browser: true, Push: true}, LeadMinutes: []int64{15}, Kinds: notificationKinds{Runs: true}, CapTicks: &one}
+	on := true
+	return notificationSettings{Channels: notificationChannels{Tray: true, Browser: true, Push: true}, LeadMinutes: []int64{15}, Kinds: notificationKinds{Runs: true, Tasks: &on}, CapTicks: &one}
 }
 
 var clockTime = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
@@ -80,6 +84,8 @@ func checkNotifications(n notificationSettings) (notificationSettings, error) {
 		return n, errors.New("Cap alerts come 0 to 8 ticks before the cap.")
 	}
 	n.CapTicks = &ticks
+	tasks := n.Kinds.Tasks == nil || *n.Kinds.Tasks
+	n.Kinds.Tasks = &tasks
 	q := n.Quiet
 	switch {
 	case q.From == "" && q.To == "":

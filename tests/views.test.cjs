@@ -133,3 +133,11 @@ test('a run copies as a Discord message nobody can format or ping with (#35)', a
     String.raw`**Fire \*Temple\*** · <t:` + unix + String.raw`:F> (<t:` + unix + String.raw`:R>) · Going (2/4): Lumina, Kaelen\_x · Bring \<\@1234567\> and \@everyone\_pots · https://odyle.example/#/room/r1`);
   assert.equal(discordText({ ...run, note: '' }, {}), String.raw`**Fire \*Temple\*** · <t:` + unix + String.raw`:F> (<t:` + unix + String.raw`:R>) · Going (0)`);
 });
+test('the Notifications card has the switch for open tasks before a reset, on until turned off', async () => {
+  const { accountView } = await import('../src/account.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const view = notifications => accountView({ account: { displayName: 'L' }, characters: 0, limits: { characters: 30 }, now, devices: [], apps: [], ...(notifications ? { notifications } : {}) });
+  assert.match(view(), /name="tasks" checked/); assert.match(view(), /once per reset, and never when everything is done/);
+  const saved = { channels: { tray: true, browser: true, push: true }, leadMinutes: [15], kinds: { runs: true, cap: false }, quiet: { from: '', to: '', timeZone: '' }, saved: true };
+  assert.match(view(saved), /name="tasks" checked/, 'settings saved before the switch keep it on');
+  assert.match(view({ ...saved, kinds: { ...saved.kinds, tasks: false } }), /name="tasks"\s+>/);
+});
