@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.29.1 · 2026-10-17
+
+### Fixed
+- Names, notes, dungeon and task titles no longer keep invisible characters or text-direction controls, which could make one name look like another or reverse how a note reads.
+
 ## 0.29.0 · 2026-10-17
 
 ### New

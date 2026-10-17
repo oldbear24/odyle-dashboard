@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -13,7 +14,7 @@ import (
 // (go test -run '^$' -fuzz '^FuzzName$' -fuzztime 10s ./odyle).
 
 func FuzzTextLimits(f *testing.F) {
-	for _, s := range []string{"", " Lumiel ", "a\u00a0b \t c", "😀😀x", "x\ufeffy", "\u2028\u3000", "\xff\xfe"} {
+	for _, s := range []string{"", " Lumiel ", "a\u00a0b \t c", "😀😀x", "x\ufeffy", "\u2028\u3000", "\xff\xfe", "\u202eevil", "a\u200bb", "👩\u200d💻"} {
 		f.Add(s, 3)
 	}
 	f.Fuzz(func(t *testing.T, s string, n int) {
@@ -28,8 +29,11 @@ func FuzzTextLimits(f *testing.F) {
 		if trim(trim(s)) != trim(s) || collapse(collapse(s)) != collapse(s) {
 			t.Fatalf("trim or collapse of %q is not stable", s)
 		}
-		if got, err := text(s, "Name", n); err == nil && (got != trim(got) || got == "" || length(got) > n) {
+		if got, err := text(s, "Name", n); err == nil && (got != trim(got) || got == "" || length(got) > n || strings.ContainsFunc(got, invisible)) {
 			t.Fatalf("text(%q, %d) accepted %q", s, n, got)
+		}
+		if strings.ContainsFunc(collapse(s), invisible) {
+			t.Fatalf("collapse(%q) kept an invisible character", s)
 		}
 	})
 }
