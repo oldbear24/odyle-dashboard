@@ -5,7 +5,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ## 0.29.0 · 2026-10-17
 
 ### New
-- **Party ready**: from an hour before a run you are going to, once everyone going plays live with enough Odyle for a cube, each of you is told once, in the browser, by push and in Odyle for Windows (0.20.0 and later). Turn it off under **Account & data → Notifications**; quiet hours apply.
+- **Party ready**: from an hour before a run you are going to, once everyone going plays live with enough Odyle for a cube, each of you is told once, in the browser, by push and in Odyle for Windows once it updates. Turn it off under **Account & data → Notifications**; quiet hours apply.
 
 ## 0.28.0 · 2026-10-17
 
