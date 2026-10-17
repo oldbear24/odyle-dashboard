@@ -100,7 +100,7 @@ test('owners invite with a link, manage the room and close it only after confirm
   const owner = await open(lead);
   try {
     const { page } = owner;
-    await page.getByRole('heading', { name: 'Welcome, UI lead.' }).waitFor();
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
     await page.locator('#create-form [name=name]').fill('UI room');
     await page.locator('#create-form [type=submit]').click();
     await page.locator('#modal .invite-row').first().waitFor();
@@ -191,7 +191,7 @@ test('owners invite with a link, manage the room and close it only after confirm
     await page.locator('[data-action="room-settings"]').click();
     await page.locator('#modal [data-action="leave-room"]').click();
     await page.locator('#modal [data-action="confirm-leave"]').click();
-    await page.getByRole('heading', { name: 'Welcome, UI lead.' }).waitFor();
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
     assert.equal((await request('/api/odyle/rooms', undefined, lead, 'GET')).data.rooms.length, 0);
     assert.deepEqual(owner.errors, []);
   } finally { await owner.close(); }
@@ -221,7 +221,7 @@ test('an invite link that no longer works says why, and Invitations finds the ro
     await page.goto(url + '/#/join/ZZZZ-ZZZZ-ZZZZ');
     await page.locator('.invite-landing.problem').filter({ hasText: 'does not work' }).waitFor();
     await page.locator('.invite-page-actions [data-action="library"]').click();
-    await page.getByRole('heading', { name: 'Welcome, Link friend.' }).waitFor();
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
     // Invitations without a room you lead says what to do instead of a dead end.
     await navigate(page, 'invite');
     await page.locator('#modal').filter({ hasText: 'Create a room first' }).waitFor();
@@ -230,7 +230,7 @@ test('an invite link that no longer works says why, and Invitations finds the ro
   // A leader of two rooms picks the room, which opens with its invite links.
   const leader = await open(lead, '#/');
   try {
-    await leader.page.getByRole('heading', { name: 'Welcome, Link lead.' }).waitFor();
+    await leader.page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
     await navigate(leader.page, 'invite');
     await leader.page.locator('#modal [data-invite-room]').first().waitFor();
     assert.match(await leader.page.locator('#modal').innerText(), /Invite to which room\?[\s\S]*First link room[\s\S]*Second link room|Invite to which room\?[\s\S]*Second link room[\s\S]*First link room/);
@@ -332,7 +332,7 @@ test('rooms plan, change and export runs, and members see each character history
     assert.deepEqual(other.errors, []);
   } finally { await other.close(); }
   const outside = await open(stranger, '#/room/' + roomId);
-  try { await outside.page.getByRole('heading', { name: 'Welcome, Run stranger.' }).waitFor(); assert.match(outside.page.url(), /#\/$/); } finally { await outside.close(); }
+  try { await outside.page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor(); assert.match(outside.page.url(), /#\/$/); } finally { await outside.close(); }
 });
 test('members keep the wishlist together, share characters and viewers only watch', async () => {
   const [lead, mate, watcher] = await Promise.all([account('Wish lead'), account('Wish mate'), account('Wish watcher')]);
@@ -341,7 +341,7 @@ test('members keep the wishlist together, share characters and viewers only watc
   // A typed invite code joins too.
   const mates = await open(mate);
   try {
-    await mates.page.getByRole('heading', { name: 'Welcome, Wish mate.' }).waitFor();
+    await mates.page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
     await mates.page.locator('#join-form [name=code]').fill(created.invites[0].code.match(/.{4}/g).join(' '));
     await mates.page.locator('#join-form [type=submit]').click();
     await mates.page.locator('.room-page h1').waitFor();
@@ -1108,7 +1108,7 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     await shot(page, 'unreachable');
     assert.ok(await page.evaluate(() => localStorage.getItem('odyle.account')));
     await page.unroute('**/api/**');
-    await page.getByRole('heading', { name: 'Welcome, Outage.' }).waitFor({ timeout: 15000 });
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor({ timeout: 15000 });
     await page.locator('.connection.connected:visible').waitFor();
     // Losing the server later flips the indicator without a reload. A server going away
     // ends the realtime stream too, which otherwise stands in for the health check.
