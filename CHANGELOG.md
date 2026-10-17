@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.25.0 · 2026-10-17
+
+### New
+- **Rooms & characters** lists **Your next runs**: the runs you are going to in the next two weeks, each opening its room, and **Add all to calendar** for all of them in one file.
+- Each room there says its members, who plays live now, the cubes the party can open now and its next run, instead of the cost per cube.
+- Until you have saved a character, a room shows four steps to get one into its party: install and pair the Windows app (with what to do when Windows warns, and Npcap), keep it running, log in to the character once, and add it here. With characters saved, the room offers them to add as before.
+
 ## 0.29.1 · 2026-10-17
 
 ### Fixed

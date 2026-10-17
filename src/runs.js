@@ -45,11 +45,41 @@ export function discordText({ dungeon, startsAt, note }, { going = [], partySize
   if (link) parts.push(link);
   return parts.join(' · ');
 }
-export function calendarFile({ id, dungeon, startsAt, note }, { room, going, now }) {
+function calendarEvent({ id, dungeon, startsAt, note }, { room, going = [], now }) {
   const start = timestamp(startsAt), summary = room ? `${dungeon} · ${room}` : dungeon, details = [note, going.length ? t('Going: {names}', { names: going.join(', ') }) : ''].filter(Boolean).join('\n');
-  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Odyle//Party dashboard//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${id}@odyle`, `DTSTAMP:${utc(now)}`, `DTSTART:${utc(start)}`, `DTEND:${utc(start + 3600000)}`, `SUMMARY:${ics(summary)}`, ...(details ? [`DESCRIPTION:${ics(details)}`] : []),
-    'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${ics(summary)}`, 'TRIGGER:-PT15M', 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
+  return ['BEGIN:VEVENT', `UID:${id}@odyle`, `DTSTAMP:${utc(now)}`, `DTSTART:${utc(start)}`, `DTEND:${utc(start + 3600000)}`, `SUMMARY:${ics(summary)}`, ...(details ? [`DESCRIPTION:${ics(details)}`] : []),
+    'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${ics(summary)}`, 'TRIGGER:-PT15M', 'END:VALARM', 'END:VEVENT'];
 }
+const calendar = events => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Odyle//Party dashboard//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events.flat(), 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
+export function calendarFile(run, { room, going, now }) {
+  return calendar([calendarEvent(run, { room, going, now })]);
+}
+// Every run you go to in one file (#51): "Add all to calendar" on Rooms & characters. A run the
+// calendar already has (the same UID) is updated, not added twice.
+export function calendarOfRuns(runs, now) {
+  return calendar(runs.map(r => calendarEvent(r, { room: r.room, now })));
+}
+
+// Your next runs on Rooms & characters (#51): the runs you are going to in the next two weeks,
+// soonest first, each opening its room, with one button for all of them in a calendar.
+export function nextRunsSection(runs, now) {
+  if (!runs?.length) return '';
+  const when = at => new Date(at).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const rows = runs.map(r => `<button class="room-item next-run" data-room="${esc(r.roomId)}"><span class="setup-icon">${icon('calendar')}</span><span><strong>${esc(r.dungeon)}</strong><small>${esc(r.room)} · ${esc(when(timestamp(r.startsAt)))} · ${esc(startsIn(timestamp(r.startsAt), now))}</small></span>${icon('arrow')}</button>`).join('');
+  return `<section class="party-section next-runs"><div class="section-heading"><h2>${t('Your next runs')} <span>${runs.length}</span></h2><button class="button secondary" data-action="calendar-all">${icon('calendar')} ${t('Add all to calendar')}</button></div><div class="room-list">${rows}</div></section>`;
+}
+
+// A room at a glance on Rooms & characters (#51): your role, its members, who plays live now and
+// the cubes their party can open now, and its next run.
+export function roomGlance(r, now) {
+  const parts = [roleName(r.role)];
+  if (typeof r.memberCount !== 'number') return [...parts, t('{cost} Odyle per cube', { cost: r.cost })].join(' · ');
+  parts.push(tn(r.memberCount, '{n} member', '{n} members'));
+  if (r.liveCount) parts.push(t('{live} live · party {cubes}', { live: r.liveCount, cubes: tn(r.partyCubes, '{n} cube', '{n} cubes') }));
+  if (r.nextRun) parts.push(t('next: {dungeon} {when}', { dungeon: r.nextRun.dungeon, when: startsIn(timestamp(r.nextRun.startsAt), now) }));
+  return parts.join(' · ');
+}
+const roleName = role => role === 'owner' ? t('leader') : role === 'officer' ? t('officer') : role === 'viewer' ? t('viewer') : t('player');
 // Planned runs of a room, soonest first: owners and players plan and join them, viewers
 // read them; the planner or the room owner changes or cancels one. Everyone can add a
 // run to their calendar. `live` holds the accounts with a live character in the room.

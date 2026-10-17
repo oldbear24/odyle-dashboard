@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -505,7 +506,11 @@ func rooms(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		out := []any{}
+		next, err := nextRuns(e.App, pluck(memberships, (*Member).Room))
+		if err != nil {
+			return err
+		}
+		out, at := []any{}, time.Now()
 		for _, m := range memberships {
 			room := byId[m.Room()]
 			if room == nil {
@@ -513,6 +518,14 @@ func rooms(e *core.RequestEvent) error {
 			}
 			linked, j := m.Shared(), roomJSON(room, rules.OdylePerCube)
 			j["role"], j["sharedCharacters"], j["sharing"], j["shareNew"] = m.Role(), linked, len(linked) > 0, m.GetBool("shareNew")
+			// The room at a glance (#51): its members, the players live now and the cubes their
+			// party can open now (the readiness rules, readiness.go), and its next run.
+			entries, users, err := roomEntries(e.App, room.Id)
+			if err != nil {
+				return err
+			}
+			party := partyOf(entries, at, rules.OdylePerCube)
+			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(users), len(party.Players), party.Cubes, next[room.Id]
 			out = append(out, j)
 		}
 		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
@@ -2228,8 +2241,12 @@ func upcoming(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		at := time.Now()
-		found, err := e.App.FindAllRecords("room_runs", dbx.In("room", anys(roomIds)...), dbx.NewExp("startsAt > {:now} AND startsAt <= {:until}", dbx.Params{"now": stamp(at), "until": stamp(at.Add(24 * time.Hour))}))
+		// The next 24 hours for reminders; the library asks for up to 60 days (?days=, #51).
+		at, days := time.Now(), int64(1)
+		if asked, err := strconv.ParseInt(e.Request.URL.Query().Get("days"), 10, 64); err == nil {
+			days = max(1, min(60, asked))
+		}
+		found, err := e.App.FindAllRecords("room_runs", dbx.In("room", anys(roomIds)...), dbx.NewExp("startsAt > {:now} AND startsAt <= {:until}", dbx.Params{"now": stamp(at), "until": stamp(at.Add(time.Duration(days) * 24 * time.Hour))}))
 		if err != nil {
 			return err
 		}
@@ -2254,6 +2271,26 @@ func maintenanceOf(rules settings) any {
 		return nil
 	}
 	return rules.Maintenance
+}
+
+// nextRuns is the next run of each room, by room: its dungeon and start, or nil without one.
+func nextRuns(app core.App, roomIds []string) (map[string]any, error) {
+	out := map[string]any{}
+	if len(roomIds) == 0 {
+		return out, nil
+	}
+	found, err := app.FindAllRecords("room_runs", dbx.In("room", anys(roomIds)...), dbx.NewExp("startsAt > {:now}", dbx.Params{"now": stamp(time.Now())}))
+	if err != nil {
+		return nil, err
+	}
+	runs := views[Run](found)
+	sort.SliceStable(runs, func(a, b int) bool { return runs[a].StartsAt() < runs[b].StartsAt() })
+	for _, r := range runs {
+		if _, seen := out[r.Room()]; !seen {
+			out[r.Room()] = map[string]any{"id": r.Id, "dungeon": r.Dungeon(), "startsAt": r.StartsAt()}
+		}
+	}
+	return out, nil
 }
 
 // upcomingRun is a run the account is going to, with its room's name.
