@@ -60,18 +60,29 @@ type words struct {
 	going     func(n int) string
 	nobody    string
 	footer    func(room string) string
+	// Readiness (#46): the field's name and its value before the start (an estimate), once it
+	// started, and once everyone going can claim a cube.
+	claims                 string
+	claimsAhead, claimsNow func(k, n int) string
+	partyReady             func(n int) string
 }
 
 var languages = map[string]words{
 	"en": {connected: func(room string) string {
 		return "Odyle will remind this channel of planned runs in **" + room + "** before each one starts."
 	}, starts: "Starts", now: "Starting now", cancelled: "Cancelled", done: "Done", open: "Open the room",
-		going: func(n int) string { return "Going (" + strconv.Itoa(n) + ")" }, nobody: "Nobody yet", footer: func(room string) string { return "Odyle · " + room }},
+		going: func(n int) string { return "Going (" + strconv.Itoa(n) + ")" }, nobody: "Nobody yet", footer: func(room string) string { return "Odyle · " + room },
+		claims: "Can claim a cube", claimsAhead: func(k, n int) string { return fraction(k, n) + " by the start (an estimate)" }, claimsNow: fraction,
+		partyReady: func(n int) string { return fraction(n, n) + " · party ready" }},
 	"cs": {connected: func(room string) string {
 		return "Odyle bude tomuto kanálu připomínat plánované běhy místnosti **" + room + "** před začátkem každého."
 	}, starts: "Začíná", now: "Začíná teď", cancelled: "Zrušeno", done: "Hotovo", open: "Otevřít místnost",
-		going: func(n int) string { return "Jdou (" + strconv.Itoa(n) + ")" }, nobody: "Zatím nikdo", footer: func(room string) string { return "Odyle · " + room }},
+		going: func(n int) string { return "Jdou (" + strconv.Itoa(n) + ")" }, nobody: "Zatím nikdo", footer: func(room string) string { return "Odyle · " + room },
+		claims: "Vezme si kostku", claimsAhead: func(k, n int) string { return fraction(k, n) + " do začátku (odhad)" }, claimsNow: fraction,
+		partyReady: func(n int) string { return fraction(n, n) + " · parta je připravená" }},
 }
+
+func fraction(k, n int) string { return strconv.Itoa(k) + "/" + strconv.Itoa(n) }
 
 func say(language string) words {
 	if w, ok := languages[language]; ok {
@@ -201,6 +212,18 @@ type runPost struct {
 	ended                         string // "", "cancelled" or "done"
 	link                          string // the room on the dashboard; "" without an Application URL
 	mentions                      []string
+	// Readiness, when the room shows it (#46): how many of those going can claim a cube at the
+	// start (now, once it started). Counts only: the channel may include people outside the room.
+	readiness, started bool
+	claim, of          int
+}
+
+// claimsKey is what a post shows of readiness, kept on the post so it is edited only when that changes.
+func (p runPost) claimsKey() string {
+	if !p.readiness || p.of == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d/%t", p.claim, p.of, p.started)
 }
 
 func reminder(p runPost, language string) map[string]any {
@@ -235,7 +258,18 @@ func reminder(p runPost, language string) map[string]any {
 			}
 			names = cut(strings.Join(escaped, ", "), 1000)
 		}
-		embed.set("fields", []any{newObject().set("name", w.going(len(p.going))).set("value", names)})
+		fields := []any{newObject().set("name", w.going(len(p.going))).set("value", names)}
+		if p.claimsKey() != "" {
+			value := w.claimsAhead(p.claim, p.of)
+			switch {
+			case p.started && p.claim == p.of:
+				value = w.partyReady(p.of)
+			case p.started:
+				value = w.claimsNow(p.claim, p.of)
+			}
+			fields = append(fields, newObject().set("name", w.claims).set("value", value))
+		}
+		embed.set("fields", fields)
 	}
 	embed.set("footer", newObject().set("text", cut(w.footer(p.room), 200)))
 	message := map[string]any{"embeds": []any{embed}}
@@ -310,6 +344,16 @@ func runContent(app core.App, room *Room, r *Run, lead int64, mention bool) (run
 	p.going = pluck(views[Account](accounts), (*Account).DisplayName)
 	if mention {
 		p.mentions = pings(app, accounts, time.Now())
+	}
+	if room.DiscordReadiness() {
+		entries, users, err := roomEntries(app, room.Id)
+		if err != nil {
+			return p, err
+		}
+		rules, at := readSettings(app), time.Now()
+		start, _ := parseDate(r.StartsAt())
+		p.readiness, p.started = true, !start.After(at)
+		p.claim, p.of = runClaims(r, entries, users, at, runCost(rules, r.Dungeon()), rules.Clock)
 	}
 	return p, nil
 }
@@ -503,7 +547,11 @@ func remindRuns(app core.App) (result, error) {
 			add(room.DiscordWebhook(), work{"Reminder for run " + r.Id, func() (bool, error) { return postRun(app, r, lead, fail) }})
 		}
 	}
-	// Posts to bring up to date: their run changed, was cancelled or was done.
+	// Posts to bring up to date: their run changed, was cancelled or was done, or what it shows
+	// of readiness changed.
+	if err := watchReadiness(app, at); err != nil {
+		fail("Readiness of Discord posts failed: "+message(err), "Odyle Discord readiness failed", "error", message(err))
+	}
 	dirty, err := app.FindRecordsByFilter("discord_posts", "dirty = true && messageId != ''", "postedAt", 100, 0)
 	if err != nil {
 		return result{}, err
@@ -587,6 +635,7 @@ func postRun(app core.App, r *Run, lead int64, fail failer) (bool, error) {
 	post.Set("startsAt", r.StartsAt())
 	post.Set("dungeon", r.Dungeon())
 	post.Set("postedAt", now())
+	post.Set("claims", p.claimsKey())
 	if err := app.Save(post); err != nil {
 		return false, err
 	}
@@ -663,9 +712,53 @@ func editPost(app core.App, post *core.Record, fail failer) (bool, error) {
 	}
 	ok, err := delivered(app, room, link, res, fail, "Update of a Discord post of run "+post.GetString("run"))
 	if ok {
-		return true, settled()
+		_, err := app.DB().NewQuery("UPDATE discord_posts SET dirty = FALSE, claims = {:claims} WHERE id = {:id}").Bind(dbx.Params{"claims": p.claimsKey(), "id": post.Id}).Execute()
+		return true, err
 	}
 	return false, err
+}
+
+// watchReadiness marks for an edit the posts whose readiness changed (#46): those of rooms that
+// show it, until five minutes after their run started (the last edit says whether the party was
+// ready), and those still showing it after their room turned it off. Each run is counted once;
+// an unchanged count edits nothing, and the job runs each minute, so a post changes at most
+// once a minute.
+func watchReadiness(app core.App, at time.Time) error {
+	found, err := app.FindRecordsByFilter("discord_posts", "ended = '' && messageId != '' && dirty = false && startsAt > {:since} && (room.discordReadiness = true || claims != '')", "postedAt", 200, 0,
+		dbx.Params{"since": stamp(at.Add(-startPostWindow))})
+	if err != nil {
+		return err
+	}
+	shows := map[string]string{}
+	for _, post := range found {
+		runId := post.GetString("run")
+		key, counted := shows[runId]
+		if !counted {
+			room, err := findAs[Room](app, "party_rooms", post.GetString("room"))
+			if err != nil {
+				return err
+			}
+			r, err := findAs[Run](app, "room_runs", runId)
+			if isNoRows(err) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			p, err := runContent(app, room, r, post.GetInt64("lead"), false)
+			if err != nil {
+				return err
+			}
+			key = p.claimsKey()
+			shows[runId] = key
+		}
+		if key != post.GetString("claims") {
+			if _, err := app.DB().NewQuery("UPDATE discord_posts SET dirty = TRUE WHERE id = {:id}").Bind(dbx.Params{"id": post.Id}).Execute(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // endPosts marks a run's posts for the job to show it cancelled or done; the run is deleted

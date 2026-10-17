@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.23.0 · 2026-10-17
+
+### New
+- **Discord reminders** can show how many of those going can claim a cube: "3/5 by the start", and "5/5 · party ready" once the run starts. The room's owner turns it on under **Room settings → Discord reminders**; the post shows counts only, never names or Odyle values, and follows changes up to the start.
+
 ## 0.22.0 · 2026-10-17
 
 ### New

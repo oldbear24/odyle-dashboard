@@ -1043,7 +1043,7 @@ app.addEventListener('submit', async e => {
       if (times.error) { formError(form, times.error); return; }
       const id = room.id, result = await send('discord-webhook', { roomId: id, ...times });
       if (changedRoom(id, () => { room = result.room; })) roomSettings();
-      toast(t('Discord reminder times saved.'));
+      toast(t('Discord reminder settings saved.'));
     }
     else if (form.id === 'discord-form') {
       // A new connection takes the times chosen above it.

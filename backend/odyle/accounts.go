@@ -2139,6 +2139,9 @@ func discordWebhook(e *core.RequestEvent) error {
 		if start, ok := b.boolean("startPost"); ok {
 			room.Set("discordStartPost", start)
 		}
+		if ready, ok := b.boolean("readiness"); ok {
+			room.Set("discordReadiness", ready)
+		}
 		if b.has("webhook") {
 			url, err := webhook(b["webhook"])
 			if err != nil {
