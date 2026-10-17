@@ -47,6 +47,24 @@ func owner(app core.App, userId, roomId string) (*Room, error) {
 	return room, nil
 }
 
+// manager is the room for its owner or one of its officers (#43). Officers run the room with
+// its owner: invite links, every planned run, clearing a dungeon off everyone's wishlist and
+// Discord reminders. Renaming and closing the room, roles, removing members and handing the
+// room over stay with the owner.
+func manager(app core.App, userId, roomId string) (*Room, error) {
+	room, err := findAs[Room](app, "party_rooms", roomId)
+	if err != nil {
+		return nil, notFound("This room no longer exists.")
+	}
+	if room.Owner() == userId {
+		return room, nil
+	}
+	if m, err := membership(app, userId, roomId); err != nil || m.Role() != "officer" {
+		return nil, forbidden("Only the room owner or an officer can do this.")
+	}
+	return room, nil
+}
+
 func ownCharacter(app core.App, userId, id string) (*Character, error) {
 	character, err := findAs[Character](app, "characters", id)
 	if err != nil {
@@ -662,7 +680,7 @@ func wishlist(e *core.RequestEvent) error {
 			if want {
 				return nil, badRequest("A dungeon can only be cleared for everyone, not added for them.")
 			}
-			if _, err := owner(app, user.Id, roomId); err != nil {
+			if _, err := manager(app, user.Id, roomId); err != nil {
 				return nil, err
 			}
 			for _, w := range entry {
@@ -1252,7 +1270,7 @@ func closeRoom(e *core.RequestEvent) error {
 // dashboards from before links were made and revoked one by one.
 func invites(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		room, err := owner(app, user.Id, b.str("roomId"))
+		room, err := manager(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
 		}
@@ -1278,7 +1296,7 @@ func invites(e *core.RequestEvent) error {
 // code once, and the room's open links.
 func inviteCreate(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		room, err := owner(app, user.Id, b.str("roomId"))
+		room, err := manager(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
 		}
@@ -1329,7 +1347,7 @@ func inviteCreate(e *core.RequestEvent) error {
 // carries the room's open links.
 func inviteRevoke(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		room, err := owner(app, user.Id, b.str("roomId"))
+		room, err := manager(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
 		}
@@ -1350,7 +1368,7 @@ func inviteRevoke(e *core.RequestEvent) error {
 // any browser. Never their codes: only the browser that made a link can show it.
 func inviteList(e *core.RequestEvent) error {
 	return run(e, func() error {
-		room, err := owner(e.App, e.Auth.Id, e.Request.PathValue("id"))
+		room, err := manager(e.App, e.Auth.Id, e.Request.PathValue("id"))
 		if err != nil {
 			return err
 		}
@@ -1823,7 +1841,8 @@ func plan(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		roomId, viewer, isOwner := m.Room(), m.Role() == "viewer", m.Role() == "owner"
+		// Officers change, cancel and wrap up every run, like the owner (#43).
+		roomId, viewer, isOwner := m.Room(), m.Role() == "viewer", m.Role() == "owner" || m.Role() == "officer"
 		if b.set("id") {
 			r, err := findAs[Run](app, "room_runs", b.str("id"))
 			if err != nil || r.Room() != roomId {
@@ -1838,7 +1857,7 @@ func plan(e *core.RequestEvent) error {
 					return nil, badRequest("A run can be marked done once it has started.")
 				}
 				if r.PlannedBy() != m.Id && !isOwner && !attending {
-					return nil, forbidden("Only its planner, an attendee or the room owner can mark this run done.")
+					return nil, forbidden("Only its planner, an attendee, an officer or the room owner can mark this run done.")
 				}
 				// The dungeon leaves the wishlist of everyone who went.
 				ran, err := dungeon(r.Dungeon())
@@ -1894,7 +1913,7 @@ func plan(e *core.RequestEvent) error {
 				}
 			case b.isTrue("remove"):
 				if r.PlannedBy() != m.Id && !isOwner && !(started && attending) {
-					return nil, forbidden("Only its planner or the room owner can cancel this run.")
+					return nil, forbidden("Only its planner, an officer or the room owner can cancel this run.")
 				}
 				if err := endPosts(app, r, "cancelled"); err != nil {
 					return nil, err
@@ -1943,7 +1962,7 @@ func plan(e *core.RequestEvent) error {
 					return nil, forbidden("Viewers cannot plan runs.")
 				}
 				if r.PlannedBy() != m.Id && !isOwner {
-					return nil, forbidden("Only its planner or the room owner can change this run.")
+					return nil, forbidden("Only its planner, an officer or the room owner can change this run.")
 				}
 				// A run keeps its dungeon when the name only differs in case or spacing,
 				// even if the catalog changed since.
@@ -2068,8 +2087,8 @@ func role(e *core.RequestEvent) error {
 			return nil, err
 		}
 		next, _ := b.text("role")
-		if next != "reporter" && next != "viewer" {
-			return nil, badRequest("Choose player or viewer.")
+		if next != "reporter" && next != "officer" && next != "viewer" {
+			return nil, badRequest("Choose player, officer or viewer.")
 		}
 		target.SetRole(next)
 		if next == "viewer" {
@@ -2125,7 +2144,7 @@ func discordWebhook(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		room, err := owner(e.App, e.Auth.Id, b.str("roomId"))
+		room, err := manager(e.App, e.Auth.Id, b.str("roomId"))
 		if err != nil {
 			return err
 		}
@@ -2223,7 +2242,7 @@ type upcomingRun struct {
 	Note     string `json:"note"`
 }
 
-// handOver passes each room an account owns to its longest-standing player; a room
+// handOver passes each room an account owns to its longest-standing officer, else player; a room
 // without one closes. It runs as the users delete hook, inside the deleting
 // transaction, for every account deletion (by its owner, a superuser or for
 // inactivity).
@@ -2233,9 +2252,15 @@ func handOver(app core.App, userId string) error {
 		return err
 	}
 	for _, room := range views[Room](owned) {
-		found, err := app.FindRecordsByFilter("room_members", "room = {:room} && user != {:user} && role = 'reporter'", "created", 1, 0, dbx.Params{"room": room.Id, "user": userId})
+		found, err := app.FindRecordsByFilter("room_members", "room = {:room} && user != {:user} && role = 'officer'", "created", 1, 0, dbx.Params{"room": room.Id, "user": userId})
 		if err != nil {
 			return err
+		}
+		if len(found) == 0 {
+			found, err = app.FindRecordsByFilter("room_members", "room = {:room} && user != {:user} && role = 'reporter'", "created", 1, 0, dbx.Params{"room": room.Id, "user": userId})
+			if err != nil {
+				return err
+			}
 		}
 		if len(found) == 0 {
 			if err := app.Delete(room); err != nil {

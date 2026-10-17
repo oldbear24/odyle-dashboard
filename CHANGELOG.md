@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.24.0 · 2026-10-17
+
+### New
+- **Officers**: under **Room settings** the room's owner can make a member an officer. Officers play like players, and also make invite links, change or cancel any run, clear a dungeon off everyone's wishlist and keep the Discord reminders. Renaming and closing the room, roles and handing it over stay with the owner. When an owner's account is deleted, an officer takes the room before the other players.
+
 ## 0.23.0 · 2026-10-17
 
 ### New

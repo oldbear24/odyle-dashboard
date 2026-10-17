@@ -169,6 +169,14 @@ test('owners invite with a link, manage the room and close it only after confirm
     await page.locator('#rename-form [name=name]').fill('Renamed UI room');
     await page.locator('#rename-form [type=submit]').click();
     await toast(page).filter({ hasText: 'Room renamed.' }).waitFor();
+    // An officer (#43): asked first too, saying what officers can do.
+    await page.locator('#modal select[data-role]').selectOption('officer');
+    await page.locator('#modal [data-confirm-role]').waitFor();
+    assert.match(await page.locator('#modal').innerText(), /Make UI friend an officer\?[\s\S]*change or cancel any run/);
+    await page.locator('#modal [data-confirm-role]').click();
+    await toast(page).filter({ hasText: 'Role changed.' }).waitFor();
+    assert.equal(await page.locator('#modal select[data-role]').inputValue(), 'officer');
+    assert.deepEqual((await request('/api/odyle/rooms', undefined, friend, 'GET')).data.rooms.map(r => r.role), ['officer']);
     await page.locator('#modal select[data-role]').selectOption('viewer');
     // A role change asks first.
     await page.locator('#modal [data-confirm-role]').waitFor();
