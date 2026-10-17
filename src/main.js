@@ -1149,6 +1149,10 @@ app.addEventListener('click', async e => {
       return modal(esc(t('Going to {dungeon} with', { dungeon: run?.dungeon || '' })), `<p>${t('Pick the character you bring. The run counts its cubes.')}</p><div class="add-chips pick-chips">${mine().filter(c => c.shared).map(c => `<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="${esc(c.id)}">${esc(c.characterName)} · ${esc(c.value.toLocaleString(locale()))}</button>`).join('')}<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="any">${t('Any: my best')}</button></div>`);
     }
     if (el.dataset.useStart) { const input = document.querySelector('#run-form [name="startsAt"]'); if (input) { input.value = el.dataset.useStart; input.focus(); } return; }
+    if (el.dataset.cantRun) {
+      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.cantRun, cant: el.dataset.cant === 'true' }); } finally { el.disabled = false; }
+      return changedRoom(id, () => { runs = result.runs; });
+    }
     if (el.dataset.run) {
       const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true', ...(el.dataset.character && el.dataset.character !== 'any' ? { character: el.dataset.character } : {}) }); } finally { el.disabled = false; }
       if (el.dataset.character) closeModal();

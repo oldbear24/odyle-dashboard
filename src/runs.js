@@ -1,7 +1,7 @@
 import { t, tn, locale } from './i18n.js';
 import { escape as esc, timestamp, age, classOf } from './model.js';
 import { icon } from './icons.js';
-import { dungeonField } from './catalog.js';
+import { dungeonField, entryOf } from './catalog.js';
 const two = n => String(n).padStart(2, '0');
 // The value of a datetime-local input for a moment, in local time.
 export function localInput(at) { const d = new Date(at); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`; }
@@ -117,11 +117,13 @@ export function rollCallLine(rows) {
   const counted = { ready: n => tn(n, '{n} ready', '{n} ready'), short: n => tn(n, '{n} short', '{n} short'), away: n => tn(n, '{n} not in game', '{n} not in game'), none: n => tn(n, '{n} without a character', '{n} without a character') };
   return ['ready', 'short', 'away', 'none'].filter(key => count(key)).map(key => counted[key](count(key))).join(' · ');
 }
+// "3/5 going" when the catalog knows the dungeon's party size (#45), else "3 going".
+export const goingCountOf = (r, catalog) => { const size = entryOf(catalog, r.dungeon)?.partySize || 0; return size ? t('{n}/{size} going', { n: r.attendees.length, size }) : tn(r.attendees.length, '{n} going', '{n} going'); };
 export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, catalog = [], perCube = 40, facts = () => '', demo, discord, readiness = null, costOf = () => perCube, start = null, maintenance = null }) {
-  const name = id => id === myId ? t('You') : members.find(m => m.user === id)?.displayName || t('Member');
+  const name = id => id === myId ? t('You') : members.find(m => m.user === id)?.displayName || t('Member'), goingCount = r => goingCountOf(r, catalog);
   const form = viewer ? `<p class="wish-note">${t('Viewers can see planned runs but cannot plan or join them.')}</p>` : `<form id="run-form" class="wish-form run-form">${dungeonField({ catalog, suggestions, list: 'run-dungeons', placeholder: catalog.length ? t('Choose a dungeon') : t('Dungeon'), perCube })}<input name="startsAt" type="datetime-local" required aria-label="${esc(t('Start'))}" value="${nextHour(now)}" ${bounds(now)}><input name="note" maxlength="120" autocomplete="off" placeholder="${esc(t('Note (optional)'))}" aria-label="${esc(t('Note'))}"><button class="button primary" type="submit">${icon('calendar')} ${t('Plan run')}</button></form>${viewer || start === null ? '' : start <= now ? `<p class="wish-note run-hint">${t('Everyone can claim a cube now.')}</p>` : `<p class="wish-note run-hint">${esc(t('Everyone can claim a cube from {when} (an estimate of the Odyle clock).', { when: new Date(start).toLocaleString(locale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }))} <button class="text-button" type="button" data-use-start="${esc(localInput(start))}">${t('Use this time')}</button></p>`}`;
   const rows = runs.map(r => {
-    const at = timestamp(r.startsAt), going = r.attendees.includes(myId), mine = r.planner === myId;
+    const at = timestamp(r.startsAt), going = r.attendees.includes(myId), mine = r.planner === myId, cant = (r.cant || []).includes(myId);
     // Each attendee with the character they bring and its cubes at this run's cost, at the start.
     const ready = readiness?.(r), cost = costOf(r), upcoming = at > now, calling = Boolean(ready) && inRollCall(at, now);
     const person = row => {
@@ -135,18 +137,21 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     const people = (ready ? ready.rows.map(person) : r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
     const down = at > now ? maintenanceAt(at, maintenance) : null, clock = ms => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
     const warning = down ? `<small class="run-warning">${esc(t('During the weekly maintenance of the game ({from}–{to}, your time)', { from: clock(down.from), to: clock(down.to) }))}</small>` : '';
+    // Answers (#45): who can't come, and how many players have not answered yet (until the start).
+    const players = members.filter(m => m.role !== 'viewer').map(m => m.user), silent = players.filter(u => !r.attendees.includes(u) && !(r.cant || []).includes(u)).length;
+    const answers = (r.cant || []).length || (at > now && silent) ? `<small class="run-answers">${[(r.cant || []).length ? esc(t('Can’t: {names}', { names: r.cant.map(name).join(', ') })) : '', at > now && silent ? esc(tn(silent, '{n} has not answered', '{n} have not answered')) : ''].filter(Boolean).join(' · ')}</small>` : '';
     const roll = calling && ready.rows.length ? `<small class="run-claim roll-call-line">${esc(t('Roll call: {line}', { line: rollCallLine(ready.rows) }))}</small>` : '';
-    const claim = warning + roll + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
+    const claim = warning + answers + roll + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.
     const wrapUp = !demo && !viewer && at <= now && (mine || owner || going);
     const actions = wrapUp ? `<button data-run-done="${esc(r.id)}" data-name="${esc(r.dungeon)}">${icon('tick')} ${t('Done')}</button><button data-run-again="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-at="${esc(r.startsAt)}">${t('Plan again next week')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-missed="true">${t('Didn’t happen')}</button>`
-      : (demo ? '' : (viewer ? '' : `<button data-run="${esc(r.id)}" data-going="${!going}">${going ? t('Not going') : `${icon('plus')} ${t('Going')}`}</button>`)
+      : (demo ? '' : (viewer ? '' : `<button data-run="${esc(r.id)}" data-going="${!going}">${going ? t('Not going') : `${icon('plus')} ${t('Going')}`}</button>` + (going ? '' : `<button data-cant-run="${esc(r.id)}" data-cant="${!cant}" aria-pressed="${cant}" class="${cant ? 'answered' : ''}">${t('Can’t')}</button>`))
       + (demo ? '' : `<button data-copy-run="${esc(r.id)}" title="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}" aria-label="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}">${icon('copy')}</button>`)
       + `<button data-calendar-run="${esc(r.id)}" title="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}" aria-label="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}">${icon('calendar')}</button>`
       + ((mine || owner) && !viewer ? `<button data-edit-run="${esc(r.id)}">${t('Edit')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}">${t('Cancel')}</button>` : ''));
     const when = new Date(at).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    return `<div class="wish-row run-row ${going ? 'mine' : ''}"><div class="run-when"><strong>${esc(when)}</strong><small data-starts="${esc(r.startsAt)}">${esc(startsIn(at, now))}</small></div><div class="wish-name"><strong>${esc(r.dungeon)}</strong><small>${r.note ? esc(r.note) : esc(tn(r.attendees.length, '{n} going', '{n} going'))}${r.planner ? ' · ' + esc(t('planned by {name}', { name: name(r.planner) })) : ''}</small>${claim}${facts(r.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
+    return `<div class="wish-row run-row ${going ? 'mine' : ''}"><div class="run-when"><strong>${esc(when)}</strong><small data-starts="${esc(r.startsAt)}">${esc(startsIn(at, now))}</small></div><div class="wish-name"><strong>${esc(r.dungeon)}</strong><small>${r.note ? esc(r.note) : esc(goingCount(r))}${r.planner ? ' · ' + esc(t('planned by {name}', { name: name(r.planner) })) : ''}</small>${claim}${facts(r.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
   }).join('');
   return `<section class="party-section wishlist runs"><div class="section-heading"><h2>${t('Planned runs')} <span>${runs.length}</span></h2><span class="refresh-label">${t('Soonest first · your local time')}${discord ? ` · ${t('Discord reminders on')}` : ''}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('No runs planned. Pick a dungeon and a time; the party joins with Going.')}</p>`}</div></section>`;
 }

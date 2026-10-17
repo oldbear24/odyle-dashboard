@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -50,4 +51,44 @@ func TestAttendeesPickTheCharacterTheyBring(t *testing.T) {
 		s.TestAppFactory, s.DisableTestAppCleanup = reuse, true
 		s.Test(t)
 	}
+}
+
+// Can't (#45): a member answers they cannot come, which takes them off the run; going again or
+// taking the answer back clears it. Viewers cannot answer.
+func TestMembersAnswerTheyCannotCome(t *testing.T) {
+	app := newTestApp(t)
+	lead, mate, watcher := newUser(t, app, "Lead"), newUser(t, app, "Mate"), newUser(t, app, "Watcher")
+	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Raid", "cost": 40})
+	leader := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
+	member := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": watcher.Id, "role": "viewer"})
+	run := saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(2 * time.Hour)), "plannedBy": leader.Id, "attendees": []string{leader.Id, member.Id}})
+	in, auth := `"roomId":"`+room.Id+`","id":"`+run.Id+`"`, tokenOf(t, mate)
+	answer := func(body string, status int) map[string]any {
+		t.Helper()
+		return ask(t, app, http.MethodPost, "/api/odyle/plan", auth, `{`+in+`,`+body+`}`, status)
+	}
+	only := func(got map[string]any) map[string]any {
+		t.Helper()
+		for _, r := range got["runs"].([]any) {
+			if r.(map[string]any)["id"] == run.Id {
+				return r.(map[string]any)
+			}
+		}
+		t.Fatalf("run missing: %v", got)
+		return nil
+	}
+	got := only(answer(`"cant":true`, 200))
+	if fmt.Sprint(got["attendees"]) != "["+lead.Id+"]" || fmt.Sprint(got["cant"]) != "["+mate.Id+"]" {
+		t.Fatalf("can't: %v", got)
+	}
+	if got = only(answer(`"going":true`, 200)); fmt.Sprint(got["cant"]) != "[]" || len(got["attendees"].([]any)) != 2 {
+		t.Fatalf("going again: %v", got)
+	}
+	answer(`"cant":true`, 200)
+	if got = only(answer(`"cant":false`, 200)); fmt.Sprint(got["cant"]) != "[]" || len(got["attendees"].([]any)) != 1 {
+		t.Fatalf("taken back, still not going: %v", got)
+	}
+	answer(`"cant":"maybe"`, 400)
+	ask(t, app, http.MethodPost, "/api/odyle/plan", tokenOf(t, watcher), `{`+in+`,"cant":true}`, 403)
 }

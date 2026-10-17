@@ -348,6 +348,9 @@ func (r *Run) SetDungeon(name string)        { r.Set("dungeon", name) }
 func (r *Run) SetNote(note string)           { r.Set("note", note) }
 func (r *Run) SetAttendees(members []string) { r.Set("attendees", members) }
 
+// Cant are the memberships that answered they cannot come (#45); attendees stay those going.
+func (r *Run) Cant() []string { return stringSlice(r.Record, "cant") }
+
 // SetStart moves the run; Discord announces it again (remindRuns).
 func (r *Run) SetStart(startsAt string) {
 	r.Set("startsAt", startsAt)

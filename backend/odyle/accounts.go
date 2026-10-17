@@ -1811,7 +1811,13 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 				picks[users[member]] = character
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks}
+		cant := []string{}
+		for _, id := range r.Cant() {
+			if user := users[id]; user != "" && !contains(r.Attendees(), id) {
+				cant = append(cant, user)
+			}
+		}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant}
 	}
 	return out, nil
 }
@@ -1839,6 +1845,8 @@ type plannedRun struct {
 	Planner   string            `json:"planner"`
 	Attendees []string          `json:"attendees"`
 	Picks     map[string]string `json:"picks"`
+	// Cant: the accounts that answered they cannot come (#45); additive, older clients ignore it.
+	Cant []string `json:"cant"`
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
@@ -1934,9 +1942,51 @@ func plan(e *core.RequestEvent) error {
 				if err := app.Delete(r); err != nil {
 					return nil, err
 				}
+			case b.has("cant"):
+				// Can't (#45): the member answers they cannot come, which takes them off the run;
+				// false takes the answer back. Going again clears it.
+				if viewer {
+					return nil, forbidden("Viewers cannot join runs.")
+				}
+				cant, ok := b.boolean("cant")
+				if !ok {
+					return nil, badRequest("Can't must be true or false.")
+				}
+				answered := []string{}
+				for _, id := range r.Cant() {
+					if id != m.Id {
+						answered = append(answered, id)
+					}
+				}
+				if cant {
+					answered = append(answered, m.Id)
+					attendees := []string{}
+					for _, id := range r.Attendees() {
+						if id != m.Id {
+							attendees = append(attendees, id)
+						}
+					}
+					r.SetAttendees(attendees)
+					picks := r.Picks()
+					delete(picks, m.Id)
+					r.Set("picks", picks)
+				}
+				r.Set("cant", answered)
+				if err := app.Save(r); err != nil {
+					return nil, err
+				}
 			case isGoing:
 				if viewer {
 					return nil, forbidden("Viewers cannot join runs.")
+				}
+				if going {
+					answered := []string{}
+					for _, id := range r.Cant() {
+						if id != m.Id {
+							answered = append(answered, id)
+						}
+					}
+					r.Set("cant", answered)
 				}
 				// Going with a character: one of the member's own, shared in this room.
 				pick := ""

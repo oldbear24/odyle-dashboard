@@ -210,3 +210,14 @@ test('around its start a run calls the roll: each attendee in words and a count'
   assert.match(calling, /class="roll-call ready">ready</); assert.match(calling, /D · <b class="roll-call none">no character</);
   assert.doesNotMatch(section(now + 60 * 60000), /roll-call/, 'an hour ahead: no roll call yet');
 });
+test('runs take Can’t answers, say who has not answered and count Going against the party size', async () => {
+  const { runsSection, goingCountOf } = await import('../src/runs.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const members = ['a', 'b', 'c', 'd', 'v'].map(user => ({ user, displayName: user.toUpperCase(), role: user === 'v' ? 'viewer' : 'reporter' }));
+  const run = { id: 'r', dungeon: 'Fire Temple', startsAt: '2026-10-14T20:00:00.000Z', attendees: ['a'], cant: ['b'], planner: 'a', note: '' };
+  const html = me => runsSection({ runs: [run], members, myId: me, viewer: false, owner: false, live: new Set(), now, catalog: [{ name: 'Fire Temple', cost: 40, partySize: 5 }] });
+  assert.match(html('a'), /Can’t: B · 2 have not answered/); assert.match(html('a'), /1\/5 going/);
+  assert.doesNotMatch(html('a'), /data-cant-run/, 'someone going has no Can’t button');
+  assert.match(html('c'), /data-cant-run="r" data-cant="true" aria-pressed="false"/);
+  assert.match(html('b'), /data-cant-run="r" data-cant="false" aria-pressed="true" class="answered"/);
+  assert.equal(goingCountOf({ dungeon: 'Unknown', attendees: ['a', 'b'] }, []), '2 going');
+});
