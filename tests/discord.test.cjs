@@ -19,10 +19,13 @@ test('room settings say when runs are posted and how the webhook last fared', as
   const on = discordSettings({ discordReminders: true, discordName: 'Raid <bot>', discordLanguage: 'cs', discordLeads: [60, 15], discordStatus: { okAt: ago(1) } }, now);
   assert.match(on, /Posting as Raid &lt;bot&gt;, in Czech\./);
   assert.match(on, /value="60" checked/); assert.match(on, /value="15" checked/); assert.doesNotMatch(on, /value="5" checked/);
-  assert.match(on, /id="discord-options-form"[\s\S]*Save times/);
+  assert.match(on, /id="discord-options-form"[\s\S]*>Save<\/button>/);
   assert.match(on, /discord-status ok/);
   // Off: the times go with the connection, so the form has no button of its own.
+  // Readiness in the posts (#46): the room's choice, counts only.
+  assert.match(on, /name="readiness"\s+>/); assert.match(discordSettings({ discordReminders: true, discordReadiness: true }, now), /name="readiness" checked/);
+  assert.match(on, /Counts only, never names or Odyle values/);
   const off = discordSettings({ discordReminders: false }, now);
-  assert.doesNotMatch(off, /Save times|discord-off/);
+  assert.doesNotMatch(off, />Save<\/button>|discord-off/);
   assert.match(off, /Post each planned run to a Discord channel before it starts/);
 });

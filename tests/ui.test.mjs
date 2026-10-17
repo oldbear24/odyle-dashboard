@@ -1233,12 +1233,12 @@ test('room owners connect Discord reminders and a bad webhook says why in the fo
     for (const minutes of [60, 30, 5]) await chip(minutes).click();
     await options.locator('[type=submit]').click();
     assert.match(await options.locator('.form-error[role=alert]').innerText(), /Choose one to three reminder times\./);
-    await chip(30).click(); await chip(5).click(); await options.locator('[name=startPost]').check();
+    await chip(30).click(); await chip(5).click(); await options.locator('[name=startPost]').check(); await options.locator('[name=readiness]').check();
     await options.locator('[type=submit]').click();
-    await toast(page).filter({ hasText: 'Discord reminder times saved.' }).waitFor();
+    await toast(page).filter({ hasText: 'Discord reminder settings saved.' }).waitFor();
     assert.match(await page.locator('#modal').innerText(), /posted to your Discord channel 1 h and 15 min before it starts, and as it starts\./);
     const saved = (await request('/api/odyle/rooms', undefined, lead, 'GET')).data.rooms.find(r => r.id === roomId);
-    assert.deepEqual([saved.discordLeads, saved.discordStartPost, saved.discordReminders, 'discordWebhook' in saved], [[60, 15], true, true, false]);
+    assert.deepEqual([saved.discordLeads, saved.discordStartPost, saved.discordReadiness, saved.discordReminders, 'discordWebhook' in saved], [[60, 15], true, true, true, false]);
     await shot(page, 'room-discord-on');
     await page.locator('#modal [data-action="discord-off"]').click();
     assert.match(await page.locator('#modal').innerText(), /Stop Discord reminders\?/);

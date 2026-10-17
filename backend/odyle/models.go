@@ -257,6 +257,7 @@ func (r *Room) Name() string            { return r.GetString("name") }
 func (r *Room) DiscordWebhook() string  { return r.GetString("discordWebhook") }
 func (r *Room) DiscordLanguage() string { return r.GetString("discordLanguage") }
 func (r *Room) DiscordStartPost() bool  { return r.GetBool("discordStartPost") }
+func (r *Room) DiscordReadiness() bool  { return r.GetBool("discordReadiness") }
 
 // DiscordLeads are the room's reminder times before a run in minutes, largest first; 15 until chosen.
 func (r *Room) DiscordLeads() []int64 {
