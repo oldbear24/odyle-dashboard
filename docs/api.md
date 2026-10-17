@@ -85,6 +85,7 @@ Members plan runs of a dungeon at a time and join them. `POST /api/odyle/plan`:
 | --- | --- | --- |
 | `{ roomId, dungeon, startsAt, note? }` | owner, players | Plans a run with the caller going. `startsAt` is an ISO time from an hour ago to 60 days ahead, `note` up to 120 characters; up to 20 runs per room still ahead (started runs do not count) |
 | `{ roomId, id, going, character? }` | owner, players | `true` joins the run, `false` leaves it. With `character` (one of the caller's own characters shared in this room, else 400) the caller brings that character; joining again changes or drops the pick and keeps the caller's place |
+| `{ roomId, id, cant }` | owner, players | `true`: the caller answers they cannot come, which also takes them off the run; `false` takes the answer back; joining again clears it (#45). Runs list them as `cant` (account ids, like `attendees`, which stay those going) |
 | `{ roomId, id, dungeon?, startsAt?, note? }` | planner, owner | Changes the run with the same rules as planning; a dungeon that only differs in case or spacing keeps its name, an empty or blank `note` removes the note, a new `startsAt` announces the run on Discord again |
 | `{ roomId, id, remove: true }` | planner, owner; after the start also attendees | Cancels the run (after its start: it did not happen) |
 | `{ roomId, id, done: true }` | planner, attendees, owner; after the start | Wraps the run up: its attendees' wishes for that dungeon are deleted, then the run (400 before the start) |
@@ -100,7 +101,9 @@ Viewers read runs but cannot plan or join them. The `room_runs` collection has n
 
 ### Run reminders
 
-`GET /api/odyle/upcoming` returns `{ runs, notifications, serverNow }`: the runs the signed-in account is going to in the next 24 hours, across its rooms, soonest first, each `{ id, roomId, room, dungeon, startsAt, note }`, and the account's [notification settings](#notifications). The dashboard (while open, in a browser that may show notifications) and the Windows app show a notification at the account's reminder times before each start.
+Each room of `GET /api/odyle/rooms` also says (dashboard 0.25.0, #51) `memberCount`, `liveCount` (the players with a live character now), `partyCubes` (the cubes their party can open now at `odylePerCube`, by the readiness rules of `backend/odyle/readiness.go`) and `nextRun` (`{ id, dungeon, startsAt }` of its next run, or null).
+
+`GET /api/odyle/upcoming` returns `{ runs, notifications, serverNow }`: the runs the signed-in account is going to in the next 24 hours (`?days=` from 1 to 60 reaches further: **Rooms & characters** lists the next 14 days, dashboard 0.25.0), across its rooms, soonest first, each `{ id, roomId, room, dungeon, startsAt, note }`, and the account's [notification settings](#notifications). The dashboard (while open, in a browser that may show notifications) and the Windows app show a notification at the account's reminder times before each start.
 
 ### Notifications
 

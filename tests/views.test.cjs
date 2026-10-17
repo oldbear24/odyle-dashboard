@@ -164,3 +164,60 @@ test('the Notifications card has the party-ready switch, on until turned off', a
   const saved = { channels: { tray: true, browser: true, push: true }, leadMinutes: [15], kinds: { runs: true, cap: false }, quiet: { from: '', to: '', timeZone: '' }, saved: true };
   assert.match(view(saved), /name="ready" checked/); assert.match(view({ ...saved, kinds: { ...saved.kinds, ready: false } }), /name="ready"\s+>/);
 });
+test('Rooms & characters lists your next runs and each room at a glance', async () => {
+  const { calendarOfRuns, nextRunsSection, roomGlance } = await import('../src/runs.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const runs = [{ id: 'r1', roomId: 'room1', room: 'Raid night', dungeon: 'Fire Temple', startsAt: '2026-10-14 14:00:00.000Z', note: '' }, { id: 'r2', roomId: 'room2', room: 'Alts', dungeon: 'Ice Temple', startsAt: '2026-10-16 18:00:00.000Z', note: 'Bring potions' }];
+  const html = nextRunsSection(runs, now);
+  assert.match(html, /<h2>Your next runs <span>2<\/span>/); assert.match(html, /data-action="calendar-all"/);
+  assert.match(html, /data-room="room1"[\s\S]*Fire Temple[\s\S]*Raid night · [^<]* · in 2h 0m/); assert.match(html, /data-room="room2"/);
+  assert.equal(nextRunsSection([], now), '');
+  // One calendar file with every run, each with its own UID and reminder.
+  const file = calendarOfRuns(runs, now);
+  assert.equal(file.match(/BEGIN:VCALENDAR/g).length, 1); assert.equal(file.match(/BEGIN:VEVENT/g).length, 2);
+  assert.match(file, /UID:r1@odyle/); assert.match(file, /SUMMARY:Ice Temple · Alts/); assert.match(file, /DESCRIPTION:Bring potions/);
+  // Rooms: members, live players and their cubes, the next run; the cost alone from older servers.
+  assert.equal(roomGlance({ role: 'officer', memberCount: 4, liveCount: 2, partyCubes: 3, nextRun: { dungeon: 'Fire Temple', startsAt: '2026-10-14 13:05:00.000Z' } }, now), 'officer · 4 members · 2 live · party 3 cubes · next: Fire Temple in 1h 5m');
+  assert.equal(roomGlance({ role: 'owner', memberCount: 1, liveCount: 0, partyCubes: 0, nextRun: null }, now), 'leader · 1 member');
+  assert.equal(roomGlance({ role: 'reporter', cost: 40 }, now), 'player · 40 Odyle per cube');
+});
+test('a member without a character in the room sees the steps to get one there', async () => {
+  const { setupTracker, setupSteps } = await import('../src/setup.js');
+  const states = s => setupSteps(s).map(x => x.state).join(' ');
+  assert.equal(states({ paired: false, online: false, saved: false, shared: false }), 'now later later later');
+  assert.equal(states({ paired: true, online: false, saved: false, shared: false }), 'done now later later');
+  assert.equal(states({ paired: true, online: true, saved: false, shared: false }), 'done done now later');
+  // A character saved once: the app was paired and read it, whether it runs now or not.
+  assert.equal(states({ paired: false, online: false, saved: true, shared: false }), 'done done done now');
+  const first = setupTracker({ paired: false, online: false, saved: false, shared: false }, { install: '<a class="download">Download</a>', add: '<div class="add-chips"></div>' });
+  assert.match(first, /Step 1 of 4/); assert.match(first, /More info → Run anyway[\s\S]*Npcap/); assert.match(first, /class="download"/); assert.doesNotMatch(first, /add-chips/);
+  const last = setupTracker({ paired: true, online: false, saved: true, shared: false }, { install: '<a class="download">Download</a>', add: '<div class="add-chips"></div>' });
+  assert.match(last, /Step 4 of 4/); assert.match(last, /add-chips/); assert.doesNotMatch(last, /class="download"/); assert.equal((last.match(/setup-step done/g) || []).length, 3);
+  assert.equal(setupTracker({ paired: true, online: true, saved: true, shared: true }), '');
+});
+test('around its start a run calls the roll: each attendee in words and a count', async () => {
+  const { runsSection, rollCallOf, rollCallLine, inRollCall } = await import('../src/runs.js'), now = Date.parse('2026-10-14T20:00:00Z');
+  const at = ms => new Date(ms).toISOString();
+  // From 15 minutes before the start to 30 minutes after it.
+  assert.deepEqual([16, 15, -30, -31].map(minutes => inRollCall(now + minutes * 60000, now)), [false, true, true, false]);
+  const live = { characterName: 'Lumina', displayName: 'Lumina', lastReadingAt: at(now - 60000) };
+  const rows = [{ user: 'a', character: live, state: 'live', claims: true, cubes: 2, cubesAtStart: 2 }, { user: 'b', character: { ...live, characterName: 'Kaelen', displayName: 'Kaelen' }, state: 'live', claims: false, cubes: 0, cubesAtStart: 0 }, { user: 'c', character: { ...live, characterName: 'Nyx', displayName: 'Nyx' }, state: 'offline', claims: true, cubes: 1, cubesAtStart: 1 }, { user: 'd', character: null, state: 'unknown', claims: false }];
+  assert.deepEqual(rows.map(rollCallOf), ['ready', 'short', 'away', 'none']);
+  assert.equal(rollCallLine(rows), '1 ready · 1 short · 1 not in game · 1 without a character');
+  const members = ['a', 'b', 'c', 'd'].map(user => ({ user, displayName: user.toUpperCase() }));
+  const section = start => runsSection({ runs: [{ id: 'r', dungeon: 'Fire Temple', startsAt: at(start), attendees: ['a', 'b', 'c', 'd'], planner: 'a', note: '' }], members, myId: 'a', viewer: false, owner: false, live: new Set(), now, readiness: () => ({ rows, claim: 2, of: 4 }) });
+  const calling = section(now + 10 * 60000);
+  assert.match(calling, /Roll call: 1 ready · 1 short · 1 not in game · 1 without a character/);
+  assert.match(calling, /class="roll-call ready">ready</); assert.match(calling, /D · <b class="roll-call none">no character</);
+  assert.doesNotMatch(section(now + 60 * 60000), /roll-call/, 'an hour ahead: no roll call yet');
+});
+test('runs take Can’t answers, say who has not answered and count Going against the party size', async () => {
+  const { runsSection, goingCountOf } = await import('../src/runs.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const members = ['a', 'b', 'c', 'd', 'v'].map(user => ({ user, displayName: user.toUpperCase(), role: user === 'v' ? 'viewer' : 'reporter' }));
+  const run = { id: 'r', dungeon: 'Fire Temple', startsAt: '2026-10-14T20:00:00.000Z', attendees: ['a'], cant: ['b'], planner: 'a', note: '' };
+  const html = me => runsSection({ runs: [run], members, myId: me, viewer: false, owner: false, live: new Set(), now, catalog: [{ name: 'Fire Temple', cost: 40, partySize: 5 }] });
+  assert.match(html('a'), /Can’t: B · 2 have not answered/); assert.match(html('a'), /1\/5 going/);
+  assert.doesNotMatch(html('a'), /data-cant-run/, 'someone going has no Can’t button');
+  assert.match(html('c'), /data-cant-run="r" data-cant="true" aria-pressed="false"/);
+  assert.match(html('b'), /data-cant-run="r" data-cant="false" aria-pressed="true" class="answered"/);
+  assert.equal(goingCountOf({ dungeon: 'Unknown', attendees: ['a', 'b'] }, []), '2 going');
+});

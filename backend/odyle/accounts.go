@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -505,7 +506,11 @@ func rooms(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		out := []any{}
+		next, err := nextRuns(e.App, pluck(memberships, (*Member).Room))
+		if err != nil {
+			return err
+		}
+		out, at := []any{}, time.Now()
 		for _, m := range memberships {
 			room := byId[m.Room()]
 			if room == nil {
@@ -513,6 +518,14 @@ func rooms(e *core.RequestEvent) error {
 			}
 			linked, j := m.Shared(), roomJSON(room, rules.OdylePerCube)
 			j["role"], j["sharedCharacters"], j["sharing"], j["shareNew"] = m.Role(), linked, len(linked) > 0, m.GetBool("shareNew")
+			// The room at a glance (#51): its members, the players live now and the cubes their
+			// party can open now (the readiness rules, readiness.go), and its next run.
+			entries, users, err := roomEntries(e.App, room.Id)
+			if err != nil {
+				return err
+			}
+			party := partyOf(entries, at, rules.OdylePerCube)
+			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(users), len(party.Players), party.Cubes, next[room.Id]
 			out = append(out, j)
 		}
 		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
@@ -1798,7 +1811,13 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 				picks[users[member]] = character
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks}
+		cant := []string{}
+		for _, id := range r.Cant() {
+			if user := users[id]; user != "" && !contains(r.Attendees(), id) {
+				cant = append(cant, user)
+			}
+		}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant}
 	}
 	return out, nil
 }
@@ -1826,6 +1845,8 @@ type plannedRun struct {
 	Planner   string            `json:"planner"`
 	Attendees []string          `json:"attendees"`
 	Picks     map[string]string `json:"picks"`
+	// Cant: the accounts that answered they cannot come (#45); additive, older clients ignore it.
+	Cant []string `json:"cant"`
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
@@ -1921,9 +1942,51 @@ func plan(e *core.RequestEvent) error {
 				if err := app.Delete(r); err != nil {
 					return nil, err
 				}
+			case b.has("cant"):
+				// Can't (#45): the member answers they cannot come, which takes them off the run;
+				// false takes the answer back. Going again clears it.
+				if viewer {
+					return nil, forbidden("Viewers cannot join runs.")
+				}
+				cant, ok := b.boolean("cant")
+				if !ok {
+					return nil, badRequest("Can't must be true or false.")
+				}
+				answered := []string{}
+				for _, id := range r.Cant() {
+					if id != m.Id {
+						answered = append(answered, id)
+					}
+				}
+				if cant {
+					answered = append(answered, m.Id)
+					attendees := []string{}
+					for _, id := range r.Attendees() {
+						if id != m.Id {
+							attendees = append(attendees, id)
+						}
+					}
+					r.SetAttendees(attendees)
+					picks := r.Picks()
+					delete(picks, m.Id)
+					r.Set("picks", picks)
+				}
+				r.Set("cant", answered)
+				if err := app.Save(r); err != nil {
+					return nil, err
+				}
 			case isGoing:
 				if viewer {
 					return nil, forbidden("Viewers cannot join runs.")
+				}
+				if going {
+					answered := []string{}
+					for _, id := range r.Cant() {
+						if id != m.Id {
+							answered = append(answered, id)
+						}
+					}
+					r.Set("cant", answered)
 				}
 				// Going with a character: one of the member's own, shared in this room.
 				pick := ""
@@ -2007,7 +2070,7 @@ func plan(e *core.RequestEvent) error {
 					return nil, err
 				}
 			default:
-				return nil, badRequest("Send going (true or false), the changes to the run, done, again or remove: true.")
+				return nil, badRequest("Send going or cant (true or false), the changes to the run, done, again or remove: true.")
 			}
 		} else {
 			if viewer {
@@ -2228,8 +2291,12 @@ func upcoming(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		at := time.Now()
-		found, err := e.App.FindAllRecords("room_runs", dbx.In("room", anys(roomIds)...), dbx.NewExp("startsAt > {:now} AND startsAt <= {:until}", dbx.Params{"now": stamp(at), "until": stamp(at.Add(24 * time.Hour))}))
+		// The next 24 hours for reminders; the library asks for up to 60 days (?days=, #51).
+		at, days := time.Now(), int64(1)
+		if asked, err := strconv.ParseInt(e.Request.URL.Query().Get("days"), 10, 64); err == nil {
+			days = max(1, min(60, asked))
+		}
+		found, err := e.App.FindAllRecords("room_runs", dbx.In("room", anys(roomIds)...), dbx.NewExp("startsAt > {:now} AND startsAt <= {:until}", dbx.Params{"now": stamp(at), "until": stamp(at.Add(time.Duration(days) * 24 * time.Hour))}))
 		if err != nil {
 			return err
 		}
@@ -2254,6 +2321,26 @@ func maintenanceOf(rules settings) any {
 		return nil
 	}
 	return rules.Maintenance
+}
+
+// nextRuns is the next run of each room, by room: its dungeon and start, or nil without one.
+func nextRuns(app core.App, roomIds []string) (map[string]any, error) {
+	out := map[string]any{}
+	if len(roomIds) == 0 {
+		return out, nil
+	}
+	found, err := app.FindAllRecords("room_runs", dbx.In("room", anys(roomIds)...), dbx.NewExp("startsAt > {:now}", dbx.Params{"now": stamp(time.Now())}))
+	if err != nil {
+		return nil, err
+	}
+	runs := views[Run](found)
+	sort.SliceStable(runs, func(a, b int) bool { return runs[a].StartsAt() < runs[b].StartsAt() })
+	for _, r := range runs {
+		if _, seen := out[r.Room()]; !seen {
+			out[r.Room()] = map[string]any{"id": r.Id, "dungeon": r.Dungeon(), "startsAt": r.StartsAt()}
+		}
+	}
+	return out, nil
 }
 
 // upcomingRun is a run the account is going to, with its room's name.

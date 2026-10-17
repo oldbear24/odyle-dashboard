@@ -11,7 +11,8 @@ import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
 import { historyChart, historyList, bindHistoryChart } from './history.js';
-import { runsSection, startsIn, runEditForm, calendarFile, discordText } from './runs.js';
+import { setupTracker } from './setup.js';
+import { runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
@@ -46,6 +47,8 @@ let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog 
 let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40, clockRules = defaultClock;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
 let windowsRelease = null, windowsReleaseAt = 0;
+// The runs you go to in the next two weeks, for Rooms & characters (#51).
+let nextRunsList = [];
 let tasks = [], resets = { ...resetDefaults }, renderedTasks = '', taskCharacters = [], taskTemplates = [], taskLimit = 40, tasksKnown = false;
 let account = null, renderedAccount = '';
 // The account's own Windows readers (readers in GET /rooms and the snapshot), kept current
@@ -182,9 +185,9 @@ async function inviteTrouble(code, error, ticket) {
   shell(`<main class="welcome invite-page"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('ROOM INVITE')}</div><h1>${t('This invite did not work')}<span class="mint">.</span></h1>${inviteLanding(answer, true)}${why}<div class="invite-page-actions"><button class="button primary" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></div></main>`, 'library');
 }
 function libraryView() {
-  shell(`<main class="dashboard"><section class="heading"><div><h1>${t('Rooms & characters')}<span class="mint">.</span></h1><p>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })} · ${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section><section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div><details class="room-setup"${rooms.length ? '' : ' open'}><summary>${icon('plus')} ${t('Create or join a room')}</summary><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div></details></section><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2>${readerButton(`${icon('plus')} ${t('Connect reader')}`)}</div><div class="member-grid party-list">${characterCards()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section></main>`, 'library');
+  shell(`<main class="dashboard"><section class="heading"><div><h1>${t('Rooms & characters')}<span class="mint">.</span></h1><p>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })} · ${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section>${nextRunsSection(nextRunsList, Date.now() + serverOffset)}<section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div><details class="room-setup"${rooms.length ? '' : ' open'}><summary>${icon('plus')} ${t('Create or join a room')}</summary><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div></details></section><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2>${readerButton(`${icon('plus')} ${t('Connect reader')}`)}</div><div class="member-grid party-list">${characterCards()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section></main>`, 'library');
 }
-const roomItems = () => rooms.map(r => `<button class="room-item" data-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))} · ${esc(t('{cost} Odyle per cube', { cost: r.cost }))}</small></span>${icon('arrow')}</button>`).join('') || `<p class="intro">${t('Create your first room, or join one with an invite.')}</p>`;
+const roomItems = () => rooms.map(r => `<button class="room-item" data-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roomGlance(r, Date.now() + serverOffset))}</small></span>${icon('arrow')}</button>`).join('') || `<p class="intro">${t('Create your first room, or join one with an invite.')}</p>`;
 const characterCards = () => (characters.length ? listHead() + ownCards() : '') || `<div class="info-panel"><h3>${t('Every character gets its own reading.')}</h3><p>${t('Connect the Windows reader to read Odyle straight from the game. Values update live while the reader runs and stay saved when you leave a room or sign out.')}</p>${appLink('text-button', t('Download the Windows app'))}</div>`;
 // The PC that reads for this account now, or the way to connect a reader: an account
 // whose reader is online is not asked to pair again (its dialog offers another PC).
@@ -248,10 +251,14 @@ async function newCharacterPrompt(c) {
 function flattened() { return members.flatMap(m => { const added = (m.characters || []).filter(c => c.shared ?? m.sharing); return added.length ? added.map(c => ({ ...c, sharing: true, user: m.user, membershipId: m.id, role: m.role, displayName: m.displayName })) : [{ ...m, id: '', characterName: '', confirmed: false, lastReadingAt: '', source: 'packet' }]; }); }
 function addBar() {
   if (me()?.role === 'viewer') return `<div class="sharing-bar"><span>${t('Viewers cannot add characters to this room.')}</span></div>`;
-  if (!mine().length) return `<div class="sharing-bar"><span>${t('Save a character with the Windows app to add it here.')}</span>${readerButton(t('Connect reader'))}</div>`;
   const missing = mine().filter(c => !c.shared);
+  const chips = () => `<div class="add-chips">${missing.map(c => `<button class="add-chip" data-share="${esc(c.id)}" data-enabled="true" title="${esc(t('Add {name} to this room', { name: c.characterName }))}">${icon('plus')}${esc(c.characterName)}</button>`).join('')}${missing.length > 1 ? `<button class="text-button" data-action="add-all">${t('Add all')}</button>` : ''}</div>`;
+  // No character saved yet: the steps that get one into the party (#52). With characters saved,
+  // the chips below add them.
+  if (!mine().length) return setupTracker({ paired: readers.length > 0, online: Boolean(readerNow()), saved: mine().length > 0, shared: false }, {
+    install: `${appLink('button secondary small', t('Download the Windows app'))}<button class="button secondary small" data-action="reading">${t('Pair Windows app')}</button>`, add: chips() });
   if (!missing.length) return '';
-  return `<div class="sharing-bar"><span>${t('Not in this room')}</span><div class="add-chips">${missing.map(c => `<button class="add-chip" data-share="${esc(c.id)}" data-enabled="true" title="${esc(t('Add {name} to this room', { name: c.characterName }))}">${icon('plus')}${esc(c.characterName)}</button>`).join('')}${missing.length > 1 ? `<button class="text-button" data-action="add-all">${t('Add all')}</button>` : ''}</div></div>`;
+  return `<div class="sharing-bar"><span>${t('Not in this room')}</span>${chips()}</div>`;
 }
 // Re-render only when the room data or a readiness state changed; otherwise just refresh the "ago" labels,
 // so hover, focus and open menus survive the periodic refresh.
@@ -727,8 +734,9 @@ function later() { if (!document.hidden) return false; lastPulse = 0; return tru
 async function leaveRoomTopic() { const stops = roomTopics; roomTopics = []; for (const stop of stops) await stop().catch(() => { /* already gone */ }); }
 async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
-  const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), loadWindowsRelease()]);
+  const [list, mine, ahead] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), pb.send('/api/odyle/upcoming?days=14', { requestKey: 'next-runs' }).catch(() => null), loadWindowsRelease()]);
   if (ticket !== navigation) return;
+  nextRunsList = ahead?.runs || [];
   rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
@@ -1141,6 +1149,10 @@ app.addEventListener('click', async e => {
       return modal(esc(t('Going to {dungeon} with', { dungeon: run?.dungeon || '' })), `<p>${t('Pick the character you bring. The run counts its cubes.')}</p><div class="add-chips pick-chips">${mine().filter(c => c.shared).map(c => `<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="${esc(c.id)}">${esc(c.characterName)} · ${esc(c.value.toLocaleString(locale()))}</button>`).join('')}<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="any">${t('Any: my best')}</button></div>`);
     }
     if (el.dataset.useStart) { const input = document.querySelector('#run-form [name="startsAt"]'); if (input) { input.value = el.dataset.useStart; input.focus(); } return; }
+    if (el.dataset.cantRun) {
+      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.cantRun, cant: el.dataset.cant === 'true' }); } finally { el.disabled = false; }
+      return changedRoom(id, () => { runs = result.runs; });
+    }
     if (el.dataset.run) {
       const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.run, going: el.dataset.going === 'true', ...(el.dataset.character && el.dataset.character !== 'any' ? { character: el.dataset.character } : {}) }); } finally { el.disabled = false; }
       if (el.dataset.character) closeModal();
@@ -1206,6 +1218,7 @@ app.addEventListener('click', async e => {
       case 'push-test': { const result = await send('push-test', {}); account.push = result.push; toast(tn(result.sent, 'Sent a test to {n} device.', 'Sent a test to {n} devices.')); break; }
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
+      case 'calendar-all': download(calendarOfRuns(nextRunsList, Date.now() + serverOffset), 'odyle-runs.ics', 'text/calendar'); break;
       case 'new-room': { await go('/'); const setup = document.querySelector('.room-setup'); if (setup) { setup.open = true; setup.querySelector('input')?.focus(); } break; }
       case 'tasks': await go('/tasks'); break;
       case 'armory': closeModal(); await go('/armory'); break;
