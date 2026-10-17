@@ -1835,7 +1835,7 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 				invited = append(invited, user)
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited, Link: r.GetString("link")}
 	}
 	return out, nil
 }
@@ -1867,6 +1867,8 @@ type plannedRun struct {
 	Cant []string `json:"cant"`
 	// Invited: the accounts a run planned from the wishlist invited that have not answered yet (#45).
 	Invited []string `json:"invited"`
+	// Link: the run's event elsewhere (Raid-Helper, a Discord event; #35), "" without one.
+	Link string `json:"link"`
 }
 
 // runInvite is what an invited member is told (#45): on their account's topic, so open
@@ -2077,7 +2079,7 @@ func plan(e *core.RequestEvent) error {
 				if err := app.Save(r); err != nil {
 					return nil, err
 				}
-			case b.has("dungeon") || b.has("startsAt") || b.has("note"):
+			case b.has("dungeon") || b.has("startsAt") || b.has("note") || b.has("link"):
 				if viewer {
 					return nil, forbidden("Viewers cannot plan runs.")
 				}
@@ -2123,6 +2125,13 @@ func plan(e *core.RequestEvent) error {
 					}
 					r.SetNote(n)
 				}
+				if b.has("link") {
+					link, err := eventLink(b["link"])
+					if err != nil {
+						return nil, err
+					}
+					r.Set("link", link)
+				}
 				if err := app.Save(r); err != nil {
 					return nil, err
 				}
@@ -2160,6 +2169,13 @@ func plan(e *core.RequestEvent) error {
 			r.SetDungeon(name.dungeon)
 			r.SetStart(startsAt)
 			r.SetNote(n)
+			if b.has("link") {
+				link, err := eventLink(b["link"])
+				if err != nil {
+					return nil, err
+				}
+				r.Set("link", link)
+			}
 			r.SetAttendees([]string{m.Id})
 			// Planned from the wishlist (#45): the members who want the dungeon are invited.
 			invited := []string{}
@@ -2533,6 +2549,7 @@ func account(e *core.RequestEvent) error {
 			"retention":     map[string]any{"inactiveAccountDays": rules.InactiveAccountDays, "deleteAfter": deleteAfter},
 			"paused":        map[string]any{"pairing": rules.PairingPaused, "reminders": rules.RemindersPaused},
 			"latestVersion": latestVersion(e.App),
+			"calendar":      calendarState(user.Record),
 			"serverNow":     now(),
 			"characters":    characters,
 			"apps":          apps,
@@ -2674,6 +2691,7 @@ func exportData(e *core.RequestEvent) error {
 			"pushSubscriptions": pushExport(e.App, user.Id),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
 			"slotMachine":       map[string]any{"spins": user.GetInt("spins"), "collection": wardrobeOf(user.Record)},
+			"calendarFeed":      calendarState(user.Record),
 			"characters":        exportedCharacters,
 			"rooms":             joined,
 			"tasks":             checklist,

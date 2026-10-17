@@ -37,11 +37,12 @@ function fold(line) {
 // neither format the message nor ping anyone (Discord markdown, <@…> and @everyone).
 // "**Fire Temple** · <t:…:F> (<t:…:R>) · Going (3/5): A, B, C · note · link".
 const discordMarkdown = /([\\*_~`|>#[\]()<@])/g;
-export function discordText({ dungeon, startsAt, note }, { going = [], partySize = 0, link = '' } = {}) {
+export function discordText({ dungeon, startsAt, note }, { going = [], partySize = 0, link = '', event = '' } = {}) {
   const unix = Math.floor(timestamp(startsAt) / 1000), md = text => String(text).replace(discordMarkdown, '\\$1');
   const count = partySize > 0 ? `${going.length}/${partySize}` : String(going.length);
   const parts = [`**${md(dungeon)}**`, `<t:${unix}:F> (<t:${unix}:R>)`, `${t('Going')} (${count})${going.length ? ': ' + going.map(md).join(', ') : ''}`];
   if (note) parts.push(md(note));
+  if (event) parts.push(event);
   if (link) parts.push(link);
   return parts.join(' · ');
 }
@@ -142,7 +143,9 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     const invited = at > now ? (r.invited || []) : [];
     const answers = (r.cant || []).length || (at > now && silent) || invited.length ? `<small class="run-answers">${[invited.length ? esc(t('Invited: {names}', { names: invited.map(name).join(', ') })) : '', (r.cant || []).length ? esc(t('Can’t: {names}', { names: r.cant.map(name).join(', ') })) : '', at > now && silent ? esc(tn(silent, '{n} has not answered', '{n} have not answered')) : ''].filter(Boolean).join(' · ')}</small>` : '';
     const roll = calling && ready.rows.length ? `<small class="roll-call-line">${esc(t('Roll call: {line}', { line: rollCallLine(ready.rows) }))}</small>` : '';
-    const claim = warning + answers + roll + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
+    // The run's event elsewhere (#35): Raid-Helper, Apollo, a Discord event.
+    const event = /^https:\/\//.test(r.link || '') ? `<a class="run-event" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${t('Event')} ↗</a>` : '';
+    const claim = event + warning + answers + roll + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.
     const wrapUp = !demo && !viewer && at <= now && (mine || owner || going);
@@ -159,5 +162,5 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
 // The form that changes a run: dungeon, start (local time) and note. An unchanged start
 // stays valid even when it is past the window, and so does a dungeon the catalog dropped.
 export function runEditForm(r, { suggestions = [], catalog = [], perCube = 40 } = {}, now = Date.now()) {
-  return `<form id="run-edit-form" class="run-edit"><input type="hidden" name="runId" value="${esc(r.id)}"><label>${t('Dungeon')}${dungeonField({ catalog, suggestions, list: 'run-edit-dungeons', value: r.dungeon, perCube })}</label><label>${t('Start')}<input name="startsAt" type="datetime-local" required value="${localInput(timestamp(r.startsAt))}" ${bounds(now, timestamp(r.startsAt))}></label><label>${t('Note (optional)')}<input name="note" maxlength="120" autocomplete="off" value="${esc(r.note)}"></label><button class="button primary" type="submit">${t('Save run')}</button></form>`;
+  return `<form id="run-edit-form" class="run-edit"><input type="hidden" name="runId" value="${esc(r.id)}"><label>${t('Dungeon')}${dungeonField({ catalog, suggestions, list: 'run-edit-dungeons', value: r.dungeon, perCube })}</label><label>${t('Start')}<input name="startsAt" type="datetime-local" required value="${localInput(timestamp(r.startsAt))}" ${bounds(now, timestamp(r.startsAt))}></label><label>${t('Event link (optional)')}<input name="link" type="url" maxlength="300" autocomplete="off" placeholder="https://…" value="${esc(r.link || '')}"></label><label>${t('Note (optional)')}<input name="note" maxlength="120" autocomplete="off" value="${esc(r.note)}"></label><button class="button primary" type="submit">${t('Save run')}</button></form>`;
 }

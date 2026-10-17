@@ -57,6 +57,7 @@ type words struct {
 	cancelled string
 	done      string
 	open      string
+	event     string
 	going     func(n int) string
 	nobody    string
 	footer    func(room string) string
@@ -70,13 +71,13 @@ type words struct {
 var languages = map[string]words{
 	"en": {connected: func(room string) string {
 		return "Odyle will remind this channel of planned runs in **" + room + "** before each one starts."
-	}, starts: "Starts", now: "Starting now", cancelled: "Cancelled", done: "Done", open: "Open the room",
+	}, starts: "Starts", now: "Starting now", cancelled: "Cancelled", done: "Done", open: "Open the room", event: "The event",
 		going: func(n int) string { return "Going (" + strconv.Itoa(n) + ")" }, nobody: "Nobody yet", footer: func(room string) string { return "Odyle · " + room },
 		claims: "Can claim a cube", claimsAhead: func(k, n int) string { return fraction(k, n) + " by the start (an estimate)" }, claimsNow: fraction,
 		partyReady: func(n int) string { return fraction(n, n) + " · party ready" }},
 	"cs": {connected: func(room string) string {
 		return "Odyle bude tomuto kanálu připomínat plánované běhy místnosti **" + room + "** před začátkem každého."
-	}, starts: "Začíná", now: "Začíná teď", cancelled: "Zrušeno", done: "Hotovo", open: "Otevřít místnost",
+	}, starts: "Začíná", now: "Začíná teď", cancelled: "Zrušeno", done: "Hotovo", open: "Otevřít místnost", event: "Událost",
 		going: func(n int) string { return "Jdou (" + strconv.Itoa(n) + ")" }, nobody: "Zatím nikdo", footer: func(room string) string { return "Odyle · " + room },
 		claims: "Vezme si kostku", claimsAhead: func(k, n int) string { return fraction(k, n) + " do začátku (odhad)" }, claimsNow: fraction,
 		partyReady: func(n int) string { return fraction(n, n) + " · parta je připravená" }},
@@ -211,6 +212,7 @@ type runPost struct {
 	lead                          int64  // minutes before the start; 0: it starts now
 	ended                         string // "", "cancelled" or "done"
 	link                          string // the room on the dashboard; "" without an Application URL
+	event                         string // the run's event elsewhere (#35)
 	mentions                      []string
 	// Readiness, when the room shows it (#46): how many of those going can claim a cube at the
 	// start (now, once it started). Counts only: the channel may include people outside the room.
@@ -244,6 +246,9 @@ func reminder(p runPost, language string) map[string]any {
 	}
 	if p.ended == "" && p.link != "" {
 		description += "\n[" + w.open + "](" + p.link + ")"
+	}
+	if p.ended == "" && p.event != "" {
+		description += "\n[" + w.event + "](" + p.event + ")"
 	}
 	embed := newObject().set("title", cut(title, 250)).set("color", color).set("description", description)
 	if p.link != "" {
@@ -324,7 +329,7 @@ func pings(app core.App, accounts []*core.Record, at time.Time) []string {
 // runContent is a run's post as it is now, with the display names of those going and, when
 // asked, the ids to ping.
 func runContent(app core.App, room *Room, r *Run, lead int64, mention bool) (runPost, error) {
-	p := runPost{room: room.Name(), dungeon: r.Dungeon(), startsAt: r.StartsAt(), note: r.Note(), lead: lead, link: roomLink(app, room.Id), going: []string{}}
+	p := runPost{room: room.Name(), dungeon: r.Dungeon(), startsAt: r.StartsAt(), note: r.Note(), lead: lead, link: roomLink(app, room.Id), event: r.GetString("link"), going: []string{}}
 	attendees := r.Attendees()
 	if len(attendees) == 0 {
 		return p, nil
@@ -773,7 +778,7 @@ func endPosts(app core.App, r *Run, how string) error {
 func watchRunPosts(app core.App) {
 	app.OnRecordAfterUpdateSuccess("room_runs").BindFunc(func(e *core.RecordEvent) error {
 		before := e.Record.Original()
-		for _, f := range []string{"dungeon", "startsAt", "note", "attendees"} {
+		for _, f := range []string{"dungeon", "startsAt", "note", "attendees", "link"} {
 			if fmt.Sprint(before.Get(f)) != fmt.Sprint(e.Record.Get(f)) {
 				if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET dirty = TRUE WHERE run = {:run} AND messageId != ''").Bind(dbx.Params{"run": e.Record.Id}).Execute(); err != nil {
 					warn(e.App, "Odyle could not mark Discord posts for an edit", "run", e.Record.Id, "error", err.Error())

@@ -2,6 +2,12 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.34.0 · 2026-10-17
+
+### New
+- **Calendar feed**: under **Account & data**, make a private link for Google, Outlook or Apple Calendar that keeps the runs you are going to up to date (dungeon, room and time; never notes). Make a new link or stop it any time.
+- **Event links**: a run can link its event elsewhere (Raid-Helper, Apollo, a Discord event). Edit the run to add one; it shows on the run, in its Discord posts and in Copy for Discord.
+
 ## 0.33.1 · 2026-10-17
 
 ### Changed
