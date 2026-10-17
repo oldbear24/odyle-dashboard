@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.35.0 · 2026-10-18
+
+### New
+- A room says under its name what the party spent this week: the Odyle its shared characters spent since the weekly reset, and about how many cubes that is. One line for the whole party, never per member.
+- Once a run has started, it says when the readers saw its attendees spend the run's cost, and **Done** stands out, so wrapping the run up is one click.
+- A character's Odyle history shows, by week, about how many hours the natural pool sat full and how much regeneration it lost, when its cap is known.
+
 ## 0.34.0 · 2026-10-17
 
 ### New

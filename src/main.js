@@ -14,7 +14,7 @@ import { historyChart, historyList, bindHistoryChart, weeklyLedger, ledgerTable 
 import { setupTracker } from './setup.js';
 import { slotsView, lookName, frameClass } from './slots.js';
 import { playSpin, playWin, playLose } from './sounds.js';
-import { runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance } from './runs.js';
+import { weekLine, runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
@@ -65,6 +65,8 @@ let announcement = null, announcementAt = 0;
 let remindersPaused = false;
 // The game's weekly maintenance window from the snapshot (#47); runs inside it say so.
 let maintenance = null;
+// The party's week (#42): what the characters shared in the room spent since the weekly reset.
+let roomWeek = null;
 const hiddenAnnouncementKey = 'odyle.announcement.hidden';
 let timer = 0;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
@@ -525,7 +527,7 @@ function dashboard() {
   const shown = readyOrder(actual, now, cost).filter(c => !liveOnly() || status(c, now) === 'live');
   const hidden = actual.length - shown.length, actions = `${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}${manager() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite')}</button>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Settings') : t('Room')}</button>`;
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
-  keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p></div><div class="heading-actions">${actions}</div></section>${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${shown.map((c, i) => card(c, i, counted, cost)).join('')}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section><div class="room-columns">${plannedRuns(now)}${wishlistSection(now)}</div></main>`));
+  keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p>${demo ? '' : weekLine(roomWeek)}</div><div class="heading-actions">${actions}</div></section>${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${shown.map((c, i) => card(c, i, counted, cost)).join('')}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section><div class="room-columns">${plannedRuns(now)}${wishlistSection(now)}</div></main>`));
 }
 // Column names over the character rows on wide screens.
 const listHead = () => `<div class="party-head" aria-hidden="true"><span>${t('Character')}</span><span>${t('Status')}</span><span>${t('Odyle')}</span><span>${t('Regeneration')}</span><span>${t('Cubes')}</span><span></span></div>`;
@@ -638,7 +640,7 @@ async function historyDialog(id, name) {
   const data = demo ? demoHistory(id) : await pb.send('/api/odyle/history/' + id);
   if (!demo && data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
   const now = Date.now() + serverOffset, cost = room?.cost || perCube;
-  modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${ledgerTable(weeklyLedger(data.readings, { now, cost, resets }), { hourlyBefore: data.hourlyBefore })}${data.readings.length ? `<div class="history-rows">${historyList(data.readings, 12, data.hourlyBefore)}</div>` : ''}`, true);
+  modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${ledgerTable(weeklyLedger(data.readings, { now, cost, resets, clock: data.clock || clockRules, character: data.character }), { hourlyBefore: data.hourlyBefore })}${data.readings.length ? `<div class="history-rows">${historyList(data.readings, 12, data.hourlyBefore)}</div>` : ''}`, true);
   shownHistory = data;
   bindHistoryChart(document.querySelector('#modal .history-chart'));
 }
@@ -747,7 +749,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; roomWeek = snapshot.week || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
