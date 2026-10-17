@@ -18,5 +18,7 @@ const paths = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-9.5v.5"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
   alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4m0 3v.5"/>',
+  chevron: '<path d="m7 10 5 5 5-5"/>', crown: '<path d="m4 8 4 4 4-6 4 6 4-4-1.5 10h-13L4 8Z"/>',
+  out: '<path d="M10 4H5v16h5M15 8l4 4-4 4m4-4H9"/>',
 };
 export const icon = name => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.diamond}</svg>`;

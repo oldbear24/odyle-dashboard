@@ -30,16 +30,19 @@ test('the party says who counts, who holds it back, who is missing and what was 
   // Missing players without a saved value add nothing to the live numbers.
   assert.equal(explain(entries.filter(c => c.user !== 'Nyx'), now, 40).lastKnown, null);
 });
-test('the summary reads like a sentence, in English and Czech, and cards say why they are not live', async () => {
+test('the summary gives the numbers, then reads like a sentence, in English and Czech, and cards say why they are not live', async () => {
   const { explain } = await import('../src/readiness.js'), { partySummary, statusReason, readyOrder } = await import('../src/partyview.js'), { useLanguage } = await import('../src/i18n.js');
   await useLanguage('en');
-  const text = partySummary(explain(entries, now, 40), now).replace(/<[^>]+>/g, '\n').split('\n').filter(Boolean);
+  const html = partySummary(explain(entries, now, 40), now), text = html.replace(/<[^>]+>/g, '\n').split('\n').filter(Boolean);
   assert.deepEqual(text, [
+    'Party cubes', '1', 'the lowest player decides', 'Ready now', '3', '/ 5', 'characters with a cube of Odyle', 'Live', '3', '/ 5', 'players in game', 'Lowest', '45', 'Kaelen · Kael',
     'Kaelen · Kael is the bottleneck · 1 player can do 6 cubes, 1 player can do 2 cubes, 1 player can do 1 cube',
-    '3 of 5 players live · Not counted: Nyx (last in game 3h ago), Aren (no character shared)',
+    // Players with a row say since when on it; the others say why here, and every reason is in the tooltip.
+    'Not counted: Nyx, Aren (no character shared)',
     'Last known: 1 cube · lowest Kaelen · Kael 45 · values from 10m ago to 3d ago · 4 of 5 players have a saved value',
     'Not live: it does not count toward the party cubes.',
   ]);
+  assert.match(html, /title="Nyx: last in game 3h ago\nAren: no character shared"/);
   assert.match(partySummary(explain(entries, now, 40), now, { estimated: true }), /Last known, estimated with the Odyle clock: /);
   assert.equal(statusReason(entries[0], now), '');
   assert.equal(statusReason(entries[4], now), 'Last in game 3h ago');
