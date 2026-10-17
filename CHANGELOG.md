@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.31.0 · 2026-10-17
+
+### New
+- **Odyle history by week**: the history dialog adds up each reset week: Odyle spent (and about how many cubes), regeneration, and items and other gains, from the changes the reader saw.
+
 ## 0.30.0 · 2026-10-17
 
 ### New

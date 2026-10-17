@@ -1,5 +1,6 @@
 import { t, tn, locale } from './i18n.js';
 import { escape as esc, timestamp } from './model.js';
+import { periodStart, defaults as resetDefaults } from './tasks.js';
 // Odyle history of one character: a step line (a value holds until the next change)
 // from its first change in the last 30 days to now, over a 10% wash. One series, so
 // the dialog title names it and no legend is drawn. A hairline marks one cube; the
@@ -37,6 +38,34 @@ export function historyList(readings, limit = 12, hourlyBefore = null) {
   const rows = readings.map((r, i) => ({ ...r, delta: i ? r.value - readings[i - 1].value : null })).reverse().slice(0, limit);
   const more = readings.length - rows.length, left = hourlyBefore ? tn(more, 'At least {n} earlier change not listed', 'At least {n} earlier changes not listed') : tn(more, '{n} earlier change not listed', '{n} earlier changes not listed');
   return `<table class="history-table"><thead><tr><th>${t('Changed')}</th><th>${t('Odyle')}</th><th>${t('Change')}</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(new Date(timestamp(r.at)).toLocaleString(locale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</td><td>${r.value.toLocaleString(locale())}</td><td>${r.delta === null ? '—' : (r.delta > 0 ? '+' : r.delta < 0 ? '−' : '±') + Math.abs(r.delta).toLocaleString(locale())}${kinds[r.kind] ? ` <span class="history-kind">${esc(t(kinds[r.kind]))}</span>` : ''}</td></tr>`).join('')}</tbody></table>${more > 0 ? `<p class="history-more">${esc(left)}${rows.length < readings.length && limit < readings.length ? ` <button class="text-button" type="button" data-history-all>${t('Show all')}</button>` : ''}</p>` : ''}`;
+}
+// The week by week ledger (#42): for each reset week of the 30 days, newest first, what the
+// changes the reader saw add up to: Odyle spent (and about how many cubes at the cost),
+// natural regeneration and item top-ups. A change without its kind (older apps) counts as
+// spent when the value dropped and as other gains when it rose. Spends on a PC without the
+// reader show up as a drop at the next reading, so the ledger is as complete as the readings.
+export function weeklyLedger(readings, { now, cost, resets = resetDefaults }) {
+  if (readings.length < 2) return [];
+  const week = 7 * 86400000, weeks = new Map();
+  for (let i = 1; i < readings.length; i++) {
+    const r = readings[i], at = timestamp(r.at), delta = Number.isFinite(r.delta) && r.kind ? r.delta : r.value - readings[i - 1].value;
+    if (!delta) continue;
+    const start = periodStart('weekly', at, resets), row = weeks.get(start) || { start, spent: 0, regen: 0, items: 0, other: 0 };
+    if (r.kind === 'regen') row.regen += delta;
+    else if (r.kind === 'item') row.items += delta;
+    else if (r.kind === 'spend' || delta < 0) row.spent += Math.abs(delta);
+    else row.other += delta;
+    weeks.set(start, row);
+  }
+  const current = periodStart('weekly', now, resets);
+  return [...weeks.values()].sort((a, b) => b.start - a.start).map(row => ({ ...row, current: row.start === current, end: row.start + week, cubes: cost > 0 ? Math.floor(row.spent / cost) : 0 }));
+}
+export function ledgerTable(rows, { hourlyBefore = null } = {}) {
+  if (!rows.length) return '';
+  const number = v => v.toLocaleString(locale()), label = row => row.current ? t('This week') : t('Week from {date}', { date: new Date(row.start).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) });
+  const body = rows.map(row => `<tr><td>${esc(label(row))}</td><td>${row.spent ? esc(t('{odyle} · ≈{cubes}', { odyle: number(row.spent), cubes: tn(row.cubes, '{n} cube', '{n} cubes') })) : '–'}</td><td>${row.regen ? '+' + number(row.regen) : '–'}</td><td>${row.items || row.other ? '+' + number(row.items + row.other) : '–'}</td></tr>`).join('');
+  const note = t('From the changes the reader saw: a spend on a PC without the reader shows as a drop at the next reading.') + (hourlyBefore ? ' ' + t('Before {date} only the last change of each hour is kept, so those weeks are incomplete.', { date: new Date(timestamp(hourlyBefore)).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) }) : '');
+  return `<h3 class="modal-sub">${t('By week')}</h3><table class="history-ledger"><thead><tr><th>${t('Week')}</th><th>${t('Spent')}</th><th>${t('Regeneration')}</th><th>${t('Items and other')}</th></tr></thead><tbody>${body}</tbody></table><small class="account-note">${esc(note)}</small>`;
 }
 // Crosshair and tooltip: the pointer picks the nearest change on the time axis.
 export function bindHistoryChart(figure) {
