@@ -6,7 +6,8 @@ import { t, tn } from './i18n.js';
 import { escape as esc } from './model.js';
 
 export const rarities = ['common', 'rare', 'epic', 'legendary'];
-// Every spin wins something; the reels show the rarity it won, never a near miss.
+// A win shows three alike, its rarity's face; a spin that wins nothing shows three different
+// faces, never two alike (no near miss).
 export const reelFaces = { common: '🍀', rare: '🌙', epic: '🐉', legendary: '💎' };
 const kinds = [['color', 'Name colours'], ['frame', 'Avatar frames'], ['badge', 'Badges']];
 const rarityLabel = rarity => t({ common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' }[rarity] || rarity);
@@ -27,11 +28,17 @@ export function lookOf(state) {
 }
 const swatch = item => item.kind === 'color' ? `<span class="slot-swatch" style="${colorStyle(item.value)}">Aa</span>` : item.kind === 'frame' ? `<span class="portrait slot-frame${frameClass({ frame: item.value })}">Od</span>` : `<span class="slot-emoji">${esc(item.value)}</span>`;
 
-export function slotsView({ state, spinning = false, last = null, name = '' }) {
+// Three different faces for a spin that won nothing, picked from the spin's seed.
+export function missFaces(seed = 0) {
+  const all = Object.values(reelFaces), first = seed % all.length, second = (first + 1 + (Math.floor(seed / 4) % (all.length - 1))) % all.length;
+  const third = all.findIndex((_, i) => i !== first && i !== second);
+  return [all[first], all[second], all[third]];
+}
+export function slotsView({ state, spinning = false, last = null, name = '', sound = true }) {
   if (!state) return `<main class="dashboard slots-page"><p class="intro">${t('Loading…')}</p></main>`;
-  const spins = state.spins, faces = spinning ? Object.values(reelFaces) : last ? Array(3).fill(reelFaces[last.won.rarity]) : ['🍀', '🌙', '💎'];
+  const spins = state.spins, faces = spinning ? Object.values(reelFaces) : last?.won ? Array(3).fill(reelFaces[last.won.rarity]) : last?.lost ? missFaces(last.seed) : ['🍀', '🌙', '💎'];
   const reels = faces.slice(0, 3).map((face, i) => `<span class="slot-reel ${spinning ? 'spinning' : ''}" style="--reel:${i}">${spinning ? `<span class="slot-strip">${[...Object.values(reelFaces), ...Object.values(reelFaces)].map(f => `<span>${f}</span>`).join('')}</span>` : `<span>${face}</span>`}</span>`).join('');
-  const result = !spinning && last ? `<p class="slot-result rarity-${esc(last.won.rarity)}" role="status">${last.duplicate ? esc(t('{item} again: already yours, +1 shard.', { item: t(last.won.name) })) : esc(t('You won {item} · {rarity}!', { item: t(last.won.name), rarity: rarityLabel(last.won.rarity) }))}</p>` : `<p class="slot-result" role="status">${spinning ? t('Spinning…') : ''}</p>`;
+  const result = !spinning && last?.lost ? `<p class="slot-result" role="status">${t('No win this time.')}</p>` : !spinning && last ? `<p class="slot-result rarity-${esc(last.won.rarity)}" role="status">${last.duplicate ? esc(t('{item} again: already yours, +1 shard.', { item: t(last.won.name) })) : esc(t('You won {item} · {rarity}!', { item: t(last.won.name), rarity: rarityLabel(last.won.rarity) }))}</p>` : `<p class="slot-result" role="status">${spinning ? t('Spinning…') : ''}</p>`;
   const look = lookOf(state);
   const groups = kinds.map(([kind, title]) => {
     const items = state.catalog.filter(c => c.kind === kind).sort((a, b) => rarities.indexOf(a.rarity) - rarities.indexOf(b.rarity));
@@ -44,7 +51,7 @@ export function slotsView({ state, spinning = false, last = null, name = '' }) {
     return `<section class="party-section slot-group"><div class="section-heading"><h2>${t(title)} <span>${count}/${items.length}</span></h2></div><div class="slot-items">${tiles}</div></section>`;
   }).join('');
   return `<main class="dashboard slots-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOU FOUND IT')}</div><h1>${t('Odyle slot machine')}<span class="mint">.</span></h1><p>${t('Every character your reader reads earns a spin a day. Each spin wins a cosmetic for your name in rooms.')}</p></div></section>`
-    + `<section class="slot-machine"><div class="slot-window" aria-hidden="true">${reels}</div>${result}<div class="slot-controls"><button class="button primary slot-spin" data-action="slot-spin" ${spins < 1 || spinning ? 'disabled' : ''}>${t('Spin')}</button><span class="slot-spins">${esc(tn(spins, '{n} spin left', '{n} spins left'))} · ${esc(t('Shards {n}/{of}', { n: state.shards, of: state.shardsForSpin }))}</span></div>`
+    + `<section class="slot-machine"><div class="slot-window" aria-hidden="true">${reels}</div>${result}<div class="slot-controls"><button class="button primary slot-spin" data-action="slot-spin" ${spins < 1 || spinning ? 'disabled' : ''}>${t('Spin')}</button><button class="icon-button slot-sound" data-action="slot-sound" aria-pressed="${sound}" title="${esc(sound ? t('Sound on') : t('Sound off'))}" aria-label="${esc(t('Sound'))}">${sound ? '🔊' : '🔇'}</button><span class="slot-spins">${esc(tn(spins, '{n} spin left', '{n} spins left'))} · ${esc(t('Shards {n}/{of}', { n: state.shards, of: state.shardsForSpin }))}</span></div>`
     + `<p class="slot-preview">${t('In rooms:')} <span class="portrait slot-frame${frameClass(look)}">${esc(name.slice(0, 2).toUpperCase())}</span> ${lookName(name, look)}</p>`
-    + `<small class="account-note">${t('Chances: common 60 %, rare 27 %, epic 10 %, legendary 3 %. A duplicate gives a shard; three shards give a spin back. Cosmetic only: nothing to buy, nothing that changes Odyle.')}</small></section>${groups}</main>`;
+    + `<small class="slot-odds">${esc(t('A spin wins {chance} % of the time; wins are common 60 %, rare 27 %, epic 10 %, legendary 3 %. A duplicate gives a shard, three shards a spin. Cosmetic only, nothing to buy.', { chance: state.winChance ?? 15 }))}</small></section>${groups}</main>`;
 }

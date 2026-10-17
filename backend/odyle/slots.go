@@ -13,9 +13,9 @@ import (
 // The Odyle slot machine (#107), an easter egg of the dashboard (the logo clicked seven times
 // opens #/slots). Playing earns spins: one a day for each character the reader read that day
 // (the game's daily reset), granted by the first accepted reading of the day; a first visit
-// gives three welcome spins. Each spin wins a cosmetic item for the account, rolled on the
-// server: a name colour, an avatar frame or a badge, common to legendary. A duplicate gives a
-// shard, and three shards give a spin back. Equipped items show next to the account's name in
+// gives three welcome spins. A spin wins with a small chance (slotWinChance), rolled on the
+// server: then a cosmetic item for the account, a name colour, an avatar frame or a badge, common
+// to legendary. A duplicate gives a shard, and three shards give a spin back. Equipped items show next to the account's name in
 // its rooms. Cosmetic only: nothing touches Odyle, characters or parties, and nothing is bought.
 
 type cosmetic struct {
@@ -56,7 +56,11 @@ var cosmetics = []cosmetic{
 	{"badge-gem", "badge", "legendary", "Odyle gem", "💎"},
 }
 
-// slotOdds are the chances of each rarity, in hundredths.
+// slotWinChance is the chance a spin wins anything, in hundredths; slotOdds split the wins by
+// rarity, in hundredths.
+const slotWinChance = 15
+
+// slotOdds are the chances of each rarity among the wins, in hundredths.
 var slotOdds = []struct {
 	rarity string
 	weight int64
@@ -152,7 +156,7 @@ func grantDailySpin(app core.App, c *Character, at time.Time) error {
 }
 
 func slotAnswer(user *core.Record, w wardrobe, extra map[string]any) map[string]any {
-	out := map[string]any{"spins": user.GetInt("spins"), "shards": w.Shards, "shardsForSpin": shardsForSpin, "owned": w.Owned, "equipped": w.Equipped, "catalog": cosmetics}
+	out := map[string]any{"spins": user.GetInt("spins"), "shards": w.Shards, "shardsForSpin": shardsForSpin, "winChance": slotWinChance, "owned": w.Owned, "equipped": w.Equipped, "catalog": cosmetics}
 	for k, v := range extra {
 		out[k] = v
 	}
@@ -205,6 +209,16 @@ func slotSpin(e *core.RequestEvent) error {
 			return nil, badRequest("No spins left. Every character the reader reads earns one a day.")
 		}
 		w := wardrobeOf(user)
+		// Most spins win nothing (#107, the owner: a small chance to win).
+		if roll(100) >= slotWinChance {
+			w.Started = true
+			user.Set("spins", user.GetInt("spins")-1)
+			user.Set("cosmetics", w)
+			if err := app.Save(user); err != nil {
+				return nil, err
+			}
+			return slotAnswer(user, w, map[string]any{"won": nil, "duplicate": false, "lost": true}), nil
+		}
 		pick, rarity := roll(100), "common"
 		for _, o := range slotOdds {
 			if pick < o.weight {
@@ -236,7 +250,7 @@ func slotSpin(e *core.RequestEvent) error {
 		if err := app.Save(user); err != nil {
 			return nil, err
 		}
-		return slotAnswer(user, w, map[string]any{"won": won, "duplicate": duplicate}), nil
+		return slotAnswer(user, w, map[string]any{"won": won, "duplicate": duplicate, "lost": false}), nil
 	})
 }
 

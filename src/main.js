@@ -13,6 +13,7 @@ import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites,
 import { historyChart, historyList, bindHistoryChart, weeklyLedger, ledgerTable } from './history.js';
 import { setupTracker } from './setup.js';
 import { slotsView, lookName, frameClass } from './slots.js';
+import { playSpin, playWin, playLose } from './sounds.js';
 import { runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
@@ -464,7 +465,9 @@ async function changelogPage(ticket) {
 }
 // The slot machine (#107, slots.js): the logo clicked seven times within three seconds opens it.
 let slotState = null, slotSpinning = false, slotLast = null, logoClicks = [];
-const slotsRender = () => shell(slotsView({ state: slotState, spinning: slotSpinning, last: slotLast, name: pb.authStore.record?.displayName || '' }), 'slots');
+// The machine's sounds, on unless this browser turned them off (sounds.js).
+const slotSoundKey = 'odyle.slotSound', slotSound = () => { try { return storage.getItem(slotSoundKey) !== 'off'; } catch { return true; } };
+const slotsRender = () => shell(slotsView({ state: slotState, spinning: slotSpinning, last: slotLast, name: pb.authStore.record?.displayName || '', sound: slotSound() }), 'slots');
 async function slotsPage(ticket) {
   slotLast = null; slotsRender();
   const state = await send('slots');
@@ -474,10 +477,12 @@ async function slotsPage(ticket) {
 async function spinSlot() {
   if (slotSpinning || !slotState || slotState.spins < 1) return;
   slotSpinning = true; slotLast = null; slotsRender();
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, sound = slotSound();
+  if (sound && !still) playSpin(1400);
   try {
     const [result] = await Promise.all([send('slot-spin'), new Promise(done => setTimeout(done, still ? 0 : 1400))]);
-    slotState = result; slotLast = { won: result.won, duplicate: result.duplicate };
+    slotState = result; slotLast = { won: result.won, duplicate: result.duplicate, lost: Boolean(result.lost), seed: Math.floor(Math.random() * 64) };
+    if (sound) { if (result.lost) playLose(); else playWin(result.won?.rarity); }
   } finally { slotSpinning = false; if (shown === '/slots') slotsRender(); }
 }
 document.addEventListener('click', e => {
@@ -1250,6 +1255,7 @@ app.addEventListener('click', async e => {
       case 'overview': room ? dashboard() : await go(pb.authStore.isValid && remembered().room ? '/room/' + remembered().room : '/'); break;
       case 'library': await go('/'); break;
       case 'slot-spin': await spinSlot(); break;
+      case 'slot-sound': { try { storage.setItem(slotSoundKey, slotSound() ? 'off' : 'on'); } catch { /* storage blocked: stays on */ } slotsRender(); break; }
       case 'calendar-all': download(calendarOfRuns(nextRunsList, Date.now() + serverOffset), 'odyle-runs.ics', 'text/calendar'); break;
       case 'new-room': { await go('/'); const setup = document.querySelector('.room-setup'); if (setup) { setup.open = true; setup.querySelector('input')?.focus(); } break; }
       case 'tasks': await go('/tasks'); break;
