@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.28.0 · 2026-10-17
+
+### New
+- A planned run that falls into the game's **weekly maintenance** says so, with the maintenance times in your local time. The server's operators set the window under Game settings.
+
 ## 0.27.0 · 2026-10-17
 
 ### New

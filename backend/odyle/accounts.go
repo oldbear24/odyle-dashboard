@@ -586,7 +586,7 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules)})
 	})
 }
 
@@ -2246,6 +2246,14 @@ func upcoming(e *core.RequestEvent) error {
 		sort.SliceStable(out, func(a, b int) bool { return out[a].StartsAt < out[b].StartsAt })
 		return e.JSON(200, map[string]any{"runs": out, "notifications": notificationsOf(e.Auth), "serverNow": now()})
 	})
+}
+
+// maintenanceOf is the weekly maintenance window for clients, or nil when none is set (#47).
+func maintenanceOf(rules settings) any {
+	if rules.Maintenance.Day == "" {
+		return nil
+	}
+	return rules.Maintenance
 }
 
 // upcomingRun is a run the account is going to, with its room's name.

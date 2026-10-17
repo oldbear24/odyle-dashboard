@@ -141,3 +141,19 @@ test('the Notifications card has the switch for open tasks before a reset, on un
   assert.match(view(saved), /name="tasks" checked/, 'settings saved before the switch keep it on');
   assert.match(view({ ...saved, kinds: { ...saved.kinds, tasks: false } }), /name="tasks"\s+>/);
 });
+test('a run planned into the weekly maintenance says so', async () => {
+  const { maintenanceAt, runsSection } = await import('../src/runs.js');
+  const window = { day: 'wednesday', hour: 6, hours: 3 }, at = text => Date.parse(text);
+  // 2026-10-21 is a Wednesday: 06:00–09:00 UTC, and a run lasts an hour from its start.
+  assert.deepEqual(maintenanceAt(at('2026-10-21T07:00:00Z'), window), { from: at('2026-10-21T06:00:00Z'), to: at('2026-10-21T09:00:00Z') });
+  assert.ok(maintenanceAt(at('2026-10-21T05:30:00Z'), window), 'a run that runs into it');
+  assert.equal(maintenanceAt(at('2026-10-21T05:00:00Z'), window), null, 'a run that ends as it starts');
+  assert.equal(maintenanceAt(at('2026-10-21T09:00:00Z'), window), null);
+  assert.ok(maintenanceAt(at('2026-10-28T08:59:00Z'), window), 'every week');
+  assert.equal(maintenanceAt(at('2026-10-22T07:00:00Z'), window), null);
+  assert.equal(maintenanceAt(at('2026-10-21T07:00:00Z'), null), null);
+  assert.ok(maintenanceAt(at('2026-10-25T23:30:00Z'), { day: 'monday', hour: 0, hours: 2 }), 'a Sunday run into a Monday window');
+  const now = at('2026-10-20T12:00:00Z'), section = startsAt => runsSection({ runs: [{ id: 'r', dungeon: 'Fire Temple', startsAt, attendees: [], planner: 'a', note: '' }], members: [], myId: 'a', viewer: false, owner: false, live: new Set(), now, maintenance: window });
+  assert.match(section('2026-10-21T07:00:00.000Z'), /class="run-warning">During the weekly maintenance of the game \(/);
+  assert.doesNotMatch(section('2026-10-21T12:00:00.000Z'), /run-warning/);
+});
