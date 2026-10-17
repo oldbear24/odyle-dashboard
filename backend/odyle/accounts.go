@@ -607,7 +607,12 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules)})
+		// The party's week (#42): one line, what the shared characters spent since the reset.
+		week, err := roomWeekOf(e.App, rules, members, rules.OdylePerCube, time.Now())
+		if err != nil {
+			return err
+		}
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules)})
 	})
 }
 
@@ -1801,7 +1806,7 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 			return nil, err
 		}
 	}
-	users, byId := memberUsers(members), map[string]*Member{}
+	users, byId, rules, at := memberUsers(members), map[string]*Member{}, readSettings(app), time.Now()
 	for _, m := range members {
 		byId[m.Id] = m
 	}
@@ -1835,7 +1840,11 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 				invited = append(invited, user)
 			}
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited, Link: r.GetString("link")}
+		spent, err := spentAtRun(app, r, byId, runCost(rules, r.Dungeon()), at)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited, Link: r.GetString("link"), Spent: spent}
 	}
 	return out, nil
 }
@@ -1869,6 +1878,8 @@ type plannedRun struct {
 	Invited []string `json:"invited"`
 	// Link: the run's event elsewhere (Raid-Helper, a Discord event; #35), "" without one.
 	Link string `json:"link"`
+	// Spent: once the run started, how many of its attendees the readers saw spend its cost (#42).
+	Spent int `json:"spent"`
 }
 
 // runInvite is what an invited member is told (#45): on their account's topic, so open
@@ -2817,7 +2828,8 @@ func history(e *core.RequestEvent) error {
 		if hourlyBefore != "" {
 			thinned = hourlyBefore
 		}
-		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed(), "level": c.GetInt64("level"), "className": c.GetString("className")}, "readings": readings, "hourlyBefore": thinned, "serverNow": now()})
+		// The cap facts the clock needs (#42): the history's By week estimates the hours at the cap.
+		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name(), "value": c.Value(), "confirmed": c.Confirmed(), "level": c.GetInt64("level"), "className": c.GetString("className"), "answeredCap": c.GetInt64("answeredCap"), "naturalMax": c.GetInt64("naturalMax"), "regenTick": c.GetInt64("regenTick")}, "clock": readSettings(e.App).Clock, "readings": readings, "hourlyBefore": thinned, "serverNow": now()})
 	})
 }
 

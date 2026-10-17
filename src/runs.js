@@ -118,6 +118,13 @@ export function rollCallLine(rows) {
   const counted = { ready: n => tn(n, '{n} ready', '{n} ready'), short: n => tn(n, '{n} short', '{n} short'), away: n => tn(n, '{n} not in game', '{n} not in game'), none: n => tn(n, '{n} without a character', '{n} without a character') };
   return ['ready', 'short', 'away', 'none'].filter(key => count(key)).map(key => counted[key](count(key))).join(' · ');
 }
+// The party's week (#42), one line under the room's name: what the characters shared here spent
+// since the weekly reset, from the changes the readers saw. Never per member.
+export function weekLine(week) {
+  if (!week) return '';
+  const line = week.spent > 0 ? t('This week the party spent {odyle} Odyle · ≈{cubes}', { odyle: week.spent.toLocaleString(locale()), cubes: tn(week.cubes, '{n} cube', '{n} cubes') }) : t('This week the party has not spent Odyle yet.');
+  return `<p class="room-week" title="${esc(t('Since the weekly reset, from the changes the readers saw in the characters shared here: a spend on a PC without the reader counts at its next reading.'))}">${esc(line)}</p>`;
+}
 // "3/5 going" when the catalog knows the dungeon's party size (#45), else "3 going".
 export const goingCountOf = (r, catalog) => { const size = entryOf(catalog, r.dungeon)?.partySize || 0; return size ? t('{n}/{size} going', { n: r.attendees.length, size }) : tn(r.attendees.length, '{n} going', '{n} going'); };
 export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, catalog = [], perCube = 40, facts = () => '', demo, discord, readiness = null, costOf = () => perCube, start = null, maintenance = null }) {
@@ -145,11 +152,13 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     const roll = calling && ready.rows.length ? `<small class="roll-call-line">${esc(t('Roll call: {line}', { line: rollCallLine(ready.rows) }))}</small>` : '';
     // The run's event elsewhere (#35): Raid-Helper, Apollo, a Discord event.
     const event = /^https:\/\//.test(r.link || '') ? `<a class="run-event" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${t('Event')} ↗</a>` : '';
-    const claim = event + warning + answers + roll + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
+    // The readers saw attendees spend the run's cost from just before its start (#42): Done comes first.
+    const spentLine = at <= now && r.spent > 0 ? `<small class="run-spent">${esc(t('The readers saw {n} of {k} going spend {cost} Odyle', { n: r.spent, k: r.attendees.length, cost }))}</small>` : '';
+    const claim = event + warning + answers + roll + spentLine + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.
     const wrapUp = !demo && !viewer && at <= now && (mine || owner || going);
-    const actions = wrapUp ? `<button data-run-done="${esc(r.id)}" data-name="${esc(r.dungeon)}">${icon('tick')} ${t('Done')}</button><button data-run-again="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-at="${esc(r.startsAt)}">${t('Plan again next week')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-missed="true">${t('Didn’t happen')}</button>`
+    const actions = wrapUp ? `<button data-run-done="${esc(r.id)}" data-name="${esc(r.dungeon)}"${r.spent > 0 ? ' class="suggested"' : ''}>${icon('tick')} ${t('Done')}</button><button data-run-again="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-at="${esc(r.startsAt)}">${t('Plan again next week')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-missed="true">${t('Didn’t happen')}</button>`
       : (demo ? '' : (viewer ? '' : `<button data-run="${esc(r.id)}" data-going="${!going}">${going ? t('Not going') : `${icon('plus')} ${t('Going')}`}</button>` + (going ? '' : `<button data-cant-run="${esc(r.id)}" data-cant="${!cant}" aria-pressed="${cant}" class="${cant ? 'answered' : ''}">${t('Can’t')}</button>`))
       + (demo ? '' : `<button data-copy-run="${esc(r.id)}" title="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}" aria-label="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}">${icon('copy')}</button>`)
       + `<button data-calendar-run="${esc(r.id)}" title="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}" aria-label="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}">${icon('calendar')}</button>`

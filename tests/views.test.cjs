@@ -289,3 +289,38 @@ test('runs carry their event link, and the account page makes, shows once and st
   assert.match(made, /value="https:\/\/odyle.example\/api\/odyle\/calendar\/abc.ics"/); assert.match(made, /href="webcal:\/\/odyle.example\/api\/odyle\/calendar\/abc.ics"/); assert.match(made, /data-action="calendar-off"/);
   assert.match(calendarCard({ on: true, since: '2026-10-14 12:00:00.000Z' }), /Your feed is on since/);
 });
+test('the week by week ledger estimates the hours at the cap and the regeneration lost', async () => {
+  const { weeklyLedger, ledgerTable, capWeeks } = await import('../src/history.js'), { defaultClock } = await import('../src/clock.js');
+  const at = iso => iso, now = Date.parse('2026-10-15T12:00:00Z'), character = { answeredCap: 840 };
+  // Full from before the Wednesday 07:00 reset; a spend, regeneration, full again from the 01:00 tick, a spend.
+  const readings = [
+    { at: at('2026-10-14T05:00:00Z'), value: 900, parts: { base: 840, bonus: 60 } },
+    { at: at('2026-10-14T09:00:00Z'), value: 800, kind: 'spend', delta: -100, parts: { base: 740, bonus: 60 } },
+    { at: at('2026-10-15T00:30:00Z'), value: 890, kind: 'regen', delta: 90, parts: { base: 830, bonus: 60 } },
+    { at: at('2026-10-15T11:00:00Z'), value: 850, kind: 'spend', delta: -40, parts: { base: 790, bonus: 60 } },
+  ];
+  const rows = weeklyLedger(readings, { now, cost: 40, clock: defaultClock, character });
+  assert.equal(rows.length, 2, 'the week before the reset gets a row for its two hours at the cap');
+  assert.deepEqual(rows.map(r => [r.current, r.spent, r.regen, r.capHours, r.lost]), [[true, 140, 90, 12, 65], [false, 0, 0, 2, 0]]);
+  const table = ledgerTable(rows);
+  assert.match(table, /<th>At the cap<\/th>/); assert.match(table, /≈12 h · 65 lost/); assert.match(table, /≈2 h · 0 lost/);
+  assert.match(table, /At the cap is an estimate from the clock between readings/);
+  // Without a settled cap, readings without the pool or a paused clock: no estimate, no column.
+  assert.equal(capWeeks(readings, { now, clock: defaultClock, character: { naturalMax: 500 } }), null);
+  assert.equal(capWeeks(readings.map(({ parts, ...r }) => r), { now, clock: defaultClock, character }), null);
+  assert.equal(capWeeks(readings, { now, clock: { ...defaultClock, paused: true }, character }), null);
+  assert.doesNotMatch(ledgerTable(weeklyLedger(readings, { now, cost: 40 })), /At the cap/);
+});
+test('the room says what the party spent this week and runs offer Done after a matching spend', async () => {
+  const { weekLine, runsSection } = await import('../src/runs.js'), now = Date.parse('2026-10-14T20:00:00Z');
+  assert.match(weekLine({ spent: 920, cubes: 23, since: '2026-10-14 07:00:00.000Z' }), /class="room-week"[^>]*>This week the party spent 920 Odyle · ≈23 cubes</);
+  assert.match(weekLine({ spent: 0, cubes: 0 }), />This week the party has not spent Odyle yet\.</);
+  assert.equal(weekLine(null), '');
+  const members = ['a', 'b', 'c'].map(user => ({ user, displayName: user.toUpperCase() }));
+  const section = (spent, startsAt) => runsSection({ runs: [{ id: 'r', dungeon: 'Fire Temple', startsAt, attendees: ['a', 'b', 'c'], planner: 'a', note: '', spent }], members, myId: 'a', viewer: false, owner: false, live: new Set(), now });
+  const started = new Date(now - 30 * 60000).toISOString();
+  assert.match(section(2, started), /class="run-spent">The readers saw 2 of 3 going spend 40 Odyle</);
+  assert.match(section(2, started), /data-run-done="r" data-name="Fire Temple" class="suggested"/);
+  assert.doesNotMatch(section(0, started), /run-spent|suggested/);
+  assert.doesNotMatch(section(2, new Date(now + 3600000).toISOString()), /run-spent/, 'not before the start');
+});

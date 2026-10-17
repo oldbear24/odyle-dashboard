@@ -1,6 +1,7 @@
 import { t, tn, locale } from './i18n.js';
 import { escape as esc, timestamp } from './model.js';
 import { periodStart, defaults as resetDefaults } from './tasks.js';
+import { capsOf, tickOf, ticksAfter } from './clock.js';
 // Odyle history of one character: a step line (a value holds until the next change)
 // from its first change in the last 30 days to now, over a 10% wash. One series, so
 // the dialog title names it and no legend is drawn. A hairline marks one cube; the
@@ -44,7 +45,33 @@ export function historyList(readings, limit = 12, hourlyBefore = null) {
 // natural regeneration and item top-ups. A change without its kind (older apps) counts as
 // spent when the value dropped and as other gains when it rose. Spends on a PC without the
 // reader show up as a drop at the next reading, so the ledger is as complete as the readings.
-export function weeklyLedger(readings, { now, cost, resets = resetDefaults }) {
+// Hours at the cap and regeneration lost, by reset week (#42): from each reading that carried
+// the natural pool (parts.base) to the next one (or now), the pool grows by the tick at the
+// tick hours up to the cap, as the clock estimates it (clock.js); while it is full, each tick
+// is lost. Only with a settled cap and readings that carry the pool, else null. An estimate:
+// a spend on a PC without the reader stays unseen until the next reading.
+export function capWeeks(readings, { now, clock, character, resets = resetDefaults }) {
+  if (!clock || clock.paused || !character || !readings.some(r => Number.isFinite(r.parts?.base))) return null;
+  const caps = capsOf(character, clock);
+  if (caps.length !== 1) return null;
+  const cap = caps[0], tick = tickOf(character, clock), week = 7 * 86400000, out = new Map();
+  const add = (at, key, value) => { const start = periodStart('weekly', at, resets), row = out.get(start) || { capMs: 0, lost: 0 }; row[key] += value; out.set(start, row); };
+  const full = (from, until) => { for (let at = from; at < until;) { const end = Math.min(until, periodStart('weekly', at, resets) + week); add(at, 'capMs', end - at); at = end; } };
+  readings.forEach((r, i) => {
+    const base = r.parts?.base;
+    if (!Number.isFinite(base)) return;
+    const from = timestamp(r.at), until = i + 1 < readings.length ? timestamp(readings[i + 1].at) : now;
+    let pool = base, fullFrom = pool >= cap ? from : null;
+    for (const at of ticksAfter(from, until, clock.tickHours)) {
+      if (pool + tick > cap) add(at, 'lost', pool + tick - Math.max(pool, cap));
+      if (pool < cap && pool + tick >= cap) fullFrom = at;
+      pool = Math.max(pool, Math.min(cap, pool + tick));
+    }
+    if (fullFrom !== null && until > fullFrom) full(fullFrom, until);
+  });
+  return out;
+}
+export function weeklyLedger(readings, { now, cost, resets = resetDefaults, clock = null, character = null }) {
   if (readings.length < 2) return [];
   const week = 7 * 86400000, weeks = new Map();
   for (let i = 1; i < readings.length; i++) {
@@ -57,15 +84,18 @@ export function weeklyLedger(readings, { now, cost, resets = resetDefaults }) {
     else row.other += delta;
     weeks.set(start, row);
   }
-  const current = periodStart('weekly', now, resets);
-  return [...weeks.values()].sort((a, b) => b.start - a.start).map(row => ({ ...row, current: row.start === current, end: row.start + week, cubes: cost > 0 ? Math.floor(row.spent / cost) : 0 }));
+  const current = periodStart('weekly', now, resets), capped = capWeeks(readings, { now, clock, character, resets });
+  // A week the character spent full without a change still gets its row.
+  for (const start of capped?.keys() || []) if (!weeks.has(start)) weeks.set(start, { start, spent: 0, regen: 0, items: 0, other: 0 });
+  return [...weeks.values()].sort((a, b) => b.start - a.start).map(row => ({ ...row, current: row.start === current, end: row.start + week, cubes: cost > 0 ? Math.floor(row.spent / cost) : 0, ...(capped ? { capHours: Math.round((capped.get(row.start)?.capMs || 0) / 3600000), lost: capped.get(row.start)?.lost || 0 } : {}) }));
 }
 export function ledgerTable(rows, { hourlyBefore = null } = {}) {
   if (!rows.length) return '';
   const number = v => v.toLocaleString(locale()), label = row => row.current ? t('This week') : t('Week from {date}', { date: new Date(row.start).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) });
-  const body = rows.map(row => `<tr><td>${esc(label(row))}</td><td>${row.spent ? esc(t('{odyle} · ≈{cubes}', { odyle: number(row.spent), cubes: tn(row.cubes, '{n} cube', '{n} cubes') })) : '–'}</td><td>${row.regen ? '+' + number(row.regen) : '–'}</td><td>${row.items || row.other ? '+' + number(row.items + row.other) : '–'}</td></tr>`).join('');
-  const note = t('From the changes the reader saw: a spend on a PC without the reader shows as a drop at the next reading.') + (hourlyBefore ? ' ' + t('Before {date} only the last change of each hour is kept, so those weeks are incomplete.', { date: new Date(timestamp(hourlyBefore)).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) }) : '');
-  return `<h3 class="modal-sub">${t('By week')}</h3><table class="history-ledger"><thead><tr><th>${t('Week')}</th><th>${t('Spent')}</th><th>${t('Regeneration')}</th><th>${t('Items and other')}</th></tr></thead><tbody>${body}</tbody></table><small class="account-note">${esc(note)}</small>`;
+  const capped = rows.some(row => 'capHours' in row), full = row => row.capHours || row.lost ? esc(t('≈{hours} h · {lost} lost', { hours: number(row.capHours), lost: number(row.lost) })) : '–';
+  const body = rows.map(row => `<tr><td>${esc(label(row))}</td><td>${row.spent ? esc(t('{odyle} · ≈{cubes}', { odyle: number(row.spent), cubes: tn(row.cubes, '{n} cube', '{n} cubes') })) : '–'}</td><td>${row.regen ? '+' + number(row.regen) : '–'}</td><td>${row.items || row.other ? '+' + number(row.items + row.other) : '–'}</td>${capped ? `<td>${full(row)}</td>` : ''}</tr>`).join('');
+  const note = t('From the changes the reader saw: a spend on a PC without the reader shows as a drop at the next reading.') + (capped ? ' ' + t('At the cap is an estimate from the clock between readings: the hours the natural pool was full and the regeneration it could not take.') : '') + (hourlyBefore ? ' ' + t('Before {date} only the last change of each hour is kept, so those weeks are incomplete.', { date: new Date(timestamp(hourlyBefore)).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) }) : '');
+  return `<h3 class="modal-sub">${t('By week')}</h3><table class="history-ledger"><thead><tr><th>${t('Week')}</th><th>${t('Spent')}</th><th>${t('Regeneration')}</th><th>${t('Items and other')}</th>${capped ? `<th>${t('At the cap')}</th>` : ''}</tr></thead><tbody>${body}</tbody></table><small class="account-note">${esc(note)}</small>`;
 }
 // Crosshair and tooltip: the pointer picks the nearest change on the time axis.
 export function bindHistoryChart(figure) {
