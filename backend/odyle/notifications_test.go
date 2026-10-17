@@ -69,9 +69,9 @@ func TestAccountsKeepTheirNotificationSettings(t *testing.T) {
 	}
 	auth := map[string]string{"Authorization": raw}
 	reuse := func(testing.TB) *tests.TestApp { return app }
-	defaults := `"notifications":{"channels":{"tray":true,"browser":true,"push":true,"discord":false},"leadMinutes":[15],"kinds":{"runs":true,"cap":false},"capTicks":1,"quiet":{"from":"","to":"","timeZone":""},"saved":false}`
+	defaults := `"notifications":{"channels":{"tray":true,"browser":true,"push":true,"discord":false},"leadMinutes":[15],"kinds":{"runs":true,"cap":false,"tasks":true},"capTicks":1,"quiet":{"from":"","to":"","timeZone":""},"saved":false}`
 	saved := `{"channels":{"tray":false,"browser":true,"push":false,"discord":false},"leadMinutes":[15,120],"kinds":{"runs":true,"cap":true},"capTicks":2,"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":false}`
-	stored := `"notifications":{"channels":{"tray":false,"browser":true,"push":false,"discord":false},"leadMinutes":[120,15],"kinds":{"runs":true,"cap":true},"capTicks":2,"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":true}`
+	stored := `"notifications":{"channels":{"tray":false,"browser":true,"push":false,"discord":false},"leadMinutes":[120,15],"kinds":{"runs":true,"cap":true,"tasks":true},"capTicks":2,"quiet":{"from":"23:00","to":"07:30","timeZone":"Europe/Prague"},"saved":true}`
 	for _, s := range []tests.ApiScenario{
 		{Name: "an account that saved none has the defaults", Method: http.MethodGet, URL: "/api/odyle/account", Headers: auth, ExpectedStatus: 200, ExpectedContent: []string{defaults}},
 		{Name: "the rooms answer carries them for the Windows app", Method: http.MethodGet, URL: "/api/odyle/rooms", Headers: auth, ExpectedStatus: 200, ExpectedContent: []string{defaults}},
