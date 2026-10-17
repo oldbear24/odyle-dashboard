@@ -684,7 +684,7 @@ func armorySearchRoute(e *core.RequestEvent) error {
 // armoryServersRoute answers GET /api/odyle/armory/servers: the servers of each region by
 // race, for the armory's search form.
 func armoryServersRoute(e *core.RequestEvent) error {
-	regions := []string{"GLOBAL_NA", "GLOBAL_EU", "GLOBAL_SA", "GLOBAL_ASIA"}
+	regions := []string{"GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_EU", "GLOBAL_SA", "GLOBAL_ASIA"}
 	out := []map[string]any{}
 	for _, r := range regions {
 		out = append(out, map[string]any{"region": r, "elyos": elyos, "asmodian": asmodian})

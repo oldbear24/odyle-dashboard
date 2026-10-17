@@ -36,6 +36,8 @@ test('browser model handles PocketBase timestamps and escapes player-controlled 
 test('class and level read as the official search lists them (#25)', async () => {
   const { classOf } = await model();
   assert.equal(classOf({ className: 'Chanter', level: 45 }), 'Chanter · Lv 45');
+  const { regionLabel } = await model();
+  assert.deepEqual(['GLOBAL_NA', 'GLOBAL_NAW', 'GLOBAL_EU', 'GLOBAL_ASIA', ''].map(regionLabel), ['NA-E', 'NA-W', 'EU', 'ASIA', '']);
   assert.equal(classOf({ className: '', level: 12 }), 'Lv 12');
   assert.equal(classOf({ className: 'Templar', level: 0 }), 'Templar');
   for (const c of [{}, null, undefined, { level: 0 }]) assert.equal(classOf(c), '');

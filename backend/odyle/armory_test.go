@@ -304,7 +304,7 @@ func TestArmorySearchListsExactNamesFirstAndKeepsTheAnswer(t *testing.T) {
 	ask(t, app, "GET", "/api/odyle/armory/search?name=Ka%20Ka&server=Lumiel&region=GLOBAL_EU", nil, "", 400)
 	ask(t, app, "GET", "/api/odyle/armory/search?name=Ka&server=Atlantis&region=GLOBAL_EU", nil, "", 400)
 	servers := ask(t, app, "GET", "/api/odyle/armory/servers", nil, "", 200)
-	if regions, _ := servers["regions"].([]any); len(regions) != 4 {
+	if regions, _ := servers["regions"].([]any); len(regions) != 5 {
 		t.Fatalf("servers %v", servers)
 	}
 }

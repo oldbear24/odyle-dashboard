@@ -11,6 +11,8 @@ export function status(member, now = Date.now()) {
 }
 // A character's class and level as PLAYNC's official search lists them (#25): "Chanter · Lv 45",
 // either alone, or "" while the daily lookup has not found the character yet.
+// A region as cards show it: EU, NA-E, NA-W, SA, ASIA.
+export const regionLabel = region => ({ GLOBAL_NA: 'NA-E', GLOBAL_NAW: 'NA-W' })[region] ?? String(region || '').replace('GLOBAL_', '');
 export const classOf = c => [c?.className || '', c?.level > 0 ? t('Lv {level}', { level: c.level }) : ''].filter(Boolean).join(' · ');
 export function age(date, now = Date.now()) {
   if (!date) return t('No reading yet');
