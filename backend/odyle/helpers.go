@@ -209,11 +209,36 @@ func isSpace(r rune) bool {
 
 func trim(s string) string { return strings.TrimFunc(s, isSpace) }
 
-// collapse turns every run of whitespace into one space.
+// invisible are the characters free text drops (#55): bidi controls, which can reverse how a
+// name or note reads around them, and characters that show nothing (zero-width space, word
+// joiner and invisible operators, the Mongolian vowel separator, a byte-order mark inside text).
+// The zero-width joiner and non-joiner stay: emoji sequences and some scripts need them.
+func invisible(r rune) bool {
+	switch r {
+	case '\u061c', '\u180e', '\u200b', '\u200e', '\u200f', '\ufeff':
+		return true
+	}
+	return r >= '\u202a' && r <= '\u202e' || r >= '\u2060' && r <= '\u2064' || r >= '\u2066' && r <= '\u2069'
+}
+
+// visible is s without the invisible characters.
+func visible(s string) string {
+	if !strings.ContainsFunc(s, invisible) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if invisible(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// collapse turns every run of whitespace into one space and drops invisible characters.
 func collapse(s string) string {
 	var b strings.Builder
 	space := false
-	for _, r := range s {
+	for _, r := range visible(s) {
 		if isSpace(r) {
 			if !space {
 				b.WriteByte(' ')

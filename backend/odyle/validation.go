@@ -12,8 +12,10 @@ import (
 // Validation of what clients send. Failures are plain errors; the routes answer
 // them as 400 with the message.
 
+// text is a required free text, trimmed and without invisible characters (#55).
 func text(value any, name string, max int) (string, error) {
 	s, ok := value.(string)
+	s = visible(s)
 	if !ok || trim(s) == "" || length(trim(s)) > max {
 		return "", errors.New(name + " is required (max " + strconv.Itoa(max) + " characters).")
 	}

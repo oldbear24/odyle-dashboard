@@ -154,3 +154,26 @@ func TestCodesIgnoreSpacesDashesAndCase(t *testing.T) {
 		t.Errorf("normalizeCode = %q", got)
 	}
 }
+
+// Free text drops bidi controls and invisible characters (#55); the zero-width joiner of emoji
+// sequences and the non-joiner stay.
+func TestFreeTextDropsInvisibleCharacters(t *testing.T) {
+	for in, want := range map[string]string{
+		"\u202eFire Temple":      "Fire Temple",
+		"Lu\u200bmi\u2060na":     "Lumina",
+		"\u2066Raid\u2069 night": "Raid night",
+		"Ray\u200fan\u200e":      "Rayan",
+		"👩\u200d💻 crew":          "👩\u200d💻 crew",
+		"می\u200cخواهم":          "می\u200cخواهم",
+	} {
+		if got, err := text(in, "Name", 60); err != nil || got != want {
+			t.Errorf("text(%q) = %q, %v; want %q", in, got, err, want)
+		}
+		if got := collapse(in); got != want {
+			t.Errorf("collapse(%q) = %q; want %q", in, got, want)
+		}
+	}
+	if _, err := text("\u200b\u202e\u2060", "Name", 60); err == nil {
+		t.Fatal("a name of nothing but invisible characters was taken")
+	}
+}
