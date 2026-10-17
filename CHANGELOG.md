@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.33.0 · 2026-10-17
+
+### New
+- **Wishlist invites**: a run planned with **Plan** from the wishlist invites everyone who wants that dungeon. They get a notice in their open dashboards, and the run lists who is invited until they answer Going or Can’t.
+
 ## 0.32.0 · 2026-10-17
 
 ### New

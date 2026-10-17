@@ -351,6 +351,10 @@ func (r *Run) SetAttendees(members []string) { r.Set("attendees", members) }
 // Cant are the memberships that answered they cannot come (#45); attendees stay those going.
 func (r *Run) Cant() []string { return stringSlice(r.Record, "cant") }
 
+// Invited are the memberships a run planned from the wishlist invited (#45): those who wanted
+// its dungeon, the planner aside.
+func (r *Run) Invited() []string { return stringSlice(r.Record, "invited") }
+
 // SetStart moves the run; Discord announces it again (remindRuns).
 func (r *Run) SetStart(startsAt string) {
 	r.Set("startsAt", startsAt)

@@ -60,6 +60,8 @@ type userNews struct {
 	capAlerts []capAlert
 	// runs whose party is ready (partyready.go)
 	partyReady []partyNotice
+	// runs planned from the wishlist that invite the account (#45)
+	invites []runInvite
 }
 
 // outbox collects news until its delivery.
@@ -256,6 +258,9 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 	}
 	if len(n.partyReady) > 0 {
 		message["partyReady"] = n.partyReady
+	}
+	if len(n.invites) > 0 {
+		message["invites"] = n.invites
 	}
 	for _, kind := range []struct {
 		key   string

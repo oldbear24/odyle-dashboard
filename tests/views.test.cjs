@@ -259,3 +259,11 @@ test('the slot machine page shows spins, an honest result and the collection; lo
   assert.match(lookName('A', { color: 'linear-gradient(90deg,#5ee0b0,#9fd3ff)' }), /background-clip:text/);
   assert.equal(frameClass({ frame: 'golden' }), ' frame-golden'); assert.equal(frameClass({ frame: 'x" onclick="' }), '');
 });
+test('a run planned from the wishlist lists who it invited until they answer', async () => {
+  const { runsSection } = await import('../src/runs.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const members = ['a', 'b', 'c'].map(user => ({ user, displayName: user.toUpperCase(), role: 'reporter' }));
+  const run = { id: 'r', dungeon: 'Fire Temple', startsAt: '2026-10-14T20:00:00.000Z', attendees: ['a'], cant: [], invited: ['b'], planner: 'a', note: '' };
+  const html = runsSection({ runs: [run], members, myId: 'a', viewer: false, owner: false, live: new Set(), now });
+  assert.match(html, /Invited: B · 2 have not answered/);
+  assert.doesNotMatch(runsSection({ runs: [{ ...run, startsAt: '2026-10-14T11:00:00.000Z' }], members, myId: 'a', viewer: false, owner: false, live: new Set(), now }), /Invited:/, 'not once it started');
+});
