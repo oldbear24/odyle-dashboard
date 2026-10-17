@@ -2,6 +2,18 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.18.0 · 2026-10-17
+
+### New
+- A character the Windows app read before its Odyle unlocks says **No Odyle yet · it unlocks at level 22** instead of waiting for a value (with a Windows app that sends it).
+- The wishlist says how long each dungeon has been on it.
+- **Show all** in a character's history lists every change, not just the newest 12.
+
+### Changed
+- When the room's next run is of a dungeon the catalog lists, the room's numbers and rows count at that dungeon's cost, and the heading says so.
+- "Party can open N cubes" counts the best players up to the dungeon's party size when more are live.
+- On phones the history chart no longer stops the page from scrolling.
+
 ## 0.17.0 · 2026-10-17
 
 ### New

@@ -13,12 +13,14 @@ export const entryOf = (catalog, name) => catalog.find(d => dungeonKey(d.name) =
 export const cubeCost = (entry, perCube) => entry?.cost > 0 ? entry.cost : perCube;
 // The line under a listed dungeon on the wishlist and planned runs: its cost, party size
 // and the cubes of it the room's party can open now. `party(cost)` is the room's party at
-// that cost (readiness.js); the cubes show only while somebody is live.
+// that cost (readiness.js); the cubes show only while somebody is live. With more live
+// players than the dungeon takes, the best of them go, so their lowest decides.
 export function dungeonFacts(entry, { perCube, party }) {
   if (!entry) return '';
-  const cost = cubeCost(entry, perCube), { lowest, cubes } = party(cost);
+  const cost = cubeCost(entry, perCube), { players = [] } = party(cost), values = players.map(c => c.value).sort((a, b) => b - a);
+  const going = entry.partySize > 0 ? values.slice(0, entry.partySize) : values, cubes = going.length ? Math.floor(going.at(-1) / cost) : 0;
   const parts = [entry.unconfirmed ? t('{cost} Odyle per cube (unconfirmed)', { cost }) : t('{cost} Odyle per cube', { cost }), entry.partySize ? tn(entry.partySize, '{n} player', '{n} players') : ''].filter(Boolean).map(esc);
-  if (lowest) parts.push(`<span class="dungeon-cubes">${esc(tn(cubes, 'party can open {n} cube', 'party can open {n} cubes'))}</span>`);
+  if (going.length) parts.push(`<span class="dungeon-cubes">${esc(tn(cubes, 'party can open {n} cube', 'party can open {n} cubes'))}${going.length < values.length ? ' ' + esc(t('(best {n} of {all})', { n: going.length, all: values.length })) : ''}</span>`);
   return `<small class="dungeon-facts">${parts.join(' · ')}</small>`;
 }
 // The dungeon field of the wishlist and run forms. With a catalog it is a list to pick

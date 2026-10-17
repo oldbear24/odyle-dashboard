@@ -1014,6 +1014,28 @@ func character(e *core.RequestEvent) error {
 	})
 }
 
+// noOdyle marks one of the account's characters as having no Odyle yet: its Windows app
+// read a complete snapshot of it without the Odyle record, which the game adds at level 22
+// (odyle-windows#6). A character with a verified reading has Odyle, so it stays as it is;
+// the next verified reading clears the mark (Character.Read). Apps send this on its own,
+// after saving the character, so a server without the action only answers 404.
+func noOdyle(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+		c, err := ownCharacter(app, user.Id, b.str("characterId"))
+		if err != nil {
+			return nil, err
+		}
+		if c.Confirmed() || c.GetBool("odyleLocked") {
+			return map[string]any{"character": c}, nil
+		}
+		c.Set("odyleLocked", true)
+		if err := app.Save(c); err != nil {
+			return nil, err
+		}
+		return map[string]any{"character": c}, nil
+	})
+}
+
 func sameCharacter(app core.App, userId string, data identity) ([]*Character, error) {
 	return charactersWhere(app, "user = {:user} && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }

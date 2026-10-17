@@ -500,6 +500,33 @@ test('new characters reach the rooms that ask for them, and a prompt offers the 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('a character without Odyle yet says so, a wish says how long it is wanted, and the history lists every change on request', async () => {
+  const lead = await account('Seed keeper'), roomId = (await request('/api/odyle/create', { name: 'Seed room' }, lead)).data.room.id;
+  const session = (await request('/api/odyle/session', {}, lead)).data;
+  // The Windows app saved a newcomer and read a snapshot of it without the Odyle record.
+  const sprout = (await request('/api/odyle/character', { characterName: 'Sprout', server: 'Lumiel', region: 'GLOBAL_EU' }, lead)).data.character;
+  assert.equal((await request('/api/odyle/no-odyle', { characterId: sprout.id }, lead)).data.character.odyleLocked, true);
+  // A veteran with more changes than the dialog lists at first.
+  const reading = { sessionId: session.sessionId, characterName: 'Veteran', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  const veteran = (await request('/api/odyle/report', { ...reading, sequence: 1, value: 100 }, lead)).data.character;
+  for (let i = 2; i <= 14; i++) await request('/api/odyle/report', { ...reading, sequence: i, value: 100 + i * 5, characterId: veteran.id }, lead);
+  for (const c of [sprout, veteran]) assert.equal((await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead)).status, 200);
+  await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    const row = page.locator('.member-card', { hasText: 'Sprout' });
+    await row.waitFor();
+    assert.match(await row.innerText(), /No Odyle yet · it unlocks at level 22/);
+    assert.match(await page.locator('.wishlist:not(.runs) .wish-row').innerText(), /1 member needs it · added today/);
+    await page.locator('.member-card', { hasText: 'Veteran' }).locator('[data-history]').click();
+    await page.locator('#modal .history-table').waitFor();
+    assert.equal(await page.locator('#modal .history-table tbody tr').count(), 12);
+    await page.locator('#modal [data-history-all]').click();
+    assert.equal(await page.locator('#modal .history-table tbody tr').count(), 14);
+    assert.equal(await page.locator('#modal [data-history-all]').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 test('a started run is planned again next week, then marked done, which clears the wishlist', async () => {
   const lead = await account('Wrap lead'), roomId = (await request('/api/odyle/create', { name: 'Wrap room' }, lead)).data.room.id;
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);

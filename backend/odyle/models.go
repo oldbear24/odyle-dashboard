@@ -180,6 +180,8 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 	c.Set("parts", r.partsValue())
 	c.learn(r)
 	c.Set("confirmed", true)
+	// A reading shows the character has Odyle after all (odyle-windows#6).
+	c.Set("odyleLocked", false)
 	c.SetValid(true)
 	c.Set("source", "packet")
 	c.Set("parserVersion", r.parserVersion)
