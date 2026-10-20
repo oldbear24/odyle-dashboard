@@ -1081,6 +1081,41 @@ func noOdyle(e *core.RequestEvent) error {
 	})
 }
 
+// mainCharacter marks one of the account's characters as its main (main: true), clearing
+// the mark of the one before, or clears it (main: false). Rooms hear of both characters
+// over realtime (characterFields).
+func mainCharacter(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+		c, err := ownCharacter(app, user.Id, b.str("characterId"))
+		if err != nil {
+			return nil, err
+		}
+		main, ok := b.boolean("main")
+		if !ok {
+			return nil, badRequest("Main must be true or false.")
+		}
+		if main {
+			before, err := charactersWhere(app, "user = {:user} && main = true && id != {:id}", dbx.Params{"user": user.Id, "id": c.Id})
+			if err != nil {
+				return nil, err
+			}
+			for _, other := range before {
+				other.Set("main", false)
+				if err := app.Save(other); err != nil {
+					return nil, err
+				}
+			}
+		}
+		if c.GetBool("main") != main {
+			c.Set("main", main)
+			if err := app.Save(c); err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{"character": c}, nil
+	})
+}
+
 func sameCharacter(app core.App, userId string, data identity) ([]*Character, error) {
 	return charactersWhere(app, "user = {:user} && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }

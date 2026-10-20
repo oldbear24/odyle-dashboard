@@ -28,7 +28,7 @@ var accountActions = []action{
 	{"desktop-code", desktopCode}, {"desktop-device", desktopDevice}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
-	{"membership", membershipAnswer}, {"no-odyle", noOdyle},
+	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
 	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed},
 }
 

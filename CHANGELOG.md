@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.37.0 · 2026-10-20
+
+### New
+- Mark one of your characters as your main with the star under Rooms & characters. It comes first in your list and stands out there and in every room it is shared in.
+
 ## 0.36.1 · 2026-10-20
 
 ### Changed

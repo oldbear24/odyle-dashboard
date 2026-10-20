@@ -330,7 +330,7 @@ func characterChanged(app core.App, c *Character) {
 
 // characterFields are the fields of a character clients show; a change to any other
 // (the portrait job's portraitCheckedAt, say) is not news.
-var characterFields = []string{"characterName", "server", "region", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait", "parts", "regenTick", "naturalMax", "answeredCap", "level", "className", "officialId", "officialRegion", "officialServerId", "odyleLocked"}
+var characterFields = []string{"characterName", "server", "region", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait", "parts", "regenTick", "naturalMax", "answeredCap", "level", "className", "officialId", "officialRegion", "officialServerId", "odyleLocked", "main"}
 
 func visiblyChanged(c *core.Record) bool {
 	before := c.Original()
