@@ -5,7 +5,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ## 0.37.0 · 2026-10-20
 
 ### New
-- Mark one of your characters as your main with the star under Rooms & characters. It comes first in your list and stands out there and in every room it is shared in.
+- Mark one of your characters as your main with the star under Rooms & characters. It is highlighted in gold and comes first, in your list and in your group in every room it is shared in.
 
 ## 0.36.1 · 2026-10-20
 

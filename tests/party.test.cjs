@@ -57,6 +57,8 @@ test('the summary gives the numbers, then reads like a sentence, in English and 
   assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40), 'Kaelen').map(g => g.map(c => c.id)), [['k1'], ['a1', 'a2'], ['b1'], ['n1']]);
   assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40), 'Vee').map(g => g[0].user), ['Anna', 'Bram', 'Kaelen', 'Nyx']);
   assert.deepEqual(byPlayer([]), []);
+  // A player's main character leads their group; the groups keep their order.
+  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName).map(c => c.id === 'a2' ? { ...c, main: true } : c), now, 40)).map(g => g.map(c => c.id)), [['a2', 'a1'], ['b1'], ['k1'], ['n1']]);
   await useLanguage('cs');
   assert.match(partySummary(explain(entries, now, 40), now), /Kaelen · Kael brzdí partu/);
   await useLanguage('en');
