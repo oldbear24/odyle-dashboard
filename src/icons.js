@@ -20,5 +20,6 @@ const paths = {
   alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4m0 3v.5"/>',
   chevron: '<path d="m7 10 5 5 5-5"/>', crown: '<path d="m4 8 4 4 4-6 4 6 4-4-1.5 10h-13L4 8Z"/>',
   out: '<path d="M10 4H5v16h5M15 8l4 4-4 4m4-4H9"/>',
+  star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3l-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>',
 };
 export const icon = name => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.diamond}</svg>`;
