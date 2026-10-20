@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.36.0 · 2026-10-20
+
+### Changed
+- A room's party lists each player's characters together under the player's name, with how many characters they have and how many are ready. The player closest to ready comes first. The room leader removes a player from that player's name.
+
 ## 0.35.0 · 2026-10-18
 
 ### New

@@ -50,3 +50,11 @@ export function readyOrder(characters, now, cost) {
   const rank = c => { const state = status(c, now); return state === 'live' && c.value >= cost ? 0 : order[state]; };
   return characters.map((c, i) => [rank(c), i, c]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , c]) => c);
 }
+
+// The ordered characters by the account that owns them: each player's characters together in
+// that order, players in the order of their first character (so closest to ready first).
+export function byPlayer(characters) {
+  const groups = new Map();
+  for (const c of characters) groups.set(c.user, [...groups.get(c.user) || [], c]);
+  return [...groups.values()];
+}

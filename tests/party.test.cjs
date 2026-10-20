@@ -31,7 +31,7 @@ test('the party says who counts, who holds it back, who is missing and what was 
   assert.equal(explain(entries.filter(c => c.user !== 'Nyx'), now, 40).lastKnown, null);
 });
 test('the summary gives the numbers, then reads like a sentence, in English and Czech, and cards say why they are not live', async () => {
-  const { explain } = await import('../src/readiness.js'), { partySummary, statusReason, readyOrder } = await import('../src/partyview.js'), { useLanguage } = await import('../src/i18n.js');
+  const { explain } = await import('../src/readiness.js'), { partySummary, statusReason, readyOrder, byPlayer } = await import('../src/partyview.js'), { useLanguage } = await import('../src/i18n.js');
   await useLanguage('en');
   const html = partySummary(explain(entries, now, 40), now), text = html.replace(/<[^>]+>/g, '\n').split('\n').filter(Boolean);
   assert.deepEqual(text, [
@@ -51,6 +51,9 @@ test('the summary gives the numbers, then reads like a sentence, in English and 
   assert.equal(statusReason({ ...entries[2], confirmed: false }, now), 'No confirmed reading yet');
   // Closest to ready first, the room's order within each group: never ranked by value.
   assert.deepEqual(readyOrder(entries.filter(c => c.characterName), now, 40).map(c => c.id), ['a1', 'b1', 'k1', 'a2', 'n1']);
+  // By the account that owns them: each player's characters together, players closest to ready first.
+  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40)).map(g => g.map(c => c.id)), [['a1', 'a2'], ['b1'], ['k1'], ['n1']]);
+  assert.deepEqual(byPlayer([]), []);
   await useLanguage('cs');
   assert.match(partySummary(explain(entries, now, 40), now), /Kaelen · Kael brzdí partu/);
   await useLanguage('en');
