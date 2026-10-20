@@ -533,7 +533,7 @@ function dashboard() {
 // name, look, leader crown and character count; the owner removes a player from here.
 function playerGroups(shown, now, counted, cost) {
   let index = 0;
-  return byPlayer(shown).map(group => {
+  return byPlayer(shown, demo ? null : pb.authStore.record?.id).map(group => {
     const p = group[0], ready = group.filter(c => readinessOf(c, now, cost).ready).length, you = p.user === pb.authStore.record?.id && !demo;
     const leader = p.role === 'owner' ? `<span class="leader-label" title="${esc(t('Room leader'))}">${icon('crown')}<span class="sr-only">${t('leader')}</span></span>` : '';
     const remove = owner() && p.membershipId && p.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(p.membershipId)}" data-name="${esc(p.displayName)}" title="${esc(t('Remove {name} from this room', { name: p.displayName }))}">${t('Remove')}</button>` : '';

@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.36.1 · 2026-10-20
+
+### Changed
+- In a room's party your own characters come first, above the other players.
+
 ## 0.36.0 · 2026-10-20
 
 ### Changed

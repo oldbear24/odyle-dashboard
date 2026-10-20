@@ -53,6 +53,9 @@ test('the summary gives the numbers, then reads like a sentence, in English and 
   assert.deepEqual(readyOrder(entries.filter(c => c.characterName), now, 40).map(c => c.id), ['a1', 'b1', 'k1', 'a2', 'n1']);
   // By the account that owns them: each player's characters together, players closest to ready first.
   assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40)).map(g => g.map(c => c.id)), [['a1', 'a2'], ['b1'], ['k1'], ['n1']]);
+  // The signed-in player's own characters come first, the others keep their order.
+  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40), 'Kaelen').map(g => g.map(c => c.id)), [['k1'], ['a1', 'a2'], ['b1'], ['n1']]);
+  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40), 'Vee').map(g => g[0].user), ['Anna', 'Bram', 'Kaelen', 'Nyx']);
   assert.deepEqual(byPlayer([]), []);
   await useLanguage('cs');
   assert.match(partySummary(explain(entries, now, 40), now), /Kaelen · Kael brzdí partu/);
