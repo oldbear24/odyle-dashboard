@@ -726,7 +726,7 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
     assert.equal(await page.locator('.sidebar').isVisible(), false);
     const bar = page.locator('.bottom-nav');
     assert.deepEqual(await bar.locator('a').allInnerTexts(), ['Party', 'Rooms', 'Tasks', 'Armory', 'Account']);
-    const smallest = await page.evaluate(() => Math.min(...[...document.querySelectorAll('.metric-label, .metric small, .party-line, .refresh-label, .room-switch-text small, footer, .member-meta, .status-why, .row-changed, .card-actions button, .bottom-nav a')].map(e => parseFloat(getComputedStyle(e).fontSize))));
+    const smallest = await page.evaluate(() => Math.min(...[...document.querySelectorAll('.metric-label, .metric small, .party-line, .refresh-label, .room-switch-text small, footer, .member-meta, .status-why, .row-changed, .card-actions button, .group-count, .group-you, .bottom-nav a')].map(e => parseFloat(getComputedStyle(e).fontSize))));
     assert.ok(smallest >= 11, `smallest text ${smallest}px`);
     await shot(page, 'phone-room');
     for (const [label, hash, ready] of [['Rooms', '#/', '.personal-characters'], ['Party', '#/room/' + roomId, '.member-grid'], ['Tasks', '#/tasks', '.tasks-page'], ['Armory', '#/armory', '#armory-form'], ['Account', '#/account', '.account-page']]) {

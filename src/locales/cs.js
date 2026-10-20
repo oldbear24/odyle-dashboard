@@ -297,6 +297,7 @@ export default {
   '{n} earlier change not listed|{n} earlier changes not listed': ['{n} starší změna není v seznamu', '{n} starší změny nejsou v seznamu', '{n} starších změn není v seznamu'],
   '{n} member needs it|{n} members need it': ['potřebuje ho {n} člen', 'potřebují ho {n} členové', 'potřebuje ho {n} členů'],
   '{n} member|{n} members': ['{n} člen', '{n} členové', '{n} členů'],
+  '{n} character|{n} characters': ['{n} postava', '{n} postavy', '{n} postav'],
   '{n} character in this room|{n} characters in this room': ['{n} postava v místnosti', '{n} postavy v místnosti', '{n} postav v místnosti'],
   'cube|cubes': ['kostka', 'kostky', 'kostek'],
   '{n} going|{n} going': ['jde {n}', 'jdou {n}', 'jde {n}'],
