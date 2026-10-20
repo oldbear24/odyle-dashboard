@@ -52,9 +52,11 @@ export function readyOrder(characters, now, cost) {
 }
 
 // The ordered characters by the account that owns them: each player's characters together in
-// that order, players in the order of their first character (so closest to ready first).
-export function byPlayer(characters) {
+// that order, players in the order of their first character (so closest to ready first). The
+// signed-in player's own group (`you`) comes before everyone else's.
+export function byPlayer(characters, you = null) {
   const groups = new Map();
   for (const c of characters) groups.set(c.user, [...groups.get(c.user) || [], c]);
-  return [...groups.values()];
+  const all = [...groups.values()];
+  return you && groups.has(you) ? [groups.get(you), ...all.filter(g => g[0].user !== you)] : all;
 }
