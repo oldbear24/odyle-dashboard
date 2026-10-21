@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.38.0 · 2026-10-21
+
+### New
+- A character whose natural pool will be full within two days stands out in orange (**Nearly full**), and in red once it is full or fills within the hour (**Full**), in your list and in every room, so you can spend Odyle before regeneration is lost.
+
+### Changed
+- **Membership** under Account & data starts at **No membership**, so the Odyle clock and cap alerts count with 560 from the first reading. Accounts that had not answered are set to no as well, or to yes when one of their characters already held more than 560. Change it any time.
+
+### Fixed
+- The server is built with Go 1.27.3, which no longer trusts compromised intermediate certificates on its outgoing connections (Discord, PLAYNC, GitHub).
+
 ## 0.37.0 · 2026-10-20
 
 ### New
