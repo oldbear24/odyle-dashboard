@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.38.1 · 2026-10-21
+
+### Fixed
+- While the armory fetches a character from PLAYNC, the waiting line shows a small spinner beside its text again, instead of a long line sweeping across the page.
+
 ## 0.38.0 · 2026-10-21
 
 ### New
