@@ -10,6 +10,9 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ### Changed
 - **Membership** under Account & data starts at **No membership**, so the Odyle clock and cap alerts count with 560 from the first reading. Accounts that had not answered are set to no as well, or to yes when one of their characters already held more than 560. Change it any time.
 
+### Fixed
+- The server is built with Go 1.27.3, which no longer trusts compromised intermediate certificates on its outgoing connections (Discord, PLAYNC, GitHub).
+
 ## 0.37.0 · 2026-10-20
 
 ### New
