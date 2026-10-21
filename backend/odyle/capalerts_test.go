@@ -13,6 +13,8 @@ func TestCapStateFollowsTheOdyleClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules, at := defaultClock(), mustTime(t, "2026-10-15T14:30:00Z")
+	// An account not sure of its membership: the readings decide the cap.
+	c.Set("answeredCap", 0)
 	read := func(base, max int64, when string) {
 		c.Set("parts", map[string]any{"base": base, "bonus": 300})
 		c.Set("naturalMax", max)

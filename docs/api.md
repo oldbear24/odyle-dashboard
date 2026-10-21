@@ -210,7 +210,7 @@ The backend checks the clock: a login reading (`kind` `snapshot` with `parts`) a
 
 ### Membership answer
 
-`POST /api/odyle/membership` with `{ membership }` saves whether the account's game account has the membership: `"yes"`, `"no"`, or `""` while not sure (the default). It answers `{ membership }`; `GET /api/odyle/account` and the export carry it too. Anything else answers 400.
+`POST /api/odyle/membership` with `{ membership }` saves whether the account's game account has the membership: `"yes"`, `"no"`, or `""` while not sure. A new account starts at `"no"` (dashboard 0.38.0); accounts that had not answered got `"no"` then too, or `"yes"` when one of their characters' `naturalMax` was above the smallest of the clock's `caps`. It answers `{ membership }`; `GET /api/odyle/account` and the export carry it too. Anything else answers 400.
 
 The answer settles the natural pool's cap: each of the account's characters carries `answeredCap`, the largest of the clock's `caps` with the membership, the smallest without, and 0 while the answer is open. Rooms, the realtime character news and the Windows app get `answeredCap` with the character; the answer itself never leaves the account. Clients, cap alerts and the clock check use `answeredCap` when it is set and the readings' `naturalMax` otherwise. Characters saved later get the cap of the account's answer, and new caps under Game settings move the answered ones with them. Readings stay as read: a character whose `naturalMax` is above its `answeredCap` contradicts the answer, and the owner's card says so.
 

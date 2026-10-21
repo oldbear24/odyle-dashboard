@@ -23,10 +23,15 @@ func TestTheMembershipAnswerSettlesEachCharactersCap(t *testing.T) {
 		return c.GetInt64("answeredCap")
 	}
 	auth := tokenOf(t, player)
-	if capOf(main) != 0 || ask(t, app, "GET", "/api/odyle/account", auth, "", 200)["membership"] != "" {
-		t.Fatal("not sure by default")
+	// A new account starts without the membership: every character of the account is capped at 560.
+	if capOf(main) != 560 || capOf(alt) != 560 || ask(t, app, "GET", "/api/odyle/account", auth, "", 200)["membership"] != "no" {
+		t.Fatalf("no membership by default: caps %d %d", capOf(main), capOf(alt))
 	}
-	// No membership: every character of the account is capped at 560; the answer itself is the account's.
+	// Not sure: the readings decide; saying no again settles 560, and the answer itself is the account's.
+	ask(t, app, "POST", "/api/odyle/membership", auth, `{"membership":""}`, 200)
+	if capOf(main) != 0 || capOf(alt) != 0 {
+		t.Fatal("open")
+	}
 	if out := ask(t, app, "POST", "/api/odyle/membership", auth, `{"membership":"no"}`, 200); out["membership"] != "no" {
 		t.Fatalf("answer: %v", out)
 	}
@@ -61,7 +66,7 @@ func TestTheMembershipAnswerSettlesEachCharactersCap(t *testing.T) {
 	if _, err := writeSettings(app, body{"clock": map[string]any{"tickHours": []any{1.0, 4.0}, "tick": 15.0, "caps": []any{500.0, 900.0}, "paused": false}}); err != nil {
 		t.Fatal(err)
 	}
-	if capOf(main) != 900 || capOf(newGameCharacter(t, app, lead.Id, "Lead")) != 0 {
+	if capOf(main) != 900 || capOf(newGameCharacter(t, app, lead.Id, "Lead")) != 500 {
 		t.Fatalf("after new caps %d", capOf(main))
 	}
 	// Not sure again: the readings decide; anything else is refused.

@@ -637,22 +637,23 @@ test('the armory keeps bookmarked characters in this browser, without an account
   } finally { await close(); }
 });
 
-test('the membership answer settles the clock\'s cap, and a reading that contradicts it is pointed out', async () => {
+test('the membership answer settles the clock\'s cap, a reading that contradicts it is pointed out, and a pool near its cap stands out', async () => {
   const me = await account('Member');
   const session = (await request('/api/odyle/session', {}, me)).data;
   assert.equal((await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Pool', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, value: 700, base: 700, bonus: 0, kind: 'snapshot' }, me)).status, 200);
   const { page, errors, close } = await open(me, '#/account');
   try {
     const form = page.locator('#membership-form');
-    assert.equal(await form.locator('input[name="membership"]:checked').getAttribute('value'), '', 'not sure until answered');
-    await form.locator('input[value="no"]').check();
+    assert.equal(await form.locator('input[name="membership"]:checked').getAttribute('value'), 'no', 'no membership until answered');
     await form.locator('[type="submit"]').click();
     await toast(page).filter({ hasText: 'Saved: the Odyle clock counts with the cap without the membership.' }).waitFor();
     await shot(page, 'account-membership');
-    // The character's pool held 700, more than the 560 without the membership: its card says so.
+    // The character's pool held 700, more than the 560 without the membership: its card says so,
+    // and in red, as a full pool.
     await navigate(page, 'library');
     const card = page.locator('.member-card', { hasText: 'Pool' });
     await card.locator('.cap-mismatch', { hasText: 'Its natural pool held 700, more than 560: has the membership started?' }).waitFor();
+    assert.equal(await page.locator('.member-card.cap-full .cap-flag', { hasText: 'Full' }).count(), 1);
     // With the membership the readings fit, and the hint goes.
     await navigate(page, 'account');
     assert.equal(await form.locator('input[name="membership"]:checked').getAttribute('value'), 'no');
@@ -662,6 +663,9 @@ test('the membership answer settles the clock\'s cap, and a reading that contrad
     await navigate(page, 'library');
     await card.waitFor();
     assert.equal(await card.locator('.cap-mismatch').count(), 0);
+    // 140 to go to 840: full in about 30 hours, so orange.
+    await page.locator('.member-card.cap-soon .cap-flag', { hasText: 'Nearly full' }).waitFor();
+    await shot(page, 'library-cap-soon');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

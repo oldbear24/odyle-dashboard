@@ -9,11 +9,12 @@ import (
 
 // The membership answer (#68), about the game's paid membership, not room memberships: whether
 // the player's game account has it, as the player says under Account & data ("yes", "no", or ""
-// while not sure, the default). It settles the natural pool's cap the Odyle clock uses: the
-// largest of the rules' caps with it, the smallest without, and the inference from the readings
-// (capsFor) while open. Each of the
-// account's characters carries that cap as answeredCap, so rooms, realtime news and the Windows
-// app get it with the character, never the answer itself. Readings stay as read; a character
+// while not sure). A new account starts at "no", the common case, so its clock and cap alerts
+// count with the smaller cap from the first reading. It settles the natural pool's cap the Odyle
+// clock uses: the largest of the rules' caps with it, the smallest without, and the inference
+// from the readings (capsFor) while open. Each of the account's characters carries that cap as
+// answeredCap, so rooms, realtime news and the Windows app get it with the character, never
+// the answer itself. Readings stay as read; a character
 // whose readings went above its answered cap is shown with a hint by the clients.
 
 var membershipAnswers = []string{"", "yes", "no"}
@@ -70,8 +71,15 @@ func membershipAnswer(e *core.RequestEvent) error {
 	})
 }
 
-// watchMembership gives a newly saved character the cap its account's answer settles.
+// watchMembership starts a new account at "no", and gives a newly saved character the cap its
+// account's answer settles.
 func watchMembership(app core.App) {
+	app.OnRecordCreate("users").BindFunc(func(e *core.RecordEvent) error {
+		if e.Record.GetString("membership") == "" {
+			e.Record.Set("membership", "no")
+		}
+		return e.Next()
+	})
 	app.OnRecordCreate("characters").BindFunc(func(e *core.RecordEvent) error {
 		if user, err := e.App.FindRecordById("users", e.Record.GetString("user")); err == nil {
 			e.Record.Set("answeredCap", answeredCap(user.GetString("membership"), readSettings(e.App).Clock.Caps))

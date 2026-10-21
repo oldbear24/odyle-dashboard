@@ -45,6 +45,17 @@ export function clockOf(c, now, rules = defaultClock) {
   return { base, total: base + c.parts.bonus, cap, tick, next, fills, full: base >= cap, settled: caps.length === 1, projected: base !== start };
 }
 
+// How close the natural pool is to its cap, for the card's colour: "full" once it is full or
+// fills within the hour, "soon" when it fills within two days, else "". While the cap is open
+// it goes by the smallest one, as cap alerts do.
+export const capSoon = 2 * day, capNow = hour;
+export function capLevel(clock, now) {
+  if (!clock) return '';
+  const at = clock.full ? now : clock.fills[0]?.at;
+  if (at == null) return '';
+  return at - now <= capNow ? 'full' : at - now <= capSoon ? 'soon' : '';
+}
+
 // One line for a card: for a character not read right now its estimated value, then either
 // the next tick and when the natural pool is full, or that it is full and losing each tick.
 export function clockLine(clock, now, fresh) {

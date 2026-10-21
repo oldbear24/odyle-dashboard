@@ -67,3 +67,22 @@ test('a membership answer settles the cap, and readings that contradict it are f
   assert.equal(capMismatch({ answeredCap: 0, naturalMax: 700 }), false);
   assert.equal(capMismatch({ answeredCap: 840, naturalMax: 300 }), false);
 });
+test('a card turns orange two days before the natural pool is full and red within the hour', async () => {
+  const { clockOf, capLevel, defaultClock } = await clock();
+  const now = at('2026-10-15T05:30:00Z'), c = { parts: { base: 500, bonus: 0 }, lastReadingAt: '2026-10-15 05:00:00.000Z', answeredCap: 560 };
+  // 60 to go, four ticks: full at 13:00, seven and a half hours away.
+  assert.equal(capLevel(clockOf(c, now, defaultClock), now), 'soon');
+  // The next tick at 07:00 fills it: red from 06:00.
+  const last = { ...c, parts: { base: 545, bonus: 0 } };
+  assert.equal(capLevel(clockOf(last, now, defaultClock), now), 'soon');
+  assert.equal(capLevel(clockOf(last, at('2026-10-15T06:00:00Z'), defaultClock), at('2026-10-15T06:00:00Z')), 'full');
+  assert.equal(capLevel(clockOf({ ...c, parts: { base: 560, bonus: 0 } }, now, defaultClock), now), 'full');
+  // 16 ticks to go fill it in 46½ hours, 17 in 49½.
+  assert.equal(capLevel(clockOf({ ...c, parts: { base: 320, bonus: 0 } }, now, defaultClock), now), 'soon');
+  assert.equal(capLevel(clockOf({ ...c, parts: { base: 305, bonus: 0 } }, now, defaultClock), now), '');
+  // With the membership the same pool is far from its cap.
+  assert.equal(capLevel(clockOf({ ...c, answeredCap: 840 }, now, defaultClock), now), '');
+  // While the cap is open it goes by the smallest one.
+  assert.equal(capLevel(clockOf({ ...c, answeredCap: 0, parts: { base: 560, bonus: 0 } }, now, defaultClock), now), 'full');
+  assert.equal(capLevel(null, now), '');
+});
