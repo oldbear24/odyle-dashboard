@@ -96,6 +96,34 @@ func note(b body, key string) (string, error) {
 	return collapse(n), err
 }
 
+// boardText is a room's information board: free text of up to 2,000 characters whose lines
+// stay, without invisible characters, the spaces that end a line or more than one empty line in
+// a row. Nothing but spaces is an empty board.
+func boardText(value any) (string, error) {
+	s, ok := value.(string)
+	if !ok {
+		return "", errors.New("The board must be text.")
+	}
+	lines, empty := []string{}, 0
+	for _, line := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(visible(s), "\r\n", "\n"), "\r", "\n"), "\n") {
+		line = strings.TrimRightFunc(line, isSpace)
+		if line == "" {
+			empty++
+			continue
+		}
+		if empty > 0 && len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		empty = 0
+		lines = append(lines, line)
+	}
+	board := strings.Join(lines, "\n")
+	if length(board) > 2000 {
+		return "", errors.New("The board can be up to 2,000 characters.")
+	}
+	return board, nil
+}
+
 // A planned run starts at most an hour ago (late entries) and at most 60 days ahead.
 func runStart(value any, now time.Time) (string, error) {
 	s, _ := value.(string)

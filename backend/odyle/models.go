@@ -277,6 +277,25 @@ func (r *Room) DiscordLeads() []int64 {
 	return leads
 }
 
+// roomFeatures are the parts of a room its owner turns on and off under Room settings: the
+// information board, planned runs, the dungeon wishlist and the party's week.
+var roomFeatures = []string{"board", "runs", "wishlist", "week"}
+
+// Features is whether each room feature is on. A room keeps the ones its owner set, so a
+// feature it never set (one added later, say) is on.
+func (r *Room) Features() map[string]bool {
+	saved := map[string]bool{}
+	_ = json.Unmarshal([]byte(r.GetString("features")), &saved)
+	out := make(map[string]bool, len(roomFeatures))
+	for _, f := range roomFeatures {
+		on, set := saved[f]
+		out[f] = on || !set
+	}
+	return out
+}
+
+func (r *Room) On(feature string) bool { return r.Features()[feature] }
+
 func (r *Room) SetOwner(user string) { r.Set("owner", user) }
 func (r *Room) SetName(name string)  { r.Set("name", name) }
 

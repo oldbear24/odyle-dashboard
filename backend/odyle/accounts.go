@@ -169,11 +169,13 @@ func ownSession(app core.App, userId, id string) (*ReaderSession, error) {
 func odylePerCube(app core.App) int64 { return readSettings(app).OdylePerCube }
 
 // The Discord webhook is a hidden field, so the public export never carries it; members
-// only learn whether the room posts reminders.
+// only learn whether the room posts reminders. So is the information board, which only the
+// snapshot carries (boardOf). features says whether each room feature is on.
 func roomJSON(room *Room, cost int64) map[string]any {
 	out := room.PublicExport()
 	out["cost"] = cost
 	out["discordReminders"] = room.DiscordWebhook() != ""
+	out["features"] = room.Features()
 	return out
 }
 
@@ -595,24 +597,30 @@ func snapshot(e *core.RequestEvent) error {
 			}
 			out[i] = j
 		}
-		wishes, err := wishlistOf(e.App, id, members)
-		if err != nil {
-			return err
+		// A room feature its owner turned off comes empty: no wishlist, no runs, no week.
+		wishes, runs := []*wish{}, []plannedRun{}
+		if room.On("wishlist") {
+			if wishes, err = wishlistOf(e.App, id, members); err != nil {
+				return err
+			}
 		}
-		runs, err := runsOf(e.App, id, members)
-		if err != nil {
-			return err
+		if room.On("runs") {
+			if runs, err = runsOf(e.App, id, members); err != nil {
+				return err
+			}
 		}
 		readers, err := readersOf(e.App, e.Auth.Id)
 		if err != nil {
 			return err
 		}
 		// The party's week (#42): one line, what the shared characters spent since the reset.
-		week, err := roomWeekOf(e.App, rules, members, rules.OdylePerCube, time.Now())
-		if err != nil {
-			return err
+		var week any
+		if room.On("week") {
+			if week, err = roomWeekOf(e.App, rules, members, rules.OdylePerCube, time.Now()); err != nil {
+				return err
+			}
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules)})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules)})
 	})
 }
 
@@ -675,7 +683,8 @@ func wishlistOf(app core.App, roomId string, members []*Member) ([]*wish, error)
 }
 
 // Reporters and owners add dungeons they need, anyone removes their own entry, and
-// the owner can clear a dungeon for everyone, for example after the party ran it.
+// the owner can clear a dungeon for everyone, for example after the party ran it. A room
+// whose owner turned the wishlist off takes no change.
 func wishlist(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
 		m, err := membership(app, user.Id, b.str("roomId"))
@@ -683,6 +692,13 @@ func wishlist(e *core.RequestEvent) error {
 			return nil, err
 		}
 		roomId := m.Room()
+		room, err := findAs[Room](app, "party_rooms", roomId)
+		if err != nil {
+			return nil, err
+		}
+		if !room.On("wishlist") {
+			return nil, forbidden("The room owner turned the dungeon wishlist off.")
+		}
 		wanted, err := dungeon(b["dungeon"])
 		if err != nil {
 			return nil, err
@@ -1960,12 +1976,19 @@ func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record) e
 // { roomId, id, again: true, startsAt? } plans it again a week later, { roomId, id, dungeon?,
 // startsAt?, note? } changes it and { roomId, id, remove: true } cancels it (changes
 // and cancelling: its planner or the room owner). Owners and players plan and join;
-// viewers read.
+// viewers read. A room whose owner turned planned runs off has none.
 func plan(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
 		m, err := membership(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
+		}
+		room, err := findAs[Room](app, "party_rooms", m.Room())
+		if err != nil {
+			return nil, err
+		}
+		if !room.On("runs") {
+			return nil, forbidden("The room owner turned planned runs off.")
 		}
 		// Officers change, cancel and wrap up every run, like the owner (#43).
 		roomId, viewer, isOwner := m.Room(), m.Role() == "viewer", m.Role() == "owner" || m.Role() == "officer"
@@ -2225,7 +2248,7 @@ func plan(e *core.RequestEvent) error {
 			r.SetAttendees([]string{m.Id})
 			// Planned from the wishlist (#45): the members who want the dungeon are invited.
 			invited := []string{}
-			if b.isTrue("fromWish") {
+			if b.isTrue("fromWish") && room.On("wishlist") {
 				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": name.key})
 				if err != nil {
 					return nil, err
@@ -2681,11 +2704,19 @@ func exportData(e *core.RequestEvent) error {
 			for j, r := range runs {
 				planned[j] = map[string]any{"dungeon": r.Dungeon(), "startsAt": r.StartsAt(), "note": r.Note(), "planned": r.PlannedBy() == m.Id}
 			}
-			name := ""
+			name, board := "", ""
 			if room := rooms[m.Room()]; room != nil {
 				name = room.Name()
+				// The information board, when this account wrote it last.
+				if room.GetString("boardBy") == user.Id {
+					board = room.GetString("board")
+				}
 			}
-			joined[i] = map[string]any{"room": m.Room(), "name": name, "role": m.Role(), "joined": m.Created(), "sharedCharacters": m.Shared(), "wishlist": pluck(wishes, (*Wish).Dungeon), "runs": planned}
+			entry := map[string]any{"room": m.Room(), "name": name, "role": m.Role(), "joined": m.Created(), "sharedCharacters": m.Shared(), "wishlist": pluck(wishes, (*Wish).Dungeon), "runs": planned}
+			if board != "" {
+				entry["board"] = board
+			}
+			joined[i] = entry
 		}
 		names := map[string]string{}
 		for _, c := range characters {

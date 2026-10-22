@@ -38,6 +38,31 @@ func FuzzTextLimits(f *testing.F) {
 	})
 }
 
+// The information board keeps its lines but never an invisible character, a carriage return, a
+// line ending in a space or two empty lines in a row, and reads the same when saved again.
+func FuzzBoard(f *testing.F) {
+	for _, s := range []string{"", " \n\n ", "Raid at 20:00\r\n\r\n\r\nBring potions  \n  - food", "a\u202eb\u200b\rc", "\xff\xfe\n\u2028x", strings.Repeat("😀", 1001)} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		got, err := boardText(s)
+		if err != nil {
+			return
+		}
+		if length(got) > 2000 || strings.ContainsFunc(got, invisible) || strings.Contains(got, "\r") || strings.Contains(got, "\n\n\n") || strings.HasPrefix(got, "\n") || strings.HasSuffix(got, "\n") {
+			t.Fatalf("boardText(%q) = %q", s, got)
+		}
+		for _, line := range strings.Split(got, "\n") {
+			if line != strings.TrimRightFunc(line, isSpace) {
+				t.Fatalf("boardText(%q) kept spaces at the end of %q", s, line)
+			}
+		}
+		if again, err := boardText(got); err != nil || again != got {
+			t.Fatalf("boardText(%q) = %q, then %q (%v)", s, got, again, err)
+		}
+	})
+}
+
 func FuzzParseDate(f *testing.F) {
 	for _, s := range []string{"2026-10-15T12:00:00.000Z", "2026-10-15 12:00", "2026-02-30T10:00:00Z", "2026-10-15T23:59:59.123456789+02:00", "2026-10-15", "bad"} {
 		f.Add(s)

@@ -29,7 +29,7 @@ var accountActions = []action{
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
-	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed},
+	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed}, {"room-features", roomFeaturesSetting},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
@@ -114,6 +114,8 @@ func routes(se *core.ServeEvent) {
 	for _, a := range publicActions {
 		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(small)
 	}
+	// A full information board (2,000 characters with its lines) needs more than 4 KB.
+	se.Router.POST("/api/odyle/board", observed("board", board)).Bind(signedIn, apis.BodyLimit(16384))
 	// Reads are timed for the superuser dashboard's Server status page (traffic.go).
 	se.Router.GET("/api/odyle/rooms", timed("rooms", rooms)).Bind(signedIn)
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
