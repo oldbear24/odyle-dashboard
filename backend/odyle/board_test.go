@@ -34,7 +34,7 @@ func TestTheBoardIsWrittenByTheOwnerAndOfficers(t *testing.T) {
 	write(watching, `"Mine"`, 403)
 	write(owner, `42`, 400)
 	// Lines stay; spaces ending a line and extra empty lines go.
-	board, _ := write(owner, `"  Raid on Wednesday at 20:00  \r\n\r\n\r\n- bring potions​ \n"`, 200)["board"].(map[string]any)
+	board, _ := write(owner, `"  Raid on Wednesday at 20:00  \r\n\r\n\r\n- bring potions\u200b \n"`, 200)["board"].(map[string]any)
 	if board["text"] != "  Raid on Wednesday at 20:00\n\n- bring potions" || board["by"] != lead.Id || board["at"] == "" {
 		t.Fatalf("board %v", board)
 	}
