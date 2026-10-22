@@ -443,7 +443,8 @@ test('the leader and officers keep the information board, and the owner turns ro
     await owner.page.locator('[data-action="room-settings"]').click();
     await form.locator('[name=runs]').check(); await form.locator('[name=wishlist]').check(); await form.locator('[name=board]').check();
     await form.locator('[type=submit]').click();
-    await toast(owner.page).filter({ hasText: 'Room features saved.' }).waitFor();
+    // Its own toast: the one before (… 1 planned run was cancelled.) may still show.
+    await toast(owner.page).filter({ hasText: /^Room features saved\.$/ }).waitFor();
     await owner.page.keyboard.press('Escape');
     for (const p of [owner.page, viewer.page]) {
       await p.locator('.board-text').filter({ hasText: 'Raid on Wednesday' }).waitFor();
