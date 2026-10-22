@@ -2,6 +2,12 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.39.0 · 2026-10-22
+
+### New
+- Every room has an **information board** at its top: the leader and officers write what every member should know (the week's plan, rules, a Discord link) under **Write** or **Edit**. Lines stay as written and web addresses become links; members see who changed it last and when.
+- **Room features** under Room settings: the leader turns the information board, planned runs, the dungeon wishlist and the party's week on or off for the whole room. The board's text and the wishlist's entries are kept while they are off; turning planned runs off cancels the runs planned at the time, after asking.
+
 ## 0.38.1 · 2026-10-21
 
 ### Fixed

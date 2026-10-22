@@ -28,7 +28,7 @@ export function deliveryLine(room, now) {
 
 // The language a room's posts use: the room's, else (not connected yet) this dashboard's (#50).
 const postLanguage = room => room?.discordReminders && room.discordLanguage ? room.discordLanguage : language() === 'cs' ? 'cs' : 'en';
-export function discordSettings(room, now, paused = false) {
+export function discordSettings(room, now, paused = false, runsOff = false) {
   const on = Boolean(room.discordReminders), leads = leadsOf(room), line = deliveryLine(room, now);
   const posting = on && room.discordName ? ' ' + t('Posting as {name}, in {language}.', { name: room.discordName, language: room.discordLanguage === 'cs' ? t('Czech') : t('English') }) : '';
   const intro = on ? t('Reminders are on: each planned run is posted to your Discord channel {when}.', { when: postTimes(room) }) + posting
@@ -37,7 +37,9 @@ export function discordSettings(room, now, paused = false) {
   const choices = discordLeadChoices.map(m => `<label class="chip-check"><input type="checkbox" name="lead" value="${m}" ${leads.includes(m) ? 'checked' : ''}><span>${esc(leadLabel(m))}</span></label>`).join('');
   const options = `<form id="discord-options-form" class="discord-options"><div class="lead-choices" role="group" aria-label="${esc(t('Reminder times'))}">${choices}</div><label class="check-row"><input type="checkbox" name="startPost" ${room.discordStartPost ? 'checked' : ''}> <span>${t('Also post when a run starts')}</span></label><small class="account-note">${t('Up to three times before each run. Going members who turned on Discord mentions in their notifications are pinged in the first post.')}</small><label class="discord-language">${t('Language of the posts')}<select name="language"><option value="en" ${postLanguage(room) === 'en' ? 'selected' : ''}>${t('English')}</option><option value="cs" ${postLanguage(room) === 'cs' ? 'selected' : ''}>${t('Czech')}</option></select></label><label class="check-row"><input type="checkbox" name="readiness" ${room.discordReadiness ? 'checked' : ''}> <span>${t('Show how many of those going can claim a cube')}</span></label><small class="account-note">${t('Counts only, never names or Odyle values: the channel may include people outside the room. The post follows changes up to the start.')}</small>${on ? `<button class="button secondary small" type="submit">${t('Save')}</button>` : ''}</form>`;
   const connect = `<form id="discord-form" class="rename-form"><label>${on ? t('Replace the webhook URL') : t('Webhook URL')}<input name="webhook" type="url" autocomplete="off" required placeholder="https://discord.com/api/webhooks/…"></label><button class="button secondary" type="submit">${on ? t('Replace') : t('Connect')}</button></form>`;
-  const hold = paused ? `<p class="discord-status warn" role="status">${t('The server\'s operator has paused Discord reminders for now; planned runs are posted again once they turn them back on.')}</p>` : '';
+  // Planned runs turned off under Room features leave nothing to post (roomfeatures.js).
+  const hold = runsOff ? `<p class="discord-status warn" role="status">${t('Planned runs are off in this room, so nothing is posted until the room owner turns them on again.')}</p>`
+    : paused ? `<p class="discord-status warn" role="status">${t('The server\'s operator has paused Discord reminders for now; planned runs are posted again once they turn them back on.')}</p>` : '';
   return `<h3 class="modal-sub">${t('Discord reminders')}</h3><p>${esc(intro)}</p>${hold}${status}${options}${connect}${on ? `<button class="text-button" data-action="discord-off">${t('Stop Discord reminders')}</button>` : ''}`;
 }
 

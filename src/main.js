@@ -28,6 +28,8 @@ import privacyText from '../docs/privacy.md?raw';
 import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
+import { boardSection, boardForm } from './board.js';
+import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
 import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
@@ -67,12 +69,16 @@ let remindersPaused = false;
 let maintenance = null;
 // The party's week (#42): what the characters shared in the room spent since the weekly reset.
 let roomWeek = null;
+// The room's information board (board.js): its text, who wrote it last and when, or null.
+let board = null;
 const hiddenAnnouncementKey = 'odyle.announcement.hidden';
 let timer = 0;
 const me = () => members.find(m => m.user === pb.authStore.record?.id);
 const owner = () => demo || room?.owner === pb.authStore.record?.id;
 // The owner or an officer (#43): invites, every run, clearing the wishlist for everyone and Discord reminders.
 const manager = () => owner() || me()?.role === 'officer';
+// Whether the room owner left a part of the room on (roomfeatures.js): board, runs, wishlist, week.
+const on = feature => featureOn(room, feature);
 const mine = () => me()?.characters || [];
 const roleName = role => role === 'owner' ? t('leader') : role === 'officer' ? t('officer') : role === 'viewer' ? t('viewer') : t('player');
 const colors = ['jade', 'amber', 'blue', 'pink', 'violet'];
@@ -271,7 +277,7 @@ let rendered = '', renderedLibrary = '';
 const stable = list => list.map(({ lastSeenAt, updated, characters, ...rest }) => ({ ...rest, characters: characters?.map(({ lastSeenAt: _seen, updated: _updated, ...c }) => c) }));
 // Hook responses list record fields in a different order each time; sort keys so identical data compares equal.
 const canonical = value => JSON.stringify(value, (key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
-function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), wishlist, runs, dungeons, catalog, flattened().map(c => status(c, now)), readerNow()?.name ?? null]); }
+function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), board, wishlist, runs, dungeons, catalog, flattened().map(c => status(c, now)), readerNow()?.name ?? null]); }
 function updateAges() {
   const now = Date.now() + serverOffset;
   document.querySelectorAll('[data-age]').forEach(el => { el.textContent = age(el.dataset.age, now); });
@@ -312,7 +318,7 @@ function wishlistSection(now) {
     const mine = w.users.includes(myId), count = w.users.length, listed = entryOf(catalog, w.dungeon), plannable = !catalog.length || listed;
     const people = w.users.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`).join('');
     const actions = demo ? '' : (mine ? `<button data-wish="${esc(w.dungeon)}" data-wanted="false" title="${esc(t('Take yourself off {dungeon}', { dungeon: w.dungeon }))}">${t('Remove me')}</button>` : viewer ? '' : `<button data-wish="${esc(w.dungeon)}" data-wanted="true">${icon('plus')} ${t('Need it too')}</button>`)
-      + (viewer || !plannable ? '' : `<button data-plan-wish="${esc(listed?.name ?? w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
+      + (viewer || !plannable || !on('runs') ? '' : `<button data-plan-wish="${esc(listed?.name ?? w.dungeon)}" title="${esc(t('Plan a run of {dungeon}', { dungeon: w.dungeon }))}">${icon('calendar')} ${t('Plan')}</button>`)
       + (manager() ? `<button class="remove" data-clear-wish="${esc(w.dungeon)}" title="${esc(t('Clear {dungeon} for everyone', { dungeon: w.dungeon }))}">${t('Clear')}</button>` : '');
     return `<div class="wish-row ${mine ? 'mine' : ''}"><div class="wish-name"><strong>${esc(w.dungeon)}</strong><small>${esc(tn(count, '{n} member needs it', '{n} members need it'))} · ${esc(wanted(w.since, now))}</small>${facts(w.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
   }).join('');
@@ -393,7 +399,7 @@ async function refreshTasks() {
   if (shown !== '/tasks') return; // navigated elsewhere while loading
   applyTasks(data); if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
 }
-function clearRoom() { room = null; members = []; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; }
+function clearRoom() { room = null; members = []; board = null; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; }
 // The armory (armory.js): public, signed in or not. The servers come from the backend once;
 // the region and server last searched are kept per browser. A profile still waiting for
 // PLAYNC asks again when the backend says to, while it stays on screen.
@@ -526,9 +532,11 @@ function dashboard() {
   const explained = explain(party, now, cost, estimate), { characters: actual, counted } = explained;
   const estimated = Boolean(explained.lastKnown && clockOf(explained.lastKnown.lowest, now, clockRules)?.projected);
   const shown = readyOrder(actual, now, cost).filter(c => !liveOnly() || status(c, now) === 'live');
+  // The parts of the room its owner left on (Room settings → Room features).
+  const columns = (on('runs') ? plannedRuns(now) : '') + (on('wishlist') ? wishlistSection(now) : '');
   const hidden = actual.length - shown.length, actions = `${demo ? `<span class="demo-tag">${t('Sample data')}</span>` : ''}${manager() ? `<button class="button primary" data-action="invite">${icon('plus')} ${t('Invite')}</button>` : ''}<button class="button secondary" data-action="room-settings">${icon('gear')} ${owner() ? t('Settings') : t('Room')}</button>`;
   // Room changes redraw the whole page; keep half-typed wishlist and run entries and their focus.
-  keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p>${demo ? '' : weekLine(roomWeek)}</div><div class="heading-actions">${actions}</div></section>${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${playerGroups(shown, now, counted, cost)}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section><div class="room-columns">${plannedRuns(now)}${wishlistSection(now)}</div></main>`));
+  keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p>${demo || !on('week') ? '' : weekLine(roomWeek)}</div><div class="heading-actions">${actions}</div></section>${on('board') ? boardSection(board, { canEdit: manager(), name: id => id === pb.authStore.record?.id ? t('You') : members.find(m => m.user === id)?.displayName || '', now }) : ''}${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${playerGroups(shown, now, counted, cost)}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section>${columns ? `<div class="room-columns">${columns}</div>` : ''}</main>`));
 }
 // The party's characters grouped by the player whose account owns them, under that player's
 // name, look, leader crown and character count; the owner removes a player from here.
@@ -622,8 +630,9 @@ async function invitePicker() {
   modal(t('Invite to which room?'), `<p>${t('Choose a room you lead. Friends you invite join only that room.')}</p><div class="room-list room-picker">${led.map(r => `<button class="room-item" data-invite-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))}</small></span>${icon('arrow')}</button>`).join('')}</div>`);
 }
 async function openInvites(id) { closeModal(); await go('/room/' + id); if (room?.id === id) await inviteDialog(); }
-// Owners rename the room, change roles, hand it over, remove members and close it;
-// other members can leave. Every change asks the server and redraws this dialog.
+// Owners rename the room, change roles, turn its features on and off, hand it over, remove
+// members and close it; other members can leave. Every change asks the server and redraws
+// this dialog.
 function roomSettings() {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to manage your own rooms.'));
   // One section per subject; the one that cannot be undone comes last.
@@ -638,11 +647,19 @@ function roomSettings() {
     : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="officer" ${m.role === 'officer' ? 'selected' : ''}>${t('Officer')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
   modal(t('Room settings'), section(t('Room name'), `<form id="rename-form" class="rename-form"><label><span class="sr-only">${t('Room name')}</span><input name="name" maxlength="60" required value="${esc(room.name)}"></label><button class="button secondary" type="submit">${t('Rename')}</button></form>`)
     + section(`${t('Members')} <span class="modal-count">${members.length}</span>`, `<p>${t('Players share characters and plan runs; officers also invite, change any run and keep the Discord reminders; viewers only watch. A member made viewer stops sharing here.')}</p><div class="member-rows">${rows}</div>`)
-    + section('', discordSettings()) + newOnes
+    + section('', featuresForm(room)) + section('', discordSettings()) + newOnes
     + section(t('Close this room'), `<p>${t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.')}</p><button class="button danger" data-action="close-room">${t('Close this room')}</button>`, 'danger-zone'), true);
 }
+// Room features the owner chose to change, while Room settings asks before planned runs go.
+let pendingFeatures = null;
+async function saveFeatures(features) {
+  const id = room.id, result = await send('room-features', { roomId: id, features });
+  // Planned runs turned off took the room's runs with them; what comes back on arrives with the next snapshot.
+  if (changedRoom(id, () => { room = result.room; if (features.runs === false) runs = []; })) roomSettings();
+  toast(result.cancelled ? tn(result.cancelled, 'Room features saved. {n} planned run was cancelled.', 'Room features saved. {n} planned runs were cancelled.') : t('Room features saved.'));
+}
 // The owner connects a Discord channel and chooses when runs are posted there (discord.js).
-const discordSettings = () => discordView(room, Date.now() + serverOffset, remindersPaused);
+const discordSettings = () => discordView(room, Date.now() + serverOffset, remindersPaused, !on('runs'));
 // Demo characters get a made-up history so the chart can be tried without signing in.
 function demoHistory(id) {
   const c = members.flatMap(m => m.characters || []).find(x => x.id === id), now = Date.now(), readings = [];
@@ -766,7 +783,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; roomWeek = snapshot.week || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -1076,6 +1093,7 @@ function demoSession() {
   { id: 'd4', user: 'nyx', displayName: 'Nyx', role: 'reporter', sharing: false, characters: [] }];
   wishlist = [{ key: 'fire temple', dungeon: 'Fire Temple', users: ['dave', 'lumina', 'kaelen'] }, { key: 'draupnir cave', dungeon: 'Draupnir Cave', users: ['lumina', 'nyx'] }, { key: 'udas temple (hard)', dungeon: 'Udas Temple (Hard)', users: ['kaelen'] }];
   runs = [{ id: 'r1', dungeon: 'Fire Temple', startsAt: new Date(Math.ceil((now + 3600000) / 1800000) * 1800000).toISOString(), note: t('Bring potions'), planner: 'dave', attendees: ['dave', 'lumina'] }];
+  board = { text: [t('Fire Temple every Wednesday at 20:00: bring potions and food.'), t('New here? Share your main character and add the dungeons you still need to the wishlist.')].join('\n\n'), by: 'dave', at: new Date(now - 2 * 3600000).toISOString() };
   dashboard();
 }
 app.addEventListener('submit', async e => {
@@ -1122,6 +1140,17 @@ app.addEventListener('submit', async e => {
       if (times.error) { formError(form, times.error); return; }
       const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language(), ...times }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
+    else if (form.id === 'features-form') {
+      const changes = changedFeatures(form, room);
+      if (!Object.keys(changes).length) { toast(t('Room features saved.')); return; }
+      // Turning planned runs off cancels the runs the room lists, so it asks first.
+      if (changes.runs === false && runs.length) { pendingFeatures = changes; ask(t('Turn planned runs off?'), esc(tn(runs.length, 'The {n} run planned in this room is cancelled for everyone, and its Discord posts say so.', 'The {n} runs planned in this room are cancelled for everyone, and their Discord posts say so.')), t('Turn planned runs off'), { action: 'confirm-features' }, 'room-settings'); return; }
+      await saveFeatures(changes);
+    }
+    else if (form.id === 'board-form') {
+      const id = room.id, result = await send('board', { roomId: id, text: data.text ?? '' }); closeModal(); changedRoom(id, () => { board = result.board; });
+      toast(result.board ? t('Board saved. Every member of the room sees it.') : t('Board cleared.'));
+    }
     else if (form.id === 'rename-form') { const id = room.id, result = await send('rename', { roomId: id, name: data.name }); rooms = rooms.map(r => r.id === id ? { ...r, name: result.room.name } : r); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Room renamed.')); }
     else if (form.id === 'notifications-form') {
       const leads = new FormData(form).getAll('lead').map(Number);
@@ -1300,6 +1329,10 @@ app.addEventListener('click', async e => {
       case 'close-dialog': closeModal(); break;
       case 'invite': await inviteDialog(); break;
       case 'room-settings': roomSettings(); break;
+      case 'confirm-features': if (pendingFeatures) { const changes = pendingFeatures; pendingFeatures = null; await saveFeatures(changes); } break;
+      case 'edit-board': if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to keep an information board in your own room.')); modal(t('Information board'), boardForm(board)); document.querySelector('#board-text')?.focus(); break;
+      case 'clear-board': ask(t('Clear the board?'), t('Every member stops seeing it. You can write a new one at any time.'), t('Clear the board'), { action: 'confirm-clear-board' }, 'edit-board'); break;
+      case 'confirm-clear-board': { const id = room.id, result = await send('board', { roomId: id, text: '' }); closeModal(); changedRoom(id, () => { board = result.board; }); toast(t('Board cleared.')); break; }
       case 'reading': await desktopDialog(); break;
       case 'pair-another': if (pairing) await openLink(pairing); break;
       case 'new-pairing': if (pairing) { forgetPairing(storage); await openLink(pairing); } break;

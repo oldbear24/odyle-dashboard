@@ -395,6 +395,65 @@ test('members keep the wishlist together, share characters and viewers only watc
     assert.deepEqual(viewer.errors, []);
   } finally { await viewer.close(); }
 });
+test('the leader and officers keep the information board, and the owner turns room features off and on', async () => {
+  const [lead, officer, watcher] = await Promise.all([account('Board lead'), account('Board officer'), account('Board watcher')]);
+  const created = (await request('/api/odyle/create', { name: 'Board room' }, lead)).data, roomId = created.room.id;
+  const joined = (await request('/api/odyle/join', { code: created.invites[0].code }, officer)).data;
+  assert.equal((await request('/api/odyle/role', { roomId, memberId: joined.membership.id, role: 'officer' }, lead)).status, 200);
+  assert.equal((await request('/api/odyle/join', { code: created.invites[1].code }, watcher)).status, 200);
+  await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
+  assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Fire Temple', startsAt: new Date(Date.now() + 100 * 60000).toISOString() }, lead)).status, 200);
+  // An officer writes the empty board; its lines stay and its web address is a link.
+  const officers = await open(officer, '#/room/' + roomId);
+  try {
+    await officers.page.locator('.board-card.empty [data-action="edit-board"]').click();
+    await officers.page.locator('#board-form textarea').fill('Raid on Wednesday at 20:00\n\nDiscord: https://discord.gg/odyle.');
+    await officers.page.locator('#board-form [type=submit]').click();
+    await toast(officers.page).filter({ hasText: 'Board saved' }).waitFor();
+    assert.equal(await officers.page.locator('.board-text a[href="https://discord.gg/odyle"]').count(), 1);
+    assert.match(await officers.page.locator('.board-text').innerText(), /^Raid on Wednesday at 20:00\n\nDiscord:/);
+    assert.match(await officers.page.locator('.board-meta').innerText(), /Last edit: You/);
+    await shot(officers.page, 'room-board');
+    assert.deepEqual(officers.errors, []);
+  } finally { await officers.close(); }
+  // A viewer reads it, without Edit, and follows what the owner turns off and on.
+  const viewer = await open(watcher, '#/room/' + roomId);
+  const owner = await open(lead, '#/room/' + roomId);
+  try {
+    await viewer.page.locator('.board-text').waitFor();
+    assert.match(await viewer.page.locator('.board-text').innerText(), /Raid on Wednesday/);
+    assert.equal(await viewer.page.locator('[data-action="edit-board"]').count(), 0);
+    await owner.page.locator('.runs .wish-row').waitFor();
+    await owner.page.locator('[data-action="room-settings"]').click();
+    const form = owner.page.locator('#features-form');
+    await form.locator('[name=runs]').uncheck(); await form.locator('[name=wishlist]').uncheck(); await form.locator('[name=board]').uncheck();
+    await form.locator('[type=submit]').click();
+    // Turning planned runs off cancels the run, so it asks first.
+    assert.match(await owner.page.locator('#modal').innerText(), /1 run planned in this room is cancelled/);
+    await owner.page.locator('#modal [data-action="confirm-features"]').click();
+    await toast(owner.page).filter({ hasText: '1 planned run was cancelled' }).waitFor();
+    assert.equal(await owner.page.locator('#features-form [name=runs]').isChecked(), false);
+    await shot(owner.page, 'room-features');
+    await owner.page.keyboard.press('Escape');
+    for (const p of [owner.page, viewer.page]) {
+      await p.locator('.board-card').waitFor({ state: 'detached' });
+      assert.equal(await p.locator('.wishlist, .runs').count(), 0);
+    }
+    // On again: the board and the wishlist come back as they were; the cancelled run does not.
+    await owner.page.locator('[data-action="room-settings"]').click();
+    await form.locator('[name=runs]').check(); await form.locator('[name=wishlist]').check(); await form.locator('[name=board]').check();
+    await form.locator('[type=submit]').click();
+    // Its own toast: the one before (… 1 planned run was cancelled.) may still show.
+    await toast(owner.page).filter({ hasText: /^Room features saved\.$/ }).waitFor();
+    await owner.page.keyboard.press('Escape');
+    for (const p of [owner.page, viewer.page]) {
+      await p.locator('.board-text').filter({ hasText: 'Raid on Wednesday' }).waitFor();
+      await p.locator('.wishlist:not(.runs) .wish-row').filter({ hasText: 'Fire Temple' }).waitFor();
+      assert.equal(await p.locator('.runs .wish-row').count(), 0);
+    }
+    assert.deepEqual(owner.errors, []); assert.deepEqual(viewer.errors, []);
+  } finally { await owner.close(); await viewer.close(); }
+});
 test('with a dungeon catalog rooms pick dungeons from it and show what a cube costs and how many the party can open', async () => {
   const operator = (await request('/__test__/superuser', {})).data, lead = await account('Catalog lead');
   const roomId = (await request('/api/odyle/create', { name: 'Catalog room' }, lead)).data.room.id;

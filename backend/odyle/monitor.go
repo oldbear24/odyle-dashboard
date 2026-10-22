@@ -26,7 +26,7 @@ import (
 const packetTopic, packetLimit = "odyle.admin.packets", 200
 
 // The body fields each route may show; everything else is never kept: tokens, invite and
-// pairing codes, device keys, webhook URLs, run notes and task titles included. 'id:taskId'
+// pairing codes, device keys, webhook URLs, run notes, task titles and the board included. 'id:taskId'
 // keeps a body field under another name: a packet's own id is its number.
 var shown = map[string][]string{
 	// The Windows app
@@ -44,6 +44,7 @@ var shown = map[string][]string{
 	"invite-create": {"roomId", "role", "expiresIn", "maxUses"}, "invite-revoke": {"roomId", "inviteId"}, "invite-preview": {},
 	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove"}, "discord-webhook": {"roomId", "language", "startPost", "readiness"},
 	"task": {"characterId", "id:taskId", "done", "move", "remove"}, "profile": {"displayName"}, "desktop-code": {}, "forget-device": {"deviceId"}, "sign-out-everywhere": {}, "delete-account": {}, "delete-character": {"characterId"}, "notifications": {}, "push-subscribe": {"language", "device"}, "push-unsubscribe": {}, "push-test": {}, "share-new": {"roomId", "enabled"},
+	"board": {"roomId"}, "room-features": {"roomId"},
 }
 
 // Requests of the Windows app (source "app"); everything else comes from the dashboard
