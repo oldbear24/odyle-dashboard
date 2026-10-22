@@ -629,6 +629,8 @@ export default {
   'There is no such job.': 'Taková úloha neexistuje.',
   'This job only runs on its schedule.': 'Tahle úloha běží jen podle svého plánu.',
   'This job is running right now. Try again in a moment.': 'Úloha právě běží. Zkus to za chvíli.',
+  'There is no such database.': 'Taková databáze neexistuje.',
+  'A vacuum is running right now. Try again in a moment.': 'Vacuum právě běží. Zkus to za chvíli.',
   'Select a Global region.': 'Vyber region Global.',
   'Choose a daily or weekly task.': 'Vyber denní, nebo týdenní úkol.',
   'A run can start from an hour ago up to 60 days ahead.': 'Run může začínat nejdřív před hodinou a nejpozději za 60 dní.',
