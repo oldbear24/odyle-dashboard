@@ -284,7 +284,7 @@ export function statusPage() {
   const empty = { serverNow: '', startedAt: '', build: {}, runtime: {}, database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [], private: 0 },
     activation: { now: {}, days: [] }, backups: {}, proxy: { headers: [] } };
   // hover is the minute (its time) the chart's tooltip shows.
-  const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '', profiling: '' });
+  const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '', profiling: '', vacuuming: '' });
   const now = () => state.now + state.offset;
   let poll = 0, tick = 0;
   async function load() {
@@ -389,6 +389,28 @@ export function statusPage() {
     state.profiling = '';
   }
   const profileButton = (name, label, query) => t.button({ type: 'button', className: 'btn sm secondary', disabled: () => Boolean(state.profiling), onclick: () => profile(name, query) }, () => state.profiling === name ? 'Taking…' : label);
+  // VACUUM rewrites a database file without the space deleted rows left (backend/odyle/vacuum.go).
+  const database = () => state.data.database || {};
+  const reclaimable = name => database()[name + 'FreeBytes'] ? size(database()[name + 'FreeBytes']) + ' reclaimable' : 'nothing to reclaim';
+  function lastVacuum(name) {
+    const v = database().vacuums?.[name];
+    return !v ? 'not vacuumed since the server started' : v.error ? 'last vacuum failed ' + ago(v.at, now()) : 'vacuumed ' + ago(v.at, now()) + ', ' + size(v.beforeBytes) + ' → ' + size(v.afterBytes);
+  }
+  function vacuum(name, label) {
+    app.modals.confirm('Vacuum the ' + label + ' database? It rewrites its ' + size(database()[name + 'Bytes']) + ', needs about as much free disk space for a moment, and every write to it waits until it is done.', async () => {
+      state.vacuuming = name;
+      try {
+        const data = await app.pb.send('/api/odyle/admin/vacuum/' + name, { method: 'POST', requestKey: null });
+        state.data = { ...state.data, database: data.database };
+        const r = data.result;
+        if (r.error) app.toasts.error('The ' + label + ' vacuum failed: ' + r.error);
+        else app.toasts.success(capital(label) + ' database vacuumed in ' + millis(r.ms) + ': ' + size(r.beforeBytes) + ' → ' + size(r.afterBytes) + '.');
+      } catch (error) { app.checkApiError(error); }
+      state.vacuuming = '';
+    }, null, { yesButton: 'Vacuum' });
+  }
+  const vacuumButton = (name, label) => t.button({ type: 'button', className: () => 'btn sm secondary' + (state.vacuuming === name ? ' loading' : ''), disabled: () => Boolean(state.vacuuming || database().vacuuming), onclick: () => vacuum(name, label) },
+    t.i({ className: 'ri-eraser-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Vacuum ' + label));
 
   return layout('#/odyle/status', app.components.refreshButton({ onclick: load }),
     t.div({ onmount: () => { load(); poll = setInterval(load, 10000); tick = setInterval(() => state.now = Date.now(), 1000); }, onunmount: () => { clearInterval(poll); clearInterval(tick); } },
@@ -457,7 +479,13 @@ export function statusPage() {
       () => backups().error ? t.div({ className: 'alert warning m-b-sm odyle-error' }, 'The backups could not be listed: ' + backups().error) : null,
       t.p({ className: 'txt-hint txt-sm m-b-base' }, () => backups().offHost ? 'Backups go to S3 storage, set by ODYLE_BACKUP_S3_* or under Settings → Backups. Restore one there, or by hand as docs/deployment.md describes.'
         : 'Backups stay on the same disk as the data and would be lost with it. Set ODYLE_BACKUP_S3_* to keep them off the host (docs/deployment.md). Restore one under Settings → Backups.'),
-      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Server'), t.span({ className: 'txt-hint txt-sm' }, () => [build().go, build().pocketbase ? 'PocketBase ' + build().pocketbase : '', build().platform].filter(Boolean).join(' · '))),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Database'), t.span({ className: 'txt-hint txt-sm' }, 'SQLite files on the data volume, with their write-ahead logs')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Data', () => size(database().dataBytes), () => reclaimable('data') + ' · ' + lastVacuum('data')),
+        stat('Logs', () => size(database().logsBytes), () => reclaimable('logs') + ' · ' + lastVacuum('logs'))),
+      t.div({ className: 'flex m-b-xs odyle-profiles' }, vacuumButton('data', 'data'), vacuumButton('logs', 'logs')),
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'Deleted rows (expired sessions, old history, request logs) leave free pages inside the file. A vacuum rewrites the file without them and gives the space back to the disk; while it runs, every write to that database waits. Vacuum after a large clean-up, ideally at a quiet hour.'),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Server'),t.span({ className: 'txt-hint txt-sm' }, () => [build().go, build().pocketbase ? 'PocketBase ' + build().pocketbase : '', build().platform].filter(Boolean).join(' · '))),
       t.div({ className: 'odyle-stats m-b-sm' },
         stat('Version', () => build().version || '—', () => build().commit ? 'commit ' + build().commit.slice(0, 12) + (build().modified ? ' (modified)' : '') + (build().builtAt ? ' · ' + when(build().builtAt) : '') : ''),
         stat('Goroutines', () => number(run().goroutines), () => number(run().realtimeClients) + ' realtime connections'),

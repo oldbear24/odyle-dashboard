@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.40.0 · 2026-10-22
+
+### New
+- Server operators can vacuum the database from the admin dashboard (**Odyle → Server status → Database**): one button for the data and one for the logs, each showing how much space a vacuum would give back to the disk and how the last one went.
+
 ## 0.39.0 · 2026-10-22
 
 ### New
