@@ -638,7 +638,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'catalog', 'clock', 'taskTemplates'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'catalog', 'classRoles', 'clock', 'taskTemplates'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
@@ -670,6 +670,20 @@ export function settingsPage() {
     Object.assign(paste, { open: false, text: '' });
   }
   const cell = (className, ...content) => t.td({ className }, t.div({ className: 'field' }, ...content));
+  // Class roles (#45): each class's role in a party, for the make-up of planned runs. Classes are
+  // named as PLAYNC names them; the armory learns new ones (the answer's `classes`).
+  const partyRoles = ['tank', 'healer', 'support', 'damage'];
+  const roles = () => state.form.classRoles || (state.form.classRoles = []);
+  const unmapped = () => (state.data?.classes || []).filter(name => !roles().some(r => key(r.class) === key(name)));
+  function addRole(name) {
+    roles().push({ class: name, role: 'damage' });
+    const at = roles().length - 1;
+    setTimeout(() => document.getElementById('odyle-role-' + at + (name ? '-role' : '-class'))?.focus());
+  }
+  const roleRow = (r, i) => t.tr({ className: 'rate-limit-row' },
+    cell('col-label', t.input({ id: 'odyle-role-' + i + '-class', type: 'text', required: true, maxLength: 40, placeholder: 'Class', ariaLabel: 'Class', 'html-list': 'odyle-classes', value: () => r.class, oninput: e => r.class = e.target.value })),
+    cell('odyle-col-role', t.select({ id: 'odyle-role-' + i + '-role', ariaLabel: 'Role', onchange: e => r.role = e.target.value }, partyRoles.map(role => t.option({ value: role, selected: () => r.role === role }, capital(role))))),
+    t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (r.class.trim() || 'this class'), onclick: () => roles().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
   // The Global task list (#38): daily and weekly tasks players add to their checklists in one go.
   const templates = () => state.form.taskTemplates || (state.form.taskTemplates = []);
   function addTemplate() {
@@ -719,6 +733,16 @@ export function settingsPage() {
           t.div({ className: 'field' }, t.label({ htmlFor: 'odyle-dungeons' }, 'One dungeon per line'), t.textarea({ id: 'odyle-dungeons', rows: 6, placeholder: 'Krao Cave | 20 | 5 | Exploration | unconfirmed', value: () => paste.text, oninput: e => paste.text = e.target.value })),
           t.div({ className: 'field-help' }, 'Name | Odyle per cube | party size | category | unconfirmed; only the name is needed, and columns copied from a spreadsheet work too. A dungeon already in the table takes the values of its line. docs/deployment.md suggests a list for Global.'),
           t.button({ type: 'button', className: 'btn sm m-t-sm', disabled: () => !lines(paste.text).length, onclick: addLines }, t.span({ className: 'txt' }, 'Add to the catalog'))) : null),
+      section('Class roles', 'Each class\'s role in a party. Planned runs show their party\'s make-up by class and say when three or more going have no tank or no healer. Classes come from PLAYNC only; players never choose them.'),
+      t.div({ className: 'col-lg-12' },
+        t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-roles' },
+          t.thead({ hidden: () => !roles().length }, t.tr(null, t.th({ className: 'col-label' }, 'Class'), t.th(null, 'Role'), t.th({ className: 'col-action' }))),
+          t.tbody(null, () => roles().map(roleRow),
+            t.tr({ className: 'rate-limit-row' }, t.td({ colSpan: 99, className: 'col-new-btn' }, t.button({ type: 'button', className: 'btn secondary sm full-width', disabled: () => roles().length >= 40, onclick: () => addRole('') }, t.i({ className: 'ri-add-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Add class'))))))),
+        t.datalist({ id: 'odyle-classes' }, () => (state.data?.classes || []).map(name => t.option({ value: name }))),
+        t.div({ className: 'field-help' }, () => roles().length ? number(roles().length) + (roles().length === 1 ? ' class' : ' classes') + ' with a role. A class missing here shows in the make-up without one.' : 'Empty: runs show their classes without roles and never miss a tank or a healer.'),
+        () => unmapped().length ? t.div({ className: 'field-help' }, 'Learned from PLAYNC without a role: ', ...unmapped().map(name => t.button({ type: 'button', className: 'btn sm secondary transparent', disabled: () => roles().length >= 40, onclick: () => addRole(name) }, t.span({ className: 'txt' }, name)))) : null,
+        t.button({ type: 'button', className: 'btn sm secondary transparent m-t-sm', onclick: () => state.form.classRoles = copy(defaults().classRoles) }, t.span({ className: 'txt' }, 'Use the default roles'))),
       section('Global task list', 'Daily and weekly tasks of the game that players add to their checklists in one go, for their account or one of their characters. Players can still add their own.'),
       t.div({ className: 'col-lg-12' },
         t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-templates' },

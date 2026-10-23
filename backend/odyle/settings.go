@@ -42,6 +42,51 @@ type dungeonEntry struct {
 
 var partySizes = []int64{0, 4, 5, 10, 20}
 
+// A class's role in a party (#45): planned runs show the make-up of their party by class and
+// the roles it misses (a tank, a healer). Superusers keep the table under Game settings, naming
+// classes as PLAYNC does (game_classes); it is a game rule, never character data.
+type classRole struct {
+	Class string `json:"class"`
+	Role  string `json:"role"`
+}
+
+var partyRoles = []string{"tank", "healer", "support", "damage"}
+
+// defaultClassRoles are AION 2's classes as parties usually count them, the table until a
+// superuser saves another.
+func defaultClassRoles() []classRole {
+	return []classRole{{"Templar", "tank"}, {"Gladiator", "damage"}, {"Assassin", "damage"}, {"Ranger", "damage"},
+		{"Sorcerer", "damage"}, {"Spiritmaster", "damage"}, {"Cleric", "healer"}, {"Chanter", "support"}}
+}
+
+// checkClassRoles reads the class roles: up to 40 classes, each named once in 1 to 40
+// characters (any case), with one of the roles.
+func checkClassRoles(value any) ([]classRole, error) {
+	raw, ok := value.([]any)
+	if !ok || len(raw) > 40 {
+		return nil, errors.New("Class roles must be a list of up to 40 classes.")
+	}
+	out, seen := []classRole{}, map[string]bool{}
+	for _, item := range raw {
+		entry, _ := item.(map[string]any)
+		name, _ := entry["class"].(string)
+		role, _ := entry["role"].(string)
+		name = collapse(trim(name))
+		if name == "" || length(name) > 40 {
+			return nil, errors.New("Name each class in 1 to 40 characters.")
+		}
+		if !contains(partyRoles, role) {
+			return nil, errors.New("Give each class a role: tank, healer, support or damage.")
+		}
+		if seen[strings.ToLower(name)] {
+			return nil, errors.New("List each class once.")
+		}
+		seen[strings.ToLower(name)] = true
+		out = append(out, classRole{Class: name, Role: role})
+	}
+	return out, nil
+}
+
 // The Odyle clock's game rules: the natural pool regenerates at fixed UTC hours by tick Odyle
 // (unless a character's own regeneration readings showed another size) up to the smallest
 // cap its readings fit under (560, or 840 with the membership). Clients project from them
@@ -117,6 +162,8 @@ type settings struct {
 	// The game's regular weekly maintenance (#47): runs planned inside it are marked. Day ""
 	// means none is set.
 	Maintenance maintenanceWindow `json:"maintenance"`
+	// Each class's role in a party (#45), for the make-up of planned runs.
+	ClassRoles []classRole `json:"classRoles"`
 }
 
 type maintenanceWindow struct {
@@ -155,7 +202,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock()}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles()}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -277,6 +324,14 @@ func loadSettings(app core.App) settings {
 	lists, _ := parseJSON(s.GetString("adapters"), "{}").(map[string]any)
 	out.Adapters = adapterLists{Extra: stringList(lists["extra"]), Disabled: stringList(lists["disabled"])}
 	out.WindowsBlocked = stringList(parseJSON(s.GetString("windowsBlocked"), "[]"))
+	// Class roles never saved (or no longer checking out) are the default table; a saved empty
+	// list is none.
+	out.ClassRoles = defaultClassRoles()
+	if saved := parseJSON(s.GetString("classRoles"), "null"); saved != nil {
+		if roles, err := checkClassRoles(saved); err == nil {
+			out.ClassRoles = roles
+		}
+	}
 	return out
 }
 
@@ -577,6 +632,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("classRoles") {
+		if next.ClassRoles, err = checkClassRoles(b["classRoles"]); err != nil {
+			return settings{}, err
+		}
+	}
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
@@ -594,6 +654,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("clock", next.Clock)
 	record.Set("taskTemplates", next.TaskTemplates)
 	record.Set("windowsBlocked", next.WindowsBlocked)
+	record.Set("classRoles", next.ClassRoles)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}

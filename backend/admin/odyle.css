@@ -99,3 +99,4 @@
 @media (max-width:900px){.odyle-packet{grid-template-columns:auto auto 1fr auto}.odyle-packet-text{grid-column:1/-1;order:1}}
 @media (prefers-reduced-motion:reduce){.odyle-live:before,.odyle-packet.fresh{animation:none}}
 .odyle-templates .col-label{width:auto;min-width:220px}.odyle-templates .odyle-col-cadence{width:130px}
+.odyle-roles .col-label{width:auto;min-width:220px}.odyle-roles .odyle-col-role{width:150px}

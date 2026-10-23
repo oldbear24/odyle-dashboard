@@ -1,4 +1,4 @@
-import { runReadiness, broughtBy, earliestClaim } from './runready.js';
+import { runReadiness, broughtBy, earliestClaim, callable } from './runready.js';
 import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
 import { discordSettings as discordView, chosenTimes } from './discord.js';
 import { defaultClock, clockOf, clockLine, capMismatch, capLevel } from './clock.js';
@@ -14,7 +14,7 @@ import { historyChart, historyList, bindHistoryChart, weeklyLedger, ledgerTable 
 import { setupTracker } from './setup.js';
 import { slotsView, lookName, frameClass } from './slots.js';
 import { playSpin, playWin, playLose } from './sounds.js';
-import { weekLine, runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance } from './runs.js';
+import { weekLine, runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance, runParty } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
 import { accountView } from './account.js';
@@ -67,6 +67,8 @@ let announcement = null, announcementAt = 0;
 let remindersPaused = false;
 // The game's weekly maintenance window from the snapshot (#47); runs inside it say so.
 let maintenance = null;
+// Each class's role in a party from the snapshot (#45), for the make-up of planned runs.
+let classRoles = [];
 // The party's week (#42): what the characters shared in the room spent since the weekly reset.
 let roomWeek = null;
 // The room's information board (board.js): its text, who wrote it last and when, or null.
@@ -324,13 +326,24 @@ function wishlistSection(now) {
   }).join('');
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
 }
+// Run now: a call starts its run in about ten minutes, and the server takes one call per room
+// every half hour (backend accounts.go callLead, callGap); the form waits as long.
+const callLead = 10 * 60000, callWait = 21 * 60000;
+// Run now asks first: who the call tells (runready.js callable, as the server counts them).
+function callDialog(form, data) {
+  const now = Date.now() + serverOffset, start = now + callLead;
+  const problem = runProblem({ ...data, startsAt: new Date(start).toISOString() }, { now, catalog: dungeons, runs }); if (problem) return formError(form, problem);
+  const n = callable(flattened(), pb.authStore.record?.id, now, start, entryOf(catalog, data.dungeon)?.cost || room?.cost || perCube, clockRules).length;
+  modal(esc(t('Call the party to {dungeon}?', { dungeon: data.dungeon })), `<p>${esc(n ? tn(n, 'The run starts in about 10 minutes. The {n} player who plays now or holds a cube is told on the dashboard, in Odyle for Windows and by push, unless it is their quiet hours.', 'The run starts in about 10 minutes. The {n} players who play now or hold a cube are told on the dashboard, in Odyle for Windows and by push, unless it is their quiet hours.') : t('Nobody else plays now or holds a cube. The run is planned anyway and starts in about 10 minutes.'))}</p><button class="button primary" data-confirm-call="${esc(data.dungeon)}" data-note="${esc(data.note || '')}">${icon('bolt')} ${t('Call the party')}</button><button class="button secondary" data-action="close-dialog">${t('Not now')}</button>`);
+}
 function plannedRuns(now) {
   const suggestions = [...new Set(wishlist.map(w => w.dungeon))], entries = flattened(), cost = room?.cost || perCube;
   // A run counts at its dungeon's own cost when the catalog has one.
   const costOf = r => entryOf(catalog, r.dungeon)?.cost || cost;
   const players = [...new Set(entries.filter(c => c.role !== 'viewer').map(c => c.user))].map(user => broughtBy(user, entries, now).character);
   return runsSection({ runs, members, myId: pb.authStore.record?.id || (demo ? 'dave' : ''), viewer: me()?.role === 'viewer', owner: manager(), live: liveUsers(now), now, suggestions, catalog, perCube: cost, facts: dungeonInfo(now), demo, discord: room?.discordReminders,
-    readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, maintenance, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules) });
+    readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, maintenance, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules),
+    roles: classRoles, called: runs.some(r => r.called && timestamp(r.startsAt) > now - callWait) });
 }
 // Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
 // changed checkbox, and the focus; what the user did not change shows what the redraw brings.
@@ -399,7 +412,7 @@ async function refreshTasks() {
   if (shown !== '/tasks') return; // navigated elsewhere while loading
   applyTasks(data); if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now(); online = true;
 }
-function clearRoom() { room = null; members = []; board = null; wishlist = []; runs = []; dungeons = []; catalog = []; demo = false; }
+function clearRoom() { room = null; members = []; board = null; wishlist = []; runs = []; dungeons = []; catalog = []; classRoles = []; demo = false; }
 // The armory (armory.js): public, signed in or not. The servers come from the backend once;
 // the region and server last searched are kept per browser. A profile still waiting for
 // PLAYNC asks again when the backend says to, while it stays on screen.
@@ -783,7 +796,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; classRoles = snapshot.classRoles || []; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -1086,12 +1099,13 @@ async function logout() {
 function demoSession() {
   clearRoom(); demo = true; room = { id: 'demo', owner: 'demo', name: t('The evening expedition'), cost: 40 }; const now = Date.now();
   members = [{ id: 'd1', user: 'dave', displayName: 'DaveCZ', role: 'owner', sharing: true, characters: [
-    { id: 'c1', characterName: 'DaveCZ', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 265, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 3000).toISOString() },
-    { id: 'c2', characterName: 'DaveAlt', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 80, confirmed: true, valid: false, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 120000).toISOString() },
-  ] }, { id: 'd2', user: 'lumina', displayName: 'Lumina', role: 'reporter', sharing: true, characters: [{ id: 'c3', characterName: 'Lumina', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 180, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 9000).toISOString() }] },
-  { id: 'd3', user: 'kaelen', displayName: 'Kaelen', role: 'reporter', sharing: true, characters: [{ id: 'c4', characterName: 'Kaelen', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 35, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 12000).toISOString() }] },
+    { id: 'c1', characterName: 'DaveCZ', className: 'Templar', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 265, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 3000).toISOString() },
+    { id: 'c2', characterName: 'DaveAlt', className: 'Chanter', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 80, confirmed: true, valid: false, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 120000).toISOString() },
+  ] }, { id: 'd2', user: 'lumina', displayName: 'Lumina', role: 'reporter', sharing: true, characters: [{ id: 'c3', characterName: 'Lumina', className: 'Cleric', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 180, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 9000).toISOString() }] },
+  { id: 'd3', user: 'kaelen', displayName: 'Kaelen', role: 'reporter', sharing: true, characters: [{ id: 'c4', characterName: 'Kaelen', className: 'Ranger', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 35, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 12000).toISOString() }] },
   { id: 'd4', user: 'nyx', displayName: 'Nyx', role: 'reporter', sharing: false, characters: [] }];
   wishlist = [{ key: 'fire temple', dungeon: 'Fire Temple', users: ['dave', 'lumina', 'kaelen'] }, { key: 'draupnir cave', dungeon: 'Draupnir Cave', users: ['lumina', 'nyx'] }, { key: 'udas temple (hard)', dungeon: 'Udas Temple (Hard)', users: ['kaelen'] }];
+  classRoles = [{ class: 'Templar', role: 'tank' }, { class: 'Cleric', role: 'healer' }, { class: 'Chanter', role: 'support' }, { class: 'Ranger', role: 'damage' }];
   runs = [{ id: 'r1', dungeon: 'Fire Temple', startsAt: new Date(Math.ceil((now + 3600000) / 1800000) * 1800000).toISOString(), note: t('Bring potions'), planner: 'dave', attendees: ['dave', 'lumina'] }];
   board = { text: [t('Fire Temple every Wednesday at 20:00: bring potions and food.'), t('New here? Share your main character and add the dungeons you still need to the wishlist.')].join('\n\n'), by: 'dave', at: new Date(now - 2 * 3600000).toISOString() };
   dashboard();
@@ -1244,6 +1258,17 @@ app.addEventListener('click', async e => {
       return modal(esc(t('Going to {dungeon} with', { dungeon: run?.dungeon || '' })), `<p>${t('Pick the character you bring. The run counts its cubes.')}</p><div class="add-chips pick-chips">${mine().filter(c => c.shared).map(c => `<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="${esc(c.id)}">${esc(c.characterName)} · ${esc(c.value.toLocaleString(locale()))}</button>`).join('')}<button class="add-chip" data-run="${esc(el.dataset.run)}" data-going="true" data-character="any">${t('Any: my best')}</button></div>`);
     }
     if (el.dataset.useStart) { const input = document.querySelector('#run-form [name="startsAt"]'); if (input) { input.value = el.dataset.useStart; input.focus(); } return; }
+    if (el.dataset.callRun !== undefined) {
+      if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to plan runs with your party.'));
+      const form = el.closest('form'); form.querySelector('.form-error')?.remove();
+      return callDialog(form, Object.fromEntries(new FormData(form)));
+    }
+    if (el.dataset.confirmCall !== undefined) {
+      const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, dungeon: el.dataset.confirmCall, note: el.dataset.note || '', call: true }); } finally { el.disabled = false; }
+      closeModal(); document.querySelector('#run-form')?.reset(); changedRoom(id, () => { runs = result.runs; });
+      const called = result.runs.filter(r => r.called && r.planner === pb.authStore.record?.id).at(-1); // the latest start: this call
+      return toast(called?.invited?.length ? tn(called.invited.length, 'The party is called: {n} player can come now.', 'The party is called: {n} players can come now.') : t('The run is planned. Nobody else can come now.'));
+    }
     if (el.dataset.cantRun) {
       const id = room.id; let result; el.disabled = true; try { result = await send('plan', { roomId: id, id: el.dataset.cantRun, cant: el.dataset.cant === 'true' }); } finally { el.disabled = false; }
       return changedRoom(id, () => { runs = result.runs; });
@@ -1256,8 +1281,8 @@ app.addEventListener('click', async e => {
     if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
     if (el.dataset.copyRun) {
       const r = runs.find(x => x.id === el.dataset.copyRun); if (!r) return;
-      const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
-      const text = discordText(r, { going, partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: `${location.origin}${location.pathname}#/room/${room.id}`, event: r.link || '' });
+      const names = ids => ids.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean), { party, waiting } = runParty(r, catalog);
+      const text = discordText(r, { going: names(party), waiting: names(waiting), partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: `${location.origin}${location.pathname}#/room/${room.id}`, event: r.link || '' });
       return toast(await copyText(text) ? t('Copied for Discord: paste it in any channel.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     }
     if (el.dataset.calendarRun) {
@@ -1406,7 +1431,11 @@ async function showCapAlerts(alerts) {
 async function showInvites(invites) {
   const settings = account?.notifications || notificationsSeen || defaultNotifications;
   if (!settings.kinds.runs || !settings.channels.browser || reminderState() !== 'on') return;
-  for (const n of invites) await notice(t('{by} invites you to {dungeon}', { by: n.by, dungeon: n.dungeon }), { body: t('{room} · {when}', { room: n.room, when: new Date(timestamp(n.startsAt)).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }), tag: 'invite-' + n.runId, icon: 'icon-192.png' });
+  for (const n of invites) {
+    // A call to a run now (Run now) says so, with its start in local time.
+    if (n.now) await notice(t('{by} calls the party to {dungeon}', { by: n.by, dungeon: n.dungeon }), { body: t('{room} · starts {time}', { room: n.room, time: new Date(timestamp(n.startsAt)).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }), tag: 'invite-' + n.runId, icon: 'icon-192.png', requireInteraction: true });
+    else await notice(t('{by} invites you to {dungeon}', { by: n.by, dungeon: n.dungeon }), { body: t('{room} · {when}', { room: n.room, when: new Date(timestamp(n.startsAt)).toLocaleString(locale(), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }), tag: 'invite-' + n.runId, icon: 'icon-192.png' });
+  }
 }
 // Everyone going to a run can claim a cube (#48): one notice per run and start, like a push.
 async function showPartyReady(notices) {

@@ -59,6 +59,7 @@ type words struct {
 	open      string
 	event     string
 	going     func(n int) string
+	waiting   func(n int) string
 	nobody    string
 	footer    func(room string) string
 	// Readiness (#46): the field's name and its value before the start (an estimate), once it
@@ -72,13 +73,13 @@ var languages = map[string]words{
 	"en": {connected: func(room string) string {
 		return "Odyle will remind this channel of planned runs in **" + room + "** before each one starts."
 	}, starts: "Starts", now: "Starting now", cancelled: "Cancelled", done: "Done", open: "Open the room", event: "The event",
-		going: func(n int) string { return "Going (" + strconv.Itoa(n) + ")" }, nobody: "Nobody yet", footer: func(room string) string { return "Odyle · " + room },
+		going: func(n int) string { return "Going (" + strconv.Itoa(n) + ")" }, waiting: func(n int) string { return "Waiting for a place (" + strconv.Itoa(n) + ")" }, nobody: "Nobody yet", footer: func(room string) string { return "Odyle · " + room },
 		claims: "Can claim a cube", claimsAhead: func(k, n int) string { return fraction(k, n) + " by the start (an estimate)" }, claimsNow: fraction,
 		partyReady: func(n int) string { return fraction(n, n) + " · party ready" }},
 	"cs": {connected: func(room string) string {
 		return "Odyle bude tomuto kanálu připomínat plánované běhy místnosti **" + room + "** před začátkem každého."
 	}, starts: "Začíná", now: "Začíná teď", cancelled: "Zrušeno", done: "Hotovo", open: "Otevřít místnost", event: "Událost",
-		going: func(n int) string { return "Jdou (" + strconv.Itoa(n) + ")" }, nobody: "Zatím nikdo", footer: func(room string) string { return "Odyle · " + room },
+		going: func(n int) string { return "Jdou (" + strconv.Itoa(n) + ")" }, waiting: func(n int) string { return "Čekají na místo (" + strconv.Itoa(n) + ")" }, nobody: "Zatím nikdo", footer: func(room string) string { return "Odyle · " + room },
 		claims: "Vezme si kostku", claimsAhead: func(k, n int) string { return fraction(k, n) + " do začátku (odhad)" }, claimsNow: fraction,
 		partyReady: func(n int) string { return fraction(n, n) + " · parta je připravená" }},
 }
@@ -208,11 +209,12 @@ func (w *webhookWaits) wait(link string, res response, at time.Time) time.Durati
 // runPost is what a reminder shows: the run as it is now, or as it was once it ended.
 type runPost struct {
 	room, dungeon, startsAt, note string
-	going                         []string
-	lead                          int64  // minutes before the start; 0: it starts now
-	ended                         string // "", "cancelled" or "done"
-	link                          string // the room on the dashboard; "" without an Application URL
-	event                         string // the run's event elsewhere (#35)
+	going                         []string // its party (runParty), in the order they answered
+	waiting                       []string // those going beyond the party size, first come first
+	lead                          int64    // minutes before the start; 0: it starts now
+	ended                         string   // "", "cancelled" or "done"
+	link                          string   // the room on the dashboard; "" without an Application URL
+	event                         string   // the run's event elsewhere (#35)
 	mentions                      []string
 	// Readiness, when the room shows it (#46): how many of those going can claim a cube at the
 	// start (now, once it started). Counts only: the channel may include people outside the room.
@@ -264,6 +266,13 @@ func reminder(p runPost, language string) map[string]any {
 			names = cut(strings.Join(escaped, ", "), 1000)
 		}
 		fields := []any{newObject().set("name", w.going(len(p.going))).set("value", names)}
+		if len(p.waiting) > 0 {
+			escaped := make([]string, len(p.waiting))
+			for i, name := range p.waiting {
+				escaped[i] = plain(name)
+			}
+			fields = append(fields, newObject().set("name", w.waiting(len(p.waiting))).set("value", cut(strings.Join(escaped, ", "), 1000)))
+		}
 		if p.claimsKey() != "" {
 			value := w.claimsAhead(p.claim, p.of)
 			switch {
@@ -346,7 +355,26 @@ func runContent(app core.App, room *Room, r *Run, lead int64, mention bool) (run
 	if err != nil {
 		return p, err
 	}
-	p.going = pluck(views[Account](accounts), (*Account).DisplayName)
+	// Names in the order they answered Going: the party, then those waiting for a place.
+	userOf, nameOf := map[string]string{}, map[string]string{}
+	for _, m := range views[Member](members) {
+		userOf[m.Id] = m.User()
+	}
+	for _, a := range views[Account](accounts) {
+		nameOf[a.Id] = a.DisplayName()
+	}
+	names := func(ids []string) []string {
+		out := []string{}
+		for _, id := range ids {
+			if name, ok := nameOf[userOf[id]]; ok {
+				out = append(out, name)
+			}
+		}
+		return out
+	}
+	rules := readSettings(app)
+	party, waiting := runParty(rules, r)
+	p.going, p.waiting = names(party), names(waiting)
 	if mention {
 		p.mentions = pings(app, accounts, time.Now())
 	}
@@ -355,10 +383,10 @@ func runContent(app core.App, room *Room, r *Run, lead int64, mention bool) (run
 		if err != nil {
 			return p, err
 		}
-		rules, at := readSettings(app), time.Now()
+		at := time.Now()
 		start, _ := parseDate(r.StartsAt())
 		p.readiness, p.started = true, !start.After(at)
-		p.claim, p.of = runClaims(r, entries, users, at, runCost(rules, r.Dungeon()), rules.Clock)
+		p.claim, p.of = runClaims(r, party, entries, users, at, runCost(rules, r.Dungeon()), rules.Clock)
 	}
 	return p, nil
 }

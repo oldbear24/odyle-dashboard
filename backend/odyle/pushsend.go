@@ -34,6 +34,8 @@ var pushTexts = map[string]map[string]string{
 		"hoursMins": "%d h %d min",
 		"ready":     "%s: the party is ready",
 		"readyBody": "All %d going can claim a cube · %s",
+		"call":      "%s calls the party to %s",
+		"callBody":  "%s · starts in about %d min",
 	},
 	"cs": {
 		"run":       "%s začíná za %s",
@@ -50,12 +52,23 @@ var pushTexts = map[string]map[string]string{
 		"hoursMins": "%d h %d min",
 		"ready":     "%s: parta je připravená",
 		"readyBody": "Všech %d jdoucích si vezme kostku · %s",
+		"call":      "%s svolává partu na %s",
+		"callBody":  "%s · začíná zhruba za %d min",
 	},
 }
 
 // partyReadyPush words a party-ready notice; its tag is the one open dashboards use.
 func partyReadyPush(language string, n partyNotice) pushMessage {
 	return pushMessage{Title: pushText(language, "ready", n.Dungeon), Body: pushText(language, "readyBody", n.Of, n.Room), Tag: "ready-" + n.RunId + "@" + n.StartsAt, Page: "#/room/" + n.RoomId}
+}
+
+// callPush words a call to a run (Run now); its tag is the one open dashboards use for invites.
+func callPush(language string, n runInvite, at time.Time) pushMessage {
+	minutes := 0
+	if start, ok := parseDate(n.StartsAt); ok {
+		minutes = max(0, int(math.Ceil(start.Sub(at).Minutes())))
+	}
+	return pushMessage{Title: pushText(language, "call", n.By, n.Dungeon), Body: pushText(language, "callBody", n.Room, minutes), Tag: "invite-" + n.RunId, Page: "#/room/" + n.RoomId}
 }
 
 func pushText(language, key string, args ...any) string {

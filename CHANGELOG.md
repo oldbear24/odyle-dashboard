@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.41.0 · 2026-10-23
+
+### New
+- **Run now**: beside **Plan run**, call the party to a dungeon right away. The run starts in about ten minutes, and the players who play now or hold enough Odyle for a cube are told on the dashboard, by push and in Odyle for Windows (0.27.0 and later), unless it is their quiet hours. A room calls once every 30 minutes.
+- **The waitlist**: once as many go as the dungeon's party size, the next players **Join the waitlist** and get a place, first come first, when someone leaves. Party ready, the Discord post and **Done** count the party only, so those still waiting keep the dungeon on their wishlist.
+- **The party's make-up** on every planned run: its classes, tanks first, and *no tank* or *no healer* once three or more go. Server operators set each class's role under **Odyle → Game settings → Class roles**.
+
 ## 0.40.0 · 2026-10-22
 
 ### New

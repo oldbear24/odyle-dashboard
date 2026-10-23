@@ -178,15 +178,32 @@ func runCost(rules settings, dungeon string) int64 {
 	return 40
 }
 
-// runClaims counts the attendees of a run who can claim a cube at its start (now, once it has
-// started): live with enough now, or expected to hold enough by then.
-func runClaims(r *Run, entries []readyEntry, users map[string]string, now time.Time, cost int64, rules clockRules) (claim, of int) {
+// runParty splits those going to a run (#45): the first as many as its dungeon's party size in the
+// catalog, in the order they answered Going, make its party; the rest wait for a place, first come
+// first. Without a party size everyone going is the party (src/runs.js runParty).
+func runParty(rules settings, r *Run) (party, waiting []string) {
+	going, size := r.Attendees(), int64(0)
+	key := strings.ToLower(strings.Join(strings.Fields(r.Dungeon()), " "))
+	for _, d := range rules.Dungeons {
+		if strings.ToLower(strings.Join(strings.Fields(d.Name), " ")) == key {
+			size = d.PartySize
+		}
+	}
+	if size <= 0 || int64(len(going)) <= size {
+		return going, []string{}
+	}
+	return going[:size], going[size:]
+}
+
+// runClaims counts the members of a run's party (runParty) who can claim a cube at its start
+// (now, once it has started): live with enough now, or expected to hold enough by then.
+func runClaims(r *Run, party []string, entries []readyEntry, users map[string]string, now time.Time, cost int64, rules clockRules) (claim, of int) {
 	start, ok := parseDate(r.StartsAt())
 	if !ok || start.Before(now) {
 		start = now
 	}
 	picks := r.Picks()
-	for _, member := range r.Attendees() {
+	for _, member := range party {
 		user, known := users[member]
 		if !known {
 			continue

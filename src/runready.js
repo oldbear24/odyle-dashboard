@@ -44,3 +44,11 @@ export function earliestClaim(players, now, cost, rules) {
   const moments = [now, ...ticksAfter(now, now + 7 * 86400000, rules?.tickHours || [])];
   return moments.find(at => players.every(c => valueAt(c, at, now, rules) >= cost)) ?? null;
 }
+
+// Run now: the players a call invites (backend accounts.go callable): everyone but the caller and
+// viewers who plays live in the room now, or whose character there is expected to hold a cube at
+// the run's cost by its start. Members without a character there are left out.
+export function callable(entries, myId, now, start, cost, rules) {
+  const users = [...new Set(entries.filter(c => c.user !== myId && c.role !== 'viewer').map(c => c.user))];
+  return users.filter(user => { const { character: c } = broughtBy(user, entries, now); return Boolean(c) && (status(c, now) === 'live' || valueAt(c, start, now, rules) >= cost); });
+}

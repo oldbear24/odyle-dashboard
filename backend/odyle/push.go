@@ -293,6 +293,11 @@ func init() {
 			warn(app, "Odyle party ready push failed", "user", user.Id, "error", message(err))
 		}
 	}
+	pushCall = func(app core.App, user *core.Record, n notificationSettings, invite runInvite) {
+		if _, err := pushToAccount(app, user.Id, n, func(language string) pushMessage { return callPush(language, invite, time.Now()) }, callLead, true); err != nil {
+			warn(app, "Odyle call push failed", "user", user.Id, "error", message(err))
+		}
+	}
 	pushCapAlert = func(app core.App, user *core.Record, n notificationSettings, alert capAlert) {
 		if _, err := pushToAccount(app, user.Id, n, func(language string) pushMessage { return capAlertPush(language, alert, time.Now()) }, 3*time.Hour, false); err != nil {
 			warn(app, "Odyle cap alert push failed", "user", user.Id, "error", message(err))

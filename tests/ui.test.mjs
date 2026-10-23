@@ -615,6 +615,29 @@ test('a started run is planned again next week, then marked done, which clears t
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('Run now asks first, calls the players who can come now and waits half an hour before another call', async () => {
+  const [lead, mate, idle] = await Promise.all([account('Call lead'), account('Call mate'), account('Call idle')]);
+  const created = (await request('/api/odyle/create', { name: 'Call room' }, lead)).data, roomId = created.room.id;
+  for (const who of [mate, idle]) assert.equal((await request('/api/odyle/join', { code: created.invites[0].code }, who)).status, 200);
+  // The mate plays now and shares a character here; the idle member shares nothing.
+  const session = (await request('/api/odyle/session', {}, mate)).data;
+  const c = (await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Caller', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, value: 120 }, mate)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, mate);
+  const { page, errors, close } = await open(lead, '#/room/' + roomId);
+  try {
+    await page.locator('#run-form [name=dungeon]').fill('Fire Temple');
+    await page.locator('#run-form [data-call-run]').click();
+    assert.match(await page.locator('#modal').innerText(), /Call the party to Fire Temple\?[\s\S]*about 10 minutes\. The 1 player who plays now or holds a cube is told/);
+    await page.locator('#modal [data-confirm-call]').click();
+    await toast(page).filter({ hasText: 'The party is called: 1 player can come now.' }).waitFor();
+    const row = page.locator('.runs .wish-row');
+    assert.match(await row.innerText(), /in (9|10)m[\s\S]*Fire Temple[\s\S]*Called: Call mate · 2 have not answered/);
+    assert.equal(await page.locator('#run-form [data-call-run]').isDisabled(), true, 'one call per half hour');
+    assert.equal((await request('/api/odyle/plan', { roomId, dungeon: 'Ice Temple', call: true }, mate)).status, 400);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('the armory looks a character up for anyone, waits for PLAYNC and opens from character cards', async () => {
   const { page, errors, close } = await open(null, '#/');
   try {
@@ -1385,11 +1408,15 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.match(await page.locator('#odyle-clock-hours').locator('xpath=../..').innerText(), /Ticks at 22:00, 02:00, 05:00 UTC/);
     await page.locator('#odyle-clock-tick').fill('20');
     await page.locator('#odyle-clock-caps').fill('600, 900'); await page.locator('#odyle-clock-caps').blur();
+    // Class roles (#45): the default table of AION 2's classes, each role changed in its row.
+    assert.deepEqual(await page.locator('.odyle-roles [id$="-class"]').evaluateAll(inputs => inputs.map(i => i.value)), ['Templar', 'Gladiator', 'Assassin', 'Ranger', 'Sorcerer', 'Spiritmaster', 'Cleric', 'Chanter']);
+    await page.locator('#odyle-role-7-role').selectOption('healer');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
     assert.deepEqual(saved.clock, { tickHours: [2, 5, 22], tick: 20, caps: [600, 900], paused: false });
+    assert.deepEqual(saved.classRoles.at(-1), { class: 'Chanter', role: 'healer' });
     assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '2, 5, 22');
     assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
@@ -1407,7 +1434,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.equal(visit.headers.get('clear-site-data'), '"cache"'); assert.match(visit.headers.get('set-cookie'), /^odyle_entry=1; Path=\/_\/;/);
     assert.equal(again.headers.get('clear-site-data'), null);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
-  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false } }, operator); }
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
 });
 test('superusers search, open and export packets and read the server status', async () => {
   const reader = await account('Status reader');

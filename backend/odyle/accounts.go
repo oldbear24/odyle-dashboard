@@ -620,7 +620,7 @@ func snapshot(e *core.RequestEvent) error {
 				return err
 			}
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules)})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules), "classRoles": rules.ClassRoles})
 	})
 }
 
@@ -1891,11 +1891,18 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 				invited = append(invited, user)
 			}
 		}
-		spent, err := spentAtRun(app, r, byId, runCost(rules, r.Dungeon()), at)
+		party, queue := runParty(rules, r)
+		waiting := []string{}
+		for _, id := range queue {
+			if user := users[id]; user != "" {
+				waiting = append(waiting, user)
+			}
+		}
+		spent, err := spentAtRun(app, r, party, byId, runCost(rules, r.Dungeon()), at)
 		if err != nil {
 			return nil, err
 		}
-		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited, Link: r.GetString("link"), Spent: spent}
+		out[i] = plannedRun{Id: r.Id, Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Note: r.Note(), Planner: users[r.PlannedBy()], Attendees: attendees, Picks: picks, Cant: cant, Invited: invited, Waiting: waiting, Link: r.GetString("link"), Spent: spent, Called: r.GetBool("called")}
 	}
 	return out, nil
 }
@@ -1925,8 +1932,14 @@ type plannedRun struct {
 	Picks     map[string]string `json:"picks"`
 	// Cant: the accounts that answered they cannot come (#45); additive, older clients ignore it.
 	Cant []string `json:"cant"`
-	// Invited: the accounts a run planned from the wishlist invited that have not answered yet (#45).
+	// Invited: the accounts a run planned from the wishlist, or called now, invited that have not
+	// answered yet (#45).
 	Invited []string `json:"invited"`
+	// Waiting: those going beyond its dungeon's party size, first come first, who wait for a
+	// place (#45); they stay in attendees.
+	Waiting []string `json:"waiting"`
+	// Called: a member called the party to this run now (Run now).
+	Called bool `json:"called"`
 	// Link: the run's event elsewhere (Raid-Helper, a Discord event; #35), "" without one.
 	Link string `json:"link"`
 	// Spent: once the run started, how many of its attendees the readers saw spend its cost (#42).
@@ -1934,7 +1947,8 @@ type plannedRun struct {
 }
 
 // runInvite is what an invited member is told (#45): on their account's topic, so open
-// dashboards and Windows apps can show it, unless they turned run notices off.
+// dashboards and Windows apps can show it, unless they turned run notices off. Now marks a
+// run the planner called the party to (Run now); older apps word it as an invite.
 type runInvite struct {
 	RunId    string `json:"runId"`
 	RoomId   string `json:"roomId"`
@@ -1942,9 +1956,12 @@ type runInvite struct {
 	Dungeon  string `json:"dungeon"`
 	StartsAt string `json:"startsAt"`
 	By       string `json:"by"`
+	Now      bool   `json:"now,omitempty"`
 }
 
-func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record) error {
+// inviteToRun tells the invited members of a run. A call (Run now) also goes by Web Push, and
+// not to members in their quiet hours.
+func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record, called bool) error {
 	if len(invited) == 0 {
 		return nil
 	}
@@ -1956,18 +1973,53 @@ func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record) e
 	if err != nil {
 		return err
 	}
-	invite := runInvite{RunId: r.Id, RoomId: room.Id, Room: room.Name(), Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), By: planner.GetString("displayName")}
+	invite, at := runInvite{RunId: r.Id, RoomId: room.Id, Room: room.Name(), Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), By: planner.GetString("displayName"), Now: called}, time.Now()
 	for _, m := range views[Member](members) {
 		user, err := app.FindRecordById("users", m.User())
 		if err != nil {
 			continue
 		}
-		if n := notificationsOf(user); !n.Kinds.Runs {
+		n := notificationsOf(user)
+		if !n.Kinds.Runs || called && n.quietAt(at) {
 			continue
 		}
 		changes(app).user(app, user.Id, func(news *userNews) { news.invites = append(news.invites, invite) })
+		if called {
+			pushCall(app, user, n, invite)
+		}
 	}
 	return nil
+}
+
+// pushCall tells a called member by Web Push when the account wants that (push.go).
+var pushCall = func(core.App, *core.Record, notificationSettings, runInvite) {}
+
+// Run now: a member calls the party to a run starting about callLead from now (a whole minute),
+// and a room calls at most once every callGap.
+const callLead, callGap = 10 * time.Minute, 30 * time.Minute
+
+// callable are the members a call invites: players other than the caller who play live in the
+// room now, or whose character there is expected to hold a cube at the run's cost by its start
+// (the Odyle clock). Members without a character there are left out.
+func callable(app core.App, roomId, caller string, start time.Time, cost int64) ([]string, error) {
+	members, err := roomMembers(app, roomId)
+	if err != nil {
+		return nil, err
+	}
+	entries, _, err := roomEntries(app, roomId)
+	if err != nil {
+		return nil, err
+	}
+	rules, at, out := readSettings(app).Clock, time.Now(), []string{}
+	for _, m := range members {
+		if m.Id == caller || m.Role() == "viewer" {
+			continue
+		}
+		if c := broughtBy(m.User(), entries, at, ""); c != nil && (readyState(*c, at) == "live" || valueAt(*c, start, at, rules) >= cost) {
+			out = append(out, m.Id)
+		}
+	}
+	return out, nil
 }
 
 // plan handles planned runs: { roomId, dungeon, startsAt, note? } plans one with the
@@ -2008,7 +2060,8 @@ func plan(e *core.RequestEvent) error {
 				if r.PlannedBy() != m.Id && !isOwner && !attending {
 					return nil, forbidden("Only its planner, an attendee, an officer or the room owner can mark this run done.")
 				}
-				// The dungeon leaves the wishlist of everyone who went.
+				// The dungeon leaves the wishlist of everyone in its party; those still waiting for a
+				// place keep theirs.
 				ran, err := dungeon(r.Dungeon())
 				if err != nil {
 					return nil, err
@@ -2017,8 +2070,9 @@ func plan(e *core.RequestEvent) error {
 				if err != nil {
 					return nil, err
 				}
+				party, _ := runParty(readSettings(app), r)
 				for _, w := range wishes {
-					if contains(r.Attendees(), w.GetString("member")) {
+					if contains(party, w.GetString("member")) {
 						if err := app.Delete(w); err != nil {
 							return nil, err
 						}
@@ -2222,8 +2276,19 @@ func plan(e *core.RequestEvent) error {
 			if err != nil {
 				return nil, err
 			}
-			startsAt, err := runStart(b["startsAt"], time.Now())
-			if err != nil {
+			// Run now: the run starts in ten minutes, once per half hour and room.
+			called := b.isTrue("call")
+			var startsAt string
+			if called {
+				calls, err := app.CountRecords("room_runs", dbx.HashExp{"room": roomId, "called": true}, dbx.NewExp("created >= {:since}", dbx.Params{"since": ago(callGap)}))
+				if err != nil {
+					return nil, err
+				}
+				if calls > 0 {
+					return nil, badRequest("The party was called less than 30 minutes ago. Answer that run instead.")
+				}
+				startsAt = time.Now().Add(callLead).Truncate(time.Minute).UTC().Format(isoLayout)
+			} else if startsAt, err = runStart(b["startsAt"], time.Now()); err != nil {
 				return nil, err
 			}
 			if err := runRoom(app, roomId); err != nil {
@@ -2246,9 +2311,16 @@ func plan(e *core.RequestEvent) error {
 				r.Set("link", link)
 			}
 			r.SetAttendees([]string{m.Id})
-			// Planned from the wishlist (#45): the members who want the dungeon are invited.
+			r.Set("called", called)
+			// Planned from the wishlist (#45): the members who want the dungeon are invited. A
+			// call invites those who can come now (callable).
 			invited := []string{}
-			if b.isTrue("fromWish") && room.On("wishlist") {
+			if called {
+				start, _ := parseDate(startsAt)
+				if invited, err = callable(app, roomId, m.Id, start, runCost(readSettings(app), name.dungeon)); err != nil {
+					return nil, err
+				}
+			} else if b.isTrue("fromWish") && room.On("wishlist") {
 				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": name.key})
 				if err != nil {
 					return nil, err
@@ -2263,7 +2335,7 @@ func plan(e *core.RequestEvent) error {
 			if err := app.Save(r); err != nil {
 				return nil, err
 			}
-			if err := inviteToRun(app, r, invited, user); err != nil {
+			if err := inviteToRun(app, r, invited, user, called); err != nil {
 				return nil, err
 			}
 		}
