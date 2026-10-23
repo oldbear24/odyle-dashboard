@@ -185,6 +185,7 @@ func TestCallingThePartyInvitesWhoCanComeNow(t *testing.T) {
 	if got["called"] != true || len(got["invited"].([]any)) != 3 || !strings.Contains(invited, live.GetString("user")) || !strings.Contains(invited, rich.GetString("user")) || !strings.Contains(invited, quiet.GetString("user")) {
 		t.Fatalf("called %v invited %v", got["called"], got["invited"])
 	}
+	stateOf(app).pushes.Wait() // the pushes go after the commit, in the background
 	if len(pushed) != 2 || !strings.Contains(strings.Join(pushed, ","), "Live:Fire Temple:true") || !strings.Contains(strings.Join(pushed, ","), "Rich:Fire Temple:true") {
 		t.Fatalf("pushed %v", pushed)
 	}

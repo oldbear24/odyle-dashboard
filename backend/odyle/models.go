@@ -108,9 +108,6 @@ func (a *Account) Created() string      { return a.GetString("created") }
 
 func (a *Account) SetDisplayName(name string) { a.Set("displayName", name) }
 
-// MarkActive notes that the account used Odyle now (see touch).
-func (a *Account) MarkActive() { a.Set("lastActiveAt", now()) }
-
 // Character is a saved game character of an account (characters).
 type Character struct{ core.BaseRecordProxy }
 

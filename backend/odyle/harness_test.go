@@ -65,6 +65,7 @@ func newTestApp(t testing.TB) *tests.TestApp {
 	// before the app is torn down, or it races the clean-up (go test -race).
 	t.Cleanup(func() {
 		stateOf(app).portraits.wait()
+		stateOf(app).pushes.Wait()
 		app.Cleanup()
 	})
 	return app

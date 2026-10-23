@@ -201,12 +201,9 @@ func touch(e *core.RequestEvent) {
 	if viewOf[Account](auth).LastActiveAt() > ago(time.Hour) {
 		return
 	}
-	user, err := findAs[Account](e.App, "users", auth.Id)
-	if err == nil {
-		user.MarkActive()
-		err = e.App.Save(user)
-	}
-	if err != nil {
+	// Only this field: a whole-record save of a copy read here would put back what another
+	// request committed meanwhile (spins, settings, a rotated token key).
+	if _, err := e.App.DB().NewQuery("UPDATE users SET lastActiveAt = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": stamp(time.Now()), "id": auth.Id}).Execute(); err != nil {
 		warn(e.App, "Odyle activity mark failed", "user", auth.Id, "error", err.Error())
 	}
 }
@@ -942,18 +939,22 @@ func checklistTask(e *core.RequestEvent) error {
 }
 
 // endSession ends a reader session; the characters it read keep their values but turn stale.
+// Read and written in one transaction (inside the caller's, if any): a reading saved while
+// the session ends is not put back to the value read before it.
 func endSession(app core.App, session *ReaderSession) error {
-	read, err := charactersWhere(app, "readingSession = {:id}", dbx.Params{"id": session.Id})
-	if err != nil {
-		return err
-	}
-	for _, c := range read {
-		c.SetValid(false)
-		if err := app.Save(c); err != nil {
+	return app.RunInTransaction(func(tx core.App) error {
+		read, err := charactersWhere(tx, "readingSession = {:id}", dbx.Params{"id": session.Id})
+		if err != nil {
 			return err
 		}
-	}
-	return app.Delete(session)
+		for _, c := range read {
+			c.SetValid(false)
+			if err := tx.Save(c); err != nil {
+				return err
+			}
+		}
+		return tx.Delete(session)
+	})
 }
 
 // endSessions ends the reader sessions that match the filter.
@@ -1973,7 +1974,11 @@ func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record, c
 	if err != nil {
 		return err
 	}
-	invite, at := runInvite{RunId: r.Id, RoomId: room.Id, Room: room.Name(), Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), By: planner.GetString("displayName"), Now: called}, time.Now()
+	type told struct {
+		user *core.Record
+		n    notificationSettings
+	}
+	invite, at, pushes := runInvite{RunId: r.Id, RoomId: room.Id, Room: room.Name(), Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), By: planner.GetString("displayName"), Now: called}, time.Now(), []told{}
 	for _, m := range views[Member](members) {
 		user, err := app.FindRecordById("users", m.User())
 		if err != nil {
@@ -1983,10 +1988,26 @@ func inviteToRun(app core.App, r *Run, invited []string, planner *core.Record, c
 		if !n.Kinds.Runs || called && n.quietAt(at) {
 			continue
 		}
+		// Delivered once the run is saved (the outbox waits for the commit).
 		changes(app).user(app, user.Id, func(news *userNews) { news.invites = append(news.invites, invite) })
 		if called {
-			pushCall(app, user, n, invite)
+			pushes = append(pushes, told{user, n})
 		}
+	}
+	// The pushes wait on push services for seconds: they go after the commit, in the
+	// background, so neither the write lock nor the caller's answer waits for them, and a
+	// call that was not saved tells no one.
+	if len(pushes) > 0 {
+		afterCommit(app, func(root core.App) {
+			work := &stateOf(root).pushes
+			work.Add(1)
+			go func() {
+				defer work.Done()
+				for _, p := range pushes {
+					pushCall(root, p.user, p.n, invite)
+				}
+			}()
+		})
 	}
 	return nil
 }
@@ -2442,55 +2463,73 @@ func discordWebhook(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		// Everything is checked, and Discord asked, before the room is written: the changes
+		// are then made to a fresh copy in one transaction, so a rename, a room setting or a
+		// delivery noted while Discord answered is kept.
+		var leads []int64
 		if b.has("leads") {
-			leads, err := checkLeads(b["leads"])
-			if err != nil {
+			if leads, err = checkLeads(b["leads"]); err != nil {
 				return err
 			}
-			room.Set("discordLeads", leads)
 		}
-		if start, ok := b.boolean("startPost"); ok {
-			room.Set("discordStartPost", start)
-		}
-		if ready, ok := b.boolean("readiness"); ok {
-			room.Set("discordReadiness", ready)
-		}
+		start, setStart := b.boolean("startPost")
+		ready, setReady := b.boolean("readiness")
 		// The posts' language alone (#50): later posts use it, and the room's posts still showing
 		// a run are edited into it.
-		relabel := false
-		if !b.has("webhook") && b.has("language") {
-			l, _ := b.text("language")
-			if l != "en" && l != "cs" {
+		language, setLanguage := "", !b.has("webhook") && b.has("language")
+		if setLanguage {
+			language, _ = b.text("language")
+			if language != "en" && language != "cs" {
 				return badRequest("Choose English or Czech for the Discord posts.")
 			}
-			relabel = room.DiscordWebhook() != "" && l != room.DiscordLanguage()
-			room.Set("discordLanguage", l)
 		}
+		url, name := "", ""
 		if b.has("webhook") {
-			url, err := webhook(b["webhook"])
-			if err != nil {
+			if url, err = webhook(b["webhook"]); err != nil {
 				return err
 			}
-			language := "en"
+			language = "en"
 			if l, _ := b.text("language"); l == "cs" {
 				language = "cs"
 			}
-			name := ""
 			if url != "" {
 				if name, err = connectWebhook(url, room.Name(), language); err != nil {
 					return err
 				}
-				// A new webhook starts with a clean record.
-				room.Set("discordStatus", deliveryStatus{OkAt: now()})
 			}
-			room.SetDiscord(url, language)
-			room.Set("discordName", name)
 		}
-		if err := e.App.Save(room); err != nil {
+		relabel := false
+		if err := e.App.RunInTransaction(func(tx core.App) error {
+			if room, err = manager(tx, e.Auth.Id, room.Id); err != nil {
+				return err
+			}
+			if b.has("leads") {
+				room.Set("discordLeads", leads)
+			}
+			if setStart {
+				room.Set("discordStartPost", start)
+			}
+			if setReady {
+				room.Set("discordReadiness", ready)
+			}
+			if setLanguage {
+				relabel = room.DiscordWebhook() != "" && language != room.DiscordLanguage()
+				room.Set("discordLanguage", language)
+			}
+			if b.has("webhook") {
+				if url != "" {
+					// A new webhook starts with a clean record.
+					room.Set("discordStatus", deliveryStatus{OkAt: now()})
+				}
+				room.SetDiscord(url, language)
+				room.Set("discordName", name)
+			}
+			return tx.Save(room)
+		}); err != nil {
 			return err
 		}
 		if relabel {
-			if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET dirty = TRUE WHERE room = {:room} AND messageId != '' AND ended = ''").Bind(dbx.Params{"room": room.Id}).Execute(); err != nil {
+			if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET " + markDirty + " WHERE room = {:room} AND messageId != '' AND ended = ''").Bind(dbx.Params{"room": room.Id, "marked": stamp(time.Now())}).Execute(); err != nil {
 				warn(e.App, "Odyle could not mark Discord posts for an edit", "room", room.Id, "error", err.Error())
 			}
 		}

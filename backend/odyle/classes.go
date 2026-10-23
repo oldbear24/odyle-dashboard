@@ -76,11 +76,19 @@ func learnClass(app core.App, classId int64, name string) error {
 		return err
 	}
 	for _, c := range named {
-		if c.GetString("className") != name {
-			c.Set("className", name)
-			if err := app.Save(c); err != nil {
+		if c.GetString("className") == name {
+			continue
+		}
+		// Saved from a fresh copy in a transaction: a reading saved meanwhile is kept.
+		if err := app.RunInTransaction(func(tx core.App) error {
+			fresh, err := tx.FindRecordById("characters", c.Id)
+			if err != nil || fresh.GetString("className") == name {
 				return err
 			}
+			fresh.Set("className", name)
+			return tx.Save(fresh)
+		}); err != nil && !isNoRows(err) {
+			return err
 		}
 	}
 	return nil

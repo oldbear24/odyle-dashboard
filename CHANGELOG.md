@@ -2,6 +2,15 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.41.1 · 2026-10-23
+
+### Fixed
+- **Run now** answers at once again, and the rest of the dashboard no longer stalls while the push notifications go out. Players are told only once the run is really planned.
+- Signing out everywhere stays signed out: old sign-ins no longer come back to life a moment later. Slot machine spins, notification settings, your display name and other account changes made at the same moment are kept too.
+- Connecting a Discord webhook no longer undoes a room rename or setting saved while Discord answered.
+- A run cancelled or changed while its Discord post was being updated now shows on Discord as well, instead of the post staying as it was.
+- A character's latest reading is kept when its reader session ends or its class is named at the same moment, and an armory profile hidden by the server operator stays hidden.
+
 ## 0.41.0 · 2026-10-23
 
 ### New
