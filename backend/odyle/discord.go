@@ -704,14 +704,22 @@ func postRun(app core.App, r *Run, lead int64, fail failer) (bool, error) {
 	return true, err
 }
 
+// markDirty marks posts for an edit (bind {:marked} to stamp(time.Now())). It moves their
+// updated time too, so editPost can tell a post marked again while it edited the post.
+const markDirty = "dirty = TRUE, updated = {:marked}"
+
 // editPost brings a post up to date with its run, or marks it once the run was cancelled or
 // done. A post whose message is gone in Discord, whose run is gone or whose webhook was
 // replaced or disconnected since is left as it is.
 func editPost(app core.App, post *core.Record, fail failer) (bool, error) {
-	settled := func() error {
-		_, err := app.DB().NewQuery("UPDATE discord_posts SET dirty = FALSE WHERE id = {:id}").Bind(dbx.Params{"id": post.Id}).Execute()
+	// The mark is cleared only if the post is as it was read: one marked again meanwhile (the
+	// run cancelled or changed while Discord answered) stays marked for the next edit.
+	unmark := func(set string, params dbx.Params) error {
+		params["id"], params["updated"], params["ended"] = post.Id, post.GetString("updated"), post.GetString("ended")
+		_, err := app.DB().NewQuery("UPDATE discord_posts SET dirty = FALSE" + set + " WHERE id = {:id} AND updated = {:updated} AND ended = {:ended}").Bind(params).Execute()
 		return err
 	}
+	settled := func() error { return unmark("", dbx.Params{}) }
 	room, err := findAs[Room](app, "party_rooms", post.GetString("room"))
 	if err != nil {
 		return false, err
@@ -745,8 +753,7 @@ func editPost(app core.App, post *core.Record, fail failer) (bool, error) {
 	}
 	ok, err := delivered(app, room, link, res, fail, "Update of a Discord post of run "+post.GetString("run"))
 	if ok {
-		_, err := app.DB().NewQuery("UPDATE discord_posts SET dirty = FALSE, claims = {:claims} WHERE id = {:id}").Bind(dbx.Params{"claims": p.claimsKey(), "id": post.Id}).Execute()
-		return true, err
+		return true, unmark(", claims = {:claims}", dbx.Params{"claims": p.claimsKey()})
 	}
 	return false, err
 }
@@ -786,7 +793,7 @@ func watchReadiness(app core.App, at time.Time) error {
 			shows[runId] = key
 		}
 		if key != post.GetString("claims") {
-			if _, err := app.DB().NewQuery("UPDATE discord_posts SET dirty = TRUE WHERE id = {:id}").Bind(dbx.Params{"id": post.Id}).Execute(); err != nil {
+			if _, err := app.DB().NewQuery("UPDATE discord_posts SET " + markDirty + " WHERE id = {:id}").Bind(dbx.Params{"id": post.Id, "marked": stamp(time.Now())}).Execute(); err != nil {
 				return err
 			}
 		}
@@ -797,8 +804,8 @@ func watchReadiness(app core.App, at time.Time) error {
 // endPosts marks a run's posts for the job to show it cancelled or done; the run is deleted
 // right after, so each post keeps its dungeon and start.
 func endPosts(app core.App, r *Run, how string) error {
-	_, err := app.DB().NewQuery("UPDATE discord_posts SET ended = {:how}, dungeon = {:dungeon}, startsAt = {:starts}, dirty = TRUE WHERE run = {:run} AND messageId != ''").
-		Bind(dbx.Params{"how": how, "dungeon": r.Dungeon(), "starts": r.StartsAt(), "run": r.Id}).Execute()
+	_, err := app.DB().NewQuery("UPDATE discord_posts SET ended = {:how}, dungeon = {:dungeon}, startsAt = {:starts}, " + markDirty + " WHERE run = {:run} AND messageId != ''").
+		Bind(dbx.Params{"how": how, "dungeon": r.Dungeon(), "starts": r.StartsAt(), "run": r.Id, "marked": stamp(time.Now())}).Execute()
 	return err
 }
 
@@ -808,7 +815,7 @@ func watchRunPosts(app core.App) {
 		before := e.Record.Original()
 		for _, f := range []string{"dungeon", "startsAt", "note", "attendees", "link"} {
 			if fmt.Sprint(before.Get(f)) != fmt.Sprint(e.Record.Get(f)) {
-				if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET dirty = TRUE WHERE run = {:run} AND messageId != ''").Bind(dbx.Params{"run": e.Record.Id}).Execute(); err != nil {
+				if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET " + markDirty + " WHERE run = {:run} AND messageId != ''").Bind(dbx.Params{"run": e.Record.Id, "marked": stamp(time.Now())}).Execute(); err != nil {
 					warn(e.App, "Odyle could not mark Discord posts for an edit", "run", e.Record.Id, "error", err.Error())
 				}
 				break

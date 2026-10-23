@@ -77,34 +77,59 @@ func newOutbox(delay time.Duration) *outbox {
 	return &outbox{delay: delay, rooms: map[string]*roomNews{}, users: map[string]*userNews{}}
 }
 
+// News collected inside a transaction waits for its commit (afterCommit): members then fetch
+// what was saved, and hear nothing of a change that was rolled back.
 func (o *outbox) room(app core.App, id string, change func(*roomNews)) {
 	if id == "" {
 		return
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	n := o.rooms[id]
-	if n == nil {
-		n = &roomNews{characters: map[string]*Character{}, removed: map[string]bool{}, seen: map[string]sighting{}}
-		o.rooms[id] = n
-	}
-	change(n)
-	o.schedule(app)
+	afterCommit(app, func(app core.App) {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		n := o.rooms[id]
+		if n == nil {
+			n = &roomNews{characters: map[string]*Character{}, removed: map[string]bool{}, seen: map[string]sighting{}}
+			o.rooms[id] = n
+		}
+		change(n)
+		o.schedule(app)
+	})
 }
 
 func (o *outbox) user(app core.App, id string, change func(*userNews)) {
 	if id == "" {
 		return
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	n := o.users[id]
-	if n == nil {
-		n = &userNews{characters: map[string]*Character{}, seen: map[string]time.Time{}, contact: map[string]time.Time{}}
-		o.users[id] = n
+	afterCommit(app, func(app core.App) {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		n := o.users[id]
+		if n == nil {
+			n = &userNews{characters: map[string]*Character{}, seen: map[string]time.Time{}, contact: map[string]time.Time{}}
+			o.users[id] = n
+		}
+		change(n)
+		o.schedule(app)
+	})
+}
+
+// afterCommit runs fn once the transaction app belongs to has committed, with the app
+// Register was given, and not at all when it rolls back; outside a transaction it runs fn
+// at once. fn runs before RunInTransaction returns, so it must not wait on the network:
+// start a goroutine for that. It must not use the transaction's app either (PocketBase
+// holds the transaction's lock while it runs these).
+func afterCommit(app core.App, fn func(core.App)) {
+	tx, root := app.TxInfo(), stateOf(app).root
+	if tx == nil || root == nil {
+		fn(app)
+		return
 	}
-	change(n)
-	o.schedule(app)
+	tx.OnComplete(func(txErr error) error {
+		if txErr == nil {
+			fn(root)
+		}
+		return nil
+	})
 }
 
 // schedule plans the delivery (with o.mu held).

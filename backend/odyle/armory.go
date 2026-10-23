@@ -432,42 +432,44 @@ func lookUpArmory(app core.App, j armoryJob) (err error) {
 			profile, err = readArmory(info, equipment)
 		}
 	}
-	record, findErr := keptProfile(app, j.serverId, j.characterId)
-	if findErr != nil {
-		return findErr
-	}
-	if errors.Is(err, errArmoryMissing) {
-		if record != nil && !record.GetBool("hidden") {
-			if deleteErr := app.Delete(record); deleteErr != nil {
-				return deleteErr
-			}
-		}
-		return err
-	}
-	if record == nil {
-		if err != nil {
-			return err
-		}
-		collection, findErr := app.FindCollectionByNameOrId("armory_profiles")
+	// The kept profile is read and written after PLAYNC answered, in one transaction: a view
+	// (viewedAt) or the hidden switch set meanwhile is kept.
+	if txErr := app.RunInTransaction(func(tx core.App) error {
+		record, findErr := keptProfile(tx, j.serverId, j.characterId)
 		if findErr != nil {
 			return findErr
 		}
-		record = core.NewRecord(collection)
-		record.Set("region", j.region)
-		record.Set("serverId", j.serverId)
-		record.Set("characterId", j.characterId)
-		record.Set("viewedAt", now())
-	}
-	if err != nil {
-		record.Set("error", cut(message(err), 300))
-	} else {
-		record.Set("name", profile.Name)
-		record.Set("profile", profile)
-		record.Set("fetchedAt", now())
-		record.Set("error", "")
-	}
-	if saveErr := app.Save(record); saveErr != nil {
-		return saveErr
+		if errors.Is(err, errArmoryMissing) {
+			if record != nil && !record.GetBool("hidden") {
+				return tx.Delete(record)
+			}
+			return nil
+		}
+		if record == nil {
+			if err != nil {
+				return nil
+			}
+			collection, findErr := tx.FindCollectionByNameOrId("armory_profiles")
+			if findErr != nil {
+				return findErr
+			}
+			record = core.NewRecord(collection)
+			record.Set("region", j.region)
+			record.Set("serverId", j.serverId)
+			record.Set("characterId", j.characterId)
+			record.Set("viewedAt", now())
+		}
+		if err != nil {
+			record.Set("error", cut(message(err), 300))
+		} else {
+			record.Set("name", profile.Name)
+			record.Set("profile", profile)
+			record.Set("fetchedAt", now())
+			record.Set("error", "")
+		}
+		return tx.Save(record)
+	}); txErr != nil {
+		return txErr
 	}
 	// The page names the class of its class id, for every character with that id (classes.go).
 	if err == nil {

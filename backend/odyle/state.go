@@ -16,10 +16,11 @@ type state struct {
 	startedAt string
 	root      core.App // the app Register was given, never a transaction
 
-	changes   *outbox   // realtime news, delivered at once
-	sightings *outbox   // heartbeats for realtime, delivered every two seconds
-	presence  *presence // heartbeats not written yet
-	health    *health   // what each reader last reported (health.go)
+	changes   *outbox        // realtime news, delivered at once
+	sightings *outbox        // heartbeats for realtime, delivered every two seconds
+	presence  *presence      // heartbeats not written yet
+	health    *health        // what each reader last reported (health.go)
+	pushes    sync.WaitGroup // Run now pushes on their way (inviteToRun)
 
 	settings settingsCache // has its own lock
 
