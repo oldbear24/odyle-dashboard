@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.42.0 · 2026-10-24
+
+### New
+- The slot machine gives every account **3 free spins every day**, on top of the spins your characters earn. They come back with the daily reset; unused ones do not carry over, and the machine shows how many free ones you have left today.
+- **25 new cosmetics** to win: name colours Lilac, Peach, Lime, Coral, Sunset, Ocean, Odyle glow and Prism; avatar frames Bark, Frost, Blossom, Jade, Void and Eclipse; badges Mushroom, Paw, Tea, Bow, Potion, Owl, Lightning, Skull, Unicorn, Comet and Trophy.
+- Server operators set the free spins a day and the spins each character read earns under Odyle → Game settings → Slot machine.
+
 ## 0.41.1 · 2026-10-23
 
 ### Fixed

@@ -1,7 +1,8 @@
 // The Odyle slot machine (#107), an easter egg: the logo clicked seven times opens #/slots.
-// Spins come from playing (one a day for each character the reader reads); each wins a
-// cosmetic item for the account, rolled on the server (backend/odyle/slots.go). Equipped items
-// show next to the account's name in its rooms (lookName, frameClass).
+// Spins come every day (dailySpins free ones, unused ones lapse) and from playing (perCharacter
+// a day for each character the reader reads); each may win a cosmetic item for the account,
+// rolled on the server (backend/odyle/slots.go). Equipped items show next to the account's name
+// in its rooms (lookName, frameClass).
 import { t, tn } from './i18n.js';
 import { escape as esc } from './model.js';
 
@@ -34,6 +35,13 @@ export function missFaces(seed = 0) {
   const third = all.findIndex((_, i) => i !== first && i !== second);
   return [all[first], all[second], all[third]];
 }
+// How spins come, as the server's rules say (the free spins of the day, then the earned ones).
+function spinSources(state) {
+  const daily = state.dailySpins ?? 0, perCharacter = state.perCharacter ?? 1;
+  return [daily > 0 ? tn(daily, 'You get {n} free spin every day; unused ones do not carry over.', 'You get {n} free spins every day; unused ones do not carry over.') : '',
+    perCharacter > 0 ? tn(perCharacter, 'Every character your reader reads earns {n} more a day.', 'Every character your reader reads earns {n} more a day.') : '',
+    t('Spins win cosmetics for your name in rooms.')].filter(Boolean).join(' ');
+}
 export function slotsView({ state, spinning = false, last = null, name = '', sound = true }) {
   if (!state) return `<main class="dashboard slots-page"><p class="intro">${t('Loading…')}</p></main>`;
   const spins = state.spins, faces = spinning ? Object.values(reelFaces) : last?.won ? Array(3).fill(reelFaces[last.won.rarity]) : last?.lost ? missFaces(last.seed) : ['🍀', '🌙', '💎'];
@@ -50,8 +58,8 @@ export function slotsView({ state, spinning = false, last = null, name = '', sou
     const count = items.filter(i => state.owned.includes(i.id)).length;
     return `<section class="party-section slot-group"><div class="section-heading"><h2>${t(title)} <span>${count}/${items.length}</span></h2></div><div class="slot-items">${tiles}</div></section>`;
   }).join('');
-  return `<main class="dashboard slots-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOU FOUND IT')}</div><h1>${t('Odyle slot machine')}<span class="mint">.</span></h1><p>${t('Every character your reader reads earns a spin a day. Each spin wins a cosmetic for your name in rooms.')}</p></div></section>`
-    + `<section class="slot-machine"><div class="slot-window" aria-hidden="true">${reels}</div>${result}<div class="slot-controls"><button class="button primary slot-spin" data-action="slot-spin" ${spins < 1 || spinning ? 'disabled' : ''}>${t('Spin')}</button><button class="icon-button slot-sound" data-action="slot-sound" aria-pressed="${sound}" title="${esc(sound ? t('Sound on') : t('Sound off'))}" aria-label="${esc(t('Sound'))}">${sound ? '🔊' : '🔇'}</button><span class="slot-spins">${esc(tn(spins, '{n} spin left', '{n} spins left'))} · ${esc(t('Shards {n}/{of}', { n: state.shards, of: state.shardsForSpin }))}</span></div>`
+  return `<main class="dashboard slots-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOU FOUND IT')}</div><h1>${t('Odyle slot machine')}<span class="mint">.</span></h1><p>${esc(spinSources(state))}</p></div></section>`
+    + `<section class="slot-machine"><div class="slot-window" aria-hidden="true">${reels}</div>${result}<div class="slot-controls"><button class="button primary slot-spin" data-action="slot-spin" ${spins < 1 || spinning ? 'disabled' : ''}>${t('Spin')}</button><button class="icon-button slot-sound" data-action="slot-sound" aria-pressed="${sound}" title="${esc(sound ? t('Sound on') : t('Sound off'))}" aria-label="${esc(t('Sound'))}">${sound ? '🔊' : '🔇'}</button><span class="slot-spins">${esc(tn(spins, '{n} spin left', '{n} spins left'))}${state.daily > 0 ? ` (${esc(t('{n} free today', { n: state.daily }))})` : ''} · ${esc(t('Shards {n}/{of}', { n: state.shards, of: state.shardsForSpin }))}</span></div>`
     + `<p class="slot-preview">${t('In rooms:')} <span class="portrait slot-frame${frameClass(look)}">${esc(name.slice(0, 2).toUpperCase())}</span> ${lookName(name, look)}</p>`
     + `<small class="slot-odds">${esc(t('A spin wins {chance} % of the time; wins are common 60 %, rare 27 %, epic 10 %, legendary 3 %. A duplicate gives a shard, three shards a spin. Cosmetic only, nothing to buy.', { chance: state.winChance ?? 15 }))}</small></section>${groups}</main>`;
 }

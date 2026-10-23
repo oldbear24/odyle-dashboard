@@ -28,7 +28,7 @@ Information board: what a room's owner or officers write on its board is kept wi
 
 Calendar feed: if you make one under **Account & data**, the dashboard keeps a fingerprint of its private link, never the link itself. Whoever has the link (your calendar app, or anyone you give it to) sees the dungeon, room and time of the runs you are going to, never notes. Making a new link or stopping the feed ends the old one at once.
 
-Slot machine: the dashboard keeps how many spins your account has and which cosmetic items it won and wears; members of your rooms see the items you wear next to your name. Your data download lists them, and deleting the account deletes them. Whether the slot machine plays its sounds is kept in this browser only (`odyle.slotSound`).
+Slot machine: the dashboard keeps how many spins your account has (free spins of the day included) and which cosmetic items it won and wears; members of your rooms see the items you wear next to your name. Your data download lists them, and deleting the account deletes them. Whether the slot machine plays its sounds is kept in this browser only (`odyle.slotSound`).
 
 Discord run reminders: a room's posts show the runs' dungeon, time, note and the display names of those going. Only if you turn on **A mention in Discord** in your notifications does a post of a run you are going to mention you, by the Discord account you sign in with, so Discord notifies you; that Discord id goes to Discord in the post and nowhere else. The server keeps each post's Discord message id for two days so it can edit the post after a change. When the room's owner turns on readiness, the posts also count how many of those going can claim a cube (for example 4/5), never which characters or their Odyle.
 

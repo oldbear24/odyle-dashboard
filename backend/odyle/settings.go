@@ -164,6 +164,34 @@ type settings struct {
 	Maintenance maintenanceWindow `json:"maintenance"`
 	// Each class's role in a party (#45), for the make-up of planned runs.
 	ClassRoles []classRole `json:"classRoles"`
+	// How the slot machine (#107) hands out spins.
+	Slots slotRules `json:"slots"`
+}
+
+// slotRules are the slot machine's spins: free spins every account has each daily period (unused
+// ones do not carry over) and the spins each character the reader reads earns a day.
+type slotRules struct {
+	DailySpins   int64 `json:"dailySpins"`
+	PerCharacter int64 `json:"perCharacter"`
+}
+
+func defaultSlots() slotRules { return slotRules{DailySpins: 3, PerCharacter: 1} }
+
+// checkSlots reads the slot rules: 0 to 20 free spins a day and 0 to 10 spins per character read.
+func checkSlots(value any) (slotRules, error) {
+	v, ok := value.(map[string]any)
+	if !ok {
+		return slotRules{}, errors.New("The slot machine rules must be daily spins and spins per character.")
+	}
+	daily, err := integer(v["dailySpins"], "Free spins a day", 0, 20)
+	if err != nil {
+		return slotRules{}, err
+	}
+	perCharacter, err := integer(v["perCharacter"], "Spins per character read", 0, 10)
+	if err != nil {
+		return slotRules{}, err
+	}
+	return slotRules{DailySpins: daily, PerCharacter: perCharacter}, nil
 }
 
 type maintenanceWindow struct {
@@ -202,7 +230,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles()}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots()}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -331,6 +359,11 @@ func loadSettings(app core.App) settings {
 		if roles, err := checkClassRoles(saved); err == nil {
 			out.ClassRoles = roles
 		}
+	}
+	// Slot rules never saved (or no longer checking out) are the defaults.
+	out.Slots = defaultSlots()
+	if slots, err := checkSlots(parseJSON(s.GetString("slots"), "null")); err == nil {
+		out.Slots = slots
 	}
 	return out
 }
@@ -637,6 +670,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("slots") {
+		if next.Slots, err = checkSlots(b["slots"]); err != nil {
+			return settings{}, err
+		}
+	}
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
@@ -655,6 +693,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("taskTemplates", next.TaskTemplates)
 	record.Set("windowsBlocked", next.WindowsBlocked)
 	record.Set("classRoles", next.ClassRoles)
+	record.Set("slots", next.Slots)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}
