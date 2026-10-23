@@ -37,10 +37,11 @@ function fold(line) {
 // neither format the message nor ping anyone (Discord markdown, <@…> and @everyone).
 // "**Fire Temple** · <t:…:F> (<t:…:R>) · Going (3/5): A, B, C · note · link".
 const discordMarkdown = /([\\*_~`|>#[\]()<@])/g;
-export function discordText({ dungeon, startsAt, note }, { going = [], partySize = 0, link = '', event = '' } = {}) {
+export function discordText({ dungeon, startsAt, note }, { going = [], waiting = [], partySize = 0, link = '', event = '' } = {}) {
   const unix = Math.floor(timestamp(startsAt) / 1000), md = text => String(text).replace(discordMarkdown, '\\$1');
   const count = partySize > 0 ? `${going.length}/${partySize}` : String(going.length);
   const parts = [`**${md(dungeon)}**`, `<t:${unix}:F> (<t:${unix}:R>)`, `${t('Going')} (${count})${going.length ? ': ' + going.map(md).join(', ') : ''}`];
+  if (waiting.length) parts.push(`${t('Waiting for a place')} (${waiting.length}): ${waiting.map(md).join(', ')}`);
   if (note) parts.push(md(note));
   if (event) parts.push(event);
   if (link) parts.push(link);
@@ -112,6 +113,7 @@ export function rollCallOf(row) {
   if (row.state !== 'live') return 'away';
   return row.claims ? 'ready' : 'short';
 }
+const roleWords = { tank: () => t('tank'), healer: () => t('healer'), support: () => t('support'), damage: () => t('damage') };
 const rollCallWords = { ready: () => t('ready'), short: () => t('short'), away: () => t('not in game'), none: () => t('no character') };
 export function rollCallLine(rows) {
   const count = key => rows.filter(row => rollCallOf(row) === key).length;
@@ -125,41 +127,78 @@ export function weekLine(week) {
   const line = week.spent > 0 ? t('This week the party spent {odyle} Odyle · ≈{cubes}', { odyle: week.spent.toLocaleString(locale()), cubes: tn(week.cubes, '{n} cube', '{n} cubes') }) : t('This week the party has not spent Odyle yet.');
   return `<p class="room-week" title="${esc(t('Since the weekly reset, from the changes the readers saw in the characters shared here: a spend on a PC without the reader counts at its next reading.'))}">${esc(line)}</p>`;
 }
-// "3/5 going" when the catalog knows the dungeon's party size (#45), else "3 going".
-export const goingCountOf = (r, catalog) => { const size = entryOf(catalog, r.dungeon)?.partySize || 0; return size ? t('{n}/{size} going', { n: r.attendees.length, size }) : tn(r.attendees.length, '{n} going', '{n} going'); };
-export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, catalog = [], perCube = 40, facts = () => '', demo, discord, readiness = null, costOf = () => perCube, start = null, maintenance = null }) {
+// The waitlist (#45): with more going than the dungeon's party size in the catalog, the first to
+// answer Going make the party and the rest wait for a place, first come first (backend
+// readiness.go runParty). Without a party size everyone going is the party.
+export function runParty(r, catalog) {
+  const size = entryOf(catalog, r.dungeon)?.partySize || 0;
+  return size && r.attendees.length > size ? { party: r.attendees.slice(0, size), waiting: r.attendees.slice(size), size } : { party: r.attendees, waiting: [], size };
+}
+// "3/5 going" when the catalog knows the dungeon's party size (#45), "5/5 going · 2 waiting" once
+// it is full, else "3 going".
+export const goingCountOf = (r, catalog) => {
+  const { party, waiting, size } = runParty(r, catalog);
+  if (!size) return tn(party.length, '{n} going', '{n} going');
+  return [t('{n}/{size} going', { n: party.length, size }), waiting.length ? tn(waiting.length, '{n} waiting', '{n} waiting') : ''].filter(Boolean).join(' · ');
+};
+// The party's make-up (#45): its classes by the roles superusers keep (the snapshot's classRoles,
+// { class, role }), tanks first, and the tank or healer it misses once three or more go and the
+// table names a class for that role. Classes come from PLAYNC only; a party with none known says
+// nothing.
+const roleOrder = ['tank', 'healer', 'support', 'damage'];
+const roleOf = (roles, name) => roles.find(r => r.class.toLowerCase() === String(name).toLowerCase())?.role || '';
+export function makeUp(characters, roles = []) {
+  const counts = new Map(); let unknown = 0;
+  for (const c of characters) { if (!c?.className) { unknown++; continue; } counts.set(c.className, (counts.get(c.className) || 0) + 1); }
+  if (!counts.size) return null;
+  const rank = name => { const at = roleOrder.indexOf(roleOf(roles, name)); return at < 0 ? roleOrder.length : at; };
+  const classes = [...counts].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b)).map(([name, n]) => ({ name, n, role: roleOf(roles, name) }));
+  const missing = characters.length >= 3 ? ['tank', 'healer'].filter(role => roles.some(r => r.role === role) && !classes.some(c => c.role === role)) : [];
+  return { classes, unknown, missing };
+}
+const missingWords = { tank: () => t('no tank'), healer: () => t('no healer') };
+export function makeUpLine(characters, roles) {
+  const m = makeUp(characters, roles);
+  if (!m) return '';
+  const parts = [...m.classes.map(c => c.n > 1 ? `${c.n}× ${c.name}` : c.name), m.unknown ? tn(m.unknown, '{n} class unknown', '{n} classes unknown') : ''].filter(Boolean).map(esc);
+  const missing = m.missing.map(role => `<b class="run-missing">${esc(missingWords[role]())}</b>`);
+  return `<small class="run-makeup">${esc(t('Make-up'))}: ${[...parts, ...missing].join(' · ')}</small>`;
+}
+export function runsSection({ runs, members, myId, viewer, owner, live, now, suggestions, catalog = [], perCube = 40, facts = () => '', demo, discord, readiness = null, costOf = () => perCube, start = null, maintenance = null, roles = [], called = false }) {
   const name = id => id === myId ? t('You') : members.find(m => m.user === id)?.displayName || t('Member'), goingCount = r => goingCountOf(r, catalog);
-  const form = viewer ? `<p class="wish-note">${t('Viewers can see planned runs but cannot plan or join them.')}</p>` : `<form id="run-form" class="wish-form run-form">${dungeonField({ catalog, suggestions, list: 'run-dungeons', placeholder: catalog.length ? t('Choose a dungeon') : t('Dungeon'), perCube })}<input name="startsAt" type="datetime-local" required aria-label="${esc(t('Start'))}" value="${nextHour(now)}" ${bounds(now)}><input name="note" maxlength="120" autocomplete="off" placeholder="${esc(t('Note (optional)'))}" aria-label="${esc(t('Note'))}"><button class="button primary" type="submit">${icon('calendar')} ${t('Plan run')}</button></form>${viewer || start === null ? '' : start <= now ? `<p class="wish-note run-hint">${t('Everyone can claim a cube now.')}</p>` : `<p class="wish-note run-hint">${esc(t('Everyone can claim a cube from {when} (an estimate of the Odyle clock).', { when: new Date(start).toLocaleString(locale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }))} <button class="text-button" type="button" data-use-start="${esc(localInput(start))}">${t('Use this time')}</button></p>`}`;
+  const form = viewer ? `<p class="wish-note">${t('Viewers can see planned runs but cannot plan or join them.')}</p>` : `<form id="run-form" class="wish-form run-form">${dungeonField({ catalog, suggestions, list: 'run-dungeons', placeholder: catalog.length ? t('Choose a dungeon') : t('Dungeon'), perCube })}<input name="startsAt" type="datetime-local" required aria-label="${esc(t('Start'))}" value="${nextHour(now)}" ${bounds(now)}><input name="note" maxlength="120" autocomplete="off" placeholder="${esc(t('Note (optional)'))}" aria-label="${esc(t('Note'))}"><button class="button primary" type="submit">${icon('calendar')} ${t('Plan run')}</button><button class="button secondary" type="button" data-call-run${called ? ` disabled title="${esc(t('The party was called less than 30 minutes ago. Answer that run instead.'))}"` : ` title="${esc(t('Starts in about 10 minutes and tells the players who can come now.'))}"`}>${icon('bolt')} ${t('Run now')}</button></form>${viewer || start === null ? '' : start <= now ? `<p class="wish-note run-hint">${t('Everyone can claim a cube now.')}</p>` : `<p class="wish-note run-hint">${esc(t('Everyone can claim a cube from {when} (an estimate of the Odyle clock).', { when: new Date(start).toLocaleString(locale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }))} <button class="text-button" type="button" data-use-start="${esc(localInput(start))}">${t('Use this time')}</button></p>`}`;
   const rows = runs.map(r => {
     const at = timestamp(r.startsAt), going = r.attendees.includes(myId), mine = r.planner === myId, cant = (r.cant || []).includes(myId);
-    // Each attendee with the character they bring and its cubes at this run's cost, at the start.
-    const ready = readiness?.(r), cost = costOf(r), upcoming = at > now, calling = Boolean(ready) && inRollCall(at, now);
+    // The party (those waiting for a place aside), each with the character they bring and its
+    // cubes at this run's cost, at the start.
+    const { party, waiting, size } = runParty(r, catalog), full = size > 0 && party.length >= size;
+    const ready = readiness?.({ ...r, attendees: party }), cost = costOf(r), upcoming = at > now, calling = Boolean(ready) && inRollCall(at, now);
     const person = row => {
       const c = row?.character, fresh = row?.state === 'live', call = calling ? rollCallOf(row) : '';
       const word = call ? ` · <b class="roll-call ${call}">${esc(rollCallWords[call]())}</b>` : '';
       if (!c) return `<span class="wish-person"><i></i>${esc(name(row.user))}${word}</span>`;
       const cubes = upcoming ? row.cubesAtStart : row.cubes, label = `${name(row.user)}${c.characterName !== c.displayName ? ' · ' + c.characterName : ''}${c.className ? ' · ' + c.className : ''} · ${tn(cubes, '{n} cube', '{n} cubes')}`;
-      const hint = (classOf(c) ? classOf(c) + ' · ' : '') + (row.picked ? t('Picked for this run') + ' · ' : '') + (fresh ? t('Live in this room now') : t('saved {age}', { age: age(c.lastReadingAt, now) })) + (upcoming && row.cubesAtStart !== row.cubes ? ' · ' + t('{n} at the start, with the Odyle clock', { n: row.cubesAtStart }) : '');
+      const role = roleOf(roles, c.className), hint = (classOf(c) ? classOf(c) + ' · ' : '') + (role ? roleWords[role]() + ' · ' : '') + (row.picked ? t('Picked for this run') + ' · ' : '') + (fresh ? t('Live in this room now') : t('saved {age}', { age: age(c.lastReadingAt, now) })) + (upcoming && row.cubesAtStart !== row.cubes ? ' · ' + t('{n} at the start, with the Odyle clock', { n: row.cubesAtStart }) : '');
       return `<span class="wish-person ${fresh ? 'live' : ''} ${row.claims ? '' : 'short'}" title="${esc(hint)}"><i></i>${esc(label)}${word}${fresh && !call ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`;
     };
-    const people = (ready ? ready.rows.map(person) : r.attendees.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
+    const people = (ready ? ready.rows.map(person) : party.map(u => `<span class="wish-person ${live.has(u) ? 'live' : ''}"${live.has(u) ? ` title="${esc(t('Live in this room now'))}"` : ''}><i></i>${esc(name(u))}${live.has(u) ? `<span class="sr-only"> (${t('live')})</span>` : ''}</span>`)).join('') || `<span class="run-nobody">${t('Nobody is going yet')}</span>`;
     const down = at > now ? maintenanceAt(at, maintenance) : null, clock = ms => new Date(ms).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
     const warning = down ? `<small class="run-warning">${esc(t('During the weekly maintenance of the game ({from}–{to}, your time)', { from: clock(down.from), to: clock(down.to) }))}</small>` : '';
     // Answers (#45): who can't come, and how many players have not answered yet (until the start).
     const players = members.filter(m => m.role !== 'viewer').map(m => m.user), silent = players.filter(u => !r.attendees.includes(u) && !(r.cant || []).includes(u)).length;
     const invited = at > now ? (r.invited || []) : [];
-    const answers = (r.cant || []).length || (at > now && silent) || invited.length ? `<small class="run-answers">${[invited.length ? esc(t('Invited: {names}', { names: invited.map(name).join(', ') })) : '', (r.cant || []).length ? esc(t('Can’t: {names}', { names: r.cant.map(name).join(', ') })) : '', at > now && silent ? esc(tn(silent, '{n} has not answered', '{n} have not answered')) : ''].filter(Boolean).join(' · ')}</small>` : '';
+    const answers = (r.cant || []).length || (at > now && silent) || invited.length || waiting.length ? `<small class="run-answers">${[waiting.length ? esc(t('Waiting for a place: {names}', { names: waiting.map(name).join(', ') })) : '', invited.length ? esc(r.called ? t('Called: {names}', { names: invited.map(name).join(', ') }) : t('Invited: {names}', { names: invited.map(name).join(', ') })) : '', (r.cant || []).length ? esc(t('Can’t: {names}', { names: r.cant.map(name).join(', ') })) : '', at > now && silent ? esc(tn(silent, '{n} has not answered', '{n} have not answered')) : ''].filter(Boolean).join(' · ')}</small>` : '';
     const roll = calling && ready.rows.length ? `<small class="roll-call-line">${esc(t('Roll call: {line}', { line: rollCallLine(ready.rows) }))}</small>` : '';
     // The run's event elsewhere (#35): Raid-Helper, Apollo, a Discord event.
     const event = /^https:\/\//.test(r.link || '') ? `<a class="run-event" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${t('Event')} ↗</a>` : '';
     // The readers saw attendees spend the run's cost from just before its start (#42): Done comes first.
-    const spentLine = at <= now && r.spent > 0 ? `<small class="run-spent">${esc(t('The readers saw {n} of {k} going spend {cost} Odyle', { n: r.spent, k: r.attendees.length, cost }))}</small>` : '';
-    const claim = event + warning + answers + roll + spentLine + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
+    const spentLine = at <= now && r.spent > 0 ? `<small class="run-spent">${esc(t('The readers saw {n} of {k} going spend {cost} Odyle', { n: r.spent, k: party.length, cost }))}</small>` : '';
+    const claim = event + warning + (ready ? makeUpLine(ready.rows.map(row => row.character), roles) : '') + answers + roll + spentLine + (ready?.of ? `<small class="run-claim ${ready.claim === ready.of ? 'all' : ''}">${esc(upcoming ? t('{k} of {n} can claim a cube at the start · {cost} Odyle', { k: ready.claim, n: ready.of, cost }) : t('{k} of {n} can claim a cube · {cost} Odyle', { k: ready.claim, n: ready.of, cost }))}</small>` : '');
     // A run that started is wrapped up by its planner, its attendees or the owner: done (the
     // dungeon leaves the wishlist of those who went), it did not happen, or the same next week.
     const wrapUp = !demo && !viewer && at <= now && (mine || owner || going);
     const actions = wrapUp ? `<button data-run-done="${esc(r.id)}" data-name="${esc(r.dungeon)}"${r.spent > 0 ? ' class="suggested"' : ''}>${icon('tick')} ${t('Done')}</button><button data-run-again="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-at="${esc(r.startsAt)}">${t('Plan again next week')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}" data-missed="true">${t('Didn’t happen')}</button>`
-      : (demo ? '' : (viewer ? '' : `<button data-run="${esc(r.id)}" data-going="${!going}">${going ? t('Not going') : `${icon('plus')} ${t('Going')}`}</button>` + (going ? '' : `<button data-cant-run="${esc(r.id)}" data-cant="${!cant}" aria-pressed="${cant}" class="${cant ? 'answered' : ''}">${t('Can’t')}</button>`))
+      : (demo ? '' : (viewer ? '' : `<button data-run="${esc(r.id)}" data-going="${!going}">${going ? t('Not going') : full ? `${icon('plus')} ${t('Join the waitlist')}` : `${icon('plus')} ${t('Going')}`}</button>` + (going ? '' : `<button data-cant-run="${esc(r.id)}" data-cant="${!cant}" aria-pressed="${cant}" class="${cant ? 'answered' : ''}">${t('Can’t')}</button>`))
       + (demo ? '' : `<button data-copy-run="${esc(r.id)}" title="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}" aria-label="${esc(t('Copy {dungeon} for Discord', { dungeon: r.dungeon }))}">${icon('copy')}</button>`)
       + `<button data-calendar-run="${esc(r.id)}" title="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}" aria-label="${esc(t('Add {dungeon} to your calendar', { dungeon: r.dungeon }))}">${icon('calendar')}</button>`
       + ((mine || owner) && !viewer ? `<button data-edit-run="${esc(r.id)}">${t('Edit')}</button><button class="remove" data-cancel-run="${esc(r.id)}" data-name="${esc(r.dungeon)}">${t('Cancel')}</button>` : ''));

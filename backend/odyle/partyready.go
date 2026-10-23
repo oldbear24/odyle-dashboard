@@ -8,10 +8,11 @@ import (
 )
 
 // Party ready (#48): the odyle-party-ready job, every minute, looks at the planned runs from an
-// hour before their start to half an hour after it. Once everyone going (two or more) plays live
-// with enough Odyle for a cube at the run's cost, each of them is told once for that start time
-// (room_runs.readyFor), on the account's topic (its Windows apps and open dashboards, by their
-// channels) and by Web Push, unless they turned it off (kinds.ready) or it is their quiet hours.
+// hour before their start to half an hour after it. Once everyone in its party (two or more; those
+// waiting for a place aside) plays live with enough Odyle for a cube at the run's cost, each of
+// them is told once for that start time (room_runs.readyFor), on the account's topic (its Windows
+// apps and open dashboards, by their channels) and by Web Push, unless they turned it off
+// (kinds.ready) or it is their quiet hours.
 // Only what the room already sees counts: presence from the readers' heartbeats and the readings.
 
 // partyNotice is what an attendee is told.
@@ -24,10 +25,11 @@ type partyNotice struct {
 	Of       int    `json:"of"`
 }
 
-// readyNow counts the attendees of a run whose character plays live now with enough for a cube.
-func readyNow(r *Run, entries []readyEntry, users map[string]string, at time.Time, cost int64) (ready, of int) {
+// readyNow counts the members of a run's party (runParty: those waiting for a place aside) whose
+// character plays live now with enough for a cube.
+func readyNow(r *Run, party []string, entries []readyEntry, users map[string]string, at time.Time, cost int64) (ready, of int) {
 	picks := r.Picks()
-	for _, member := range r.Attendees() {
+	for _, member := range party {
 		user, known := users[member]
 		if !known {
 			continue
@@ -55,7 +57,8 @@ func partyReady(app core.App) (result, error) {
 	rules := readSettings(app)
 	for _, r := range runs {
 		room := rooms[r.Room()]
-		if room == nil || len(r.Attendees()) < 2 || r.GetString("readyFor") == r.StartsAt() {
+		party, _ := runParty(rules, r)
+		if room == nil || len(party) < 2 || r.GetString("readyFor") == r.StartsAt() {
 			continue
 		}
 		entries, users, err := roomEntries(app, room.Id)
@@ -63,7 +66,7 @@ func partyReady(app core.App) (result, error) {
 			out.fail(err.Error())
 			continue
 		}
-		ready, of := readyNow(r, entries, users, at, runCost(rules, r.Dungeon()))
+		ready, of := readyNow(r, party, entries, users, at, runCost(rules, r.Dungeon()))
 		if of < 2 || ready < of {
 			continue
 		}
@@ -74,7 +77,7 @@ func partyReady(app core.App) (result, error) {
 			continue
 		}
 		notice := partyNotice{RunId: r.Id, RoomId: room.Id, Room: room.Name(), Dungeon: r.Dungeon(), StartsAt: r.StartsAt(), Of: of}
-		for _, member := range r.Attendees() {
+		for _, member := range party {
 			user, err := app.FindRecordById("users", users[member])
 			if err != nil {
 				continue

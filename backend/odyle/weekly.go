@@ -83,17 +83,17 @@ func roomWeekOf(app core.App, rules settings, members []*Member, cost int64, at 
 // a little early.
 const runSpendWindow = 15 * time.Minute
 
-// spentAtRun counts the attendees of a run that started whose characters shared in the room
-// (their pick, if they picked one) spent the run's cost from 15 minutes before its start, as
-// the app named the change. The room then offers Done first.
-func spentAtRun(app core.App, r *Run, byId map[string]*Member, cost int64, at time.Time) (int, error) {
+// spentAtRun counts the members of a run's party (runParty) that started whose characters shared
+// in the room (their pick, if they picked one) spent the run's cost from 15 minutes before its
+// start, as the app named the change. The room then offers Done first.
+func spentAtRun(app core.App, r *Run, party []string, byId map[string]*Member, cost int64, at time.Time) (int, error) {
 	start, ok := parseDate(r.StartsAt())
 	if !ok || start.After(at) || cost <= 0 {
 		return 0, nil
 	}
 	owner, characters := map[string]string{}, []string{}
 	picks := r.Picks()
-	for _, id := range r.Attendees() {
+	for _, id := range party {
 		m := byId[id]
 		if m == nil {
 			continue

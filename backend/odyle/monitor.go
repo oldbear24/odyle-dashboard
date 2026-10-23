@@ -42,7 +42,7 @@ var shown = map[string][]string{
 	// The dashboard
 	"create": {"name"}, "join": {}, "rename": {"roomId", "name"}, "leave": {"roomId"}, "close": {"roomId"}, "invites": {"roomId"}, "revoke": {"roomId", "memberId"}, "role": {"roomId", "memberId", "role"}, "transfer": {"roomId", "memberId"},
 	"invite-create": {"roomId", "role", "expiresIn", "maxUses"}, "invite-revoke": {"roomId", "inviteId"}, "invite-preview": {},
-	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove"}, "discord-webhook": {"roomId", "language", "startPost", "readiness"},
+	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove", "call"}, "discord-webhook": {"roomId", "language", "startPost", "readiness"},
 	"task": {"characterId", "id:taskId", "done", "move", "remove"}, "profile": {"displayName"}, "desktop-code": {}, "forget-device": {"deviceId"}, "sign-out-everywhere": {}, "delete-account": {}, "delete-character": {"characterId"}, "notifications": {}, "push-subscribe": {"language", "device"}, "push-unsubscribe": {}, "push-test": {}, "share-new": {"roomId", "enabled"},
 	"board": {"roomId"}, "room-features": {"roomId"},
 }
@@ -436,7 +436,17 @@ func seenAdapters(app core.App) []any {
 }
 
 func settingsJSON(app core.App, current settings) map[string]any {
-	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app)}
+	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app)}
+}
+
+// learnedClasses are the class names the armory learned from PLAYNC (classes.go), for the class
+// roles under Game settings.
+func learnedClasses(app core.App) []string {
+	names := []string{}
+	if err := app.DB().NewQuery("SELECT DISTINCT name FROM game_classes WHERE name != '' ORDER BY name").Column(&names); err != nil {
+		warn(app, "Odyle could not list the learned classes", "error", err.Error())
+	}
+	return names
 }
 
 func settingsRoute(e *core.RequestEvent) error {
