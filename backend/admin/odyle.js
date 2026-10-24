@@ -638,7 +638,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'catalog', 'classRoles', 'clock', 'taskTemplates'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'catalog', 'classRoles', 'clock', 'taskTemplates', 'slots'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const defaults = () => state.data?.defaults;
@@ -761,9 +761,14 @@ export function settingsPage() {
         t.input({ id: 'odyle-clock-paused', type: 'checkbox', checked: () => Boolean(clock().paused), onchange: e => state.form.clock = { ...clock(), paused: e.target.checked } }),
         t.label({ htmlFor: 'odyle-clock-paused' }, 'Hide the Odyle clock')),
         t.div({ className: 'field-help' }, 'Turns off every estimate (next tick, full at, projected values) on dashboards and in the Windows app, for example after a game patch moved the schedule.')),
+      section('Slot machine', 'The easter egg of the dashboard (the logo clicked seven times): spins win cosmetics players wear next to their names in rooms. Nothing touches Odyle or characters.'),
+      field('odyle-slots-daily', 'Free spins a day', t.input({ id: 'odyle-slots-daily', type: 'number', min: 0, max: 20, step: 1, required: true, value: () => state.form.slots?.dailySpins ?? '', oninput: e => state.form.slots = { ...state.form.slots, dailySpins: integer(e.target.value) } }),
+        'Every account has these each day from the daily reset; unused ones do not carry over. 0 turns them off.'),
+      field('odyle-slots-character', 'Spins per character read', t.input({ id: 'odyle-slots-character', type: 'number', min: 0, max: 10, step: 1, required: true, value: () => state.form.slots?.perCharacter ?? '', oninput: e => state.form.slots = { ...state.form.slots, perCharacter: integer(e.target.value) } }),
+        'Earned once a day for each character the reader reads; these carry over. 0 turns them off.'),
       t.div({ className: 'col-lg-12' }, t.hr()),
       // Resets the game rules only; the retention period and the dungeon catalog stay.
-      buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay, clock: { ...defaults().clock } } },
+      buttons(t.button({ type: 'button', className: 'btn transparent secondary', onclick: () => state.form = { ...state.form, odylePerCube: defaults().odylePerCube, dailyResetHour: defaults().dailyResetHour, weeklyResetDay: defaults().weeklyResetDay, clock: { ...defaults().clock }, slots: { ...defaults().slots } } },
         t.span({ className: 'txt' }, () => 'Use defaults (' + number(defaults()?.odylePerCube) + ' · ' + String(defaults()?.dailyResetHour ?? '').padStart(2, '0') + ':00 UTC · ' + capital(defaults()?.weeklyResetDay || '') + ')')))));
 }
 

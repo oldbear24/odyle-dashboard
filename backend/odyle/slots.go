@@ -11,9 +11,10 @@ import (
 )
 
 // The Odyle slot machine (#107), an easter egg of the dashboard (the logo clicked seven times
-// opens #/slots). Playing earns spins: one a day for each character the reader read that day
-// (the game's daily reset), granted by the first accepted reading of the day; a first visit
-// gives three welcome spins. A spin wins with a small chance (slotWinChance), rolled on the
+// opens #/slots). Every account has free spins each day (slotRules.DailySpins, 3 unless a
+// superuser sets another number; unused ones do not carry over), and playing earns more: by
+// default one a day for each character the reader read that day (the game's daily reset), granted
+// by the first accepted reading of the day; a first visit gives three welcome spins. A spin wins with a small chance (slotWinChance), rolled on the
 // server: then a cosmetic item for the account, a name colour, an avatar frame or a badge, common
 // to legendary. A duplicate gives a shard, and three shards give a spin back. Equipped items show next to the account's name in
 // its rooms. Cosmetic only: nothing touches Odyle, characters or parties, and nothing is bought.
@@ -37,6 +38,14 @@ var cosmetics = []cosmetic{
 	{"color-gold", "color", "epic", "Gold", "#f3c94a"},
 	{"color-crimson", "color", "epic", "Crimson", "#ff6b78"},
 	{"color-aurora", "color", "legendary", "Aurora", "linear-gradient(90deg,#5ee0b0,#9fd3ff,#c3a6ff,#f2b5c4)"},
+	{"color-lilac", "color", "common", "Lilac", "#d8c2f0"},
+	{"color-peach", "color", "common", "Peach", "#ffc9a3"},
+	{"color-lime", "color", "rare", "Lime", "#b8f25e"},
+	{"color-coral", "color", "rare", "Coral", "#ff8f8f"},
+	{"color-sunset", "color", "epic", "Sunset", "linear-gradient(90deg,#ff9a5c,#ff6b78,#c3a6ff)"},
+	{"color-ocean", "color", "epic", "Ocean", "linear-gradient(90deg,#5ee0d8,#4f8fff)"},
+	{"color-glow", "color", "legendary", "Odyle glow", "linear-gradient(90deg,#b5f2cd,#f3c94a,#5ee0b0)"},
+	{"color-prism", "color", "legendary", "Prism", "linear-gradient(90deg,#ff6b78,#f3c94a,#b8f25e,#5ee0d8,#c3a6ff)"},
 	{"frame-moss", "frame", "common", "Moss", "moss"},
 	{"frame-stone", "frame", "common", "Stone", "stone"},
 	{"frame-silver", "frame", "rare", "Silver", "silver"},
@@ -44,6 +53,12 @@ var cosmetics = []cosmetic{
 	{"frame-golden", "frame", "epic", "Golden", "golden"},
 	{"frame-ember", "frame", "epic", "Ember", "ember"},
 	{"frame-starfire", "frame", "legendary", "Starfire", "starfire"},
+	{"frame-bark", "frame", "common", "Bark", "bark"},
+	{"frame-frost", "frame", "rare", "Frost", "frost"},
+	{"frame-blossom", "frame", "rare", "Blossom", "blossom"},
+	{"frame-jade", "frame", "epic", "Jade", "jade"},
+	{"frame-void", "frame", "epic", "Void", "void"},
+	{"frame-eclipse", "frame", "legendary", "Eclipse", "eclipse"},
 	{"badge-sprout", "badge", "common", "Sprout", "🌿"},
 	{"badge-dice", "badge", "common", "Dice", "🎲"},
 	{"badge-clover", "badge", "common", "Clover", "🍀"},
@@ -54,6 +69,17 @@ var cosmetics = []cosmetic{
 	{"badge-flame", "badge", "epic", "Flame", "🔥"},
 	{"badge-crown", "badge", "legendary", "Crown", "👑"},
 	{"badge-gem", "badge", "legendary", "Odyle gem", "💎"},
+	{"badge-mushroom", "badge", "common", "Mushroom", "🍄"},
+	{"badge-paw", "badge", "common", "Paw", "🐾"},
+	{"badge-tea", "badge", "common", "Tea", "☕"},
+	{"badge-bow", "badge", "rare", "Bow", "🏹"},
+	{"badge-potion", "badge", "rare", "Potion", "🧪"},
+	{"badge-owl", "badge", "rare", "Owl", "🦉"},
+	{"badge-lightning", "badge", "epic", "Lightning", "⚡"},
+	{"badge-skull", "badge", "epic", "Skull", "💀"},
+	{"badge-unicorn", "badge", "epic", "Unicorn", "🦄"},
+	{"badge-comet", "badge", "legendary", "Comet", "☄️"},
+	{"badge-trophy", "badge", "legendary", "Trophy", "🏆"},
 }
 
 // slotWinChance is the chance a spin wins anything, in hundredths; slotOdds split the wins by
@@ -83,6 +109,25 @@ type wardrobe struct {
 	Equipped map[string]string `json:"equipped"`
 	Shards   int64             `json:"shards"`
 	Started  bool              `json:"started"`
+	// The daily period of the free spins and how many of them are left in it. They are kept apart
+	// from users.spins (earned spins, which carry over) and spent first.
+	Day   string `json:"day"`
+	Daily int64  `json:"daily"`
+}
+
+// refill gives the free spins of a new daily period, and takes back any above a lowered allowance.
+// It answers whether the wardrobe changed.
+func (w *wardrobe) refill(app core.App, at time.Time) bool {
+	rules := readSettings(app)
+	if day := spinDay(at, rules.DailyResetHour); w.Day != day {
+		w.Day, w.Daily = day, rules.Slots.DailySpins
+		return true
+	}
+	if w.Daily > rules.Slots.DailySpins {
+		w.Daily = rules.Slots.DailySpins
+		return true
+	}
+	return false
 }
 
 func wardrobeOf(user *core.Record) wardrobe {
@@ -136,12 +181,13 @@ func spinDay(at time.Time, resetHour int64) string {
 	return start.Format("2006-01-02")
 }
 
-// grantDailySpin gives the character's account a spin for the first accepted reading of the
-// character in a daily period. Single-field updates: the day is claimed first, so a character
-// earns one spin a day however many readings come.
+// grantDailySpin gives the character's account its spins (slotRules.PerCharacter) for the first
+// accepted reading of the character in a daily period. Single-field updates: the day is claimed
+// first, so a character earns them once a day however many readings come.
 func grantDailySpin(app core.App, c *Character, at time.Time) error {
-	day := spinDay(at, readSettings(app).DailyResetHour)
-	if c.GetString("spinDay") == day {
+	rules := readSettings(app)
+	day := spinDay(at, rules.DailyResetHour)
+	if rules.Slots.PerCharacter < 1 || c.GetString("spinDay") == day {
 		return nil
 	}
 	claimed, err := app.DB().NewQuery("UPDATE characters SET spinDay = {:day} WHERE id = {:id} AND spinDay != {:day}").Bind(dbx.Params{"day": day, "id": c.Id}).Execute()
@@ -151,12 +197,15 @@ func grantDailySpin(app core.App, c *Character, at time.Time) error {
 	if rows, _ := claimed.RowsAffected(); rows == 0 {
 		return nil
 	}
-	_, err = app.DB().NewQuery("UPDATE users SET spins = spins + 1 WHERE id = {:user}").Bind(dbx.Params{"user": c.User()}).Execute()
+	_, err = app.DB().NewQuery("UPDATE users SET spins = spins + {:spins} WHERE id = {:user}").Bind(dbx.Params{"spins": rules.Slots.PerCharacter, "user": c.User()}).Execute()
 	return err
 }
 
-func slotAnswer(user *core.Record, w wardrobe, extra map[string]any) map[string]any {
-	out := map[string]any{"spins": user.GetInt("spins"), "shards": w.Shards, "shardsForSpin": shardsForSpin, "winChance": slotWinChance, "owned": w.Owned, "equipped": w.Equipped, "catalog": cosmetics}
+// slotAnswer counts every spin the account can use in `spins`: the free ones left today (`daily`,
+// of `dailySpins`) and the earned ones.
+func slotAnswer(app core.App, user *core.Record, w wardrobe, extra map[string]any) map[string]any {
+	rules := readSettings(app).Slots
+	out := map[string]any{"spins": int64(user.GetInt("spins")) + w.Daily, "daily": w.Daily, "dailySpins": rules.DailySpins, "perCharacter": rules.PerCharacter, "shards": w.Shards, "shardsForSpin": shardsForSpin, "winChance": slotWinChance, "owned": w.Owned, "equipped": w.Equipped, "catalog": cosmetics}
 	for k, v := range extra {
 		out[k] = v
 	}
@@ -170,7 +219,7 @@ func fresh(app core.App, user *core.Record) (*core.Record, error) {
 }
 
 // POST /api/odyle/slots: the account's spins, shards and collection with the catalog; the first
-// visit gives the welcome spins.
+// visit gives the welcome spins, the first of a daily period the free spins.
 func slots(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, _ body, _ *[]string) (any, error) {
 		user, err := fresh(app, user)
@@ -178,15 +227,18 @@ func slots(e *core.RequestEvent) error {
 			return nil, err
 		}
 		w := wardrobeOf(user)
+		changed := w.refill(app, time.Now())
 		if !w.Started {
-			w.Started = true
-			user.Set("cosmetics", w)
+			w.Started, changed = true, true
 			user.Set("spins", user.GetInt("spins")+welcomeSpins)
+		}
+		if changed {
+			user.Set("cosmetics", w)
 			if err := app.Save(user); err != nil {
 				return nil, err
 			}
 		}
-		return slotAnswer(user, w, nil), nil
+		return slotAnswer(app, user, w, nil), nil
 	})
 }
 
@@ -199,25 +251,32 @@ func roll(limit int64) int64 {
 }
 
 // POST /api/odyle/slot-spin: one spin, rolled here: a rarity by slotOdds, then one of its items.
+// A free spin of the day goes first, then an earned one.
 func slotSpin(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, _ body, _ *[]string) (any, error) {
 		user, err := fresh(app, user)
 		if err != nil {
 			return nil, err
 		}
-		if user.GetInt("spins") < 1 {
-			return nil, badRequest("No spins left. Every character the reader reads earns one a day.")
-		}
 		w := wardrobeOf(user)
+		w.refill(app, time.Now())
+		spins := user.GetInt("spins")
+		if w.Daily > 0 {
+			w.Daily--
+		} else if spins > 0 {
+			spins--
+		} else {
+			return nil, badRequest("No spins left. New ones come with the daily reset.")
+		}
+		w.Started = true
 		// Most spins win nothing (#107, the owner: a small chance to win).
 		if roll(100) >= slotWinChance {
-			w.Started = true
-			user.Set("spins", user.GetInt("spins")-1)
+			user.Set("spins", spins)
 			user.Set("cosmetics", w)
 			if err := app.Save(user); err != nil {
 				return nil, err
 			}
-			return slotAnswer(user, w, map[string]any{"won": nil, "duplicate": false, "lost": true}), nil
+			return slotAnswer(app, user, w, map[string]any{"won": nil, "duplicate": false, "lost": true}), nil
 		}
 		pick, rarity := roll(100), "common"
 		for _, o := range slotOdds {
@@ -234,7 +293,7 @@ func slotSpin(e *core.RequestEvent) error {
 			}
 		}
 		won := pool[roll(int64(len(pool)))]
-		spins, duplicate := user.GetInt("spins")-1, contains(w.Owned, won.Id)
+		duplicate := contains(w.Owned, won.Id)
 		if duplicate {
 			w.Shards++
 			if w.Shards >= shardsForSpin {
@@ -244,13 +303,12 @@ func slotSpin(e *core.RequestEvent) error {
 		} else {
 			w.Owned = append(w.Owned, won.Id)
 		}
-		w.Started = true
 		user.Set("spins", spins)
 		user.Set("cosmetics", w)
 		if err := app.Save(user); err != nil {
 			return nil, err
 		}
-		return slotAnswer(user, w, map[string]any{"won": won, "duplicate": duplicate, "lost": false}), nil
+		return slotAnswer(app, user, w, map[string]any{"won": won, "duplicate": duplicate, "lost": false}), nil
 	})
 }
 
@@ -266,6 +324,7 @@ func slotEquip(e *core.RequestEvent) error {
 			return nil, badRequest("Choose a colour, a frame or a badge.")
 		}
 		w := wardrobeOf(user)
+		w.refill(app, time.Now())
 		if id == "" {
 			delete(w.Equipped, kind)
 		} else if c, ok := cosmeticById(id); !ok || c.Kind != kind || !contains(w.Owned, id) {
@@ -283,6 +342,6 @@ func slotEquip(e *core.RequestEvent) error {
 			return nil, err
 		}
 		*affected = append(*affected, rooms...)
-		return slotAnswer(user, w, nil), nil
+		return slotAnswer(app, user, w, nil), nil
 	})
 }

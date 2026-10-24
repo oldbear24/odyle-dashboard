@@ -1357,11 +1357,12 @@ test('the logo clicked seven times opens the slot machine, whose spins win cosme
     for (let i = 0; i < 7; i++) await logo.click();
     await page.waitForURL(/#\/slots$/);
     await page.locator('.slot-machine').waitFor();
-    assert.match(await page.locator('.slot-spins').innerText(), /3 spins left/);
+    // Three welcome spins and three free ones of the day.
+    assert.match(await page.locator('.slot-spins').innerText(), /6 spins left \(3 free today\)/);
     await page.locator('[data-action="slot-spin"]').click();
     // Most spins win nothing; a win can be worn.
     await page.locator('.slot-result').filter({ hasText: /You won|already yours|No win this time/ }).waitFor();
-    assert.match(await page.locator('.slot-spins').innerText(), /2 spins left/);
+    assert.match(await page.locator('.slot-spins').innerText(), /5 spins left \(2 free today\)/);
     if (await page.locator('[data-slot-equip]:not([data-slot-equip=""])').count()) {
       await page.locator('[data-slot-equip]:not([data-slot-equip=""])').first().click();
       await page.locator('.slot-item.worn').waitFor();

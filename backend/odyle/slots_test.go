@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The slot machine (#107): welcome spins once, a spin a day per character read, spins that win
+// The slot machine (#107): welcome spins once, free spins every day, a spin a day per character read, spins that win
 // items (a duplicate gives a shard), equipping only what the account owns, and rooms seeing it.
 func TestTheSlotMachineEarnsSpinsAndWinsCosmetics(t *testing.T) {
 	app := newTestApp(t)
@@ -18,11 +18,12 @@ func TestTheSlotMachineEarnsSpinsAndWinsCosmetics(t *testing.T) {
 		t.Helper()
 		return ask(t, app, http.MethodPost, "/api/odyle/"+action, auth, body, status)
 	}
-	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins) || len(got["catalog"].([]any)) != len(cosmetics) {
-		t.Fatalf("first visit: %v", got["spins"])
+	daily := defaultSlots().DailySpins
+	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins+daily) || got["daily"] != float64(daily) || len(got["catalog"].([]any)) != len(cosmetics) {
+		t.Fatalf("first visit: %v (%v free)", got["spins"], got["daily"])
 	}
-	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins) {
-		t.Fatalf("welcome spins twice: %v", got["spins"])
+	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins+daily) {
+		t.Fatalf("welcome or free spins twice: %v", got["spins"])
 	}
 	// A character read earns one spin a day, however many readings come; another character one more.
 	at := time.Now()
@@ -38,11 +39,14 @@ func TestTheSlotMachineEarnsSpinsAndWinsCosmetics(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins+2) {
+	if got := post("slots", `{}`, 200); got["spins"] != float64(welcomeSpins+daily+2) {
 		t.Fatalf("two characters read today: %v", got["spins"])
 	}
-	// Spending every spin: most win nothing, a win is an item or a shard; none is left after.
-	for i := 0; i < welcomeSpins+2; i++ {
+	// Spending every spin: the free ones first; most win nothing, a win is an item or a shard; none is left after.
+	if got := post("slot-spin", `{}`, 200); got["daily"] != float64(daily-1) {
+		t.Fatalf("a spin did not take a free one first: %v", got["daily"])
+	}
+	for i := 1; i < int(welcomeSpins+daily)+2; i++ {
 		got := post("slot-spin", `{}`, 200)
 		if got["lost"] == true {
 			if got["won"] != nil {
@@ -97,5 +101,61 @@ func TestSpinDaysFollowTheDailyReset(t *testing.T) {
 		if got := spinDay(at(c.at), 7); got != c.want {
 			t.Errorf("spinDay(%s) = %s, want %s", c.at, got, c.want)
 		}
+	}
+}
+
+// The daily free spins (#107) follow the game settings: they come once a daily period, unused ones
+// lapse at the next, a lowered allowance takes effect at once, and the spins per character read
+// can be turned off.
+func TestFreeSpinsFollowTheSettings(t *testing.T) {
+	app := newTestApp(t)
+	player := newUser(t, app, "Daily")
+	auth := tokenOf(t, player)
+	spins := func() (float64, float64) {
+		t.Helper()
+		got := ask(t, app, http.MethodPost, "/api/odyle/slots", auth, `{}`, 200)
+		return got["spins"].(float64), got["daily"].(float64)
+	}
+	if _, err := writeSettings(app, body{"slots": map[string]any{"dailySpins": float64(5), "perCharacter": float64(0)}}); err != nil {
+		t.Fatal(err)
+	}
+	if all, free := spins(); all != float64(welcomeSpins+5) || free != 5 {
+		t.Fatalf("five free spins: %v (%v free)", all, free)
+	}
+	// Yesterday's unused free spins lapse: a new period gives the allowance again, never more.
+	u, err := app.FindRecordById("users", player.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := wardrobeOf(u)
+	w.Day, w.Daily = "2000-01-01", 1
+	u.Set("cosmetics", w)
+	if err := app.Save(u); err != nil {
+		t.Fatal(err)
+	}
+	if all, free := spins(); all != float64(welcomeSpins+5) || free != 5 {
+		t.Fatalf("a new day: %v (%v free)", all, free)
+	}
+	if _, err := writeSettings(app, body{"slots": map[string]any{"dailySpins": float64(2), "perCharacter": float64(0)}}); err != nil {
+		t.Fatal(err)
+	}
+	if all, free := spins(); all != float64(welcomeSpins+2) || free != 2 {
+		t.Fatalf("a lowered allowance: %v (%v free)", all, free)
+	}
+	// No spins per character read.
+	c := viewOf[Character](saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Reader", "server": "EU", "region": "GLOBAL_EU", "value": 100, "confirmed": true}))
+	if err := grantDailySpin(app, c, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := spins(); all != float64(welcomeSpins+2) {
+		t.Fatalf("a character read earned a spin turned off: %v", all)
+	}
+	for _, wrong := range []map[string]any{{"dailySpins": float64(21), "perCharacter": float64(1)}, {"dailySpins": float64(3)}, {"dailySpins": float64(-1), "perCharacter": float64(1)}} {
+		if _, err := writeSettings(app, body{"slots": wrong}); err == nil {
+			t.Fatalf("slot rules %v saved", wrong)
+		}
+	}
+	if got := readSettings(app).Slots; got.DailySpins != 2 || got.PerCharacter != 0 {
+		t.Fatalf("slot rules: %+v", got)
 	}
 }
