@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.42.1 · 2026-10-24
+
+### Fixed
+- A main character now shows the **avatar frame** won on the slot machine. The gold ring around the portrait used to cover it and is gone; the gold card edge and the **Main** label still mark the main character.
+
 ## 0.42.0 · 2026-10-24
 
 ### New
