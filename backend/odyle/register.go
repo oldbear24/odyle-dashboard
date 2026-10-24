@@ -30,6 +30,7 @@ var accountActions = []action{
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
 	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed}, {"room-features", roomFeaturesSetting},
+	{"location", location}, {"location-sharing", locationSharing},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
@@ -121,6 +122,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
 	se.Router.GET("/api/odyle/snapshot/{id}", timed("snapshot", snapshot)).Bind(signedIn)
 	se.Router.GET("/api/odyle/history/{id}", timed("history", history)).Bind(signedIn)
+	se.Router.GET("/api/odyle/locations/{id}", timed("locations", locations)).Bind(signedIn)
 	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
 	// The private calendar feed (#35): its token is in the address, so a request that succeeds is
@@ -158,7 +160,7 @@ func routes(se *core.ServeEvent) {
 // The cookie that marks browsers which dropped their cache of the superuser dashboard.
 var entryCookie = regexp.MustCompile(`(?:^|;\s*)odyle_entry=1(?:;|$)`)
 
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self'; frame-src https://aion2.th.gl; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 // hardening adds browser hardening to the dashboard pages and files it serves. API and
 // admin responses are left alone: the OAuth redirect page and the PocketBase UI need

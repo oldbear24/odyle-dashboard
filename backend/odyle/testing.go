@@ -19,6 +19,8 @@ import (
 
 var verifiedAdapters = []string{"test-fixture-v1"}
 
+var verifiedLocationAdapters = []string{"test-location-v1"}
+
 // The armory asks the PLAYNC stand-in of the tests without its pauses between lookups.
 func init() {
 	testFixtures = fixtures
@@ -269,6 +271,26 @@ func fixtures(se *core.ServeEvent) {
 		}
 		_, err := e.App.DB().NewQuery(update).Bind(dbx.Params{"at": ago(time.Duration(count(b["days"])) * 24 * time.Hour), "id": b.str("id")}).Execute()
 		return map[string]any{}, err
+	})
+	// Moves a character's places back by the given minutes: its latest place and its history.
+	fixture(se, "age-places", func(e *core.RequestEvent, b body) (any, error) {
+		c, err := e.App.FindRecordById("characters", b.str("id"))
+		if err != nil {
+			return nil, err
+		}
+		shift := "-" + strconv.Itoa(count(b["minutes"])) + " minutes"
+		if _, err := e.App.DB().NewQuery("UPDATE character_locations SET created = strftime('%Y-%m-%d %H:%M:%fZ', created, {:shift}) WHERE character = {:id}").Bind(dbx.Params{"shift": shift, "id": c.Id}).Execute(); err != nil {
+			return nil, err
+		}
+		if p, ok := parseJSON(c.GetString("location"), "null").(map[string]any); ok {
+			if raw, _ := p["at"].(string); raw != "" {
+				at, _ := parseDate(raw)
+				p["at"] = stamp(at.Add(-time.Duration(count(b["minutes"])) * time.Minute))
+				c.Set("location", p)
+				return map[string]any{}, e.App.Save(c)
+			}
+		}
+		return map[string]any{}, nil
 	})
 	fixture(se, "readings", func(e *core.RequestEvent, b body) (any, error) {
 		readings, err := e.App.FindRecordsByFilter("character_readings", "character = {:id}", "created", 0, 0, dbx.Params{"id": b.str("id")})

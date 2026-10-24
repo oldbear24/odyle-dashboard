@@ -166,6 +166,8 @@ type settings struct {
 	ClassRoles []classRole `json:"classRoles"`
 	// How the slot machine (#107) hands out spins.
 	Slots slotRules `json:"slots"`
+	// The game's map ids as superusers name them, each linked to a TH.GL map (location.go).
+	Maps []gameMap `json:"maps"`
 }
 
 // slotRules are the slot machine's spins: free spins every account has each daily period (unused
@@ -230,7 +232,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots()}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -364,6 +366,11 @@ func loadSettings(app core.App) settings {
 	out.Slots = defaultSlots()
 	if slots, err := checkSlots(parseJSON(s.GetString("slots"), "null")); err == nil {
 		out.Slots = slots
+	}
+	// Saved maps that no longer check out are none.
+	out.Maps = []gameMap{}
+	if maps, err := checkMaps(parseJSON(s.GetString("maps"), "[]")); err == nil {
+		out.Maps = maps
 	}
 	return out
 }
@@ -532,12 +539,13 @@ func adapterSettings(value any) (adapterLists, error) {
 	}
 	lists := adapterLists{Extra: []string{}, Disabled: []string{}}
 	for _, name := range extraNames {
-		if !contains(verifiedAdapters, name) {
+		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) {
 			lists.Extra = append(lists.Extra, name)
 		}
 	}
+	// The location adapters (location.go) are switched off here too, never accepted as reading ones.
 	for _, name := range disabledNames {
-		if contains(verifiedAdapters, name) {
+		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) {
 			lists.Disabled = append(lists.Disabled, name)
 		}
 	}
@@ -675,6 +683,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
+	if b.has("maps") {
+		if next.Maps, err = checkMaps(b["maps"]); err != nil {
+			return settings{}, err
+		}
+	}
 	record.Set("odylePerCube", next.OdylePerCube)
 	record.Set("dailyResetHour", next.DailyResetHour)
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
@@ -694,6 +707,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("windowsBlocked", next.WindowsBlocked)
 	record.Set("classRoles", next.ClassRoles)
 	record.Set("slots", next.Slots)
+	record.Set("maps", next.Maps)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}

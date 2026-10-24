@@ -20,3 +20,9 @@ package odyle
 // parser pinned to Odyle's resource id 60000001, so records without a bonus or base
 // part are read and other counters are never taken for Odyle.
 var verifiedAdapters = []string{"global-reference-v1", "global-reference-v2"}
+
+// The location adapters (location.go), listed and switched off the same way.
+//
+// global-location-v1: map loads (21 36), arrivals (23 36) and the own character's effect events
+// (2A 38) of the Global stream, read only for the own character.
+var verifiedLocationAdapters = []string{"global-location-v1"}

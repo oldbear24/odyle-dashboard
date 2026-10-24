@@ -752,6 +752,61 @@ test('the membership answer settles the clock\'s cap, a reading that contradicts
   } finally { await close(); }
 });
 
+test('location sharing is off until turned on, rooms see where a character was, and its map centres TH.GL on it', async () => {
+  const operator = (await request('/__test__/superuser', {})).data, me = await account('Wanderer'), friend = await account('Friend');
+  assert.equal((await request('/api/odyle/admin/settings', { maps: [{ id: 1110, name: 'Altgard', thgl: 'Altgard' }] }, operator)).status, 200);
+  const roomId = (await request('/api/odyle/create', { name: 'Map room' }, me)).data.room.id;
+  assert.equal((await request('/__test__/member', { room: roomId, user: friend.record.id, role: 'reporter' })).status, 200);
+  const session = (await request('/api/odyle/session', {}, me)).data;
+  assert.equal(session.shareLocation, false);
+  const c = (await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Scout', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, value: 120 }, me)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, me);
+  const place = { sessionId: session.sessionId, characterId: c.id, adapter: 'test-location-v1', map: 1110, x: -83475.7, y: -33883.7, z: 19698, heading: 113.4, source: 'load' };
+  assert.equal((await request('/api/odyle/location', place, me)).data.shared, false, 'nothing is kept before the player turns it on');
+  const { page, errors, close } = await open(me, '#/account');
+  // TH.GL's map is not fetched in tests: a blank page stands in for the embed.
+  await page.context().route('https://aion2.th.gl/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>TH.GL</title>' }));
+  try {
+    const form = page.locator('#location-form');
+    assert.equal(await form.locator('input[name="shareLocation"]').isChecked(), false, 'off by default');
+    await form.locator('input[name="shareLocation"]').check();
+    await form.locator('[type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: your rooms see where your characters were last seen.' }).waitFor();
+    await shot(page, 'account-location');
+    assert.equal((await request('/api/odyle/location', place, me)).data.shared, true);
+    // The library row says where and how long ago; it opens the map.
+    await navigate(page, 'library');
+    const row = page.locator('.member-card', { hasText: 'Scout' }).locator('.place-line');
+    await row.filter({ hasText: 'Altgard' }).waitFor();
+    await row.click();
+    await page.locator('#modal .place-now', { hasText: 'Altgard · loading screen' }).waitFor();
+    const src = await page.locator('#modal .place-frame iframe').getAttribute('src');
+    assert.equal(src, 'https://aion2.th.gl/embed/maps/Altgard?center=-33884,-83476&zoom=3&types=kibelisk,dungeon_kibelisk');
+    assert.equal(await page.locator('#modal .place-pin').count(), 1);
+    await shot(page, 'location-dialog');
+    await page.locator('#modal [data-action="close-dialog"]').click();
+    // A room member sees it too, and a place on a map without a name shows its id.
+    const other = await open(friend, '#/room/' + roomId);
+    try {
+      await other.page.locator('.member-card', { hasText: 'Scout' }).locator('.place-line', { hasText: 'Altgard' }).waitFor();
+      assert.equal((await request('/api/odyle/location', { ...place, map: 600001, source: 'flight', heading: null }, me)).data.shared, true);
+      await other.page.locator('.member-card', { hasText: 'Scout' }).locator('.place-line', { hasText: 'Map 600001' }).waitFor();
+      await shot(other.page, 'room-location');
+      assert.deepEqual(other.errors, []);
+    } finally { await other.close(); }
+    // Turned off, the places go.
+    await navigate(page, 'account');
+    await form.locator('input[name="shareLocation"]').uncheck();
+    await form.locator('[type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: location sharing is off, and the saved places are deleted.' }).waitFor();
+    assert.deepEqual((await request('/api/odyle/locations/' + c.id, undefined, friend, 'GET')).data.locations, []);
+    await navigate(page, 'library');
+    await page.locator('.member-card', { hasText: 'Scout' }).waitFor();
+    assert.equal(await page.locator('.member-card', { hasText: 'Scout' }).locator('.place-line').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('after an update the dashboard says so once, and What\'s new lists the changes', async () => {
   const { page, errors, close } = await open(null, '#/');
   try {

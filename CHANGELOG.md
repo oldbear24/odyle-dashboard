@@ -2,6 +2,14 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.43.0 · 2026-10-24
+
+### New
+- **Location sharing**, off until you turn it on: under **Account & data → Location sharing**, **Share my location with my rooms** lets the rooms your characters are shared in see where each was last seen. The Windows app (from 0.28.0) reads the place from the game at each loading screen, while gliding or flying and with some skills; a plain walk sends nothing, so a place always shows how long ago it was.
+- Character rows show the map and its age (📍 Altgard · 4m ago). Click it for the place on **TH.GL's AION 2 map**, centred on the character with a pin, and the character's places of the last 30 days. An open map follows the character's newer places until you move it.
+- Places are kept for 30 days. Turning sharing off deletes them at once, and **Download my data** includes them.
+- For superusers: **Game settings → Maps** names the game's map ids and links each to its TH.GL map; ids players visited without a name are listed to add. **Server controls** can switch the location adapter off.
+
 ## 0.42.1 · 2026-10-24
 
 ### Fixed

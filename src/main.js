@@ -11,6 +11,7 @@ import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
 import { historyChart, historyList, bindHistoryChart, weeklyLedger, ledgerTable } from './history.js';
+import { placeButton, locationBody } from './places.js';
 import { setupTracker } from './setup.js';
 import { slotsView, lookName, frameClass } from './slots.js';
 import { playSpin, playWin, playLose } from './sounds.js';
@@ -69,6 +70,8 @@ let remindersPaused = false;
 let maintenance = null;
 // Each class's role in a party from the snapshot (#45), for the make-up of planned runs.
 let classRoles = [];
+// The game's maps as superusers named them (location sharing, places.js).
+let gameMaps = [];
 // The party's week (#42): what the characters shared in the room spent since the weekly reset.
 let roomWeek = null;
 // The room's information board (board.js): its text, who wrote it last and when, or null.
@@ -117,7 +120,7 @@ function roomSwitch() {
 }
 function renderRoomSwitch() { document.querySelectorAll('.room-switch').forEach(el => { if (!el.open) el.outerHTML = roomSwitch(); }); }
 let roomsKnown = false;
-async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; roomsKnown = true; renderRoomSwitch(); }
+async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; roomsKnown = true; renderRoomSwitch(); }
 // The account menu behind the avatar: the account page, pairing, invites, help, what's new and
 // signing out. Signed out (or in the demo) the same place offers help and the way back.
 function accountMenu() {
@@ -584,12 +587,14 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
   // The player's name, look (#107) and crown head their group (playerGroups).
   const where = [c.server, regionLabel(c.region)].filter(Boolean).join(' ');
   const meta = [classOf(c), where].filter(Boolean).map(esc).join(' · '), clock = known && clockOf(c, now, clockRules);
+  // Where the character was last seen, when its player shares it (places.js).
+  const place = demo ? '' : placeButton(c, gameMaps, now);
   const counts = counted?.has(c.id) ? `<span class="counts-for" title="${esc(t('Counts for {name}', { name: c.displayName }))}">${icon('diamond')}${t('counts')}</span>` : '';
   const changed = `${source ? `${source} · ` : ''}${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}`;
   // Orange two days before the natural pool is full, red once it is or within the hour.
   const level = capLevel(clock, now), flag = level === 'soon' ? [t('Nearly full'), t('Its natural pool is full within two days: spend Odyle before regeneration is lost.')]
     : level ? [!clock.full ? t('Full within the hour') : clock.settled ? t('Full') : t('Full at {cap}?', { cap: clock.cap.toLocaleString(locale()) }), t('Its natural pool is full, or will be within the hour: each tick after that is lost.')] : null;
-  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''} ${c.main ? 'is-main' : ''} ${level ? `cap-${level}` : ''}"><div class="row-id">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.main ? `<span class="main-label" title="${esc(t('Main character of {name}', { name: c.displayName }))}">${icon('star')}<span class="main-word">${t('Main')}</span></span>` : ''}</div><div class="member-meta"${classOf(c) ? ` title="${esc(t('Class and level from PLAYNC, checked daily'))}"` : ''}>${meta}</div></div></div>`
+  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''} ${c.main ? 'is-main' : ''} ${level ? `cap-${level}` : ''}"><div class="row-id">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.main ? `<span class="main-label" title="${esc(t('Main character of {name}', { name: c.displayName }))}">${icon('star')}<span class="main-word">${t('Main')}</span></span>` : ''}</div><div class="member-meta"${classOf(c) ? ` title="${esc(t('Class and level from PLAYNC, checked daily'))}"` : ''}>${meta}</div>${place}</div></div>`
     + `<div class="row-state"><span class="status ${state}"><i></i>${labels[state]}</span>${c.characterName && !fresh ? `<span class="status-why">${esc(statusReason(c, now))}</span>` : ''}</div>`
     + `<div class="row-energy"><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}<div class="row-changed">${locked ? t('No Odyle yet · it unlocks at level 22') : changed}</div></div>`
     + `<div class="row-clock">${flag ? `<span class="cap-flag" title="${esc(flag[1])}">${icon('alert')}${esc(flag[0])}</span>` : ''}${clock ? `<div class="energy-clock">${esc(clockLine(clock, now, fresh))}</div>` : ''}${self && capMismatch(c) ? `<div class="energy-clock cap-mismatch">${esc(t('Its natural pool held {max}, more than {cap}: has the membership started? Account & data → Membership.', { max: c.naturalMax.toLocaleString(locale()), cap: c.answeredCap.toLocaleString(locale()) }))}</div>` : ''}</div>`
@@ -690,6 +695,37 @@ async function historyDialog(id, name) {
   modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${ledgerTable(weeklyLedger(data.readings, { now, cost, resets, clock: data.clock || clockRules, character: data.character }), { hourlyBefore: data.hourlyBefore })}${data.readings.length ? `<div class="history-rows">${historyList(data.readings, 12, data.hourlyBefore)}</div>` : ''}`, true);
   shownHistory = data;
   bindHistoryChart(document.querySelector('#modal .history-chart'));
+}
+// Where a character was last seen and its places of the 30 days (places.js), on TH.GL's map.
+// The open dialog follows the character: a newer place recentres the map, at most every 20
+// seconds and only while the pin shows, so a map the viewer moved stays where they put it.
+let placeView = null;
+async function locationDialog(id, name) {
+  const data = await pb.send('/api/odyle/locations/' + id);
+  if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
+  gameMaps = data.maps || gameMaps;
+  const own = characters.some(c => c.id === id);
+  placeView = { id, name, own, data, picked: 0, all: false, shownAt: 0 };
+  modal(esc(t('{name} · Location', { name })), `<div class="place-dialog">${placeBody()}</div>`, true);
+  placeView.shownAt = Date.now();
+}
+const placeBody = () => locationBody({ data: placeView.data, maps: gameMaps, name: placeView.name, own: placeView.own, now: Date.now() + serverOffset, picked: placeView.picked, all: placeView.all });
+function renderPlace() {
+  const el = document.querySelector('#modal .place-dialog');
+  if (!el || !placeView) return;
+  el.innerHTML = placeBody(); placeView.shownAt = Date.now();
+}
+// Clicking into the embedded map moves focus out of the page: the pin no longer marks the place.
+window.addEventListener('blur', () => setTimeout(() => {
+  const frame = document.activeElement;
+  if (!frame?.matches?.('#modal .place-frame iframe')) return;
+  frame.parentElement.classList.add('is-moved'); frame.parentElement.querySelector('[data-place-back]')?.removeAttribute('hidden');
+}));
+function followPlace(changed) {
+  const c = placeView && changed.find(x => x.id === placeView.id && x.location?.at);
+  if (!c || !document.querySelector('#modal .place-dialog') || c.location.at === placeView.data.location?.at) return;
+  placeView.data = { ...placeView.data, location: c.location };
+  if (placeView.picked === 0 && !document.querySelector('#modal .place-frame.is-moved') && Date.now() - placeView.shownAt > 20000) renderPlace();
 }
 // The pairing dialog (Pair Windows app, Connect reader; pairing.js). It shows this
 // browser's unused connection link again, or asks for one, with a countdown to its
@@ -796,7 +832,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; classRoles = snapshot.classRoles || []; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; classRoles = snapshot.classRoles || []; gameMaps = snapshot.maps || gameMaps; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -818,7 +854,7 @@ async function library(ticket) {
   const [list, mine, ahead] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), pb.send('/api/odyle/upcoming?days=14', { requestKey: 'next-runs' }).catch(() => null), loadWindowsRelease()]);
   if (ticket !== navigation) return;
   nextRunsList = ahead?.runs || [];
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -840,6 +876,7 @@ async function openRoom(id, ticket) {
 async function roomNews(id, data) {
   if (room?.id !== id) return;
   if (data?.removed) return leftRoom(id);
+  if (Array.isArray(data?.characters)) followPlace(data.characters);
   if (Array.isArray(data?.characters) && applyRoomCharacters(members, data.characters)) { characters = me()?.characters || characters; return renderPage(); }
   if (later()) return;
   try { await refreshRoom(); }
@@ -893,6 +930,7 @@ async function ownNews(data) {
     const known = new Set(characters.map(c => c.id)), offer = async () => { if (library && known.size + rooms.length) for (const c of characters.filter(c => !known.has(c.id) && c.characterName)) await newCharacterPrompt(c); };
     if (data.refresh) { if (shown !== '/tasks') primeTasks(); if (!room && !later()) { await refreshPage(); await offer(); } }
     else if (Array.isArray(data.characters) && !applyCharacters(characters, data.characters) && library && !later()) { await refreshPage(); await offer(); }
+    if (Array.isArray(data.characters)) followPlace(data.characters);
     if (data.seen) applySeen(data.seen, characters);
     // Cap alerts of the account's characters (the job checked the quiet hours).
     if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
@@ -919,7 +957,7 @@ async function refreshPage() {
   else if (shown?.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
@@ -1172,6 +1210,11 @@ app.addEventListener('submit', async e => {
       const result = await send('notifications', { channels: { tray: Boolean(data.tray), browser: Boolean(data.browser), push: Boolean(data.push), discord: Boolean(data.discord) }, leadMinutes: leads, kinds: { ...(account.notifications || defaultNotifications).kinds, runs: Boolean(data.runs), cap: Boolean(data.cap), tasks: Boolean(data.tasks), ready: Boolean(data.ready) }, capTicks: Number(data.capTicks ?? 1), quiet: { from: data.quietFrom || '', to: data.quietTo || '', timeZone: data.quietFrom || data.quietTo ? data.timeZone : '' } });
       account.notifications = result.notifications; upcomingAt = 0; accountRender(); toast(t('Notifications saved.'));
     }
+    else if (form.id === 'location-form') {
+      const result = await send('location-sharing', { enabled: data.shareLocation === 'on' });
+      account.shareLocation = result.shareLocation; accountRender();
+      toast(result.shareLocation ? t('Saved: your rooms see where your characters were last seen.') : t('Saved: location sharing is off, and the saved places are deleted.'));
+    }
     else if (form.id === 'membership-form') {
       const result = await send('membership', { membership: data.membership || '' });
       account.membership = result.membership; accountRender();
@@ -1198,6 +1241,10 @@ app.addEventListener('click', async e => {
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
+    if (el.dataset.location) return await locationDialog(el.dataset.location, el.dataset.name);
+    if (el.dataset.place && placeView) { placeView.picked = Number(el.dataset.place); return renderPlace(); }
+    if (el.matches('[data-place-all]') && placeView) { placeView.all = true; return renderPlace(); }
+    if (el.matches('[data-place-back]') && placeView) return renderPlace();
     if (el.matches('[data-history-all]')) { const rows = document.querySelector('#modal .history-rows'); if (rows && shownHistory) rows.innerHTML = historyList(shownHistory.readings, Infinity, shownHistory.hourlyBefore); return; }
     if (el.dataset.armoryUnmark) { keepBookmarks(removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
