@@ -527,7 +527,7 @@ func rooms(e *core.RequestEvent) error {
 			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(users), len(party.Players), party.Cubes, next[room.Id]
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth)})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth), "maps": rules.Maps})
 	})
 }
 
@@ -617,7 +617,7 @@ func snapshot(e *core.RequestEvent) error {
 				return err
 			}
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules), "classRoles": rules.ClassRoles})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules), "classRoles": rules.ClassRoles, "maps": rules.Maps})
 	})
 }
 
@@ -1035,7 +1035,7 @@ func session(e *core.RequestEvent) error {
 		if err := app.Save(s); err != nil {
 			return nil, err
 		}
-		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused}, nil
+		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation")}, nil
 	})
 }
 
@@ -1305,7 +1305,7 @@ func heartbeat(e *core.RequestEvent) error {
 			beat(e.App, session, read, time.Now())
 			noteReader(e.App, session.Id, b, time.Now())
 		}
-		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused})
+		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation")})
 	})
 }
 
@@ -1803,7 +1803,12 @@ func cleanup(app core.App) (result, error) {
 	if err != nil {
 		return result{}, err
 	}
-	return result{Done: done + history + runs}, nil
+	// Places shared by location sharing are kept 30 days too.
+	places, err := purge(app, "character_locations", "created < {:cutoff}", stamp(at.Add(-30*24*time.Hour)))
+	if err != nil {
+		return result{}, err
+	}
+	return result{Done: done + history + runs + places}, nil
 }
 
 // Rows purge deletes per statement, and statements per run: a backlog (after a long
@@ -2723,6 +2728,7 @@ func account(e *core.RequestEvent) error {
 			"account":       map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
 			"notifications": notificationsOf(user.Record),
 			"membership":    user.GetString("membership"),
+			"shareLocation": user.GetBool("shareLocation"),
 			"push":          pushState(e.App, user.Id),
 			"limits":        limits,
 			"usage":         map[string]any{"ownedRooms": owned, "memberships": memberships, "desktopDevices": len(devices), "characters": characters},
@@ -2799,6 +2805,9 @@ func exportData(e *core.RequestEvent) error {
 			present(app, c)
 			j := c.PublicExport()
 			j["history"] = pluck(points, (*HistoryPoint).JSON)
+			if j["locations"], err = placesOf(app, c.Id, 100000); err != nil {
+				return err
+			}
 			exportedCharacters[i] = j
 		}
 		joined := make([]any, len(memberships))
@@ -2977,25 +2986,8 @@ func history(e *core.RequestEvent) error {
 		if err != nil {
 			return notFound("This character no longer exists.")
 		}
-		if c.User() != e.Auth.Id {
-			sharedIn, err := membershipsWhere(e.App, "user = {:owner} && sharedCharacters ~ {:id}", dbx.Params{"owner": c.User(), "id": id})
-			if err != nil {
-				return err
-			}
-			allowed := false
-			for _, room := range pluck(sharedIn, (*Member).Room) {
-				member, err := list(e.App, "room_members", "room = {:room} && user = {:user}", dbx.Params{"room": room, "user": e.Auth.Id})
-				if err != nil {
-					return err
-				}
-				if len(member) > 0 {
-					allowed = true
-					break
-				}
-			}
-			if !allowed {
-				return forbidden("This character is not shared with you.")
-			}
+		if err := seenBy(e.App, c, e.Auth.Id); err != nil {
+			return err
 		}
 		readings, hourlyBefore, err := historyOf(e.App, id)
 		if err != nil {
