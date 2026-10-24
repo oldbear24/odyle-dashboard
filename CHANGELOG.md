@@ -5,7 +5,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ## 0.42.1 · 2026-10-24
 
 ### Fixed
-- A main character now shows the **avatar frame** won on the slot machine. The gold ring around the portrait used to cover it; it now only appears on mains without a frame, and the gold card edge and the **Main** label still mark the main character.
+- A main character now shows the **avatar frame** won on the slot machine. The gold ring around the portrait used to cover it and is gone; the gold card edge and the **Main** label still mark the main character.
 
 ## 0.42.0 · 2026-10-24
 
