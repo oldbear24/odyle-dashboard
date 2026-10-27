@@ -96,6 +96,22 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
   assert.match(first, /armory-spinner/);
 });
 
+test('a class shows its emblem where the server keeps one: profile, search, bookmarks', async () => {
+  const { armoryProfile, armorySearch, addBookmark, classBadge } = await import('../src/armory.js');
+  assert.equal(classBadge(images, 'class_icon_chanter.png', 'Chanter'), '<img class="class-icon" src="/api/odyle/armory-images/class_icon_chanter.png" alt="" title="Chanter" loading="lazy" decoding="async">');
+  assert.deepEqual([classBadge(images, '', 'Chanter'), classBadge(images, '../x.png', 'Chanter'), classBadge(images, undefined)], ['', '', '']);
+  const shown = answer({ classIcon: 'class_icon_chanter.png' });
+  assert.match(armoryProfile(shown, now, false, false, { images }), /<span>Level 45<\/span><span><img class="class-icon" src="\/api\/odyle\/armory-images\/class_icon_chanter.png" alt="" title="Chanter"[^>]*>Chanter<\/span><span>Asmodians<\/span>/);
+  assert.match(armoryProfile(answer(), now, false, false, { images }), /<span>Level 45<\/span><span>Chanter<\/span>/);
+  const regions = [{ region: 'GLOBAL_EU', elyos: ['Siel'], asmodian: ['Lumiel'] }];
+  const hits = [{ name: 'Ka', level: 45, race: 2, server: 'Lumiel', serverId: 2304, region: 'eu', characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', class: 'Chanter', classIcon: 'class_icon_chanter.png' },
+    { name: 'Kb', level: 12, race: 1, server: 'Lumiel', serverId: 2304, region: 'eu', characterId: 'QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', class: '', classIcon: '' }];
+  const page = armorySearch(regions, {}, hits, false, addBookmark([], shown, 'now'), now, images);
+  assert.match(page, /<span>Level 45 · <img class="class-icon" [^>]*title="Chanter"[^>]*>Chanter · Asmodians · Lumiel<\/span>/);
+  assert.match(page, /<span>Level 12 · Elyos · Lumiel<\/span>/);
+  assert.match(page, /<strong>Ka&lt;b&gt;<\/strong><span><img class="class-icon" [^>]*>Level 45 · Chanter · Lumiel<\/span>/);
+});
+
 test('a running lookup shows its step and a progress bar, and the profile read so far', async () => {
   const { armoryProfile, lookupLine, lookupStatus } = await import('../src/armory.js');
   const running = (progress, extra = {}) => answer({ state: 'fetching', retryAfter: 2, progress, ...extra });
@@ -176,7 +192,7 @@ test('the search form keeps the last region and server and lists what PLAYNC fou
 test('bookmarks keep characters in this browser, newest first, with their last opened numbers', async () => {
   const { readBookmarks, addBookmark, removeBookmark, refreshBookmark, isBookmarked, bookmarkKey, armorySearch, armoryProfile } = await import('../src/armory.js');
   let list = addBookmark([], answer(), '2026-10-16T12:00:00.000Z');
-  assert.deepEqual(list, [{ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', name: 'Ka<b>', server: 'Lumiel', class: 'Chanter', level: 45, combatPower: 107458, itemLevel: 1671, portrait: profile.portrait, fetchedAt: answer().fetchedAt, savedAt: '2026-10-16T12:00:00.000Z' }]);
+  assert.deepEqual(list, [{ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', name: 'Ka<b>', server: 'Lumiel', class: 'Chanter', classIcon: '', level: 45, combatPower: 107458, itemLevel: 1671, portrait: profile.portrait, fetchedAt: answer().fetchedAt, savedAt: '2026-10-16T12:00:00.000Z' }]);
   assert.equal(addBookmark(list, answer(), 'later'), list, 'a character is bookmarked once');
   const other = answer({ characterId: 'QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', profile: { ...profile, name: 'Other' } });
   list = addBookmark(list, other, '2026-10-16T12:05:00.000Z');

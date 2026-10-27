@@ -731,6 +731,8 @@ type armoryWork struct {
 	errorAt   time.Time
 	done      int
 	failed    int
+
+	classesTried time.Time // PLAYNC's classes were last asked for (classes.go learnClassesFor)
 }
 
 func newArmoryWork() *armoryWork {
@@ -952,11 +954,13 @@ func lookUpArmory(app core.App, j armoryJob, track *armoryTrack) (err error) {
 	}); txErr != nil {
 		return txErr
 	}
-	// The page names the class of its class id, for every character with that id (classes.go).
+	// The page names the class of its class id, for every character with that id, and the
+	// class's emblem is kept once (classes.go).
 	if err == nil {
 		if learnErr := learnClass(app, profile.pcId, profile.Class); learnErr != nil {
 			warn(app, "Odyle could not keep a class name", "error", message(learnErr))
 		}
+		learnClassesFor(app, profile.Class)
 	}
 	return err
 }
@@ -995,7 +999,7 @@ func armoryRoute(e *core.RequestEvent) error {
 	if record != nil && record.GetBool("hidden") {
 		return notFound("This character is not in the armory.")
 	}
-	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("partial", false).set("fetchedAt", "").set("error", "")
+	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("partial", false).set("classIcon", "").set("fetchedAt", "").set("error", "")
 	var fetched time.Time
 	outdated := false
 	if record != nil {
@@ -1028,6 +1032,10 @@ func armoryRoute(e *core.RequestEvent) error {
 	if state.Partial != "" && (record == nil || outdated) {
 		out.set("profile", parseJSON(state.Partial, "null")).set("partial", true)
 	}
+	if shown, ok := out.values["profile"].(map[string]any); ok {
+		class, _ := shown["class"].(string)
+		out.set("classIcon", classIcons(e.App)[class])
+	}
 	return e.JSON(200, out.set("state", state.State).set("position", state.Position).set("wait", state.Wait).set("retryAfter", state.RetryAfter).set("lookupError", state.Error).set("progress", state.Progress))
 }
 
@@ -1040,6 +1048,9 @@ type armoryHit struct {
 	ServerId    int    `json:"serverId"`
 	Region      string `json:"region"`
 	CharacterId string `json:"characterId"`
+	Class       string `json:"class"`
+	ClassIcon   string `json:"classIcon"`
+	classId     int64
 }
 
 type searchAnswer struct {
@@ -1103,7 +1114,7 @@ func (s *armorySearches) find(name, server, region string) ([]armoryHit, error) 
 			if err != nil || !armoryIds.MatchString(id) || serverId != at.serverId {
 				continue
 			}
-			hits = append(hits, armoryHit{Name: jsonText(hit, "name", 40), Level: whole(hit["level"]), Race: whole(hit["race"]), Server: server, ServerId: serverId, Region: at.region, CharacterId: id})
+			hits = append(hits, armoryHit{Name: jsonText(hit, "name", 40), Level: whole(hit["level"]), Race: whole(hit["race"]), Server: server, ServerId: serverId, Region: at.region, CharacterId: id, classId: whole(hit["pcId"])})
 		}
 	}
 	exact := strings.ToLower(name)
@@ -1171,7 +1182,13 @@ func armorySearchRoute(e *core.RequestEvent) error {
 		warn(e.App, "Odyle armory search failed", "error", message(err))
 		return unavailable("The official character search did not answer. Try again in a minute.")
 	}
-	return e.JSON(200, map[string]any{"results": hits})
+	// Each hit's class and emblem, as far as the server knows its class id.
+	classes, named := gameClasses(e.App), make([]armoryHit, len(hits))
+	for i, hit := range hits {
+		hit.Class, hit.ClassIcon = classes[hit.classId].Name, classes[hit.classId].Icon
+		named[i] = hit
+	}
+	return e.JSON(200, map[string]any{"results": named})
 }
 
 // armoryServersRoute answers GET /api/odyle/armory/servers: the servers of each region by
@@ -1198,6 +1215,16 @@ func cleanArmory(app core.App) (result, error) {
 		return result{Done: int(deleted)}, err
 	}
 	return result{Done: int(deleted)}, nil
+}
+
+// armoryNight is the nightly odyle-armory job: it forgets the profiles and images nobody
+// needs any more (cleanArmory) and reads PLAYNC's classes again (classes.go).
+func armoryNight(app core.App) (result, error) {
+	out, err := cleanArmory(app)
+	if err != nil {
+		return out, err
+	}
+	return out, learnClasses(app)
 }
 
 // armoryStatus is the armory's part of the Server status page.

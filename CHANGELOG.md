@@ -2,6 +2,12 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.48.0 · 2026-10-27
+
+### New
+- **Class emblems**: characters show their class's emblem from PLAYNC's character pages beside the class, on their cards in rooms and on your characters page, and in the armory on the profile, in search results and in bookmarks.
+- The armory's search lists each character's class.
+
 ## 0.47.0 · 2026-10-27
 
 ### New

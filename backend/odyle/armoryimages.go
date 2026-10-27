@@ -312,6 +312,10 @@ func cleanArmoryImages(app core.App) (int, error) {
 	if err := rows.Close(); err != nil {
 		return 0, err
 	}
+	// The classes' emblems (classes.go).
+	for _, c := range gameClasses(app) {
+		named[c.Icon] = true
+	}
 	deleted := 0
 	for _, entry := range entries {
 		info, err := entry.Info()
