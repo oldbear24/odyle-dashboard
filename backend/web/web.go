@@ -3,14 +3,20 @@
 // release workflow copy the Vite build (npm run build, dist) into web/dist. A build
 // without it (a plain go build in a fresh checkout) holds only the placeholder
 // dist/.gitkeep and serves the dashboard from --publicDir instead.
+//
+// Every page of the dashboard has its own path (/armory/eu/2304/…, /tasks). The backend
+// answers each with the dashboard's page, named for what it shows (pages.go): its title,
+// description and picture for search engines and link previews, which run no JavaScript or
+// read only the page as served. The page also gets a base that leads back to the dashboard's
+// root, since the build names its files relative to itself, and a mark that tells the
+// dashboard to use paths; served anywhere else (a static host, the development server) it
+// keeps hash routes (#/armory/eu/…).
 package web
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
-	"html"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -48,10 +54,10 @@ func (v visible) Open(name string) (fs.File, error) {
 
 // Serve answers with the files of a dashboard compiled in (apis.Static). They have no
 // modification time to revalidate with, so every answer carries the file's content hash
-// as its ETag: the page and the files with fixed names (sw.js, the manifest, the icons)
+// as its ETag: the pages and the files with fixed names (sw.js, the manifest, the icons)
 // are revalidated on each load, and the build's content-hashed files under assets/ are
-// kept for a year.
-func Serve(dashboard fs.FS, indexFallback bool) (func(*core.RequestEvent) error, error) {
+// kept for a year. describe names each page (nil leaves the pages as built).
+func Serve(dashboard fs.FS, indexFallback bool, describe Describe) (func(*core.RequestEvent) error, error) {
 	tags := map[string]string{}
 	err := fs.WalkDir(dashboard, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
@@ -73,17 +79,16 @@ func Serve(dashboard fs.FS, indexFallback bool) (func(*core.RequestEvent) error,
 	return func(e *core.RequestEvent) error {
 		// The file apis.Static answers with: the one asked for, a folder's index.html or,
 		// for any other path, the page.
-		name := path.Clean(strings.TrimPrefix(e.Request.PathValue(apis.StaticWildcardParam), "/"))
+		name := requested(e)
 		if _, ok := tags[name]; !ok {
-			name = path.Join(name, "index.html")
-			if _, ok := tags[name]; !ok && indexFallback {
-				name = "index.html"
+			if _, ok := tags[path.Join(name, "index.html")]; ok {
+				name = path.Join(name, "index.html")
+			} else if indexFallback {
+				return servePage(e, page, describe)
 			}
 		}
-		if name == "index.html" && e.App != nil {
-			if named := withPreviewImage(page, publicURL(e.App.Settings().Meta.AppURL)); named != nil {
-				return servePage(e, named)
-			}
+		if name == "index.html" {
+			return servePage(e, page, describe)
 		}
 		if tag, ok := tags[name]; ok {
 			header := e.Response.Header()
@@ -98,14 +103,65 @@ func Serve(dashboard fs.FS, indexFallback bool) (func(*core.RequestEvent) error,
 	}, nil
 }
 
-// The page names its link-preview picture (og:image) relative to itself, as a page
-// served from any address must. Link previews (Discord, chat apps) want an absolute
-// address, so the page served here names it under the Application URL set in the
-// superuser dashboard (Settings → Application) when that is a public address.
-var previewImage = []byte(`property="og:image" content="./icon-512.png"`)
+// Folder answers with the files of a dashboard folder (--publicDir) as apis.Static does,
+// and with its page, read at each request (the folder may be built again meanwhile),
+// named as Serve names it.
+func Folder(dir fs.FS, indexFallback bool, describe Describe) func(*core.RequestEvent) error {
+	static := apis.Static(dir, indexFallback)
+	return func(e *core.RequestEvent) error {
+		name := requested(e)
+		if info, err := fs.Stat(dir, name); err == nil && !info.IsDir() && name != "index.html" {
+			return static(e)
+		}
+		if _, err := fs.Stat(dir, path.Join(name, "index.html")); err != nil && !indexFallback && name != "index.html" {
+			return static(e)
+		}
+		page, err := fs.ReadFile(dir, "index.html")
+		if err != nil {
+			return static(e)
+		}
+		return servePage(e, page, describe)
+	}
+}
 
-// publicURL is the Application URL without its trailing slash, or "" while it is unset,
-// PocketBase's default (localhost) or not a web address.
+// requested is the file a request asks for, under the dashboard ("." for its root).
+func requested(e *core.RequestEvent) string {
+	return path.Clean(strings.TrimPrefix(e.Request.PathValue(apis.StaticWildcardParam), "/"))
+}
+
+// servePage answers with the page as named for the path asked for, revalidated by its
+// content hash like the files apis.Static serves. A path that is no page of the dashboard
+// still gets it (it opens the start), with 404.
+func servePage(e *core.RequestEvent, page []byte, describe Describe) error {
+	route := "/" + strings.TrimSuffix(strings.TrimPrefix(e.Request.URL.EscapedPath(), "/"), "index.html")
+	base := ""
+	about := Page{}
+	if e.App != nil {
+		base = publicURL(e.App.Settings().Meta.AppURL)
+	}
+	if describe != nil {
+		about = describe(e, route, base)
+	}
+	named := Named(page, route, base, about)
+	sum := sha256.Sum256(named)
+	tag := `"` + hex.EncodeToString(sum[:12]) + `"`
+	header := e.Response.Header()
+	header.Set("ETag", tag)
+	header.Set("Cache-Control", "no-cache")
+	if strings.Contains(e.Request.Header.Get("If-None-Match"), tag) {
+		return e.NoContent(http.StatusNotModified)
+	}
+	status := http.StatusOK
+	if about.Missing {
+		status = http.StatusNotFound
+	}
+	return e.Blob(status, "text/html; charset=utf-8", named)
+}
+
+// publicURL is the Application URL set in the superuser dashboard (Settings → Application)
+// without its trailing slash, or "" while it is unset, PocketBase's default (localhost) or
+// not a web address. Link previews and search engines want absolute addresses, which only
+// a public address gives.
 func publicURL(appURL string) string {
 	u, err := url.Parse(strings.TrimRight(appURL, "/"))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
@@ -118,26 +174,5 @@ func publicURL(appURL string) string {
 	return u.String()
 }
 
-// withPreviewImage is the page with its preview picture under base, or nil when there is
-// no base or the page names no relative picture.
-func withPreviewImage(page []byte, base string) []byte {
-	if base == "" || !bytes.Contains(page, previewImage) {
-		return nil
-	}
-	absolute := `property="og:image" content="` + html.EscapeString(base+"/icon-512.png") + `"`
-	return bytes.Replace(page, previewImage, []byte(absolute), 1)
-}
-
-// servePage answers with a page built here, revalidated by its content hash like the
-// files apis.Static serves.
-func servePage(e *core.RequestEvent, page []byte) error {
-	sum := sha256.Sum256(page)
-	tag := `"` + hex.EncodeToString(sum[:12]) + `"`
-	header := e.Response.Header()
-	header.Set("ETag", tag)
-	header.Set("Cache-Control", "no-cache")
-	if strings.Contains(e.Request.Header.Get("If-None-Match"), tag) {
-		return e.NoContent(http.StatusNotModified)
-	}
-	return e.Blob(http.StatusOK, "text/html; charset=utf-8", page)
-}
+// PublicURL is the dashboard's public address as Serve names pages under it ("" without one).
+func PublicURL(app core.App) string { return publicURL(app.Settings().Meta.AppURL) }

@@ -1277,4 +1277,16 @@ export default {
   'Each place is kept for {n} day.|Each place is kept for {n} days.': ['Každé místo se uchovává {n} den.', 'Každé místo se uchovává {n} dny.', 'Každé místo se uchovává {n} dní.'],
   'No place in the last {n} day yet. The Windows app sends one at each loading screen, while gliding or flying and with some skills.|No place in the last {n} days yet. The Windows app sends one at each loading screen, while gliding or flying and with some skills.': ['Za poslední {n} den zatím žádné místo. Windows aplikace ho posílá při každé načítací obrazovce, při plachtění či létání a u některých dovedností.', 'Za poslední {n} dny zatím žádné místo. Windows aplikace ho posílá při každé načítací obrazovce, při plachtění či létání a u některých dovedností.', 'Za posledních {n} dní zatím žádné místo. Windows aplikace ho posílá při každé načítací obrazovce, při plachtění či létání a u některých dovedností.'],
   'Off by default. Places are kept for {n} day, and turning this off deletes them at once.|Off by default. Places are kept for {n} days, and turning this off deletes them at once.': ['Ve výchozím stavu vypnuto. Místa se uchovávají {n} den a vypnutím se hned smažou.', 'Ve výchozím stavu vypnuto. Místa se uchovávají {n} dny a vypnutím se hned smažou.', 'Ve výchozím stavu vypnuto. Místa se uchovávají {n} dní a vypnutím se hned smažou.'],
+  // Page titles, as the backend names the pages for search engines (routes.js, backend/odyle/pages.go)
+  'AION 2 armory: look up any Global character · Odyle': 'Zbrojnice AION 2: vyhledejte kteroukoli postavu Global · Odyle',
+  'A character on {server} · Odyle Armory': 'Postava na serveru {server} · Zbrojnice Odyle',
+  "{name}'s skills · {server} · Odyle Armory": '{name}: dovednosti · {server} · Zbrojnice Odyle',
+  "{name}'s Daevanion boards · {server} · Odyle Armory": '{name}: desky Daevanion · {server} · Zbrojnice Odyle',
+  "{name}'s titles · {server} · Odyle Armory": '{name}: tituly · {server} · Zbrojnice Odyle',
+  "{name}'s appearance · {server} · Odyle Armory": '{name}: vzhled · {server} · Zbrojnice Odyle',
+  '{name} · Level {level} {class} on {server} · Odyle Armory': '{name} · {class} úrovně {level} na serveru {server} · Zbrojnice Odyle',
+  "What's new in Odyle": 'Co je nového v Odyle',
+  'Privacy · Odyle': 'Soukromí · Odyle',
+  'Demo party room · Odyle': 'Ukázková místnost party · Odyle',
+  'The sitemap needs the Application URL.': 'Mapa webu potřebuje Application URL.',
 };

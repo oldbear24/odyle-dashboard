@@ -29,9 +29,10 @@ import privacyText from '../docs/privacy.md?raw';
 import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
+import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
-import { armoryRoute, armoryTarget, armorySearch, armoryProfile, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
+import { armoryRoute, armoryTarget, armorySearch, armoryProfile, armoryTitle, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
@@ -107,8 +108,9 @@ const navItem = (action, active, name, label) => `<a href="${navHref(action)}" d
 // Where a navigation item leads: the open (or last) room, the library, the checklist, the armory, the account.
 function navHref(action) {
   const signedIn = pb.authStore.isValid && !demo;
-  if (action === 'overview') return demo ? '#/demo' : room ? '#/room/' + room.id : signedIn && remembered().room ? '#/room/' + remembered().room : '#/';
-  return { library: '#/', tasks: signedIn ? '#/tasks' : '#/', armory: '#/armory', account: signedIn ? '#/account' : '#/' }[action] || '';
+  if (action === 'overview') return link(demo ? '/demo' : room ? '/room/' + room.id : signedIn && remembered().room ? '/room/' + remembered().room : '/');
+  const path = { library: '/', tasks: signedIn ? '/tasks' : '/', armory: '/armory', account: signedIn ? '/account' : '/' }[action];
+  return path ? link(path) : '';
 }
 const bottomNav = active => `<nav class="bottom-nav" aria-label="${esc(t('Pages'))}">${[...pages().map(([action, name, label, short]) => [action, name, short || label]), ['account', 'user', t('Account')]].map(([action, name, label]) => `<a href="${navHref(action)}" data-action="${action}" class="${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span>${label}</span>${action === 'tasks' ? taskBadge() : ''}</a>`).join('')}</nav>`;
 const connectionLabel = () => `<i></i>${demo ? t('Demo workspace') : online ? t('Connected') : t('Not connected')}`;
@@ -119,7 +121,7 @@ function roomSwitch() {
   if (demo) return `<div class="room-switch is-static">${mark(room?.name)}<span class="room-switch-text"><small>${t('Room')}</small><strong>${esc(room?.name || '')}</strong></span></div>`;
   if (!pb.authStore.isValid) return '';
   const id = room?.id || remembered().room, name = room?.name || rooms.find(r => r.id === id)?.name || '';
-  const options = rooms.map(r => `<a href="#/room/${esc(r.id)}" class="menu-item room-option ${r.id === room?.id ? 'active' : ''}"${r.id === room?.id ? ' aria-current="page"' : ''}>${mark(r.name)}<span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))}</small></span></a>`).join('');
+  const options = rooms.map(r => `<a href="${esc(link('/room/' + r.id))}" class="menu-item room-option ${r.id === room?.id ? 'active' : ''}"${r.id === room?.id ? ' aria-current="page"' : ''}>${mark(r.name)}<span><strong>${esc(r.name)}</strong><small>${esc(roleName(r.role))}</small></span></a>`).join('');
   return `<details class="room-switch"><summary title="${esc(t('Switch room'))}">${mark(name)}<span class="room-switch-text"><small>${t('Room')}</small><strong>${esc(name || t('Choose a room'))}</strong></span>${icon('chevron')}</summary><div class="menu">${options}<button class="menu-item" data-action="new-room">${icon('plus')}<span>${t('Create or join a room')}</span></button></div></details>`;
 }
 function renderRoomSwitch() { document.querySelectorAll('.room-switch').forEach(el => { if (!el.open) el.outerHTML = roomSwitch(); }); }
@@ -131,7 +133,7 @@ function accountMenu() {
   const connection = `<span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span>`, help = `<button class="menu-item" data-action="help">${icon('shield')}<span>${t('Reader & privacy')}</span></button>`;
   if (demo || !pb.authStore.isValid) return `<div class="account-guest">${help}${connection}${demo ? `<button class="button secondary" data-action="exit-demo">${t('Leave the demo')}</button>` : ''}</div>`;
   const name = pb.authStore.record?.displayName || '', item = (action, glyph, label) => `<button class="menu-item" data-action="${action}">${icon(glyph)}<span>${label}</span></button>`;
-  return `<details class="account-menu"><summary title="${esc(t('Account menu'))}"><span class="avatar">${esc(name.slice(0, 1).toUpperCase() || 'O')}</span><span class="account-text"><strong>${esc(name)}</strong>${connection}</span><span class="sr-only">${t('Account menu')}</span>${icon('chevron')}</summary><div class="menu">${readerItem()}<a class="menu-item" href="#/account" data-action="account">${icon('user')}<span>${t('Account & data')}</span></a>${item('desktop', 'download', t('Pair Windows app'))}${item('invite', 'plus', t('Invitations'))}${help}<a class="menu-item" href="#/changelog">${icon('info')}<span>${t('What\'s new')}</span></a>${item('logout', 'out', t('Sign out'))}</div></details>`;
+  return `<details class="account-menu"><summary title="${esc(t('Account menu'))}"><span class="avatar">${esc(name.slice(0, 1).toUpperCase() || 'O')}</span><span class="account-text"><strong>${esc(name)}</strong>${connection}</span><span class="sr-only">${t('Account menu')}</span>${icon('chevron')}</summary><div class="menu">${readerItem()}<a class="menu-item" href="${link('/account')}" data-action="account">${icon('user')}<span>${t('Account & data')}</span></a>${item('desktop', 'download', t('Pair Windows app'))}${item('invite', 'plus', t('Invitations'))}${help}<a class="menu-item" href="${link('/changelog')}">${icon('info')}<span>${t('What\'s new')}</span></a>${item('logout', 'out', t('Sign out'))}</div></details>`;
 }
 // Phones have no sidebar: the account menu says which PC reads, or offers to connect one.
 const readerItem = () => { const reader = readerNow(); return `<button class="menu-item menu-reader ${reader ? 'reader-online' : ''}" data-action="reading">${reader ? `<i></i><span>${esc(readerLabel(reader.name))}</span>` : `${icon('plus')}<span>${t('Connect reader')}</span>`}</button>`; };
@@ -170,8 +172,8 @@ function renderReaderStatus() { const el = document.querySelector('.sidebar-foot
 function shell(content, active = 'overview') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent, reader = pb.authStore.isValid && !demo ? readerButton(`${icon('plus')} ${t('Connect reader')}`) : '';
-  const home = cls => `<a href="#/" class="${cls}" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span class="brand-name">odyle<span class="brand-dot">.</span></span></a>`;
-  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar">${home('brand')}${roomSwitch()}<nav aria-label="${esc(t('Pages'))}">${pages().map(([action, name, label]) => navItem(action, active, name, label)).join('')}</nav><div class="sidebar-foot">${reader}${accountMenu()}</div></aside><header class="topbar">${home('brand brand-mini')}${roomSwitch()}${accountMenu()}</header><div class="main">${announcementBar()}${updateNote()}${content}<footer><span>Odyle <a class="version-link" href="#/changelog" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a></span><span>${t('Unofficial fan project')} · <a class="footer-link" href="#/privacy">${t('Privacy')}</a></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
+  const home = cls => `<a href="${link('/')}" class="${cls}" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span class="brand-name">odyle<span class="brand-dot">.</span></span></a>`;
+  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar">${home('brand')}${roomSwitch()}<nav aria-label="${esc(t('Pages'))}">${pages().map(([action, name, label]) => navItem(action, active, name, label)).join('')}</nav><div class="sidebar-foot">${reader}${accountMenu()}</div></aside><header class="topbar">${home('brand brand-mini')}${roomSwitch()}${accountMenu()}</header><div class="main">${announcementBar()}${updateNote()}${content}<footer><span>Odyle <a class="version-link" href="${link('/changelog')}" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a></span><span>${t('Unofficial fan project')} · <a class="footer-link" href="${link('/privacy')}">${t('Privacy')}</a></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -184,7 +186,7 @@ const scopeText = () => t("Odyle is an unofficial fan project, not affiliated wi
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 // The welcome page; an invite link (code) adds its card, filled in from the preview.
 function welcome(code = '') {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')} <a href="#/privacy">${t('Privacy')}</a></p>${scopeNote()}</main>`);
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')} <a href="${link('/privacy')}">${t('Privacy')}</a></p>${scopeNote()}</main>`);
   if (code && !previewed(code)) previewInvite(code);
 }
 // What the invite link on screen opens (invites.js inviteLanding), asked once per code:
@@ -450,6 +452,7 @@ function armoryRender(searching = false) {
   const chosen = armoryChosen || armoryChoice();
   const now = Date.now() + serverOffset, marks = bookmarks();
   shell(armoryAnswer ? armoryProfile(armoryAnswer, now, armoryRefreshable(), isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages() }) : armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
+  retitle(armoryTitle(armoryAnswer, armoryTab));
 }
 // While a profile waits for PLAYNC, it is asked for again when the backend says to.
 function armoryPoll(path, ticket) {
@@ -602,7 +605,7 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
     : self && !room ? `${c.id ? mainToggle(c) : ''}<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}` : '';
   // The profile itself once the daily lookup found the character on PLAYNC, else a search by name.
   const armoryPath = officialPath(c) || (c.characterName && /^[A-Za-z]{2,20}$/.test(c.server || '') && /^GLOBAL_(NAW?|EU|SA|ASIA)$/.test(c.region || '') ? findPath(c.region, c.server, c.characterName) : '');
-  const armory = !demo && armoryPath ? `<a class="card-link icon-only" href="#${esc(armoryPath)}" title="${esc(t('Gear and stats of {name} on PLAYNC', { name: c.characterName }))}">${icon('search')}<span class="sr-only">${t('Armory')}</span></a>` : '';
+  const armory = !demo && armoryPath ? `<a class="card-link icon-only" href="${esc(link(armoryPath))}" title="${esc(t('Gear and stats of {name} on PLAYNC', { name: c.characterName }))}">${icon('search')}<span class="sr-only">${t('Armory')}</span></a>` : '';
   // A packet reading needs no label; samples, old manual values and characters waiting for the game say so.
   const source = demo ? t('Sample') : c.source === 'packet' ? '' : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
   // The player's name, look (#107) and crown head their group (playerGroups).
@@ -668,14 +671,14 @@ async function inviteDialog(listed) {
   if (!pb.authStore.isValid) return signInPrompt(t('Sign in with Discord to create a room and invite your friends.'));
   if (!room || !manager()) return invitePicker();
   const id = room.id, now = Date.now() + serverOffset, draw = ++inviteDraws, askedAt = Date.now();
-  modal(t('Invite another Discord account'), inviteDialogBody(listed ? withCodes(storage, id, listed, now) : null, location.href, now));
+  modal(t('Invite another Discord account'), inviteDialogBody(listed ? withCodes(storage, id, listed, now) : null, address('/'), now));
   if (listed) return;
   const answer = (await pb.send('/api/odyle/invites/' + id)).invites;
   if (draw === inviteDraws) drawInvites(id, answer, askedAt);
 }
 function drawInvites(id, listed, since) {
   const slot = document.querySelector('#modal[open] .invite-list'), now = Date.now() + serverOffset; inviteDraws++;
-  if (slot && room?.id === id) slot.innerHTML = inviteList(withCodes(storage, id, listed, now, since), location.href, now);
+  if (slot && room?.id === id) slot.innerHTML = inviteList(withCodes(storage, id, listed, now, since), address('/'), now);
 }
 // Invitations outside a room you lead: the rooms you lead to choose from (the only one
 // opens at once), or who can invite instead of a dead end.
@@ -1078,20 +1081,31 @@ function rerender() {
   welcome(joinCode(shown || ''));
 }
 
-// Every page has its own URL: #/ (welcome or your rooms), #/room/<id>, #/tasks,
-// #/account, #/demo and #/join/<code> (an invite link). Hash routes keep the
-// relative-base build working from any static host, and a reload or shared link opens
+// Every page has its own URL: / (welcome or your rooms), /room/<id>, /tasks, /account,
+// /demo, the armory's pages and #/join/<code> (an invite link), as paths where the backend
+// serves the dashboard and as fragments elsewhere (routes.js). A reload or shared link opens
 // the same page. The last signed-in page is remembered so a fresh visit resumes there.
 let shown = null, navigation = 0;
 const memoryKey = 'odyle.location';
 function remembered() { try { return JSON.parse(storage.getItem(memoryKey)) || {}; } catch { return {}; } }
 function remember(path) { try { storage.setItem(memoryKey, JSON.stringify({ path, room: path.startsWith('/room/') ? path.slice(6) : remembered().room })); } catch { /* storage full or blocked */ } }
 function forget(id) { try { if (!id) storage.removeItem(memoryKey); else if (remembered().room === id) storage.setItem(memoryKey, JSON.stringify({ path: '/' })); } catch { /* storage blocked */ } }
-function currentPath() { const armory = location.hash.slice(1); if (armoryRoute.test(armory)) return armory; const match = location.hash.match(/^#(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots)?)$/); return match ? match[1] : '/'; }
+// The page a route names, or '' for none.
+function pageOf(route) { if (armoryRoute.test(route)) return route; const match = route.match(/^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots)?)$/); return match ? match[1] : ''; }
+function currentPath() { return pageOf(current()) || '/'; }
+// The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
+// armory names its profiles once they are fetched (armoryRender).
+function pageTitle(path) {
+  if (path.startsWith('/armory')) return armoryTarget(path).profile ? document.title : armoryTitle(null);
+  return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle') }[path] || t('Odyle — Party command');
+}
 async function show(force = false) {
   const path = currentPath();
   if (path === shown && !force) return;
   shown = path; const ticket = ++navigation;
+  // A path that names no page shows as the page it opens.
+  if (usesPaths() && current() !== path) visit(path, true);
+  retitle(pageTitle(path));
   if (path === '/demo') { await leaveRoomTopic(); return demoSession(); }
   if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
   if (path === '/changelog') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return changelogPage(ticket); }
@@ -1119,10 +1133,20 @@ async function show(force = false) {
   }
 }
 function go(path, replace = false) {
-  if (location.hash !== '#' + path) { if (replace) history.replaceState(null, '', '#' + path); else location.hash = path; }
+  visit(path, replace);
   return show(path === shown);
 }
-window.addEventListener('hashchange', () => show().catch(failure));
+window.addEventListener('hashchange', () => { adoptHash(); show().catch(failure); });
+window.addEventListener('popstate', () => { if (usesPaths()) show().catch(failure); });
+// With paths, a link to a page of the dashboard opens it in place, as fragments do without.
+document.addEventListener('click', e => {
+  const a = e.target.closest?.('a[href]');
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target || a.hasAttribute('download')) return;
+  const path = linked(a.href);
+  if (!path || pageOf(path) !== path) return;
+  e.preventDefault();
+  go(path).catch(failure);
+});
 
 // Tokens last seven days. An open dashboard renews its token every six hours and
 // returns to the sign-in page once the server no longer accepts it. A refusal of a request
@@ -1145,7 +1169,7 @@ async function authenticated() {
   catch (error) { return [401, 403].includes(error?.status) ? logout() : unreachable(); }
   renewedAt = Date.now(); online = true;
   // A visit without a page in its URL resumes the last page of this browser.
-  if (!/^#\//.test(location.hash)) history.replaceState(null, '', '#' + (remembered().path || '/'));
+  if (bare()) visit(remembered().path || '/', true);
   clearInterval(timer); lastPulse = lastCheck = Date.now();
   timer = setInterval(tick, 5000);
   await show(true).catch(failure);
@@ -1425,7 +1449,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.copyRun) {
       const r = runs.find(x => x.id === el.dataset.copyRun); if (!r) return;
       const names = ids => ids.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean), { party, waiting } = runParty(r, catalog);
-      const text = discordText(r, { going: names(party), waiting: names(waiting), partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: `${location.origin}${location.pathname}#/room/${room.id}`, event: r.link || '' });
+      const text = discordText(r, { going: names(party), waiting: names(waiting), partySize: entryOf(catalog, r.dungeon)?.partySize || 0, link: address('/room/' + room.id), event: r.link || '' });
       return toast(await copyText(text) ? t('Copied for Discord: paste it in any channel.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     }
     if (el.dataset.calendarRun) {
@@ -1518,7 +1542,7 @@ app.addEventListener('click', async e => {
         esc(tn(keptDays.historyDays, 'The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for {n} day as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.', 'The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for {n} days as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.')),
         t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
         scopeText(),
-        `${t('What Odyle keeps and how long:')} <a href="#/privacy">${t('Privacy notice')}</a> · <a href="https://github.com/oldbear24/odyle-dashboard/issues" target="_blank" rel="noopener">${t('Report a problem or ask')}</a>`,
+        `${t('What Odyle keeps and how long:')} <a href="${link('/privacy')}">${t('Privacy notice')}</a> · <a href="https://github.com/oldbear24/odyle-dashboard/issues" target="_blank" rel="noopener">${t('Report a problem or ask')}</a>`,
       ].map(p => `<p>${p}</p>`).join('')); break;
       case 'leave-room': ask(esc(t('Leave {room}?', { room: room.name })), t('You lose access to this room, your wishlist entries and your place on planned runs. Your characters stay on your account; you need a new invite to come back.'), t('Leave room'), { action: 'confirm-leave' }); break;
       case 'close-room': ask(esc(t('Close {room}?', { room: room.name })), t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.'), t('Close room for everyone'), { action: 'confirm-close' }); break;
@@ -1644,7 +1668,7 @@ app.addEventListener('change', async e => {
   const el = e.target;
   if (el.id === 'language-select') {
     try { await useLanguage(el.value); } catch (error) { return failure(error); }
-    document.documentElement.lang = language(); document.title = t('Odyle — Party command'); storage.setItem(languageKey, language());
+    document.documentElement.lang = language(); retitle(pageTitle(currentPath())); storage.setItem(languageKey, language());
     // Push messages are written in the language of the device that asked for them.
     if (pushHere === 'on') (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription().then(s => s && pushSubscribed(s)).catch(() => { /* kept in the old language */ });
     return rerender();
@@ -1676,8 +1700,9 @@ app.addEventListener('error', e => { if (e.target.matches?.('img.armory-img')) {
 // The service worker keeps the dashboard's files for visits without a connection and
 // shows run reminders; development builds go without it.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => { /* runs without offline files */ });
+adoptHash();
 useLanguage(detect(storage.getItem(languageKey), navigator.languages || [navigator.language])).catch(() => useLanguage('en')).then(() => {
-  document.documentElement.lang = language(); document.title = t('Odyle — Party command');
+  document.documentElement.lang = language(); retitle(pageTitle(currentPath()));
   if (pb.authStore.isValid) return authenticated().catch(failure);
   loadAnnouncement(true).catch(() => { /* an older backend or no connection: no banner */ });
   show().catch(failure);

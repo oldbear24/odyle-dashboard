@@ -5,6 +5,7 @@
 import { t, locale } from './i18n.js';
 import { escape as esc } from './model.js';
 import { icon } from './icons.js';
+import { link } from './routes.js';
 
 // An entry's text, escaped, with **bold** and `code` as the changelog writes them.
 export const inline = text => esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -24,5 +25,5 @@ export function whatsNew(entries, current, windows) {
 // Whether to say the dashboard was updated: a version seen before that is not this one.
 export const updated = (seen, current) => Boolean(seen) && seen !== current;
 export function updatedNote(current) {
-  return `<div class="update-note" role="status">${icon('info')}<p>${esc(t('Updated to {version}.', { version: current }))} <a href="#/changelog">${t('What\'s new')}</a></p><button class="close-button" data-action="hide-update-note" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button></div>`;
+  return `<div class="update-note" role="status">${icon('info')}<p>${esc(t('Updated to {version}.', { version: current }))} <a href="${link('/changelog')}">${t('What\'s new')}</a></p><button class="close-button" data-action="hide-update-note" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button></div>`;
 }

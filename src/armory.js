@@ -9,6 +9,7 @@
 import { t, tn, locale } from './i18n.js';
 import { age, escape as esc } from './model.js';
 import { icon } from './icons.js';
+import { link } from './routes.js';
 
 export const regionNames = () => ({ GLOBAL_NA: t('North America East'), GLOBAL_NAW: t('North America West'), GLOBAL_EU: t('Europe'), GLOBAL_SA: t('South America'), GLOBAL_ASIA: t('Asia') });
 // PLAYNC's search regions and the regions Odyle names them by.
@@ -71,7 +72,7 @@ export const removeBookmark = (list, key) => list.filter(b => bookmarkKey(b) !==
 export const refreshBookmark = (list, answer) => answer.profile ? list.map(b => bookmarkKey(b) === bookmarkKey(answer) ? bookmarkOf(answer, b.savedAt) : b) : list;
 function bookmarkList(bookmarks, now, images) {
   if (!bookmarks.length) return '';
-  const row = b => `<li><a href="#${esc(profilePath(b))}"><span class="armory-mini" aria-hidden="true">${esc(initials(b.name))}${picture(images, b.portrait)}</span><strong>${esc(b.name)}</strong><span>${classBadge(images, b.classIcon, b.class)}${esc([t('Level {level}', { level: b.level }), b.class, b.server].filter(Boolean).join(' · '))}</span><span class="armory-mark-power">${esc(number(b.combatPower))} CP · ${esc(t('item level {n}', { n: number(b.itemLevel) }))}<small>${esc(t('as of {age}', { age: age(b.fetchedAt, now) }))}</small></span>${icon('arrow')}</a><button class="close-button" data-armory-unmark="${esc(bookmarkKey(b))}" aria-label="${esc(t('Remove {name} from bookmarks', { name: b.name }))}" title="${esc(t('Remove {name} from bookmarks', { name: b.name }))}">×</button></li>`;
+  const row = b => `<li><a href="${esc(link(profilePath(b)))}"><span class="armory-mini" aria-hidden="true">${esc(initials(b.name))}${picture(images, b.portrait)}</span><strong>${esc(b.name)}</strong><span>${classBadge(images, b.classIcon, b.class)}${esc([t('Level {level}', { level: b.level }), b.class, b.server].filter(Boolean).join(' · '))}</span><span class="armory-mark-power">${esc(number(b.combatPower))} CP · ${esc(t('item level {n}', { n: number(b.itemLevel) }))}<small>${esc(t('as of {age}', { age: age(b.fetchedAt, now) }))}</small></span>${icon('arrow')}</a><button class="close-button" data-armory-unmark="${esc(bookmarkKey(b))}" aria-label="${esc(t('Remove {name} from bookmarks', { name: b.name }))}" title="${esc(t('Remove {name} from bookmarks', { name: b.name }))}">×</button></li>`;
   return `<section class="armory-bookmarks"><div class="section-heading"><h2>${t('Bookmarked characters')} <span>${bookmarks.length}</span></h2></div><ul class="armory-results armory-marked">${bookmarks.map(row).join('')}</ul></section>`;
 }
 const slotNames = () => ({ MainHand: t('Main hand'), SubHand: t('Off hand'), Helmet: t('Helmet'), Shoulder: t('Shoulders'), Torso: t('Torso'), Pants: t('Pants'), Gloves: t('Gloves'), Boots: t('Boots'),
@@ -92,7 +93,7 @@ const gradeName = grade => gradeNames()[grade] || grade || '';
 export function armorySearch(regions, chosen, results = null, searching = false, bookmarks = [], now = Date.now(), images = '') {
   const region = regions.find(r => r.region === chosen.region) || regions.find(r => r.region === 'GLOBAL_EU') || regions[0];
   const names = regionNames(), group = (label, list) => `<optgroup label="${esc(label)}">${list.map(s => `<option ${s === chosen.server ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>`;
-  const list = results === null ? '' : results.length ? `<ul class="armory-results">${results.map(hit => `<li><a href="#${esc(profilePath(hit))}"><strong>${esc(hit.name)}${isBookmarked(bookmarks, hit) ? ` <span class="armory-star" title="${esc(t('Bookmarked'))}">★</span>` : ''}</strong><span>${esc(t('Level {level}', { level: hit.level }))} · ${hit.class ? `${classBadge(images, hit.classIcon, hit.class)}${esc(hit.class)} · ` : ''}${hit.race === 1 ? t('Elyos') : hit.race === 2 ? t('Asmodians') : ''} · ${esc(hit.server)}</span>${icon('arrow')}</a></li>`).join('')}</ul>`
+  const list = results === null ? '' : results.length ? `<ul class="armory-results">${results.map(hit => `<li><a href="${esc(link(profilePath(hit)))}"><strong>${esc(hit.name)}${isBookmarked(bookmarks, hit) ? ` <span class="armory-star" title="${esc(t('Bookmarked'))}">★</span>` : ''}</strong><span>${esc(t('Level {level}', { level: hit.level }))} · ${hit.class ? `${classBadge(images, hit.classIcon, hit.class)}${esc(hit.class)} · ` : ''}${hit.race === 1 ? t('Elyos') : hit.race === 2 ? t('Asmodians') : ''} · ${esc(hit.server)}</span>${icon('arrow')}</a></li>`).join('')}</ul>`
     : `<p class="armory-empty">${t('PLAYNC lists no character of that name on this server.')}</p>`;
   return `<main class="dashboard armory"><div class="heading"><div><h1>${t('Look up a character')}</h1><p>${t('Everything PLAYNC\'s official character pages show of any AION 2 Global character: gear with each item\'s stats and stones, combat power, stats, skills, Daevanion boards, titles and skins. No sign-in needed.')}</p></div></div>
 ${bookmarkList(bookmarks, now, images)}<form id="armory-form" class="armory-form"><label>${t('Region')}<select name="region">${regions.map(r => `<option value="${esc(r.region)}" ${r === region ? 'selected' : ''}>${esc(names[r.region] || r.region)}</option>`).join('')}</select></label>
@@ -258,6 +259,17 @@ function appearanceTab(p, images) {
   return `<section class="armory-panel"><div class="section-heading"><h2>${t('Skins')} <span>${number(p.skins.length)}</span></h2></div>${p.skins.length ? `<ul class="armory-gear is-grid">${p.skins.map(s => tile(slotLabel(s.slot), s)).join('')}</ul>` : `<p class="armory-empty">${t('No skin is worn over the gear.')}</p>`}</section>${companions.length ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Pet and wings')}</h2></div><ul class="armory-gear is-grid">${companions.map(g => tile(slotLabel(g.slot), g)).join('')}</ul></section>` : ''}`;
 }
 
+// The page's title in the tab, as the backend names it (backend/odyle/pages.go): the search,
+// a profile (by its tab) or a profile not fetched yet.
+export function armoryTitle(answer, tab = '') {
+  const p = answer?.profile;
+  if (!answer) return t('AION 2 armory: look up any Global character · Odyle');
+  if (!p) return t('A character on {server} · Odyle Armory', { server: answer.server });
+  const of = { name: p.name, level: p.level, class: p.class, server: p.server || answer.server };
+  return { skills: t("{name}'s skills · {server} · Odyle Armory", of), daevanion: t("{name}'s Daevanion boards · {server} · Odyle Armory", of), titles: t("{name}'s titles · {server} · Odyle Armory", of), appearance: t("{name}'s appearance · {server} · Odyle Armory", of) }[tab]
+    || t('{name} · Level {level} {class} on {server} · Odyle Armory', of);
+}
+
 // The tabs a profile has: gear and stats always, the others once the kept copy holds them.
 export function profileTabs(p) {
   return [['', t('Gear & stats')], ['skills', t('Skills'), p.skills?.length], ['daevanion', t('Daevanion'), p.boards?.length], ['titles', t('Titles'), p.titles?.total], ['appearance', t('Appearance'), p.skins?.length || p.gear?.some(g => companionSlots.includes(g.slot))]]
@@ -270,7 +282,7 @@ export function profileTabs(p) {
 export function armoryProfile(answer, now, refreshable, bookmarked = false, view = {}) {
   const p = answer.profile, images = view.images || '', loading = Boolean(answer.partial);
   const status = lookupStatus(answer, now, refreshable);
-  const back = `<a class="text-button armory-back" href="#/armory">${icon('arrow')} ${t('Search another character')}</a>`;
+  const back = `<a class="text-button armory-back" href="${link('/armory')}">${icon('arrow')} ${t('Search another character')}</a>`;
   if (!p) return `<main class="dashboard armory"><div class="heading"><div><h1>${esc(t('A character on {server}', { server: answer.server }))}</h1><p>${t('This character is not in the armory yet. Odyle fetches it from PLAYNC, one character at a time; this page fills in by itself.')}</p></div></div>${status}${back}</main>`;
   const profile = { ...p, stats: p.stats || [], gear: p.gear || [], skills: p.skills || [], skins: p.skins || [], boards: p.boards || [], titles: { owned: 0, total: 0, equipped: [], ...p.titles } };
   const tabs = profileTabs(profile), tab = tabs.some(([key]) => key === view.tab) ? view.tab : '';
@@ -284,7 +296,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
 <div class="armory-identity"><p class="armory-eyebrow">${esc([profile.server || answer.server, regionLabel(answer.region)].filter(Boolean).join(' · '))}</p><h1>${esc(profile.name)}</h1>${profile.title ? `<p class="armory-title ${gradeClass(profile.titleGrade)}">${esc(profile.title)}</p>` : ''}<p class="armory-tags"><span>${esc(t('Level {level}', { level: profile.level }))}</span>${profile.class ? `<span>${classBadge(images, answer.classIcon, profile.class)}${esc(profile.class)}</span>` : ''}${[profile.race, profile.gender].filter(Boolean).map(s => `<span>${esc(s)}</span>`).join('')}</p></div>
 <div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl></section>`;
-  const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="#${esc(profilePath(answer, key))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
+  const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
   const content = tab === 'skills' ? skillsTab(profile, images) : tab === 'daevanion' ? daevanionTab(profile, images, view.board, loading) : tab === 'titles' ? titlesTab(profile) : tab === 'appearance' ? appearanceTab(profile, images) : gearTab(profile, images, loading);
   return `<main class="dashboard armory armory-profile">${hero}${status}${nav}<div class="armory-tab">${content}</div>${back}</main>`;
 }

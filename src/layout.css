@@ -127,3 +127,5 @@ dialog.split{max-width:1000px}
 dialog .place-main .place-note{margin:8px 0 0}
 @media(max-width:900px){.history-dialog:has(.history-changes),.place-dialog:has(.place-list){grid-template-columns:1fr;gap:0}.place-dialog .place-list{margin-top:14px}.history-dialog>.history-changes{margin-top:14px;padding-top:12px;border-top:1px solid #2c3a31}}
 @media(max-width:540px){dialog{padding:16px 14px}.modal-body{margin:0 -14px -16px;padding:0 14px 16px}.pager-at{min-width:90px}.history-head .segmented{width:100%}.segmented button{flex:1;padding:5px 4px}}
+/* The page as the backend names it for readers without JavaScript (backend/web); the dashboard draws over it. */
+.prerendered{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

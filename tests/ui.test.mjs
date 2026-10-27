@@ -135,7 +135,7 @@ test('owners invite with a link, manage the room and close it only after confirm
       await guest.page.reload();
       await guest.page.locator('.room-page h1').waitFor();
       await toast(guest.page).filter({ hasText: 'You joined UI room as a player.' }).waitFor();
-      assert.match(guest.page.url(), /#\/room\/[a-z0-9]+$/);
+      assert.match(guest.page.url(), /\/room\/[a-z0-9]+$/);
       assert.equal(await guest.page.locator('[data-action="invite"].button').count(), 0);
       // Only the leader invites; the others are told whom to ask.
       await navigate(guest.page, 'invite');
@@ -165,7 +165,7 @@ test('owners invite with a link, manage the room and close it only after confirm
     await shot(page, 'invite-links');
     await page.keyboard.press('Escape');
     // Another browser lists the same links, but only the browser that made a link can copy it.
-    const elsewhere = await open(lead, new URL(page.url()).hash);
+    const elsewhere = await open(lead, new URL(page.url()).pathname.slice(1));
     try {
       await elsewhere.page.locator('.room-page h1').waitFor();
       await elsewhere.page.locator('[data-action="invite"]:visible').first().click();
@@ -259,7 +259,7 @@ test('an invite link that no longer works says why, and Invitations finds the ro
     // The room switch lists both rooms and names the open one.
     assert.match(await leader.page.locator('.room-switch:visible summary').innerText(), /First link room/);
     assert.deepEqual((await leader.page.locator('.room-switch:visible .room-option strong').allTextContents()).sort(), ['First link room', 'Second link room']);
-    assert.match(leader.page.url(), new RegExp('#/room/' + first.room.id + '$'));
+    assert.match(leader.page.url(), new RegExp('/room/' + first.room.id + '$'));
     assert.deepEqual(leader.errors, []);
   } finally { await leader.close(); }
 });
@@ -328,7 +328,7 @@ test('rooms plan, change and export runs, and members see each character history
     await toast(page).filter({ hasText: 'Copied for Discord: paste it in any channel.' }).waitFor();
     await page.locator('.runs .wish-row').scrollIntoViewIfNeeded(); await shot(page, 'room-runs');
     const copied = await page.evaluate(() => window.copied);
-    assert.equal(copied.length, 1); assert.match(copied[0], /^\*\*Fire Temple\*\* · <t:\d+:F> \(<t:\d+:R>\) · Going \(1(\/\d+)?\): .+ · Bring food · http:\/\/127\.0\.0\.1:18091\/#\/room\/\w+$/);
+    assert.equal(copied.length, 1); assert.match(copied[0], /^\*\*Fire Temple\*\* · <t:\d+:F> \(<t:\d+:R>\) · Going \(1(\/\d+)?\): .+ · Bring food · http:\/\/127\.0\.0\.1:18091\/room\/\w+$/);
     await page.locator(`[data-history="${c.id}"]`).click();
     await page.locator('#modal .history-line').waitFor();
     assert.deepEqual(await page.locator('#modal .history-table tbody td:nth-child(2)').allInnerTexts(), ['90', '30', '55', '20']);
@@ -352,7 +352,7 @@ test('rooms plan, change and export runs, and members see each character history
     assert.deepEqual(other.errors, []);
   } finally { await other.close(); }
   const outside = await open(stranger, '#/room/' + roomId);
-  try { await outside.page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor(); assert.match(outside.page.url(), /#\/$/); } finally { await outside.close(); }
+  try { await outside.page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor(); assert.equal(new URL(outside.page.url()).pathname + new URL(outside.page.url()).hash, '/'); } finally { await outside.close(); }
 });
 test('members keep the wishlist together, share characters and viewers only watch', async () => {
   const [lead, mate, watcher] = await Promise.all([account('Wish lead'), account('Wish mate'), account('Wish watcher')]);
@@ -670,6 +670,11 @@ test('Run now asks first, calls the players who can come now and waits half an h
 test('the armory looks a character up for anyone, waits for PLAYNC and opens from character cards', async () => {
   const { page, errors, close } = await open(null, '#/');
   try {
+    // An old hash link opens its page under its path.
+    await page.goto(url + '/#/privacy');
+    await page.waitForURL(url + '/privacy'); await page.locator('.privacy-page, main').first().waitFor();
+    assert.equal(await page.title(), 'Privacy · Odyle');
+    await page.goto(url + '/');
     await page.locator('.welcome [data-action="armory"]').click();
     await page.getByRole('heading', { name: 'Look up a character' }).waitFor();
     await page.locator('#armory-form select[name="region"]').selectOption('GLOBAL_EU');
@@ -678,7 +683,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     await page.locator('#armory-form [type="submit"]').click();
     // The one character of that very name opens. Nobody looked it up before, so the page
     // waits for PLAYNC and fills in by itself.
-    await page.waitForURL(/#\/armory\/eu\/2304\/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
+    await page.waitForURL(/\/armory\/eu\/2304\/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
     await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor({ timeout: 15000 });
     assert.match(await page.locator('.armory-power').innerText(), /107,458[\s\S]*1,671/);
     // The paper doll: the four items PLAYNC lists, with their icons and the portrait from the Odyle server.
@@ -688,6 +693,13 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     assert.match(await items.last().innerText(), /Pet\s+Pagati/i);
     assert.match(await page.locator('.armory-stats').first().innerText(), /Might\s+45\s+Attack increase \+4.5%/);
     assert.match(await page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+s ago$/);
+    // The profile has its own address, named for search engines and link previews before the
+    // dashboard runs, and the tab keeps the same title.
+    const served = await (await fetch(page.url())).text();
+    assert.match(served, /<title>Armorer · Level 45 Chanter on Lumiel · Odyle Armory<\/title><meta name="description" content="Armorer is a level 45 Asmodian Chanter on Lumiel \(Europe\) with 107,458 combat power, item level 1,671\./);
+    assert.match(served, /<base href="..\/..\/..\/"><meta name="odyle-routes" content="paths">/);
+    assert.match(served, /<meta property="og:image" content="..\/..\/..\/api\/odyle\/armory-images\/[^"]+\.(png|jpg|webp)">/);
+    assert.equal(await page.title(), 'Armorer · Level 45 Chanter on Lumiel · Odyle Armory');
     const loaded = await page.evaluate(() => [...document.querySelectorAll('.armory-portrait img, .armory-gear-slot > .armory-icon img')].map(img => [new URL(img.src).pathname, img.complete && img.naturalWidth > 0]));
     assert.ok(loaded.length === 3 && loaded.every(([path, ok]) => path.startsWith('/api/odyle/armory-images/') && ok), JSON.stringify(loaded));
     // An item's card shows on hover, with its stats and stones.
@@ -728,7 +740,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     await room.page.locator('.member-card', { hasText: 'Armorer' }).locator('.member-meta', { hasText: 'Chanter · Lv 45' }).waitFor({ timeout: 15000 });
     await shot(room.page, 'armory-card');
     const link = room.page.locator('.member-card', { hasText: 'Armorer' }).locator('a.card-link', { hasText: 'Armory' });
-    assert.equal(await link.getAttribute('href'), '#/armory/eu/2304/' + armorer[0]);
+    assert.equal(await link.getAttribute('href'), './armory/eu/2304/' + armorer[0]);
     await link.click();
     await room.page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
     assert.match(await room.page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+[sm] ago$/);
@@ -920,10 +932,10 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
     assert.equal(await page.evaluate(() => document.activeElement.tagName), 'MAIN');
     // Wide: the sidebar's pages are links (they open in a new tab too), the brand leads home, a dialog is named by its heading.
     await page.setViewportSize({ width: 1280, height: 900 });
-    assert.equal(await page.locator('.sidebar a.nav-item[data-action="tasks"]').getAttribute('href'), '#/tasks');
-    assert.equal(await page.locator('.sidebar a.nav-item[data-action="overview"]').getAttribute('href'), '#/room/' + roomId);
+    assert.equal(await page.locator('.sidebar a.nav-item[data-action="tasks"]').getAttribute('href'), './tasks');
+    assert.equal(await page.locator('.sidebar a.nav-item[data-action="overview"]').getAttribute('href'), './room/' + roomId);
     assert.deepEqual(await page.locator('.sidebar nav a').allInnerTexts(), ['Party', 'Rooms & characters', 'Tasks', 'Armory']);
-    assert.equal(await page.locator('.sidebar .brand').getAttribute('href'), '#/');
+    assert.equal(await page.locator('.sidebar .brand').getAttribute('href'), './');
     await navigate(page, 'help');
     assert.equal(await page.locator('#modal').getAttribute('aria-labelledby'), 'modal-title');
     assert.equal(await page.locator('#modal-title').innerText(), 'Saved characters, fresh readings');
@@ -936,7 +948,7 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
     const smallest = await page.evaluate(() => Math.min(...[...document.querySelectorAll('.metric-label, .metric small, .party-line, .refresh-label, .room-switch-text small, footer, .member-meta, .status-why, .row-changed, .card-actions button, .group-count, .group-you, .bottom-nav a')].map(e => parseFloat(getComputedStyle(e).fontSize))));
     assert.ok(smallest >= 11, `smallest text ${smallest}px`);
     await shot(page, 'phone-room');
-    for (const [label, hash, ready] of [['Rooms', '#/', '.personal-characters'], ['Party', '#/room/' + roomId, '.member-grid'], ['Tasks', '#/tasks', '.tasks-page'], ['Armory', '#/armory', '#armory-form'], ['Account', '#/account', '.account-page']]) {
+    for (const [label, hash, ready] of [['Rooms', '', '.personal-characters'], ['Party', 'room/' + roomId, '.member-grid'], ['Tasks', 'tasks', '.tasks-page'], ['Armory', 'armory', '#armory-form'], ['Account', 'account', '.account-page']]) {
       await bar.locator('a', { hasText: label }).click();
       await page.waitForURL(url + '/' + hash); await page.locator(ready).waitFor();
       assert.equal(await bar.locator('a.active').count() <= 1, true);
@@ -1025,7 +1037,7 @@ test('an open room checks no health while live, waits while hidden and draws its
     await navigate(page, 'library');
     await page.locator('.heading-actions [data-action="desktop"]').waitFor();
     await answer; await delay(300);
-    assert.equal(new URL(page.url()).hash, '#/'); assert.equal(await page.locator('.room-page h1').count(), 0);
+    assert.equal(new URL(page.url()).pathname + new URL(page.url()).hash, '/'); assert.equal(await page.locator('.room-page h1').count(), 0);
     assert.equal(await page.locator('#modal[open] #rename-form').count(), 0);
     await page.locator('.heading-actions [data-action="desktop"]').waitFor();
     await page.unroute('**/api/odyle/rename');
@@ -1348,12 +1360,12 @@ test('the privacy notice is a page of the dashboard, and no page loads anything 
   const elsewhere = [];
   page.on('request', request => { if (new URL(request.url()).host !== '127.0.0.1:18091') elsewhere.push(request.url()); });
   try {
-    await page.locator('.welcome-note a[href="#/privacy"]').click();
+    await page.locator('.welcome-note a[href="./privacy"]').click();
     await page.getByRole('heading', { name: 'Privacy.' }).waitFor();
     const text = await page.locator('.privacy-text').innerText();
     assert.match(text, /odyle\.account/); assert.match(text, /odyle\.taskScope/); assert.match(text, /no font service or tracker sees your address/);
     assert.equal(await page.locator('.privacy-help a[href="https://github.com/oldbear24/odyle-dashboard/issues"]').count(), 1);
-    assert.equal(await page.locator('footer a[href="#/privacy"]').count(), 1);
+    assert.equal(await page.locator('footer a[href="./privacy"]').count(), 1);
     // The fonts come with the dashboard.
     await page.evaluate(() => document.fonts.ready);
     assert.deepEqual(await page.evaluate(() => [document.fonts.check('16px "DM Sans Variable"'), document.fonts.check('16px "Manrope Variable"')]), [true, true]);
@@ -1392,7 +1404,7 @@ test('Discord sign-in offers this page in another browser when its window cannot
     // The test backend has no Discord sign-in configured, and the page says so.
     await toast(page).filter({ hasText: 'Discord sign-in needs backend configuration' }).waitFor();
     await page.locator('.signin-help [data-action="open-elsewhere"]').click();
-    assert.equal(await page.locator('#modal .link-field').inputValue(), url + '/#/');
+    assert.equal(await page.locator('#modal .link-field').inputValue(), url + '/');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -1417,7 +1429,7 @@ test('Discord sign-in opens its window, signs in and joins the room of an invite
     await opened;
     // Signed in with the Discord name, the invite joins at once.
     await page.locator('.room-page h1').waitFor();
-    assert.match(page.url(), /#\/room\/[a-z0-9]+$/); assert.equal(await page.locator('.room-page h1').innerText(), 'Window room');
+    assert.match(page.url(), /\/room\/[a-z0-9]+$/); assert.equal(await page.locator('.room-page h1').innerText(), 'Window room');
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('odyle.account')).record.displayName), 'Window Tester');
     assert.deepEqual(errors, []);
   } finally { await close(); oauth.close(); }
@@ -1482,7 +1494,7 @@ test('the logo clicked seven times opens the slot machine, whose spins win cosme
     const logo = page.locator('a.brand:visible').first();
     await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
     for (let i = 0; i < 7; i++) await logo.click();
-    await page.waitForURL(/#\/slots$/);
+    await page.waitForURL(/\/slots$/);
     await page.locator('.slot-machine').waitFor();
     // Three welcome spins and three free ones of the day.
     assert.match(await page.locator('.slot-spins').innerText(), /6 spins left \(3 free today\)/);
