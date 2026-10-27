@@ -8,6 +8,11 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - **Class emblems**: characters show their class's emblem from PLAYNC's character pages beside the class, on their cards in rooms and on your characters page, and in the armory on the profile, in search results and in bookmarks.
 - The armory's search lists each character's class.
 
+## 0.47.1 · 2026-10-27
+
+### Fixed
+- Security: the server's networking library is updated (golang.org/x/net 0.62.0), so a crafted HTML page can no longer make the server spend a long time reading it (GO-2026-6860).
+
 ## 0.47.0 · 2026-10-27
 
 ### New
