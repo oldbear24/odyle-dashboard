@@ -3,6 +3,7 @@ package odyle
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -202,12 +203,24 @@ func TestArmoryServerIdsBelongToTheirRegion(t *testing.T) {
 
 // armoryStand stands in for PLAYNC's character pages, search, icons and portraits: characters
 // whose id starts with "missing" are not listed, "refused" ones get 429; gate, when set, holds
-// each answer. lookups counts the info pages asked for (one a lookup), details the item and
-// board pages, images the icons and portraits.
+// each answer, and held the item and board pages'. lookups counts the info pages asked for
+// (one a lookup), details the item and board pages, images the icons and portraits, and
+// together the most images downloaded at once.
 type armoryStand struct {
 	lookups, details, images, searches atomic.Int32
-	gate                               chan struct{}
+	downloading, together              atomic.Int32
+	gate, held                         chan struct{}
 	url                                string
+}
+
+// download counts an image being downloaded, for a moment, alongside the others.
+func (s *armoryStand) download() {
+	s.images.Add(1)
+	now := s.downloading.Add(1)
+	for most := s.together.Load(); now > most && !s.together.CompareAndSwap(most, now); most = s.together.Load() {
+	}
+	time.Sleep(10 * time.Millisecond)
+	s.downloading.Add(-1)
 }
 
 func (s *armoryStand) serve(t *testing.T) {
@@ -228,7 +241,7 @@ func (s *armoryStand) serve(t *testing.T) {
 			return
 		}
 		if name, ok := strings.CutPrefix(r.URL.Path, "/assets/"); ok {
-			s.images.Add(1)
+			s.download()
 			// One icon is missing, as a few are on PLAYNC's CDN; skills come at full size.
 			if strings.HasPrefix(name, "Missing") {
 				w.WriteHeader(404)
@@ -238,7 +251,7 @@ func (s *armoryStand) serve(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/game_profile_images/aion2global/images" {
-			s.images.Add(1)
+			s.download()
 			w.Header().Set("Content-Type", "image/png")
 			w.Write(pngOf(t, 80))
 			return
@@ -247,6 +260,9 @@ func (s *armoryStand) serve(t *testing.T) {
 			s.lookups.Add(1)
 		} else {
 			s.details.Add(1)
+		}
+		if s.held != nil && (r.URL.Path == "/api/character/equipment/item" || r.URL.Path == "/api/character/daevanion/detail") {
+			<-s.held
 		}
 		id := q.Get("characterId")
 		switch {
@@ -532,6 +548,84 @@ func TestArmoryKeepsItemsBoardsAndImages(t *testing.T) {
 	}
 	if status := armoryStatus(app); status["images"].(int) != 6 || status["imageBytes"].(int64) == 0 {
 		t.Fatalf("status %v", status)
+	}
+}
+
+// While a lookup reads the items' and boards' pages, a reader with no kept profile sees what
+// PLAYNC's character pages gave, with its icons, and how far the lookup got. Images come
+// side by side.
+func TestArmoryShowsTheProfileWhileItsDetailsLoad(t *testing.T) {
+	fastArmory(t)
+	stand := &armoryStand{held: make(chan struct{})}
+	stand.serve(t)
+	app := newTestApp(t)
+	const id = "kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="
+	if first := ask(t, app, "GET", armoryPath(id), nil, "", 200); first["partial"] != false || first["progress"] != nil {
+		t.Fatalf("queued: %v", first)
+	}
+	var shown map[string]any
+	for i := 0; i < 400; i++ {
+		shown = ask(t, app, "GET", armoryPath(id), nil, "", 200)
+		if progress, _ := shown["progress"].(map[string]any); shown["partial"] == true && progress["step"] == "items" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	progress, _ := shown["progress"].(map[string]any)
+	profile, _ := shown["profile"].(map[string]any)
+	if shown["state"] != "fetching" || shown["partial"] != true || progress["step"] != "items" || progress["done"].(float64) != 0 || progress["total"].(float64) != 2 || progress["percent"].(float64) < 10 || progress["percent"].(float64) > 50 {
+		t.Fatalf("while the details load: %v", shown)
+	}
+	main, _ := profile["gear"].([]any)[0].(map[string]any)
+	if profile["name"] != "Hero" || main["icon"] != "Icon_WP_MA_0078_T05.png" || main["detail"] != nil || !strings.HasPrefix(profile["portrait"].(string), "portrait-") {
+		t.Fatalf("partial profile: %v", profile)
+	}
+	if stand.together.Load() < 2 {
+		t.Fatalf("images one at a time: %d", stand.together.Load())
+	}
+	close(stand.held)
+	stateOf(app).armory.wait()
+	kept := ask(t, app, "GET", armoryPath(id), nil, "", 200)
+	main, _ = kept["profile"].(map[string]any)["gear"].([]any)[0].(map[string]any)
+	if kept["state"] != "fresh" || kept["partial"] != false || kept["progress"] != nil || main["detail"] == nil {
+		t.Fatalf("kept: %v", kept)
+	}
+}
+
+// The progress counts PLAYNC's pages as one and images as a tenth, never goes back and
+// reaches 100 only once the lookup ends.
+func TestArmoryTrackCountsTheLookup(t *testing.T) {
+	track := newArmoryTrack()
+	percent := func() int { p, _ := track.read(); return p.Percent }
+	seen := []int{}
+	track.begin("profile", 2, 1)
+	track.tick()
+	seen = append(seen, percent())
+	track.tick()
+	track.plan(4, 1)
+	seen = append(seen, percent())
+	track.begin("images", 10, imageWorth)
+	for range 10 {
+		track.tick()
+	}
+	seen = append(seen, percent())
+	track.begin("items", 4, 1)
+	for range 4 {
+		track.tick()
+	}
+	seen = append(seen, percent())
+	track.begin("boards", 1, 1)
+	track.tick()
+	track.begin("images", 0, imageWorth)
+	seen = append(seen, percent())
+	if fmt.Sprint(seen) != "[3 26 35 82 99]" {
+		t.Fatalf("percent %v", seen)
+	}
+	var none *armoryTrack
+	none.begin("profile", 2, 1)
+	none.tick()
+	if progress, partial := none.read(); progress != nil || partial != "" {
+		t.Fatal("a nil track")
 	}
 }
 

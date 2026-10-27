@@ -259,7 +259,7 @@ func TestAnArmoryLookupKeepsTheHiddenSwitch(t *testing.T) {
 	ask(t, app, "GET", armoryPath(id), nil, "", 200)
 	stateOf(app).armory.wait()
 	whileWriting(t, app, "UPDATE armory_profiles SET hidden = TRUE", dbx.Params{}, func() {
-		if err := lookUpArmory(app, armoryJob{key: armoryKey(2304, id), region: "eu", serverId: 2304, characterId: id}); err != nil {
+		if err := lookUpArmory(app, armoryJob{key: armoryKey(2304, id), region: "eu", serverId: 2304, characterId: id}, nil); err != nil {
 			t.Fatal(err)
 		}
 	})

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -50,9 +51,12 @@ const (
 	iconLimit      = 2 << 20   // the largest icon downloaded
 	iconPixels     = 2048      // the widest and highest icon decoded
 	iconSize       = 112       // the width and height icons are kept at, at most
-	iconsPerLookup = 300       // the most icons one lookup downloads
+	iconsPerLookup = 300       // the most icons one lookup downloads at once (it does twice)
 	imageGrace     = time.Hour // an image no profile names yet is kept at least this long
 )
+
+// armoryImageLanes is how many images a lookup downloads side by side from PLAYNC's CDN.
+const armoryImageLanes = 6
 
 // iconOf is the file name of the game icon that m[key] links to, or "" for any other link.
 func iconOf(m map[string]any, key string) string {
@@ -106,11 +110,11 @@ func (p *armoryProfile) icons() []string {
 	return out
 }
 
-// keepArmoryImages downloads the character's portrait and the icons the profile names that
-// the server does not keep yet. An image that cannot be downloaded (PLAYNC lacks a few) is
-// left out of the profile: the page shows the character's initials or an empty frame, and
-// the next lookup tries again.
-func keepArmoryImages(app core.App, p *armoryProfile) {
+// keepArmoryImages downloads the icons the profile names that the server does not keep yet,
+// armoryImageLanes side by side, and with portrait the character's portrait too. An image
+// that cannot be downloaded (PLAYNC lacks a few) is left out of the profile: the page shows
+// the character's initials or an empty frame, and the next lookup tries again.
+func keepArmoryImages(app core.App, p *armoryProfile, track *armoryTrack, portrait bool) {
 	dir := imageDir(app)
 	kept := map[string]bool{}
 	defer p.eachIcon(func(name *string) {
@@ -122,33 +126,60 @@ func keepArmoryImages(app core.App, p *armoryProfile) {
 		warn(app, "Odyle could not keep armory images", "error", message(err))
 		return
 	}
-	if p.portraitLink != "" {
-		p.Portrait = keepPortrait(dir, p.portraitLink)
-	}
-	fetched := 0
+	missing := []string{}
 	for _, name := range p.icons() {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 			kept[name] = true
-			continue
+		} else if len(missing) < iconsPerLookup {
+			missing = append(missing, name)
 		}
-		if fetched >= iconsPerLookup {
-			continue
-		}
-		fetched++
-		res, err := send(call{method: "GET", url: assetsURL() + name, headers: map[string]string{"user-agent": userAgent}, timeout: 15 * time.Second, limit: iconLimit})
-		if err != nil || res.status != 200 || !bytes.HasPrefix(res.body, pngSignature) {
-			continue
-		}
-		icon, err := shrinkIcon(res.body)
-		if err == nil {
-			err = writeImage(dir, name, icon)
-		}
-		if err != nil {
-			warn(app, "Odyle could not keep an armory image", "error", message(err))
-			continue
-		}
-		kept[name] = true
 	}
+	images := len(missing)
+	if portrait = portrait && p.portraitLink != ""; portrait {
+		images++
+	}
+	track.begin("images", images, imageWorth)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	lanes := make(chan struct{}, armoryImageLanes)
+	download := func(fetch func()) {
+		wg.Add(1)
+		lanes <- struct{}{}
+		go func() {
+			defer func() { <-lanes; track.tick(); wg.Done() }()
+			fetch()
+		}()
+	}
+	if portrait {
+		download(func() { p.Portrait = keepPortrait(dir, p.portraitLink) })
+	}
+	for _, name := range missing {
+		download(func() {
+			if keepIcon(app, dir, name) {
+				mu.Lock()
+				kept[name] = true
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+}
+
+// keepIcon downloads a game icon, shrinks it and keeps it; false when PLAYNC does not have it.
+func keepIcon(app core.App, dir, name string) bool {
+	res, err := send(call{method: "GET", url: assetsURL() + name, headers: map[string]string{"user-agent": userAgent}, timeout: 15 * time.Second, limit: iconLimit})
+	if err != nil || res.status != 200 || !bytes.HasPrefix(res.body, pngSignature) {
+		return false
+	}
+	icon, err := shrinkIcon(res.body)
+	if err == nil {
+		err = writeImage(dir, name, icon)
+	}
+	if err != nil {
+		warn(app, "Odyle could not keep an armory image", "error", message(err))
+		return false
+	}
+	return true
 }
 
 // shrinkIcon fits a PNG icon into iconSize pixels, or returns it as it is when it fits.

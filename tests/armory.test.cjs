@@ -96,6 +96,32 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
   assert.match(first, /armory-spinner/);
 });
 
+test('a running lookup shows its step and a progress bar, and the profile read so far', async () => {
+  const { armoryProfile, lookupLine, lookupStatus } = await import('../src/armory.js');
+  const running = (progress, extra = {}) => answer({ state: 'fetching', retryAfter: 2, progress, ...extra });
+  assert.equal(lookupLine(running({ step: 'profile', done: 1, total: 2, percent: 3 }), now), 'Reading the character page…');
+  assert.equal(lookupLine(running({ step: 'images', done: 12, total: 1200, percent: 20 }), now), 'Downloading icons · 12 of 1,200');
+  assert.equal(lookupLine(running({ step: 'items', done: 5, total: 20, percent: 40 }), now), 'Reading item details · 5 of 20');
+  assert.equal(lookupLine(running({ step: 'boards', done: 0, total: 4, percent: 90 }), now), 'Reading Daevanion boards · 0 of 4');
+  assert.equal(lookupLine(running(null), now), 'Fetching from PLAYNC now…');
+  const status = lookupStatus(running({ step: 'items', done: 5, total: 20, percent: 40 }), now, false);
+  assert.match(status, /<div class="armory-status is-waiting" role="status"><span class="armory-spinner" aria-hidden="true"><\/span><span>Reading item details · 5 of 20<span class="armory-track armory-progress" role="progressbar" aria-label="Lookup progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40"><i style="width:40%"><\/i><\/span><\/span><\/div>/);
+  assert.match(lookupStatus(running({ step: 'items', percent: 250 }), now, false), /aria-valuenow="100"><i style="width:100%">/);
+  // Queued, kept or failed: no bar.
+  for (const extra of [{ state: 'queued', position: 1, wait: 50, progress: null }, {}, { state: 'failed', lookupError: 'x', retryAfter: 600 }]) assert.doesNotMatch(lookupStatus(answer(extra), now, false), /progressbar/);
+  // The profile read so far: items and boards say their details are on their way.
+  const partial = { ...profile, gear: profile.gear.map(({ detail: _, ...g }) => g), boards: profile.boards.map(b => ({ ...b, nodes: [], statEffects: [], skillEffects: [] })) };
+  const reading = running({ step: 'items', done: 0, total: 2, percent: 20 }, { profile: partial, partial: true, fetchedAt: '' });
+  const gear = armoryProfile(reading, now, false, false, { images });
+  assert.match(gear, /<small>Main hand<\/small><strong>Enraged Kromede Rod<\/strong><span>Unique · exceed 3<\/span>[\s\S]*?Odyle is reading this item's details from PLAYNC…/);
+  assert.match(gear, /progressbar/);
+  assert.match(armoryProfile(reading, now, false, false, { images, tab: 'daevanion' }), /Odyle is reading this board from PLAYNC…/);
+  // Kept without them, the profile says PLAYNC gave none.
+  const kept = armoryProfile(answer({ profile: partial }), now, false, false, { images, tab: 'daevanion' });
+  assert.match(kept, /PLAYNC did not list this board's nodes\./);
+  assert.doesNotMatch(armoryProfile(answer({ profile: partial }), now, false, false, { images }), /reading this item/);
+});
+
 test('a profile\'s tabs show its skills, Daevanion boards, titles and appearance', async () => {
   const { armoryProfile, profileTabs, imageUrl } = await import('../src/armory.js');
   const view = (tab, extra = {}) => armoryProfile(answer(), now, false, false, { images, tab, ...extra });

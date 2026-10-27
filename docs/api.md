@@ -359,12 +359,13 @@ Public routes for the armory, signed in or not, with their own rate limits per a
     "boards": [{ "id": 71, "name": "Nezekan", "open": 12, "total": 40, "icon": "…",
       "nodes": [{ "r": 3, "c": 3, "g": "Unique", "t": "Stat", "o": true, "e": "Combat Speed +1.5%" }, { "r": 8, "c": 8, "g": "None", "t": "Start", "n": "Nezekan - Start" }],
       "statEffects": ["Combat Speed +1.5%"], "skillEffects": ["Bolt +1"] }] },
-  "fetchedAt": "2026-10-16T10:00:00.000Z", "error": "",
-  "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": ""
+  "partial": false, "fetchedAt": "2026-10-16T10:00:00.000Z", "error": "",
+  "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": "", "progress": null
 }
 ```
 
 - `profile` is `null` until PLAYNC was first asked. `fetchedAt` is when it was, and `error` is why the last lookup of a kept profile failed.
+- `partial` (dashboard 0.47.0) is `true` while a lookup runs for a character with no profile kept in today's shape: `profile` is then what PLAYNC's info and equipment pages gave, without `detail` on the items and `nodes` on the boards, which follow once the lookup ends. It is not kept.
 - `v` is the profile's shape; profiles kept before dashboard 0.46.0 have none and hold only the name to `itemLevel`, `stats` without `effects`, `gear` without `icon` and `detail`, and `boards` with `name`, `open` and `total`. Opening one queues it again.
 - `gear` lists the equipped items in PLAYNC's slot order (`MainHand`, `SubHand`, `Helmet`, …, `Arcana1`–`5`), then `Wings` and `Pet`. `detail` is the item's official item page for this character, missing when PLAYNC did not give it: `main` are its properties (`min` ~ `value`, `extra` from its enchantment; an `exceed` line has only `extra`), `sub` and `subSkills` its soul binding (`soulBind` is the rate in %, `subCount` the lines it can hold), `stones` its manastones (soulstones on accessories) of `stoneSlots`, `godStones` its theostones (`name`, `grade`, `desc`) of `godSlots`, and `set` the set it belongs to.
 - `skills` are `Active`, `Passive` and `Dp` (stigma) skills; `acquired` says the character learned it and `equipped` that it is on the skill bar.
@@ -374,7 +375,7 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 - `state` says where the lookup stands:
   - `fresh`: kept and younger than six hours, nothing to do.
   - `queued`: `position` characters are ahead and it takes about `wait` seconds.
-  - `fetching`: PLAYNC is being asked right now.
+  - `fetching`: PLAYNC is being asked right now. `progress` (dashboard 0.47.0, `null` in every other state) says how far: `{ step, done, total, percent }`, where `step` is `profile` (info and equipment), `images` (the icons, the portrait), `items` (each item's page) or `boards` (each open board's page), `done` of `total` is that step, and `percent` the whole lookup (it never goes back, and stays below 100 until the lookup ends).
   - `failed`: `lookupError` says why, and it is tried again after `retryAfter` seconds.
   - `busy`: the queue, or the caller's three places in it, is full.
   - `paused`: superusers paused the armory.
