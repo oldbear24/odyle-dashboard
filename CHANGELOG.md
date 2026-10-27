@@ -2,7 +2,7 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
-## 0.44.0 · 2026-10-27
+## 0.45.0 · 2026-10-27
 
 ### New
 - The **Odyle history** and **Location** windows page through their lists: 15 changes or 12 places at a time, with buttons to the newer, older, newest and oldest pages, instead of one long list behind **Show all**.
@@ -12,6 +12,13 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ### Changed
 - Pop-up windows keep their title and close button in view: only their content scrolls, and the page behind no longer scrolls along. A short last page keeps the list's height, so the page buttons stay under your pointer.
 - On wide screens the Odyle history shows its chart and weeks beside the changes, and the Location window its map beside the places, so both fit without scrolling. A change or place from an earlier year shows the year.
+
+## 0.44.0 · 2026-10-27
+
+### New
+- Places in dungeons, Abyss layers, arenas and other instances can show their map too: superusers now pick from **all of TH.GL's AION 2 maps** (151, not just the six regions) under **Game settings → Maps**.
+- Maps link themselves: a map id named after a place TH.GL lists, like *Altgard* or *Valka's Nest*, gets its TH.GL map without typing it, and picking a TH.GL map of one place names the map. Maps named earlier link the same way.
+- Under the map of a place, **Open on TH.GL ↗** opens the full map on TH.GL's site.
 
 ## 0.43.0 · 2026-10-24
 

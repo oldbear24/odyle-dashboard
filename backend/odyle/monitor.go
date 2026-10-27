@@ -437,7 +437,7 @@ func seenAdapters(app core.App) []any {
 }
 
 func settingsJSON(app core.App, current settings) map[string]any {
-	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app), "locationAdapters": verifiedLocationAdapters, "unnamedMaps": unnamedMaps(app, current.Maps)}
+	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app), "locationAdapters": verifiedLocationAdapters, "unnamedMaps": unnamedMaps(app, current.Maps), "thglMaps": thglCatalog()}
 }
 
 // learnedClasses are the class names the armory learned from PLAYNC (classes.go), for the class

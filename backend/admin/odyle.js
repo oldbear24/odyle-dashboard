@@ -688,7 +688,23 @@ export function settingsPage() {
     t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (r.class.trim() || 'this class'), onclick: () => roles().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
   // Game maps (location sharing): the game names maps by id only. Superusers name them and link each
   // to a map of TH.GL's AION 2 site, which the dashboard embeds; ids seen without a name are listed.
-  const thglMaps = ['Verteron', 'Eltnen', 'Poeta', 'Altgard', 'Morheim', 'Ishalgen'];
+  // TH.GL's maps come with the places each lists (the answer's thglMaps, thgl.go).
+  const thglMaps = () => state.data?.thglMaps || [];
+  const placeKey = name => key(String(name).replace(/’/g, "'"));
+  const thglNamed = name => thglMaps().find(m => placeKey(m.name) === placeKey(name));
+  function thglOf(place) {
+    const listing = thglMaps().filter(m => m.places.some(p => placeKey(p) === placeKey(place)));
+    return thglNamed(place)?.name || (listing.length === 1 ? listing[0].name : '');
+  }
+  // What the server fills in when it saves (linkMap), filled in as soon as a field is left: a name
+  // TH.GL lists links its map, and a TH.GL map of one place names the row.
+  function linkLeftOut(m) {
+    if (!m.thgl.trim() && m.name.trim()) m.thgl = thglOf(m.name);
+    const known = thglNamed(m.thgl);
+    if (!known) return;
+    m.thgl = known.name;
+    if (!m.name.trim() && known.places.length === 1) m.name = known.places[0];
+  }
   const maps = () => state.form.maps || (state.form.maps = []);
   const unnamed = () => (state.data?.unnamedMaps || []).filter(seen => !maps().some(m => m.id === seen.id && m.name.trim()));
   function addMap(id) {
@@ -699,8 +715,8 @@ export function settingsPage() {
   }
   const mapRow = (m, i) => t.tr({ className: 'rate-limit-row' },
     cell('odyle-col-map', t.input({ id: 'odyle-map-' + i + '-id', type: 'number', min: 1, max: 9999999, step: 1, required: true, placeholder: 'Map id', ariaLabel: 'Map id', value: () => m.id ?? '', oninput: e => m.id = integer(e.target.value) })),
-    cell('col-label', t.input({ id: 'odyle-map-' + i + '-name', type: 'text', maxLength: 60, placeholder: 'Name', ariaLabel: 'Name', value: () => m.name, oninput: e => m.name = e.target.value })),
-    cell('odyle-col-thgl', t.input({ id: 'odyle-map-' + i + '-thgl', type: 'text', maxLength: 60, placeholder: 'TH.GL map', ariaLabel: 'TH.GL map', 'html-list': 'odyle-thgl-maps', value: () => m.thgl, oninput: e => m.thgl = e.target.value })),
+    cell('col-label', t.input({ id: 'odyle-map-' + i + '-name', type: 'text', maxLength: 60, placeholder: 'Name', ariaLabel: 'Name', 'html-list': 'odyle-thgl-places', value: () => m.name, oninput: e => m.name = e.target.value, onchange: () => linkLeftOut(m) })),
+    cell('odyle-col-thgl', t.input({ id: 'odyle-map-' + i + '-thgl', type: 'text', maxLength: 120, placeholder: 'TH.GL map', ariaLabel: 'TH.GL map', 'html-list': 'odyle-thgl-maps', title: () => m.thgl, value: () => m.thgl, oninput: e => m.thgl = e.target.value, onchange: () => linkLeftOut(m) })),
     t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (m.name.trim() || 'map ' + (m.id ?? '')), onclick: () => maps().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
   // The Global task list (#38): daily and weekly tasks players add to their checklists in one go.
   const templates = () => state.form.taskTemplates || (state.form.taskTemplates = []);
@@ -766,13 +782,14 @@ export function settingsPage() {
         t.div({ className: 'field-help' }, () => roles().length ? number(roles().length) + (roles().length === 1 ? ' class' : ' classes') + ' with a role. A class missing here shows in the make-up without one.' : 'Empty: runs show their classes without roles and never miss a tank or a healer.'),
         () => unmapped().length ? t.div({ className: 'field-help' }, 'Learned from PLAYNC without a role: ', ...unmapped().map(name => t.button({ type: 'button', className: 'btn sm secondary transparent', disabled: () => roles().length >= 40, onclick: () => addRole(name) }, t.span({ className: 'txt' }, name)))) : null,
         t.button({ type: 'button', className: 'btn sm secondary transparent m-t-sm', onclick: () => state.form.classRoles = copy(defaults().classRoles) }, t.span({ className: 'txt' }, 'Use the default roles'))),
-      section('Maps', 'Location sharing shows where players who turned it on were last seen. The game names its maps by id only: name each one, and give the TH.GL map that shows it (its name in the address, like Altgard in aion2.th.gl/maps/Altgard). Never copy names from other projects\' tables.'),
+      section('Maps', 'Location sharing shows where players who turned it on were last seen. The game names its maps by id only: name each one after its place, and the TH.GL map that shows it links by itself when TH.GL lists the place (Altgard, Valka\'s Nest). Or pick one of TH.GL\'s maps: one that shows a single place also names the row. A map TH.GL adds later is its name in the address (aion2.th.gl/maps/<name>). Never copy names from other projects\' tables.'),
       t.div({ className: 'col-lg-12' },
         t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-maps' },
           t.thead({ hidden: () => !maps().length }, t.tr(null, t.th(null, 'Map id'), t.th({ className: 'col-label' }, 'Name'), t.th(null, 'TH.GL map'), t.th({ className: 'col-action' }))),
           t.tbody(null, () => maps().map(mapRow),
             t.tr({ className: 'rate-limit-row' }, t.td({ colSpan: 99, className: 'col-new-btn' }, t.button({ type: 'button', className: 'btn secondary sm full-width', disabled: () => maps().length >= 500, onclick: () => addMap(null) }, t.i({ className: 'ri-add-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Add a map'))))))),
-        t.datalist({ id: 'odyle-thgl-maps' }, thglMaps.map(name => t.option({ value: name }))),
+        t.datalist({ id: 'odyle-thgl-maps' }, () => thglMaps().map(m => t.option({ value: m.name }))),
+        t.datalist({ id: 'odyle-thgl-places' }, () => [...new Set(thglMaps().flatMap(m => m.places))].map(place => t.option({ value: place }))),
         t.div({ className: 'field-help' }, () => maps().length ? number(maps().length) + (maps().length === 1 ? ' map' : ' maps') + '. Players see a map without a name as its id; one without a TH.GL map has no map to open.' : 'Empty: players see map ids instead of names.'),
         () => unnamed().length ? t.div({ className: 'field-help' }, 'Seen in the last 30 days without a name: ', ...unnamed().map(seen => t.button({ type: 'button', className: 'btn sm secondary transparent', title: () => number(seen.characters) + (seen.characters === 1 ? ' character, last ' : ' characters, last ') + when(seen.lastAt), onclick: () => addMap(seen.id) }, t.span({ className: 'txt' }, String(seen.id))))) : null),
       section('Global task list', 'Daily and weekly tasks of the game that players add to their checklists in one go, for their account or one of their characters. Players can still add their own.'),
