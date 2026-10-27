@@ -4,9 +4,9 @@ go 1.27.3
 
 require (
 	github.com/pocketbase/dbx v1.12.0
-	github.com/pocketbase/pocketbase v0.40.5
+	github.com/pocketbase/pocketbase v0.40.6
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/image v0.46.0
+	golang.org/x/image v0.47.0
 )
 
 require (
