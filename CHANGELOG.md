@@ -13,6 +13,11 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - Pop-up windows keep their title and close button in view: only their content scrolls, and the page behind no longer scrolls along. A short last page keeps the list's height, so the page buttons stay under your pointer.
 - On wide screens the Odyle history shows its chart and weeks beside the changes, and the Location window its map beside the places, so both fit without scrolling. A change or place from an earlier year shows the year.
 
+## 0.44.1 · 2026-10-27
+
+### Fixed
+- For superusers: adding maps under **Game settings → Maps** no longer stalls. Adding or removing a map redraws only that row, so the field you type in keeps its place; typing an id or a name no longer redraws the ids seen without a name, and a click on one of them or on **Save changes** is no longer lost. An id that already has a row is no longer offered again.
+
 ## 0.44.0 · 2026-10-27
 
 ### New
