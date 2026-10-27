@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.47.1 · 2026-10-27
+
+### Fixed
+- Security: the server's networking library is updated (golang.org/x/net 0.62.0), so a crafted HTML page can no longer make the server spend a long time reading it (GO-2026-6860).
+
 ## 0.47.0 · 2026-10-27
 
 ### New
