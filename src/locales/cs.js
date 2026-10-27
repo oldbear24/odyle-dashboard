@@ -565,6 +565,7 @@ export default {
   'This character is not in the armory.': 'Tato postava ve zbrojnici není.',
   'PLAYNC does not list this character.': 'PLAYNC tuto postavu neuvádí.',
   'PLAYNC answered something else than a character profile.': 'PLAYNC neodpověděl profilem postavy.',
+  'PLAYNC listed no classes.': 'PLAYNC neuvedl žádné třídy.',
   'PLAYNC refused the lookup for now.': 'PLAYNC dotaz zatím odmítl.',
   'Many lookups at the moment. Try again in a minute.': 'Právě probíhá mnoho dotazů. Zkuste to za minutu.',
   'Search a character name of 2 to 16 letters or digits.': 'Hledejte jméno postavy o 2 až 16 písmenech nebo číslicích.',

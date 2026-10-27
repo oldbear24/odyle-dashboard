@@ -8,6 +8,12 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - The server runs on PocketBase 0.41.0, which has moved from GitHub to its author's own site (ganigeorgiev.com). Operators who build Odyle themselves fetch it from there; nothing changes for players.
 - Updated libraries: Vite 8.3.5 builds the dashboard, and a file-type detection library is back on a release its author stands by (1.4.16).
 
+## 0.48.0 · 2026-10-27
+
+### New
+- **Class emblems**: characters show their class's emblem from PLAYNC's character pages beside the class, on their cards in rooms and on your characters page, and in the armory on the profile, in search results and in bookmarks.
+- The armory's search lists each character's class.
+
 ## 0.47.1 · 2026-10-27
 
 ### Fixed

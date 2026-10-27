@@ -205,10 +205,12 @@ func TestArmoryServerIdsBelongToTheirRegion(t *testing.T) {
 // whose id starts with "missing" are not listed, "refused" ones get 429; gate, when set, holds
 // each answer, and held the item and board pages'. lookups counts the info pages asked for
 // (one a lookup), details the item and board pages, images the icons and portraits, and
-// together the most images downloaded at once.
+// together the most images downloaded at once; classLists the class lists and classIcons the
+// class emblems (the Ranger's is missing).
 type armoryStand struct {
 	lookups, details, images, searches atomic.Int32
 	downloading, together              atomic.Int32
+	classLists, classIcons             atomic.Int32
 	gate, held                         chan struct{}
 	url                                string
 }
@@ -235,7 +237,7 @@ func (s *armoryStand) serve(t *testing.T) {
 			serverId, _ := json.Marshal(q.Get("serverId"))
 			json.NewEncoder(w).Encode(map[string]any{"list": []any{
 				map[string]any{"characterId": "longer" + id, "name": "<strong>" + q.Get("keyword") + "</strong>x", "level": 22, "race": 2, "serverId": json.RawMessage(serverId)},
-				map[string]any{"characterId": id, "name": "<strong>" + q.Get("keyword") + "</strong>", "level": 45, "race": 2, "serverId": json.RawMessage(serverId)},
+				map[string]any{"characterId": id, "name": "<strong>" + q.Get("keyword") + "</strong>", "level": 45, "race": 2, "pcId": 36, "serverId": json.RawMessage(serverId)},
 				map[string]any{"characterId": "bad id", "name": q.Get("keyword"), "serverId": 2304},
 			}})
 			return
@@ -254,6 +256,26 @@ func (s *armoryStand) serve(t *testing.T) {
 			s.download()
 			w.Header().Set("Content-Type", "image/png")
 			w.Write(pngOf(t, 80))
+			return
+		}
+		if r.URL.Path == "/en-us/api/gameinfo/pcdata" {
+			s.classLists.Add(1)
+			json.NewEncoder(w).Encode(map[string]any{"pcDataList": []any{
+				map[string]any{"id": 33, "className": "CHANTER", "classText": "Chanter"},
+				map[string]any{"id": 36, "className": "CHANTER", "classText": "Chanter"},
+				map[string]any{"id": 15, "className": "RANGER", "classText": "Ranger"},
+				map[string]any{"id": 21, "className": "ELEMENTALIST", "classText": "Spiritmaster"},
+				map[string]any{"id": 99, "className": "../x", "classText": "Bad"},
+			}})
+			return
+		}
+		if name, ok := strings.CutPrefix(r.URL.Path, "/class/"); ok {
+			s.classIcons.Add(1)
+			if name == "class_icon_ranger.png" {
+				w.WriteHeader(404)
+				return
+			}
+			w.Write(pngOf(t, 256))
 			return
 		}
 		if r.URL.Path == "/api/character/info" {
@@ -292,6 +314,7 @@ func (s *armoryStand) serve(t *testing.T) {
 	t.Setenv("PLAYNC_SEARCH_URL", server.URL+"/search")
 	t.Setenv("PLAYNC_ASSETS_URL", server.URL+"/assets/")
 	t.Setenv("PLAYNC_IMAGE_URL", server.URL)
+	t.Setenv("PLAYNC_CLASS_ICONS_URL", server.URL+"/class/")
 }
 
 func fastArmory(t *testing.T) {
@@ -548,7 +571,8 @@ func TestArmoryKeepsItemsBoardsAndImages(t *testing.T) {
 	if got := stand.images.Load() - images; got != 2 {
 		t.Fatalf("%d images downloaded again", got)
 	}
-	if status := armoryStatus(app); status["images"].(int) != 6 || status["imageBytes"].(int64) == 0 {
+	// Six images of the profile and the emblems of the Chanter and the Spiritmaster.
+	if status := armoryStatus(app); status["images"].(int) != 8 || status["imageBytes"].(int64) == 0 {
 		t.Fatalf("status %v", status)
 	}
 }
