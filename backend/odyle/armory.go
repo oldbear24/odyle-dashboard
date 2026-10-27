@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The armory (#67): anyone, signed in or not, looks up an AION 2 Global character and sees

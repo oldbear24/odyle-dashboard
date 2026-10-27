@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Dungeons room members still need to run. One record per member and dungeon; key is
 // the normalized name, so "Fire temple" and "fire  Temple" are one entry. Records

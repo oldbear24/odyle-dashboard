@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The Odyle clock: the natural pool's regeneration rules as a server-wide setting (the UTC
 // hours of its ticks, the Odyle per tick, the pool's caps and a switch that hides every

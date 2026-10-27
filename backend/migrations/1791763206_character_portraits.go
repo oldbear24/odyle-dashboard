@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The character's official AION 2 portrait, downloaded by the backend
 // (odyle/portraits.go). Players cannot set it: the collection keeps no update rule and

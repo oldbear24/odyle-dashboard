@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
 
 // A browser's side of Web Push, with the standard library's HKDF: its keys, and the

@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // How long the history is kept, set by superusers under Game settings: odyle_settings.historyDays
 // is how many days each change of a character's Odyle stays in character_readings, and

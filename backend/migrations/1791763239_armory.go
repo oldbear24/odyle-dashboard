@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The armory (backend/odyle/armory.go): the AION 2 Global character profiles anyone looked
 // up, as PLAYNC's official character pages list them, one row per character (search

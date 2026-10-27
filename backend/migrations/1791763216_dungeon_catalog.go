@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // An optional list of dungeon names superusers keep on the dashboard's Odyle page.
 // While it is empty, wishlists and planned runs take any name; once it lists dungeons,

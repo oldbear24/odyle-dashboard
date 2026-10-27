@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Reader sessions are looked up by their paired PC when a session starts and when a PC
 // is removed; 1791763219 added the column without an index.

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Rate limits count requests per client address, the one PocketBase's RealIP answers.

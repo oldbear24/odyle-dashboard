@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // An account's notification settings (backend/odyle/notifications.go): which notifications,
 // where and its quiet hours, edited on the dashboard and followed by every client. Empty

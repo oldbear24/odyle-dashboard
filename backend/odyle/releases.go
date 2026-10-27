@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The newest release of the Windows companion, so the dashboard can offer its download

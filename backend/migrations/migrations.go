@@ -9,7 +9,7 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 func register(file string, up, down func(app core.App) error) {

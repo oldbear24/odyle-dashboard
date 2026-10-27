@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Discord reminders of planned runs. A room owner may connect a channel webhook; the
 // backend posts each run there 15 minutes before it starts. The URL is a secret, so the

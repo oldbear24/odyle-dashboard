@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Web Push (backend/odyle/push.go): each browser or installed app that turned push on for an
 // account keeps its push service endpoint and keys, the language its notifications are

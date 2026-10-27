@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Characters without Odyle yet (odyle-windows#6): the Windows app read a complete snapshot of
 // the character without its Odyle record, which the game adds at level 22, and said so

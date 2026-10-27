@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Party ready (#48): room_runs.readyFor is the start time whose attendees were told that
 // everyone going can claim a cube, so each start time is told once.

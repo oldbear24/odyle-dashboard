@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The slot machine (#107): users.spins (whole spins to use) and users.cosmetics (owned and
 // equipped items, shards, whether the welcome spins were given), and characters.spinDay (the

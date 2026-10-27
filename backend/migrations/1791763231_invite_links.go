@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Invite links an owner makes one by one: who made each link, an optional label, a use
 // limit with the joins so far and when it was made, so the owner can list the room's

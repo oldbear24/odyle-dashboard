@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
 
 // Runs outside Odyle (#35): a run's event link (https only), and the private calendar feed of the

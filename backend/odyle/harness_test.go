@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 
 	_ "github.com/oldbear24/odyle-dashboard/backend/migrations"
 )

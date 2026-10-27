@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Lookups the backend runs on every reading, page load and job run: an account's
 // memberships and reader sessions, the characters a session read, portraits that are

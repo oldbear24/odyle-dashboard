@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Room creation, joins and the application routes were capped tightly while the
 // service was new. Abuse has not been a concern, so the limits now only stop a runaway

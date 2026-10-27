@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // classStand is PLAYNC's search listing each name with the given id, class id and level.

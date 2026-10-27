@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Paired PCs carry the Windows computer name the app sends, so Account & data can list
 // them and remove one. A reader session remembers the pairing it was opened with:

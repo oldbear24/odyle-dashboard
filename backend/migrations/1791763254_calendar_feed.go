@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Runs outside Odyle (#35): room_runs.link (the run's event elsewhere), and the private calendar
 // feed of each account: users.calendarDigest (the digest of its address's token, hidden) and

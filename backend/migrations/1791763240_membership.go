@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The membership answer (backend/odyle/membership.go): an account says whether its game account
 // has the membership ("yes", "no", or "" while not sure), and each of its characters carries the

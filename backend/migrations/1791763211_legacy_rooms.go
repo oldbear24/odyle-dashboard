@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The anonymous rooms of 1791763200_odyle (rooms, members, invites) were replaced by
 // the account-based party_rooms, room_members and room_invites in 1791763201_accounts,

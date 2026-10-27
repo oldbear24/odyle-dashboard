@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Accounts change their profile only through POST /api/odyle/profile, which checks the
 // display name. The users collection's own update API also accepted names of only

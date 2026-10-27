@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // One row a day of the activation and feature-use totals the Server status page shows
 // (backend/odyle/stats.go), written by the nightly odyle-stats job, so their trend

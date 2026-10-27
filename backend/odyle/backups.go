@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Backups are PocketBase's own (Settings → Backups): migration 1791763227_backups.go

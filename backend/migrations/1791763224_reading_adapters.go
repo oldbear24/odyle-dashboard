@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Each history point records the packet adapter that decoded it (the reading's
 // parserVersion), so points of a decoder later found to misread can be told apart.

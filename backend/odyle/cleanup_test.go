@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/dbx"
 )
 
 func TestCleanupPurgesWhatExpired(t *testing.T) {

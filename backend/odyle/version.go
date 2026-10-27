@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Version is the release the backend was built as and Commit its commit. The release
@@ -43,7 +43,7 @@ var build = sync.OnceValue(func() buildInfo {
 			}
 		}
 		for _, dep := range info.Deps {
-			if dep.Path == "github.com/pocketbase/pocketbase" {
+			if dep.Path == "ganigeorgiev.com/pocketbase/pocketbase" {
 				b.PocketBase = dep.Version
 			}
 		}

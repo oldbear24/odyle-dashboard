@@ -3,8 +3,8 @@ package odyle
 import (
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Cap alerts: the odyle-cap-alerts job (hourly at :05, after each regeneration tick) projects

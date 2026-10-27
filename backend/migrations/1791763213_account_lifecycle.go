@@ -3,7 +3,7 @@ package migrations
 import (
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Accounts can now be deleted by their owner and, when a superuser sets

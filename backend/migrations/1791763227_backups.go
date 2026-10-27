@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // PocketBase's scheduled backups (Settings → Backups): every night at 03:00 UTC, before
 // the inactive-account clean-up at 03:17, keeping the newest seven. A schedule a
