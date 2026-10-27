@@ -1165,6 +1165,7 @@ export default {
   'Map of {map} by TH.GL': 'Mapa {map} od TH.GL',
   'Back to {name}': 'Zpět na {name}',
   'Map: TH.GL’s AION 2 map, centred on the place. Moving the map hides the pin.': 'Mapa: AION 2 mapa od TH.GL, vystředěná na místo. Posunutím mapy značka zmizí.',
+  'Open on TH.GL': 'Otevřít na TH.GL',
   'Shown': 'Zobrazeno',
   'Show': 'Ukázat',
   'Location sharing is off for your account. Turn it on under Account & data to let your rooms see where your characters were last seen.': 'Sdílení polohy je pro tvůj účet vypnuté. Zapni ho v sekci Účet a data, aby tvoje místnosti viděly, kde byly tvoje postavy naposledy.',
@@ -1188,7 +1189,7 @@ export default {
   'Maps must be a list of up to 500 maps.': 'Mapy musí být seznam nejvýš 500 map.',
   'List each map id once.': 'Uveď každé id mapy jen jednou.',
   'Name each map in up to 60 characters.': 'Pojmenuj každou mapu nejvýš 60 znaky.',
-  "A TH.GL map is its name from the map's address, like Altgard.": 'Mapa TH.GL je její název z adresy mapy, například Altgard.',
+  'A TH.GL map is its name as TH.GL lists it, like Altgard, in up to 120 characters.': 'Mapa TH.GL je její název, jak ho TH.GL uvádí, například Altgard, nejvýš 120 znaků.',
   'The heading must be degrees between -360 and 360.': 'Směr musí být ve stupních od -360 do 360.',
   'The source must be load, arrival, flight or effect.': 'Zdroj musí být load, arrival, flight nebo effect.',
 };

@@ -783,6 +783,7 @@ test('location sharing is off until turned on, rooms see where a character was, 
     const src = await page.locator('#modal .place-frame iframe').getAttribute('src');
     assert.equal(src, 'https://aion2.th.gl/embed/maps/Altgard?center=-33884,-83476&zoom=3&types=kibelisk,dungeon_kibelisk');
     assert.equal(await page.locator('#modal .place-pin').count(), 1);
+    assert.equal(await page.locator('#modal .place-credit a').getAttribute('href'), 'https://aion2.th.gl/maps/Altgard');
     await shot(page, 'location-dialog');
     await page.locator('#modal [data-action="close-dialog"]').click();
     // A room member sees it too, and a place on a map without a name shows its id.
@@ -1467,12 +1468,22 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     // Class roles (#45): the default table of AION 2's classes, each role changed in its row.
     assert.deepEqual(await page.locator('.odyle-roles [id$="-class"]').evaluateAll(inputs => inputs.map(i => i.value)), ['Templar', 'Gladiator', 'Assassin', 'Ranger', 'Sorcerer', 'Spiritmaster', 'Cleric', 'Chanter']);
     await page.locator('#odyle-role-7-role').selectOption('healer');
+    // Maps: a name TH.GL lists links its TH.GL map, and a TH.GL map of one place names the row.
+    const map = (row, field) => page.locator('#odyle-map-' + row + '-' + field), rows = await page.locator('.odyle-maps [id$="-id"]').count();
+    await page.getByRole('button', { name: 'Add a map' }).click();
+    await map(rows, 'id').fill('600101'); await map(rows, 'name').fill('Valka’s Nest'); await map(rows, 'name').blur();
+    assert.equal(await map(rows, 'thgl').inputValue(), "Herb Cave / Valka's Nest (+3)");
+    await page.getByRole('button', { name: 'Add a map' }).click();
+    await map(rows + 1, 'id').fill('600102'); await map(rows + 1, 'thgl').fill('fire temple arena'); await map(rows + 1, 'thgl').blur();
+    assert.deepEqual([await map(rows + 1, 'name').inputValue(), await map(rows + 1, 'thgl').inputValue()], ['Fire Temple Arena', 'Fire Temple Arena']);
+    assert.equal(await page.locator('#odyle-thgl-maps option').count(), 151);
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
     assert.deepEqual(saved.clock, { tickHours: [2, 5, 22], tick: 20, caps: [600, 900], paused: false });
     assert.deepEqual(saved.classRoles.at(-1), { class: 'Chanter', role: 'healer' });
+    assert.deepEqual(saved.maps.slice(-2), [{ id: 600101, name: 'Valka’s Nest', thgl: "Herb Cave / Valka's Nest (+3)" }, { id: 600102, name: 'Fire Temple Arena', thgl: 'Fire Temple Arena' }]);
     assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '2, 5, 22');
     assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.

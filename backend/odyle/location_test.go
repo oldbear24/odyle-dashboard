@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -131,7 +132,7 @@ func TestOldPlacesExpire(t *testing.T) {
 
 // Superusers name map ids; ids seen without a name are listed for them.
 func TestMapsAreNamedBySuperusers(t *testing.T) {
-	for _, bad := range []any{"Altgard", []any{map[string]any{"id": float64(0), "name": "x"}}, []any{map[string]any{"id": float64(1110), "name": "a"}, map[string]any{"id": float64(1110), "name": "b"}}, []any{map[string]any{"id": float64(1110), "name": "a", "thgl": "../evil"}}, []any{map[string]any{"id": float64(1110), "name": strings.Repeat("x", 61)}}} {
+	for _, bad := range []any{"Altgard", []any{map[string]any{"id": float64(0), "name": "x"}}, []any{map[string]any{"id": float64(1110), "name": "a"}, map[string]any{"id": float64(1110), "name": "b"}}, []any{map[string]any{"id": float64(1110), "name": "a", "thgl": "../evil"}}, []any{map[string]any{"id": float64(1110), "name": "a", "thgl": "<b>Altgard</b>"}}, []any{map[string]any{"id": float64(1110), "name": "a", "thgl": strings.Repeat("x", 121)}}, []any{map[string]any{"id": float64(1110), "name": strings.Repeat("x", 61)}}} {
 		if _, err := checkMaps(bad); err == nil {
 			t.Errorf("checkMaps(%v) accepted", bad)
 		}
@@ -154,5 +155,46 @@ func TestMapsAreNamedBySuperusers(t *testing.T) {
 	unnamed := unnamedMaps(app, readSettings(app).Maps)
 	if len(unnamed) != 1 || unnamed[0].(map[string]any)["id"] != int64(600001) {
 		t.Fatalf("unnamed maps = %v, want only 600001", unnamed)
+	}
+}
+
+// TH.GL's whole map list passes the check, and what a superuser leaves out is linked from it: a
+// map named after a place TH.GL lists gets its TH.GL map, and one linked to a TH.GL map of one
+// place gets that place's name. A superuser's own choice stays.
+func TestMapsLinkTheirTHGLMapsByPlace(t *testing.T) {
+	for _, name := range thglMaps {
+		if !thglMap.MatchString(name) {
+			t.Errorf("TH.GL map %q fails the check", name)
+		}
+		for _, place := range thglPlaces(name) {
+			if length(place) > 60 {
+				t.Errorf("place %q of %q is too long for a name", place, name)
+			}
+		}
+	}
+	if len(thglByName) != len(thglMaps) {
+		t.Errorf("%d TH.GL maps, %d names", len(thglMaps), len(thglByName))
+	}
+	if got := thglPlaces("Nightmare Altar (Easy) / Nightmare Altar (Normal) (+4)"); !slices.Equal(got, []string{"Nightmare Altar (Easy)", "Nightmare Altar", "Nightmare Altar (Normal)"}) {
+		t.Errorf("places = %q", got)
+	}
+	entry := func(id int, name, thgl string) any {
+		return map[string]any{"id": float64(id), "name": name, "thgl": thgl}
+	}
+	maps, err := checkMaps([]any{entry(1, "altgard", ""), entry(2, "Valka’s  Nest", ""), entry(3, "Nightmare Altar", ""), entry(4, "", "fire temple arena"), entry(5, "", "Herb Cave / Valka's Nest (+3)"), entry(6, "Our camp", ""), entry(7, "Altgard", "Morheim"), entry(8, "", "A Map TH.GL Adds Later"), entry(9, "Fire Temple", "")})
+	want := []gameMap{{1, "altgard", "Altgard"}, {2, "Valka’s Nest", "Herb Cave / Valka's Nest (+3)"}, {3, "Nightmare Altar", "Nightmare Altar (Easy) / Nightmare Altar (Normal) (+4)"}, {4, "Fire Temple Arena", "Fire Temple Arena"},
+		{5, "", "Herb Cave / Valka's Nest (+3)"}, {6, "Our camp", ""}, {7, "Altgard", "Morheim"}, {8, "", "A Map TH.GL Adds Later"}, {9, "Fire Temple", "Fire Temple"}}
+	if err != nil || !slices.Equal(maps, want) {
+		t.Fatalf("checkMaps = %v, %v\nwant %v", maps, err, want)
+	}
+	// Maps saved before this list (or under Collections → odyle_settings) are linked when read.
+	app := newTestApp(t)
+	record := findSettings(app)
+	record.Set("maps", []any{entry(1110, "Altgard", "")})
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSettings(app).Maps; len(got) != 1 || got[0].Thgl != "Altgard" {
+		t.Fatalf("read maps = %v, want Altgard linked", got)
 	}
 }

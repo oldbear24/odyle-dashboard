@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.44.0 · 2026-10-27
+
+### New
+- Places in dungeons, Abyss layers, arenas and other instances can show their map too: superusers now pick from **all of TH.GL's AION 2 maps** (151, not just the six regions) under **Game settings → Maps**.
+- Maps link themselves: a map id named after a place TH.GL lists, like *Altgard* or *Valka's Nest*, gets its TH.GL map without typing it, and picking a TH.GL map of one place names the map. Maps named earlier link the same way.
+- Under the map of a place, **Open on TH.GL ↗** opens the full map on TH.GL's site.
+
 ## 0.43.0 · 2026-10-24
 
 ### New
