@@ -36,20 +36,31 @@ before(async () => {
   });
   await new Promise(r => discord.listen(0, '127.0.0.1', r)); discordUrl = 'http://127.0.0.1:' + discord.address().port;
   // Stands in for PLAYNC: the character search lists two characters for "Armorer" (and
-  // nobody else, so other characters get no portrait), with their official pages.
+  // nobody else, so other characters get no portrait), with their official pages, an item's
+  // and a board's page, the game's icons and the portrait.
   plaync = createServer((req, res) => {
     const at = new URL(req.url, 'http://plaync'), q = at.searchParams, json = body => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    const icon = name => 'https://assets.playnccdn.com/static-aion2-gamedata/resources/' + name;
     if (at.pathname === '/search') return json({ list: /^armorer$/i.test(q.get('keyword')) ? [armorer, armorerAlt].map(([characterId, name, level, pcId]) => ({ characterId: encodeURIComponent(characterId), name, level, pcId, race: 2, serverId: Number(q.get('serverId')), region: q.get('region') })) : [] });
-    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique' },
-      stat: { statList: [{ type: 'STR', name: 'Might', value: 45 }, { type: 'WIS', name: 'Willpower', value: 8 }, { type: 'Justice', name: 'Justice [Nezekan]', value: 41 }, { type: 'ItemLevel', name: 'ItemLevel', value: 1671 }] },
-      daevanion: { boardList: [{ name: 'Nezekan', openNodeCount: 12, totalNodeCount: 40 }] } });
-    if (at.pathname === '/api/character/equipment') return json({ equipment: { equipmentList: [{ slotPos: 5, slotPosName: 'Torso', name: 'Vakron Breastplate', grade: 'Unique', enchantLevel: 10, exceedLevel: 0 }, { slotPos: 1, slotPosName: 'MainHand', name: 'Enraged Kromede Rod', grade: 'Unique', enchantLevel: 15, exceedLevel: 3 }] },
-      petwing: { pet: { name: 'Pagati', level: 3 }, wing: { name: 'Forest Spirit Wings', grade: 'Unique', enchantLevel: 0 } } });
+    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', genderName: 'Female', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique', profileImage: 'https://profileimg.plaync.com/game_profile_images/aion2global/images?gameServerKey=2304&charKey=7' },
+      stat: { statList: [{ type: 'STR', name: 'Might', value: 45, statSecondList: ['Attack increase +4.5%'] }, { type: 'WIS', name: 'Willpower', value: 8 }, { type: 'Justice', name: 'Justice [Nezekan]', value: 41 }, { type: 'ItemLevel', name: 'ItemLevel', value: 1671 }] },
+      title: { ownedCount: 94, totalCount: 304, titleList: [{ equipCategory: 'Attack', name: 'Guardian of Altgard', grade: 'Legend', ownedCount: 36, totalCount: 105, equipStatList: [{ desc: 'PvE Damage Boost +3%' }], statList: [{ desc: 'PvE Attack +4' }] }] },
+      daevanion: { boardList: [{ id: 71, name: 'Nezekan', openNodeCount: 12, totalNodeCount: 40, open: 1 }] } });
+    if (at.pathname === '/api/character/equipment') return json({ equipment: { equipmentList: [{ id: 210130053, slotPos: 5, slotPosName: 'Torso', name: 'Vakron Breastplate', grade: 'Unique', enchantLevel: 10, exceedLevel: 0, icon: icon('Icon_Torso.png') }, { id: 110830051, slotPos: 1, slotPosName: 'MainHand', name: 'Enraged Kromede Rod', grade: 'Unique', enchantLevel: 15, exceedLevel: 3, icon: icon('Icon_Rod.png') }],
+      skinList: [{ slotPos: 3, slotPosName: 'Torso', name: 'Howling Dragon (Breastplate)', grade: 'Unique', icon: icon('Icon_Skin.png') }] },
+    petwing: { pet: { name: 'Pagati', level: 3 }, wing: { name: 'Forest Spirit Wings', grade: 'Unique', enchantLevel: 0 } },
+    skill: { skillList: [{ name: 'Bolt', category: 'Active', skillLevel: 13, needLevel: 1, acquired: 1, equip: 1, icon: icon('ICON_Bolt.png') }, { name: 'Absolution', category: 'Dp', skillLevel: 0, needLevel: 22, acquired: 0, equip: 0 }] } });
+    if (at.pathname === '/api/character/equipment/item' && q.get('id') === '110830051') return json({ name: 'Enraged Kromede Rod', grade: 'Unique', level: 102, categoryName: 'Mace', type: 'Equip', maxEnchantLevel: 15, maxExceedEnchantLevel: 5, equipLevel: 45, magicStoneSlotCount: 2, soulBindRate: '63.8',
+      mainStats: [{ name: 'Attack', minValue: '315', value: '630', extra: '174' }], subStats: [{ name: 'Combat Speed', value: '13%' }], magicStoneStat: [{ name: 'Attack', value: '+10', grade: 'Unique', icon: icon('Icon_Stone.png') }], sources: ['Crafting'] });
+    if (at.pathname === '/api/character/daevanion/detail') return json({ nodeList: [{ row: 1, col: 1, grade: 'Unique', type: 'Stat', open: 1, effectList: [{ desc: 'Combat Speed +1.5%' }] }, { row: 1, col: 2, grade: 'Rare', type: 'SkillLevel', open: 0, effectList: [{ desc: 'Bolt +1' }] }],
+      openStatEffectList: [{ desc: 'Combat Speed +1.5%' }], openSkillEffectList: [] });
+    // A 1×1 PNG for every icon and the portrait.
+    if (at.pathname.startsWith('/assets/') || at.pathname === '/game_profile_images/aion2global/images') { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')); }
     res.writeHead(404); res.end();
   });
   await new Promise(r => plaync.listen(0, '127.0.0.1', r)); playncUrl = 'http://127.0.0.1:' + plaync.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-ui-test-'));
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, PLAYNC_ASSETS_URL: playncUrl + '/assets/', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
   for (let i = 0; i < 50 && !(await fetch(url + '/api/health').then(r => r.ok, () => false)); i++) await delay(100);
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
   if (shots) await mkdir(shots, { recursive: true });
@@ -670,12 +681,33 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     await page.waitForURL(/#\/armory\/eu\/2304\/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
     await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor({ timeout: 15000 });
     assert.match(await page.locator('.armory-power').innerText(), /107,458[\s\S]*1,671/);
-    assert.equal(await page.locator('.armory-item').count(), 4);
-    assert.match(await page.locator('.armory-item').first().innerText(), /Main hand\s+Enraged Kromede Rod\s+Unique · \+15 · exceed 3/i);
-    assert.match(await page.locator('.armory-item').last().innerText(), /Pet\s+Pagati/i);
-    assert.match(await page.locator('.armory-stats').first().innerText(), /Might\s+45/);
+    // The paper doll: the four items PLAYNC lists, with their icons and the portrait from the Odyle server.
+    const items = page.locator('.armory-gear-slot[tabindex]');
+    assert.equal(await items.count(), 4);
+    assert.match(await items.first().locator('.armory-gear-text').innerText(), /Main hand · Mace\s+Enraged Kromede Rod\s+item level 102 · 1 stone/i);
+    assert.match(await items.last().innerText(), /Pet\s+Pagati/i);
+    assert.match(await page.locator('.armory-stats').first().innerText(), /Might\s+45\s+Attack increase \+4.5%/);
     assert.match(await page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+s ago$/);
+    const loaded = await page.evaluate(() => [...document.querySelectorAll('.armory-portrait img, .armory-gear-slot > .armory-icon img')].map(img => [new URL(img.src).pathname, img.complete && img.naturalWidth > 0]));
+    assert.ok(loaded.length === 3 && loaded.every(([path, ok]) => path.startsWith('/api/odyle/armory-images/') && ok), JSON.stringify(loaded));
+    // An item's card shows on hover, with its stats and stones.
+    const tip = items.first().locator('.armory-tip');
+    assert.equal(await tip.isVisible(), false);
+    await items.first().hover();
+    assert.match(await tip.innerText(), /\+15 Enraged Kromede Rod[\s\S]*Properties\s+Attack\s+315 ~ 630 \(\+174\)[\s\S]*Manastone engraving\s+Attack \+10\s+Empty slot/i);
     await shot(page, 'armory-profile');
+    // It closes once the pointer leaves (on phones it covers the lower part of the screen).
+    await page.mouse.move(1, 1);
+    await tip.waitFor({ state: 'hidden' });
+    // The other tabs show what was fetched, each at its own address.
+    for (const [tab, ready, text] of [['Skills', '.armory-skill', /Bolt/], ['Daevanion', '.armory-node.is-open', /Combat Speed \+1.5%/], ['Titles', '.armory-title-card', /Guardian of Altgard/], ['Appearance', '.armory-gear-slot', /Howling Dragon/]]) {
+      await page.locator('.armory-tabs a', { hasText: tab }).click();
+      await page.waitForURL(new RegExp(`/${tab.toLowerCase()}$`)); await page.locator(ready).first().waitFor();
+      assert.match(await page.locator('.armory-tab').innerText(), text);
+      await shot(page, 'armory-' + tab.toLowerCase());
+    }
+    await page.locator('.armory-tabs a', { hasText: 'Gear & stats' }).click();
+    await page.waitForURL(/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/); await items.first().waitFor();
     // Back to the search, which keeps the region and server; a name PLAYNC does not list.
     await page.locator('.armory-back').click();
     assert.equal(await page.locator('#armory-form select[name="server"]').inputValue(), 'Lumiel');
@@ -921,7 +953,8 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
 test('the main pages pass the axe accessibility check, signed out and in', async () => {
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
-  const pages = [[null, '#/'], [null, '#/armory'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
+  const profileAt = '#/armory/eu/2304/' + armorer[0];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);

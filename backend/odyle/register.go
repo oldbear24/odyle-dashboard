@@ -137,6 +137,9 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/armory/servers", timed("armory-servers", armoryServersRoute))
 	se.Router.GET("/api/odyle/armory/search", timed("armory-search", armorySearchRoute))
 	se.Router.GET("/api/odyle/armory/{region}/{serverId}/{characterId}", timed("armory", armoryRoute))
+	// Its images (armoryimages.go) are outside /api/odyle/armory/, under the general rate limit:
+	// a profile shows some hundred of them, which browsers then keep.
+	se.Router.GET("/api/odyle/armory-images/{file}", timed("armory-image", armoryImageRoute))
 	// Public: the message superusers set under Server controls, for the dashboard (signed in or not).
 	se.Router.GET("/api/odyle/announcement", timed("announcement", func(e *core.RequestEvent) error {
 		return e.JSON(200, map[string]any{"announcement": announcement(readSettings(e.App))})

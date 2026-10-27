@@ -329,7 +329,7 @@ Superusers can pause every packet reader at once under **Server controls** (`rea
 
 ## Armory
 
-Public routes for the armory, signed in or not, with their own rate limits per address: 20 searches and 60 armory requests a minute. Everything comes from PLAYNC's official character pages ([Armory](armory.md)); no route writes armory data.
+Public routes for the armory, signed in or not, with their own rate limits per address: 20 searches and 60 armory requests a minute (its images fall under the general limit of `/api/odyle/`). Everything comes from PLAYNC's official character pages ([Armory](armory.md)); no route writes armory data.
 
 `GET /api/odyle/armory/servers` answers `{ regions: [{ region, elyos, asmodian }] }`: the five Odyle regions (`GLOBAL_NA`, `GLOBAL_NAW`, `GLOBAL_EU`, `GLOBAL_SA`, `GLOBAL_ASIA`) with their server names by race.
 
@@ -342,16 +342,35 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 ```json
 {
   "region": "eu", "serverId": 2304, "characterId": "…=", "server": "Lumiel",
-  "profile": { "name": "…", "level": 45, "class": "Chanter", "race": "Asmodians", "server": "Lumiel", "title": "…", "titleGrade": "Unique", "combatPower": 107458, "itemLevel": 1671,
-    "stats": [{ "type": "Justice", "name": "Justice", "deity": "Nezekan", "value": 41, "primary": false }],
-    "gear": [{ "slot": "MainHand", "name": "…", "grade": "Unique", "enchant": 15, "exceed": 3 }, { "slot": "Pet", "name": "…", "grade": "", "enchant": 0, "exceed": 0, "level": 3 }],
-    "boards": [{ "name": "Nezekan", "open": 12, "total": 40 }] },
+  "profile": { "v": 2, "name": "…", "level": 45, "class": "Chanter", "race": "Asmodians", "gender": "Female", "server": "Lumiel", "title": "…", "titleGrade": "Unique", "combatPower": 107458, "itemLevel": 1671,
+    "portrait": "portrait-91afbc931266651a985906284c45fa32.jpg",
+    "stats": [{ "type": "Justice", "name": "Justice", "deity": "Nezekan", "value": 41, "primary": false, "effects": ["Defense increase +4.1%", "Perfect Chance +4.1%"] }],
+    "gear": [
+      { "slot": "MainHand", "name": "…", "grade": "Unique", "enchant": 15, "exceed": 3, "icon": "Icon_WP_OR_0100_T06.png",
+        "detail": { "category": "Orb", "kind": "Equip", "itemLevel": 102, "maxEnchant": 15, "maxExceed": 5, "equipLevel": 45, "race": "Asmodians", "classes": ["Spiritmaster"],
+          "main": [{ "name": "Attack", "min": "315", "value": "630", "extra": "174" }], "sub": [{ "name": "Combat Speed", "value": "13%" }], "subCount": 5, "soulBind": "100",
+          "subSkills": [{ "name": "Combustion", "level": 2, "icon": "ICON_EL_SKILL_004.png" }], "stoneSlots": 4, "stones": [{ "name": "Attack", "value": "+10", "grade": "Unique", "icon": "…" }], "godSlots": 1, "godStones": [],
+          "set": { "name": "Primal Vigor", "equipped": 2, "items": [{ "name": "…", "grade": "Unique", "equipped": true }], "bonuses": [{ "count": 2, "effects": ["…"] }] },
+          "desc": "", "sources": ["Crafting"], "skins": ["Rending Roar (Orb)"], "tradable": false, "storable": true } },
+      { "slot": "Pet", "name": "…", "grade": "", "enchant": 0, "exceed": 0, "level": 3, "icon": "…" }],
+    "skins": [{ "slot": "Torso", "name": "Howling Dragon (Breastplate)", "grade": "Unique", "icon": "…" }],
+    "skills": [{ "name": "Bolt", "category": "Active", "level": 13, "needLevel": 14, "acquired": true, "equipped": true, "icon": "…" }],
+    "titles": { "owned": 94, "total": 304, "equipped": [{ "category": "Attack", "name": "Guardian of Altgard", "grade": "Legend", "owned": 36, "total": 105, "effects": ["PvE Damage Boost +3%"], "stats": ["PvE Attack +4"] }] },
+    "boards": [{ "id": 71, "name": "Nezekan", "open": 12, "total": 40, "icon": "…",
+      "nodes": [{ "r": 3, "c": 3, "g": "Unique", "t": "Stat", "o": true, "e": "Combat Speed +1.5%" }, { "r": 8, "c": 8, "g": "None", "t": "Start", "n": "Nezekan - Start" }],
+      "statEffects": ["Combat Speed +1.5%"], "skillEffects": ["Bolt +1"] }] },
   "fetchedAt": "2026-10-16T10:00:00.000Z", "error": "",
   "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": ""
 }
 ```
 
 - `profile` is `null` until PLAYNC was first asked. `fetchedAt` is when it was, and `error` is why the last lookup of a kept profile failed.
+- `v` is the profile's shape; profiles kept before dashboard 0.46.0 have none and hold only the name to `itemLevel`, `stats` without `effects`, `gear` without `icon` and `detail`, and `boards` with `name`, `open` and `total`. Opening one queues it again.
+- `gear` lists the equipped items in PLAYNC's slot order (`MainHand`, `SubHand`, `Helmet`, …, `Arcana1`–`5`), then `Wings` and `Pet`. `detail` is the item's official item page for this character, missing when PLAYNC did not give it: `main` are its properties (`min` ~ `value`, `extra` from its enchantment; an `exceed` line has only `extra`), `sub` and `subSkills` its soul binding (`soulBind` is the rate in %, `subCount` the lines it can hold), `stones` its manastones (soulstones on accessories) of `stoneSlots`, `godStones` its theostones (`name`, `grade`, `desc`) of `godSlots`, and `set` the set it belongs to.
+- `skills` are `Active`, `Passive` and `Dp` (stigma) skills; `acquired` says the character learned it and `equipped` that it is on the skill bar.
+- `titles.equipped` is the title worn in each category (`Attack`, `Defense`, `Etc`; `name` empty for none), with what it gives when worn (`effects`) and its own stats (`stats`), and how many of the category the character owns.
+- `boards[].nodes` are a board's nodes by row (`r`) and column (`c`), with their grade (`g`), type (`t`: `Stat`, `SkillLevel`, `Start`, …) and, when open, `o`; `e` is what a node gives, `n` its name when it has no effect or another type. Boards with no open node have none. `statEffects` and `skillEffects` sum up the open nodes.
+- `portrait` and every `icon` name an image the Odyle server keeps (`""` when it has none): `GET /api/odyle/armory-images/{name}` answers it (PNG, JPEG or WebP; icons at most 112 pixels) with `Cache-Control: public, max-age=31536000, immutable`, since a name always shows the same image, and any other name with 404.
 - `state` says where the lookup stands:
   - `fresh`: kept and younger than six hours, nothing to do.
   - `queued`: `position` characters are ahead and it takes about `wait` seconds.
@@ -363,7 +382,7 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 - Clients ask again after `retryAfter` seconds while the state is `queued`, `fetching` or `busy`.
 - A character PLAYNC does not list, a hidden profile, or an id or server outside the region answers 404.
 
-The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused }`. `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
+The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes }` (`images` and `imageBytes` count the kept icons and portraits). `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
 
 ## Account and data
 

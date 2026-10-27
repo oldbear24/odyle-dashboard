@@ -24,7 +24,7 @@ var verifiedLocationAdapters = []string{"test-location-v1"}
 // The armory asks the PLAYNC stand-in of the tests without its pauses between lookups.
 func init() {
 	testFixtures = fixtures
-	armoryPace, armorySearchGap = 300*time.Millisecond, 50*time.Millisecond
+	armoryPace, armoryStep, armorySearchGap = 300*time.Millisecond, 10*time.Millisecond, 50*time.Millisecond
 }
 
 func fixture(se *core.ServeEvent, path string, handle func(e *core.RequestEvent, b body) (any, error)) {

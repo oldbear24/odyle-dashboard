@@ -305,7 +305,7 @@ export function statusPage() {
   const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
   const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
   const clock = () => readers().clock || { checked: 0, matched: 0, checkedToday: 0, missedToday: 0 };
-  const armory = () => state.data.armory || { profiles: 0, hidden: 0, waiting: 0, fetching: false, done: 0, failed: 0, lastAt: '', lastError: '', lastErrorAt: '', blockedUntil: '', paused: false };
+  const armory = () => state.data.armory || { profiles: 0, hidden: 0, waiting: 0, fetching: false, done: 0, failed: 0, lastAt: '', lastError: '', lastErrorAt: '', blockedUntil: '', paused: false, images: 0, imageBytes: 0 };
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -508,7 +508,8 @@ export function statusPage() {
         stat('Kept profiles', () => number(armory().profiles), () => number(armory().hidden) + ' hidden · kept 30 days after they were last opened'),
         stat('Queue', () => armory().paused ? 'paused' : number(armory().waiting + (armory().fetching ? 1 : 0)), () => armory().paused ? 'Server controls' : armory().fetching ? 'one lookup running' : 'waiting for PLAYNC'),
         stat('Lookups', () => number(armory().done), () => (armory().failed ? number(armory().failed) + ' failed · ' : '') + (armory().lastAt ? 'last ' + new Date(armory().lastAt).toLocaleString() : 'none yet')),
-        stat('Last error', () => armory().lastError ? new Date(armory().lastErrorAt).toLocaleString() : 'none', () => armory().lastError || 'PLAYNC answered every lookup')),
+        stat('Last error', () => armory().lastError ? new Date(armory().lastErrorAt).toLocaleString() : 'none', () => armory().lastError || 'PLAYNC answered every lookup'),
+        stat('Images', () => number(armory().images || 0), () => app.utils.formattedFileSize(armory().imageBytes || 0) + ' of icons and portraits in pb_data/armory_images')),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
