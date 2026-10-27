@@ -2,37 +2,85 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 // The armory page (#67): src/armory.js.
 const now = Date.parse('2026-10-16T12:00:00Z');
-const profile = {
-  name: 'Ka<b>', level: 45, class: 'Chanter', race: 'Asmodians', server: 'Lumiel', title: 'Golden Glow', titleGrade: 'Unique', combatPower: 107458, itemLevel: 1671,
-  stats: [{ type: 'STR', name: 'Might', value: 45, primary: true }, { type: 'Justice', name: 'Justice', deity: 'Nezekan', value: 41, primary: false }],
-  gear: [{ slot: 'MainHand', name: 'Enraged Kromede Rod', grade: 'Unique', enchant: 15, exceed: 3 }, { slot: 'Arcana3', name: 'Compass', grade: 'Legend', enchant: 0, exceed: 0 }, { slot: 'Pet', name: 'Pagati', grade: '', enchant: 0, exceed: 0, level: 3 }],
-  boards: [{ name: 'Nezekan', open: 12, total: 40 }],
+// A profile as the backend keeps it (backend/odyle/armory.go), with an item's details, skills,
+// titles, skins and a board's nodes.
+const detail = {
+  category: 'Mace', kind: 'Equip', itemLevel: 102, maxEnchant: 15, maxExceed: 5, equipLevel: 45, race: 'All', classes: ['Chanter'],
+  main: [{ name: 'Attack', min: '315', value: '630', extra: '174' }, { name: 'Attack', value: '0', extra: '40', exceed: true }], sub: [{ name: 'Combat Speed', value: '13%' }], subCount: 2, soulBind: '63.8',
+  subSkills: [{ name: 'Bolt', level: 2, icon: 'ICON_EL_SKILL_004.png' }], stoneSlots: 2, stones: [{ name: 'Attack', value: '+10', grade: 'Unique', icon: 'Icon_Stone.png' }], godSlots: 1, godStones: [],
+  set: { name: 'Primal Vigor', equipped: 2, items: [{ name: 'Chalice of Vigor', grade: 'Unique', equipped: true }, { name: 'Bell of Vigor', grade: 'Unique', equipped: false }], bonuses: [{ count: 2, effects: ['+60 PvE Attack'] }, { count: 4, effects: ['+150 PvE Attack'] }] },
+  desc: '', sources: ['Crafting'], skins: ['Golden Vow (Mace)'], tradable: false, storable: true,
 };
+const profile = {
+  v: 2, name: 'Ka<b>', level: 45, class: 'Chanter', race: 'Asmodians', gender: 'Female', server: 'Lumiel', title: 'Golden Glow', titleGrade: 'Unique', combatPower: 107458, itemLevel: 1671, portrait: 'portrait-0123456789abcdef0123456789abcdef.png',
+  stats: [{ type: 'STR', name: 'Might', value: 45, primary: true, effects: ['Attack increase +4.5%'] }, { type: 'Justice', name: 'Justice', deity: 'Nezekan', value: 41, primary: false, effects: [] }],
+  gear: [{ slot: 'MainHand', name: 'Enraged Kromede Rod', grade: 'Unique', enchant: 15, exceed: 3, icon: 'Icon_WP_MA_0078_T05.png', detail }, { slot: 'Helmet', name: 'Vakron Helm', grade: 'Legend', enchant: 0, exceed: 0 }, { slot: 'Arcana3', name: 'Compass', grade: 'Legend', enchant: 0, exceed: 0 }, { slot: 'Pet', name: 'Pagati', grade: '', enchant: 0, exceed: 0, level: 3 }],
+  skins: [{ slot: 'EarringL', name: 'Gilded Wings (Earrings)', grade: 'Unique', icon: '' }, { slot: 'MaceMain', name: 'Eternal Sun (Mace)', grade: 'Special', icon: '' }],
+  skills: [{ name: 'Bolt', category: 'Active', level: 13, needLevel: 1, acquired: true, equipped: true, icon: 'ICON_CL_SKILL_001.png' }, { name: 'Absolution', category: 'Dp', level: 0, needLevel: 22, acquired: false, equipped: false, icon: '' }],
+  titles: { owned: 94, total: 304, equipped: [{ category: 'Attack', name: 'Guardian of Altgard', grade: 'Legend', owned: 36, total: 105, effects: ['PvE Damage Boost +3%'], stats: ['PvE Attack +4'] }, { category: 'Etc', name: '', grade: '', owned: 27, total: 101, effects: [], stats: [] }] },
+  boards: [{ id: 71, name: 'Nezekan', open: 12, total: 40, icon: '', nodes: [{ r: 3, c: 3, g: 'Unique', t: 'Stat', o: true, e: 'Combat Speed +1.5%' }, { r: 4, c: 5, g: 'Rare', t: 'SkillLevel', e: 'Bolt +1' }], statEffects: ['Combat Speed +1.5%'], skillEffects: ['Bolt +1'] },
+    { id: 74, name: 'Triniel', open: 0, total: 116, icon: '', nodes: [], statEffects: [], skillEffects: [] }],
+};
+const images = '/api/odyle/armory-images/';
 const answer = extra => ({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', server: 'Lumiel', profile, fetchedAt: new Date(now - 2 * 3600000).toISOString(), error: '', state: 'fresh', position: 0, wait: 0, retryAfter: 0, lookupError: '', ...extra });
 
 test('armory paths say what they show', async () => {
   const { armoryRoute, armoryTarget, profilePath, findPath } = await import('../src/armory.js');
   const profileAt = profilePath({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=' });
-  for (const path of ['/armory', profileAt, findPath('GLOBAL_EU', 'Lumiel', 'Ka'), findPath('GLOBAL_NA', 'Siel', 'Žluťoučký'), findPath('GLOBAL_NAW', 'Siel', 'Ka')]) assert.ok(armoryRoute.test(path), path);
-  for (const path of ['/armory/', '/armory/xx/2304/kdPX-_ocYSqMloiCy7IXZ0CDm', '/armory/eu/2304/short', '/armory/find/GLOBAL_XX/Lumiel/Ka', '/armory/eu/2304/a/b']) assert.ok(!armoryRoute.test(path), path);
-  assert.deepEqual(armoryTarget(profileAt), { profile: { region: 'eu', serverId: '2304', characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=' } });
+  for (const path of ['/armory', profileAt, profileAt + '/skills', profileAt + '/appearance', findPath('GLOBAL_EU', 'Lumiel', 'Ka'), findPath('GLOBAL_NA', 'Siel', 'Žluťoučký'), findPath('GLOBAL_NAW', 'Siel', 'Ka')]) assert.ok(armoryRoute.test(path), path);
+  for (const path of ['/armory/', '/armory/xx/2304/kdPX-_ocYSqMloiCy7IXZ0CDm', '/armory/eu/2304/short', '/armory/find/GLOBAL_XX/Lumiel/Ka', '/armory/eu/2304/a/b', profileAt + '/gear', profileAt + '/']) assert.ok(!armoryRoute.test(path), path);
+  assert.deepEqual(armoryTarget(profileAt), { profile: { region: 'eu', serverId: '2304', characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', tab: '' } });
+  assert.deepEqual(armoryTarget(profileAt + '/daevanion').profile.tab, 'daevanion');
+  assert.equal(profilePath({ region: 'eu', serverId: 2304, characterId: 'abc' }, 'titles'), '/armory/eu/2304/abc/titles');
+  assert.equal(profilePath({ region: 'eu', serverId: 2304, characterId: 'abc' }, 'nonsense'), '/armory/eu/2304/abc');
   assert.deepEqual(armoryTarget(findPath('GLOBAL_NA', 'Siel', 'Žluťoučký')), { find: { region: 'GLOBAL_NA', server: 'Siel', name: 'Žluťoučký' } });
   assert.deepEqual(armoryTarget('/armory'), { search: true });
 });
 
 test('a profile shows its gear, power and stats, escaped, with where its lookup stands', async () => {
-  const { armoryProfile, slotLabel, gradeClass, lookupLine, waiting } = await import('../src/armory.js');
-  assert.deepEqual(['MainHand', 'Earring2', 'Arcana3', 'Mystery'].map(slotLabel), ['Main hand', 'Earring', 'Arcana 3', 'Mystery']);
+  const { armoryProfile, slotLabel, gradeClass, lookupLine, waiting, playncPage } = await import('../src/armory.js');
+  assert.deepEqual(['MainHand', 'Earring2', 'Arcana3', 'Mystery', 'EarringL', 'MaceMain', 'OrbSub'].map(slotLabel), ['Main hand', 'Earring', 'Arcana 3', 'Mystery', 'Earring', 'Main hand', 'Off hand']);
   assert.deepEqual(['Unique', 'legend', 'weird', undefined].map(gradeClass), ['grade-unique', 'grade-legend', 'grade-common', 'grade-common']);
-  const html = armoryProfile(answer(), now, false);
+  const html = armoryProfile(answer(), now, false, false, { images });
   assert.match(html, /<h1>Ka&lt;b&gt;<\/h1>/);
-  assert.match(html, /107,458/);
-  assert.match(html, /1,671/);
-  assert.match(html, /grade-unique"><span class="armory-slot">Main hand<\/span><strong>Enraged Kromede Rod<\/strong><span class="armory-grade">Unique · \+15 · exceed 3/);
+  assert.match(html, /<p class="armory-eyebrow">Lumiel · Europe<\/p>/);
+  assert.match(html, /<span>Level 45<\/span><span>Chanter<\/span><span>Asmodians<\/span><span>Female<\/span>/);
+  assert.match(html, /<dt>Combat power<\/dt><dd><strong>107,458<\/strong>/);
+  assert.match(html, /<dt>Item level<\/dt><dd><strong>1,671<\/strong>/);
+  assert.match(html, /<dt>Daevanion<\/dt><dd><strong>8 %<\/strong><small>12 of 156 nodes<\/small>/);
+  assert.match(html, /<dt>Titles<\/dt><dd><strong>94<\/strong><small>of 304<\/small>/);
+  assert.match(html, /<dt>Skills<\/dt><dd><strong>1<\/strong><small>of 2 learned<\/small>/);
+  // Images come from the Odyle server only, by the names it keeps them under.
+  assert.match(html, /<img class="armory-img " src="\/api\/odyle\/armory-images\/portrait-0123456789abcdef0123456789abcdef.png"/);
+  assert.doesNotMatch(html, /playnccdn|profileimg/);
+  assert.match(html, new RegExp(`href="${playncPage(answer()).replace(/[.?+]/g, '\\$&')}" target="_blank" rel="noopener noreferrer">Official page ↗`));
+  assert.equal(playncPage(answer()), 'https://aion2.plaync.com/en-us/characters/2304/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4%3D?region=eu');
+  // The paper doll: every slot, empty ones said so; weapons and arcana name their type.
+  assert.match(html, /<small>Main hand · Mace<\/small><strong>Enraged Kromede Rod<\/strong><span>item level 102 · 1 stone<\/span>/);
+  assert.match(html, /<small>Helmet<\/small><strong>Vakron Helm<\/strong><span>Legend<\/span>/);
+  assert.match(html, /<small>Shoulders<\/small><strong>Empty<\/strong>/);
+  assert.match(html, /<b class="armory-enchant">\+15<\/b><i class="armory-exceed">✦3<\/i>/);
   assert.match(html, /Arcana 3/);
-  assert.match(html, /Pagati<\/strong><span class="armory-grade">Level 3<\/span>/);
+  assert.match(html, /<b class="armory-enchant">Lv 3<\/b><\/span><span class="armory-gear-text"><small>Pet<\/small><strong>Pagati<\/strong>/);
+  // The item's card: its facts, stats, soul binding, stones (empty slots too) and set.
+  assert.match(html, /<strong>\+15 Enraged Kromede Rod<\/strong><small>Unique · Mace<\/small>/);
+  assert.match(html, /<dt>Enchantment<\/dt><dd>\+15 \/ 15<\/dd>/);
+  assert.match(html, /<dt>Exceed<\/dt><dd>3 \/ 5<\/dd>/);
+  assert.match(html, /<li><span>Attack<\/span><b>315 ~ 630 <em>\(\+174\)<\/em><\/b><\/li><li class="is-exceed"><span>Attack<\/span><b>40<\/b><\/li>/);
+  assert.match(html, /<h4>Soul binding <em>63.8%<\/em><\/h4>/);
+  assert.match(html, /<span>Bolt<\/span><b>\+2<\/b>/);
+  assert.match(html, /<h4>Manastone engraving<\/h4><ul class="armory-stones"><li class="grade-unique"><img [^>]*Icon_Stone.png[^>]*><span>Attack \+10<\/span><\/li><li class="is-open"><i class="armory-stone-art"><\/i><span>Empty slot<\/span><\/li><\/ul>/);
+  assert.match(html, /<h4>Theostone engraving<\/h4><ul class="armory-stones"><li class="is-open">/);
+  assert.match(html, /<h4>Set: Primal Vigor <span>2 \/ 2<\/span><\/h4>/);
+  assert.match(html, /<li class="is-on"><b>2 pieces<\/b><span>\+60 PvE Attack<\/span><\/li><li class=""><b>4 pieces<\/b>/);
+  assert.match(html, /<span>Skin: Golden Vow \(Mace\)<\/span><span>How to obtain: Crafting<\/span><span>Not tradable<\/span>/);
+  assert.match(html, /<small>2 pieces: \+60 PvE Attack<\/small>/);
+  // Stats with what they give.
+  assert.match(html, /<span>Might<\/span><strong>45<\/strong><\/div><ul><li>Attack increase \+4.5%<\/li><\/ul>/);
   assert.match(html, /Justice<small>Nezekan<\/small>/);
   assert.match(html, /Data from PLAYNC 2h ago/);
+  // The tabs, the first one shown.
+  assert.match(html, /<nav class="armory-tabs"[^>]*><a href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=" aria-current="page">Gear &amp; stats<\/a><a href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=\/skills">Skills<\/a><a [^>]*>Daevanion<\/a><a [^>]*>Titles<\/a><a [^>]*>Appearance<\/a><\/nav>/);
   assert.doesNotMatch(html, /armory-refresh/);
   assert.match(armoryProfile(answer(), now, true), /data-action="armory-refresh"/);
   // Waiting for PLAYNC: the kept copy stays, with the queue.
@@ -46,6 +94,44 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
   const first = armoryProfile(answer({ profile: null, fetchedAt: '', state: 'fetching', retryAfter: 2 }), now, false);
   assert.match(first, /A character on Lumiel/);
   assert.match(first, /armory-spinner/);
+});
+
+test('a profile\'s tabs show its skills, Daevanion boards, titles and appearance', async () => {
+  const { armoryProfile, profileTabs, imageUrl } = await import('../src/armory.js');
+  const view = (tab, extra = {}) => armoryProfile(answer(), now, false, false, { images, tab, ...extra });
+  const skills = view('skills');
+  assert.match(skills, /aria-current="page">Skills<\/a>/);
+  assert.match(skills, /<h2>Active skills <span>1 \/ 1<\/span><\/h2>/);
+  assert.match(skills, /<li class="armory-skill is-equipped" tabindex="0" aria-label="Bolt, Level 13, On the skill bar">/);
+  assert.match(skills, /<dt>From gear<\/dt><dd>\+2<\/dd><\/div><div><dt>From Daevanion<\/dt><dd>\+1<\/dd>/);
+  assert.match(skills, /<h2>Stigma skills <span>0 \/ 1<\/span><\/h2>/);
+  assert.match(skills, /armory-skill is-locked" tabindex="0" aria-label="Absolution, Level 0, Not learned yet"/);
+  // Daevanion: the first board with open nodes, its nodes from its first row and column on.
+  const boards = view('daevanion');
+  assert.match(boards, /data-armory-board="71" aria-pressed="true"/);
+  assert.match(boards, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\);grid-template-rows:repeat\(2,auto\)/);
+  assert.match(boards, /<span class="armory-node grade-unique is-stat is-open" style="grid-row:1;grid-column:1" title="Combat Speed \+1.5%"><\/span>/);
+  assert.match(boards, /<span class="armory-node grade-rare is-skilllevel" style="grid-row:2;grid-column:3" title="Bolt \+1 · closed"><\/span>/);
+  assert.match(boards, /<h4>Skill effect<\/h4><ul><li>Bolt \+1<\/li><\/ul>/);
+  assert.match(view('daevanion', { board: '74' }), /No node of this board is open yet\./);
+  // Titles: the one worn in each category, with what it gives.
+  const titles = view('titles');
+  assert.match(titles, /<strong>94 <small>\/ 304<\/small><\/strong>/);
+  assert.match(titles, /<span>Offensive<\/span><small>36 \/ 105<\/small>[\s\S]*<strong class="grade-legend">Guardian of Altgard<\/strong><h4>When worn<\/h4><ul><li>PvE Damage Boost \+3%<\/li><\/ul><h4>Title stats<\/h4>/);
+  assert.match(titles, /<span>Other<\/span>[\s\S]*No title worn/);
+  const appearance = view('appearance');
+  assert.match(appearance, /<h2>Skins <span>2<\/span><\/h2>/);
+  assert.match(appearance, /<small>Earring<\/small><strong>Gilded Wings \(Earrings\)<\/strong>/);
+  assert.match(appearance, /<small>Main hand<\/small><strong>Eternal Sun \(Mace\)<\/strong>/);
+  // A profile kept before the armory kept everything shows its gear and stats only.
+  const old = { name: 'Old', level: 45, combatPower: 1, itemLevel: 1, stats: [], gear: [{ slot: 'MainHand', name: 'Rod', grade: 'Unique', enchant: 15, exceed: 3 }], boards: [{ name: 'Nezekan', open: 12, total: 40 }] };
+  assert.deepEqual(profileTabs({ ...old, skills: [], skins: [], titles: {} }).map(([key]) => key), ['', 'daevanion']);
+  const shown = armoryProfile(answer({ profile: old }), now, false, false, { images, tab: 'skills' });
+  assert.match(shown, /aria-current="page">Gear &amp; stats/);
+  assert.match(shown, /<small>Main hand<\/small><strong>Rod<\/strong><span>Unique · exceed 3<\/span>/);
+  assert.match(shown, /<span class="armory-icon {2}grade-unique is-empty"/);
+  // Only names the backend keeps images under become addresses.
+  assert.deepEqual(['a.png', 'portrait-x.jpg', '../x.png', 'x.gif', '', null, 'a b.png'].map(name => imageUrl(images, name)), [images + 'a.png', images + 'portrait-x.jpg', '', '', '', '', '']);
 });
 
 test('the search form keeps the last region and server and lists what PLAYNC found', async () => {
@@ -64,7 +150,7 @@ test('the search form keeps the last region and server and lists what PLAYNC fou
 test('bookmarks keep characters in this browser, newest first, with their last opened numbers', async () => {
   const { readBookmarks, addBookmark, removeBookmark, refreshBookmark, isBookmarked, bookmarkKey, armorySearch, armoryProfile } = await import('../src/armory.js');
   let list = addBookmark([], answer(), '2026-10-16T12:00:00.000Z');
-  assert.deepEqual(list, [{ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', name: 'Ka<b>', server: 'Lumiel', class: 'Chanter', level: 45, combatPower: 107458, itemLevel: 1671, fetchedAt: answer().fetchedAt, savedAt: '2026-10-16T12:00:00.000Z' }]);
+  assert.deepEqual(list, [{ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', name: 'Ka<b>', server: 'Lumiel', class: 'Chanter', level: 45, combatPower: 107458, itemLevel: 1671, portrait: profile.portrait, fetchedAt: answer().fetchedAt, savedAt: '2026-10-16T12:00:00.000Z' }]);
   assert.equal(addBookmark(list, answer(), 'later'), list, 'a character is bookmarked once');
   const other = answer({ characterId: 'QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', profile: { ...profile, name: 'Other' } });
   list = addBookmark(list, other, '2026-10-16T12:05:00.000Z');
@@ -79,12 +165,13 @@ test('bookmarks keep characters in this browser, newest first, with their last o
   assert.deepEqual([readBookmarks('not json'), readBookmarks('{}'), readBookmarks(null)], [[], [], []]);
   // The armory page lists them above the form, escaped, and marks them in results.
   const regions = [{ region: 'GLOBAL_EU', elyos: ['Siel'], asmodian: ['Lumiel'] }];
-  const page = armorySearch(regions, {}, [{ name: 'Other', level: 45, race: 2, server: 'Lumiel', serverId: 2304, region: 'eu', characterId: other.characterId }], false, list, now);
+  const page = armorySearch(regions, {}, [{ name: 'Other', level: 45, race: 2, server: 'Lumiel', serverId: 2304, region: 'eu', characterId: other.characterId }], false, list, now, images);
   assert.match(page, /Bookmarked characters <span>2<\/span>/);
   assert.match(page, /<strong>Ka&lt;b&gt;<\/strong><span>Level 45 · Chanter · Lumiel<\/span><span class="armory-mark-power">120,000 CP · item level 1,671<small>as of 0s ago<\/small>/);
   assert.ok(page.includes(`data-armory-unmark="${bookmarkKey(list[1])}"`));
   assert.match(page, /<strong>Other <span class="armory-star"/);
   assert.ok(page.indexOf('armory-bookmarks') < page.indexOf('armory-form'));
+  assert.match(page, /<span class="armory-mini" aria-hidden="true">KA<img class="armory-img " src="\/api\/odyle\/armory-images\/portrait-0123456789abcdef0123456789abcdef.png"/);
   assert.deepEqual(removeBookmark(list, bookmarkKey(list[0])).map(b => b.name), ['Ka<b>']);
   assert.doesNotMatch(armorySearch(regions, {}, null, false, [], now), /armory-bookmarks/);
   // The profile's button says whether it is bookmarked.

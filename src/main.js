@@ -136,6 +136,8 @@ const readerItem = () => { const reader = readerNow(); return `<button class="me
 // An open menu closes on a click outside it, on a chosen item and on Escape.
 document.addEventListener('click', event => document.querySelectorAll('details.room-switch[open], details.account-menu[open]').forEach(menu => { if (!menu.contains(event.target) || event.target.closest('.menu-item')) menu.open = false; }));
 document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelectorAll('details.room-switch[open], details.account-menu[open]').forEach(menu => { menu.open = false; }); });
+// An armory item's or skill's card, open while its tile has focus, closes on Escape too.
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.activeElement?.matches('.armory-gear-slot, .armory-skill')) document.activeElement.blur(); });
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
 const seenKey = 'odyle.seenVersion';
@@ -420,8 +422,9 @@ async function refreshTasks() {
 function clearRoom() { room = null; members = []; board = null; wishlist = []; runs = []; dungeons = []; catalog = []; classRoles = []; demo = false; }
 // The armory (armory.js): public, signed in or not. The servers come from the backend once;
 // the region and server last searched are kept per browser. A profile still waiting for
-// PLAYNC asks again when the backend says to, while it stays on screen.
-let armoryServers = null, armoryAnswer = null, armoryResults = null, armoryChosen = null, armoryTimer = 0;
+// PLAYNC asks again when the backend says to, while it stays on screen. Its tabs have their
+// own paths but show the profile already fetched; the Daevanion board shown is kept per page.
+let armoryServers = null, armoryAnswer = null, armoryResults = null, armoryChosen = null, armoryTimer = 0, armoryTab = '', armoryBoard = '';
 const armoryKey = 'odyle.armory';
 function armoryChoice() { try { return JSON.parse(storage.getItem(armoryKey)) || {}; } catch { return {}; } }
 // Bookmarked characters (#72), in this browser only: no account needed, nothing sent anywhere.
@@ -439,10 +442,16 @@ function toggleBookmark() {
   armoryRender(); toast(on ? t('Removed {name} from your bookmarks.', { name }) : t('Bookmarked {name}. The armory page lists it.', { name }));
 }
 const armoryRefreshable = () => armoryAnswer?.state === 'fresh' && armoryAnswer.fetchedAt && Date.now() + serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
+// The armory's images (the game's icons, portraits) come from the backend (armoryimages.go).
+const armoryImages = () => pb.buildURL('/api/odyle/armory-images/');
 function armoryRender(searching = false) {
   const chosen = armoryChosen || armoryChoice();
   const now = Date.now() + serverOffset, marks = bookmarks();
-  shell(armoryAnswer ? armoryProfile(armoryAnswer, now, armoryRefreshable(), isBookmarked(marks, armoryAnswer)) : armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now), 'armory');
+  shell(armoryAnswer ? armoryProfile(armoryAnswer, now, armoryRefreshable(), isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages() }) : armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
+}
+// While a profile waits for PLAYNC, it is asked for again when the backend says to.
+function armoryPoll(path, ticket) {
+  if (armoryAnswer && (waiting(armoryAnswer) || armoryAnswer.state === 'failed')) armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, armoryAnswer.retryAfter || 5) * 1000);
 }
 async function armoryPage(path, ticket, refresh = false) {
   clearTimeout(armoryTimer);
@@ -450,7 +459,12 @@ async function armoryPage(path, ticket, refresh = false) {
   if (ticket !== navigation) return;
   const target = armoryTarget(path);
   if (target.profile) {
-    const { region, serverId, characterId } = target.profile;
+    const { region, serverId, characterId, tab } = target.profile;
+    const same = armoryAnswer && armoryAnswer.region === region && String(armoryAnswer.serverId) === serverId && armoryAnswer.characterId === characterId;
+    // Another tab of the profile on screen: shown at once, from what was fetched.
+    if (same && tab !== armoryTab && !refresh) { armoryTab = tab; armoryRender(); return armoryPoll(path, ticket); }
+    if (!same) armoryBoard = '';
+    armoryTab = tab;
     let answer;
     try { answer = await pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`, refresh ? { query: { refresh: 1 } } : {}); }
     catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryAnswer = armoryResults = null; armoryRender(); return toast(t(error.message)); }
@@ -458,8 +472,7 @@ async function armoryPage(path, ticket, refresh = false) {
     online = true; armoryAnswer = answer;
     if (answer.profile && isBookmarked(bookmarks(), answer)) keepBookmarks(refreshBookmark(bookmarks(), answer));
     armoryRender();
-    if (waiting(answer) || answer.state === 'failed') armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, answer.retryAfter || 5) * 1000);
-    return;
+    return armoryPoll(path, ticket);
   }
   armoryAnswer = armoryResults = null;
   if (!target.find) { armoryChosen = null; return armoryRender(); }
@@ -1323,6 +1336,7 @@ app.addEventListener('click', async e => {
     if (el.dataset.historyPage && historyView) return await historyPage(Number(el.dataset.historyPage), el);
     if (el.dataset.historyWeek && historyView) return historyWeek(Number(el.dataset.historyWeek), el);
     if (el.dataset.armoryUnmark) { keepBookmarks(removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
+    if (el.dataset.armoryBoard) { armoryBoard = el.dataset.armoryBoard; armoryRender(); return document.querySelector(`[data-armory-board="${CSS.escape(armoryBoard)}"]`)?.focus(); }
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
     if (el.dataset.shareNew) {
@@ -1650,6 +1664,8 @@ app.addEventListener('focusin', e => { if (e.target.matches?.('.link-field')) e.
 app.addEventListener('close', e => { if (e.target.id !== 'modal') return; stopPairing(); if (room && !demo) renderDashboard(); }, true);
 // A picture that fails to load (removed meanwhile, server unreachable) uncovers the initials.
 app.addEventListener('error', e => { if (e.target.matches?.('.portrait img')) e.target.closest('.portrait-photo').remove(); }, true);
+// An armory image the backend does not keep (yet) leaves its frame empty.
+app.addEventListener('error', e => { if (e.target.matches?.('img.armory-img')) { e.target.parentElement?.classList.add('is-empty'); e.target.remove(); } }, true);
 // The page language is ready before the first page is drawn; without its dictionary it stays English.
 // The service worker keeps the dashboard's files for visits without a connection and
 // shows run reminders; development builds go without it.

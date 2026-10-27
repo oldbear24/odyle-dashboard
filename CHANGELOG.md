@@ -2,6 +2,20 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.46.0 · 2026-10-27
+
+### New
+- **A new armory profile** that shows everything PLAYNC's official character pages list, with the game's icons and the character's portrait. A header gives the portrait, title, level, class, race and server with the combat power, item level and how much of the Daevanion, titles and skills the character has.
+- **Gear & stats**: the gear laid out by slot (weapons and armour, accessories, arcana, pet and wings), each item in its grade's colour with its enchantment and exceed level. Hover or tap an item for its card: properties, soul binding, manastones and theostones with their empty slots, its set and the set's effects, its skin and how to obtain it. The stats beside it say what each one gives.
+- **Skills**: every active, passive and stigma skill with its level, which ones are on the skill bar, which are not learned yet and how much gear and Daevanion add.
+- **Daevanion**: each board drawn node by node, open nodes lit in their grade's colour, with what the board's open nodes give.
+- **Titles** (owned, and the one worn in each category with its effects) and **Appearance** (skins, pet and wings).
+- Each tab has its own address to share, and **Official page ↗** opens the character on PLAYNC's site. Bookmarked characters show their portrait.
+
+### Changed
+- Item grades now have the game's own colours (rare green, legend blue, unique orange).
+- Characters looked up before this version fill in the rest the next time their profile is opened.
+
 ## 0.45.0 · 2026-10-27
 
 ### New
