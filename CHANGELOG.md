@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.44.1 · 2026-10-27
+
+### Fixed
+- For superusers: adding maps under **Game settings → Maps** no longer stalls. Adding or removing a map redraws only that row, so the field you type in keeps its place; typing an id or a name no longer redraws the ids seen without a name, and a click on one of them or on **Save changes** is no longer lost. An id that already has a row is no longer offered again.
+
 ## 0.44.0 · 2026-10-27
 
 ### New

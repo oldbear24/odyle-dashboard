@@ -606,8 +606,8 @@ function settingsForm(keys, sync = () => {}) {
   const cancel = () => { state.form = JSON.parse(state.initial); sync(state.form); };
   const buttons = (...left) => t.div({ className: 'col-lg-12' }, t.div({ className: 'flex' }, ...left, t.div({ className: 'm-r-auto' }),
     () => state.changed ? [
-      t.button({ type: 'button', className: 'btn transparent secondary', onclick: cancel }, t.span({ className: 'txt' }, 'Cancel')),
-      t.button({ className: () => 'btn expanded-lg ' + (state.saving ? 'loading' : ''), disabled: () => state.saving }, t.span({ className: 'txt' }, 'Save changes')),
+      t.button({ rid: 'cancel', type: 'button', className: 'btn transparent secondary', onclick: cancel }, t.span({ className: 'txt' }, 'Cancel')),
+      t.button({ rid: 'save', className: () => 'btn expanded-lg ' + (state.saving ? 'loading' : ''), disabled: () => state.saving }, t.span({ className: 'txt' }, 'Save changes')),
     ] : null));
   return { state, load, save, buttons };
 }
@@ -704,18 +704,32 @@ export function settingsPage() {
     if (!m.name.trim() && known.places.length === 1) m.name = known.places[0];
   }
   const maps = () => state.form.maps || (state.form.maps = []);
-  const unnamed = () => (state.data?.unnamedMaps || []).filter(seen => !maps().some(m => m.id === seen.id && m.name.trim()));
+  // A row keeps its elements while others are added or removed (rid), under ids of its own, so
+  // adding a map draws one row instead of all of them, and a field being typed in stays.
+  const rowKeys = new WeakMap();
+  let rows = 0;
+  const rowKey = m => rowKeys.get(m) ?? rowKeys.set(m, rows++).get(m);
+  // Ids already in the table are not offered again; the list follows the ids typed, not the names.
+  const unnamed = () => {
+    const listed = new Set(maps().map(m => m.id));
+    return (state.data?.unnamedMaps || []).filter(seen => !listed.has(seen.id));
+  };
   function addMap(id) {
-    const known = maps().findIndex(m => id && m.id === id);
-    if (known < 0) maps().push({ id: id || null, name: '', thgl: '' });
-    const at = known < 0 ? maps().length - 1 : known;
-    setTimeout(() => document.getElementById('odyle-map-' + at + (id ? '-name' : '-id'))?.focus());
+    let m = maps().find(row => id && row.id === id);
+    if (!m) {
+      maps().push({ id: id || null, name: '', thgl: '' });
+      m = maps()[maps().length - 1];
+    }
+    setTimeout(() => document.getElementById('odyle-map-' + rowKey(m) + (id ? '-name' : '-id'))?.focus());
   }
-  const mapRow = (m, i) => t.tr({ className: 'rate-limit-row' },
-    cell('odyle-col-map', t.input({ id: 'odyle-map-' + i + '-id', type: 'number', min: 1, max: 9999999, step: 1, required: true, placeholder: 'Map id', ariaLabel: 'Map id', value: () => m.id ?? '', oninput: e => m.id = integer(e.target.value) })),
-    cell('col-label', t.input({ id: 'odyle-map-' + i + '-name', type: 'text', maxLength: 60, placeholder: 'Name', ariaLabel: 'Name', 'html-list': 'odyle-thgl-places', value: () => m.name, oninput: e => m.name = e.target.value, onchange: () => linkLeftOut(m) })),
-    cell('odyle-col-thgl', t.input({ id: 'odyle-map-' + i + '-thgl', type: 'text', maxLength: 120, placeholder: 'TH.GL map', ariaLabel: 'TH.GL map', 'html-list': 'odyle-thgl-maps', title: () => m.thgl, value: () => m.thgl, oninput: e => m.thgl = e.target.value, onchange: () => linkLeftOut(m) })),
-    t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (m.name.trim() || 'map ' + (m.id ?? '')), onclick: () => maps().splice(i, 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
+  const mapRow = m => {
+    const at = 'odyle-map-' + rowKey(m);
+    return t.tr({ rid: m, className: 'rate-limit-row' },
+      cell('odyle-col-map', t.input({ id: at + '-id', type: 'number', min: 1, max: 9999999, step: 1, required: true, placeholder: 'Map id', ariaLabel: 'Map id', value: () => m.id ?? '', oninput: e => m.id = integer(e.target.value) })),
+      cell('col-label', t.input({ id: at + '-name', type: 'text', maxLength: 60, placeholder: 'Name', ariaLabel: 'Name', 'html-list': 'odyle-thgl-places', value: () => m.name, oninput: e => m.name = e.target.value, onchange: () => linkLeftOut(m) })),
+      cell('odyle-col-thgl', t.input({ id: at + '-thgl', type: 'text', maxLength: 120, placeholder: 'TH.GL map', ariaLabel: 'TH.GL map', 'html-list': 'odyle-thgl-maps', title: () => m.thgl, value: () => m.thgl, oninput: e => m.thgl = e.target.value, onchange: () => linkLeftOut(m) })),
+      t.td({ className: 'col-action' }, t.button({ type: 'button', className: 'btn sm secondary transparent circle', title: 'Remove', ariaLabel: () => 'Remove ' + (m.name.trim() || 'map ' + (m.id ?? '')), onclick: () => maps().includes(m) && maps().splice(maps().indexOf(m), 1) }, t.i({ className: 'ri-close-line', ariaHidden: true }))));
+  };
   // The Global task list (#38): daily and weekly tasks players add to their checklists in one go.
   const templates = () => state.form.taskTemplates || (state.form.taskTemplates = []);
   function addTemplate() {
@@ -784,7 +798,9 @@ export function settingsPage() {
         t.datalist({ id: 'odyle-thgl-maps' }, () => thglMaps().map(m => t.option({ value: m.name }))),
         t.datalist({ id: 'odyle-thgl-places' }, () => [...new Set(thglMaps().flatMap(m => m.places))].map(place => t.option({ value: place }))),
         t.div({ className: 'field-help' }, () => maps().length ? number(maps().length) + (maps().length === 1 ? ' map' : ' maps') + '. Players see a map without a name as its id; one without a TH.GL map has no map to open.' : 'Empty: players see map ids instead of names.'),
-        () => unnamed().length ? t.div({ className: 'field-help' }, 'Seen in the last 30 days without a name: ', ...unnamed().map(seen => t.button({ type: 'button', className: 'btn sm secondary transparent', title: () => number(seen.characters) + (seen.characters === 1 ? ' character, last ' : ' characters, last ') + when(seen.lastAt), onclick: () => addMap(seen.id) }, t.span({ className: 'txt' }, String(seen.id))))) : null),
+        // The buttons stay while the list changes (rid), so a click is never lost to a redraw.
+        t.div({ className: 'field-help', hidden: () => !unnamed().length }, 'Seen in the last 30 days without a name: ',
+          () => unnamed().map(seen => t.button({ rid: seen, type: 'button', className: 'btn sm secondary transparent', title: () => number(seen.characters) + (seen.characters === 1 ? ' character, last ' : ' characters, last ') + when(seen.lastAt), onclick: () => addMap(seen.id) }, t.span({ className: 'txt' }, String(seen.id)))))),
       section('Global task list', 'Daily and weekly tasks of the game that players add to their checklists in one go, for their account or one of their characters. Players can still add their own.'),
       t.div({ className: 'col-lg-12' },
         t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-templates' },
