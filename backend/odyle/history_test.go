@@ -39,7 +39,7 @@ func TestHistoryListsEveryChangeOfAQuietCharacter(t *testing.T) {
 	id := historyCharacter(t, app, "Quiet")
 	start := time.Now().Add(-29 * 24 * time.Hour)
 	addChanges(t, app, id, []int64{10, 20, 30, 40}, []time.Time{start.Add(-48 * time.Hour), start, start.Add(time.Minute), time.Now().Add(-time.Hour)})
-	readings, hourlyBefore, err := historyOf(app, id)
+	readings, hourlyBefore, err := historyOf(app, id, 30)
 	if err != nil || hourlyBefore != "" {
 		t.Fatalf("%v, hourly before %q", err, hourlyBefore)
 	}
@@ -69,7 +69,7 @@ func TestHistoryOfABusyCharacterStillStartsThirtyDaysAgo(t *testing.T) {
 		values, at = append(values, int64(1000+i)), append(at, recent.Add(time.Duration(i)*time.Minute))
 	}
 	addChanges(t, app, id, values, at)
-	readings, hourlyBefore, err := historyOf(app, id)
+	readings, hourlyBefore, err := historyOf(app, id, 30)
 	if err != nil {
 		t.Fatal(err)
 	}

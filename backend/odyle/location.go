@@ -15,8 +15,9 @@ import (
 // /api/odyle/location-sharing) lets its Windows app send where its characters are, as the game
 // says it: on each map load and arrival, about once a second while gliding or flying, and with
 // some skills (the game sends nothing while a character simply walks). The latest place is characters.location, which
-// rooms see with the shared character, shown with its age; every place is kept 30 days in
-// character_locations. Turning sharing off clears both. The game names maps by id only:
+// rooms see with the shared character, shown with its age; every place is kept in
+// character_locations as long as Game settings say (locationDays, 30 by default). Turning
+// sharing off clears both. The game names maps by id only:
 // superusers name them and link each to a TH.GL map (settings.Maps); the dashboard shows a
 // place through TH.GL's embedded map, never with map art of its own.
 
@@ -260,9 +261,9 @@ func seenBy(app core.App, c *Character, userId string) error {
 	return forbidden("This character is not shared with you.")
 }
 
-// placesOf is a character's places of the last 30 days, newest first, at most limit of them.
-func placesOf(app core.App, id string, limit int) ([]any, error) {
-	found, err := app.FindRecordsByFilter("character_locations", "character = {:id} && created >= {:since}", "-created", limit, 0, dbx.Params{"id": id, "since": ago(30 * 24 * time.Hour)})
+// placesOf is a character's kept places, newest first: limit of them from offset.
+func placesOf(app core.App, id string, limit, offset int) ([]any, error) {
+	found, err := app.FindRecordsByFilter("character_locations", "character = {:id} && created >= {:since}", "-created", limit, offset, placesKept(app, id))
 	if err != nil {
 		return nil, err
 	}
@@ -277,11 +278,18 @@ func placesOf(app core.App, id string, limit int) ([]any, error) {
 	return out, nil
 }
 
-// locationHistoryLimit bounds an answer: a minute apart, 2,000 places are a day and a half of flight.
+// placesKept are the query parameters of a character's places that are still kept.
+func placesKept(app core.App, id string) dbx.Params {
+	return dbx.Params{"id": id, "since": ago(daysOf(readSettings(app).LocationDays))}
+}
+
+// locationHistoryLimit bounds an answer without a page: a minute apart, 2,000 places are a day
+// and a half of flight.
 const locationHistoryLimit = 2000
 
-// locations answers a character's places of the last 30 days (GET /api/odyle/locations/{id}) to
-// its owner and the members of the rooms it is shared in, while its owner shares.
+// locations answers a character's kept places (GET /api/odyle/locations/{id}) to its owner and
+// the members of the rooms it is shared in, while its owner shares: with ?page= (from 1) one
+// page of perPage (?perPage=, 20 by default) and how many there are, else the newest 2,000.
 func locations(e *core.RequestEvent) error {
 	return run(e, func() error {
 		c, err := findAs[Character](e.App, "characters", e.Request.PathValue("id"))
@@ -295,17 +303,33 @@ func locations(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		rules := readSettings(e.App)
+		answer := map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name()}, "shared": owner.GetBool("shareLocation"), "location": nil, "locations": []any{}, "maps": rules.Maps, "keepDays": rules.LocationDays, "serverNow": now()}
+		paged := e.Request.URL.Query().Has("page")
+		page, perPage := pageOf(e, 20)
+		if paged {
+			answer["page"], answer["perPage"], answer["total"], answer["pages"] = page, perPage, 0, 1
+		}
+		if !owner.GetBool("shareLocation") {
+			return e.JSON(200, answer)
+		}
 		// The latest place too: the history keeps a flight's places a minute apart.
-		places, latest := []any{}, any(nil)
-		if owner.GetBool("shareLocation") {
-			if places, err = placesOf(e.App, c.Id, locationHistoryLimit); err != nil {
+		if raw := c.GetString("location"); raw != "" && raw != "null" {
+			answer["location"] = c.Get("location")
+		}
+		limit, offset := locationHistoryLimit, 0
+		if paged {
+			total, err := e.App.CountRecords("character_locations", dbx.NewExp("character = {:id} AND created >= {:since}", placesKept(e.App, c.Id)))
+			if err != nil {
 				return err
 			}
-			if raw := c.GetString("location"); raw != "" && raw != "null" {
-				latest = c.Get("location")
-			}
+			answer["total"], answer["pages"] = total, pages(int(total), perPage)
+			limit, offset = perPage, (page-1)*perPage
 		}
-		return e.JSON(200, map[string]any{"character": map[string]any{"id": c.Id, "characterName": c.Name()}, "shared": owner.GetBool("shareLocation"), "location": latest, "locations": places, "maps": readSettings(e.App).Maps, "serverNow": now()})
+		if answer["locations"], err = placesOf(e.App, c.Id, limit, offset); err != nil {
+			return err
+		}
+		return e.JSON(200, answer)
 	})
 }
 

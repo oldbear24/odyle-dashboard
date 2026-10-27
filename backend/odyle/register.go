@@ -122,6 +122,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
 	se.Router.GET("/api/odyle/snapshot/{id}", timed("snapshot", snapshot)).Bind(signedIn)
 	se.Router.GET("/api/odyle/history/{id}", timed("history", history)).Bind(signedIn)
+	se.Router.GET("/api/odyle/history/{id}/changes", timed("history-changes", historyChanges)).Bind(signedIn)
 	se.Router.GET("/api/odyle/locations/{id}", timed("locations", locations)).Bind(signedIn)
 	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)

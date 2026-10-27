@@ -568,16 +568,16 @@ test('new characters reach the rooms that ask for them, and a prompt offers the 
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
-test('a character without Odyle yet says so, a wish says how long it is wanted, and the history lists every change on request', async () => {
+test('a character without Odyle yet says so, a wish says how long it is wanted, and the history pages through its changes', async () => {
   const lead = await account('Seed keeper'), roomId = (await request('/api/odyle/create', { name: 'Seed room' }, lead)).data.room.id;
   const session = (await request('/api/odyle/session', {}, lead)).data;
   // The Windows app saved a newcomer and read a snapshot of it without the Odyle record.
   const sprout = (await request('/api/odyle/character', { characterName: 'Sprout', server: 'Lumiel', region: 'GLOBAL_EU' }, lead)).data.character;
   assert.equal((await request('/api/odyle/no-odyle', { characterId: sprout.id }, lead)).data.character.odyleLocked, true);
-  // A veteran with more changes than the dialog lists at first.
+  // A veteran with more changes than a page of the dialog lists.
   const reading = { sessionId: session.sessionId, characterName: 'Veteran', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
   const veteran = (await request('/api/odyle/report', { ...reading, sequence: 1, value: 100 }, lead)).data.character;
-  for (let i = 2; i <= 14; i++) await request('/api/odyle/report', { ...reading, sequence: i, value: 100 + i * 5, characterId: veteran.id }, lead);
+  for (let i = 2; i <= 20; i++) await request('/api/odyle/report', { ...reading, sequence: i, value: 100 + i * 5, characterId: veteran.id }, lead);
   for (const c of [sprout, veteran]) assert.equal((await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, lead)).status, 200);
   await request('/api/odyle/wishlist', { roomId, dungeon: 'Fire Temple', wanted: true }, lead);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
@@ -588,10 +588,28 @@ test('a character without Odyle yet says so, a wish says how long it is wanted, 
     assert.match(await page.locator('.wishlist:not(.runs) .wish-row').innerText(), /1 member needs it · added today/);
     await page.locator('.member-card', { hasText: 'Veteran' }).locator('[data-history]').click();
     await page.locator('#modal .history-table').waitFor();
-    assert.equal(await page.locator('#modal .history-table tbody tr').count(), 12);
-    await page.locator('#modal [data-history-all]').click();
-    assert.equal(await page.locator('#modal .history-table tbody tr').count(), 14);
-    assert.equal(await page.locator('#modal [data-history-all]').count(), 0);
+    const rows = page.locator('#modal .history-table tbody tr:not(.pager-filler)'), pager = page.locator('#modal .history-changes .pager');
+    assert.equal(await rows.count(), 15); assert.equal(await pager.locator('.pager-at').innerText(), 'Page 1 of 2');
+    assert.equal(await page.locator('#modal .history-changes .modal-count').innerText(), '20');
+    // The older page keeps the table's height, and the focus stays on the pager.
+    const height = (await page.locator('#modal .history-table').boundingBox()).height;
+    await pager.locator('.pager-step.older:not(.edge)').click();
+    await pager.locator('.pager-at', { hasText: 'Page 2 of 2' }).waitFor();
+    assert.equal(await rows.count(), 5); assert.equal(await rows.first().locator('td').nth(1).innerText(), '125');
+    assert.ok(Math.abs((await page.locator('#modal .history-table').boundingBox()).height - height) < 2, 'a short page keeps the height');
+    assert.equal(await page.evaluate(() => document.activeElement?.className), 'pager-at');
+    await pager.locator('.pager-step.newer.edge').click();
+    await pager.locator('.pager-at', { hasText: 'Page 1 of 2' }).waitFor();
+    // A shorter period, up to the 30 days the server keeps.
+    assert.deepEqual(await page.locator('#modal [data-history-days]').allInnerTexts(), ['7 days', '30 days']);
+    await page.locator('#modal [data-history-days="7"]').click();
+    await page.locator('#modal [data-history-days="7"][aria-pressed="true"]').waitFor();
+    assert.match(await page.locator('#modal .history-about').innerText(), /Every change in the last 7 days/);
+    // Only the body scrolls: the title and the close button stay in view.
+    await page.setViewportSize({ width: page.viewportSize().width, height: 420 });
+    await page.locator('#modal .modal-body').evaluate(body => body.scrollTo(0, body.scrollHeight));
+    assert.ok(await page.locator('#modal .modal-body').evaluate(body => body.scrollTop > 0), 'the body scrolls');
+    assert.ok((await page.locator('#modal [data-action="close-dialog"]').boundingBox()).y > 0, 'the close button stays in view');
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
@@ -774,6 +792,9 @@ test('location sharing is off until turned on, rooms see where a character was, 
     await toast(page).filter({ hasText: 'Saved: your rooms see where your characters were last seen.' }).waitFor();
     await shot(page, 'account-location');
     assert.equal((await request('/api/odyle/location', place, me)).data.shared, true);
+    // Fifteen places in all, each on another map than the one before, Altgard the latest.
+    for (let i = 0; i < 13; i++) await request('/api/odyle/location', { ...place, map: i % 2 ? 1110 : 600001 }, me);
+    assert.equal((await request('/api/odyle/location', place, me)).data.shared, true);
     // The library row says where and how long ago; it opens the map.
     await navigate(page, 'library');
     const row = page.locator('.member-card', { hasText: 'Scout' }).locator('.place-line');
@@ -783,7 +804,19 @@ test('location sharing is off until turned on, rooms see where a character was, 
     const src = await page.locator('#modal .place-frame iframe').getAttribute('src');
     assert.equal(src, 'https://aion2.th.gl/embed/maps/Altgard?center=-33884,-83476&zoom=3&types=kibelisk,dungeon_kibelisk');
     assert.equal(await page.locator('#modal .place-pin').count(), 1);
+    // The places beside the map, twelve a page; paging leaves the map as it is.
+    const list = page.locator('#modal .place-list');
+    assert.equal(await list.locator('.modal-count').innerText(), '15'); assert.match(await list.innerText(), /Each place is kept for 30 days/);
+    assert.equal(await list.locator('tbody tr:not(.pager-filler)').count(), 12); assert.equal(await list.locator('tr.is-picked').count(), 1);
     await shot(page, 'location-dialog');
+    await list.locator('.pager-step.older:not(.edge)').click();
+    await list.locator('.pager-at', { hasText: 'Page 2 of 2' }).waitFor();
+    assert.equal(await list.locator('tbody tr:not(.pager-filler)').count(), 3); assert.equal(await list.locator('tr.is-picked').count(), 0);
+    assert.equal(await page.locator('#modal .place-frame iframe').getAttribute('src'), src);
+    // A place of the older page shows on the map.
+    await list.locator('[data-place="1"]').click();
+    await page.locator('#modal .place-now', { hasText: 'Map 600001' }).waitFor();
+    assert.equal(await page.locator('#modal .place-list tr.is-picked').count(), 1);
     await page.locator('#modal [data-action="close-dialog"]').click();
     // A room member sees it too, and a place on a map without a name shows its id.
     const other = await open(friend, '#/room/' + roomId);
@@ -1439,11 +1472,14 @@ async function superuser() {
   await tab.page.locator('.page-header').first().waitFor();
   return { operator, ...tab };
 }
-test('superusers keep the dungeon catalog and the inactive account period on the Odyle settings page', async () => {
+test('superusers keep the dungeon catalog, the inactive account period and how long history is kept on the Odyle settings page', async () => {
   const { operator, page, errors, close } = await superuser();
   try {
     await page.goto(url + '/_/#/odyle/settings');
     await page.locator('#odyle-inactive').fill('365');
+    // The Odyle history for a year, the places for 90 days.
+    await page.locator('#odyle-history-days').fill('365'); await page.locator('#odyle-location-days').fill('90');
+    await page.getByText('Each change of a character\'s Odyle is kept for 365 days (1 year)').waitFor();
     // Dungeons come in from a list typed line by line, as a superuser would, or pasted.
     await page.getByRole('button', { name: 'Add several from a list' }).click();
     await page.locator('#odyle-dungeons').click(); await page.keyboard.type('Fire Temple\n fire temple \nUdas Temple | 80 | 10 | Sanctuary | unconfirmed\n');
@@ -1475,6 +1511,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.deepEqual(saved.classRoles.at(-1), { class: 'Chanter', role: 'healer' });
     assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '2, 5, 22');
     assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
+    assert.deepEqual([saved.historyDays, saved.locationDays], [365, 90]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(url + '/_/#/collections'); await page.locator('.page-header').first().waitFor();
@@ -1490,7 +1527,7 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.equal(visit.headers.get('clear-site-data'), '"cache"'); assert.match(visit.headers.get('set-cookie'), /^odyle_entry=1; Path=\/_\/;/);
     assert.equal(again.headers.get('clear-site-data'), null);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
-  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, historyDays: 30, locationDays: 30, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
 });
 test('superusers search, open and export packets and read the server status', async () => {
   const reader = await account('Status reader');

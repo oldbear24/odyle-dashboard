@@ -10,8 +10,8 @@ import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, reset
 import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
-import { historyChart, historyList, bindHistoryChart, weeklyLedger, ledgerTable } from './history.js';
-import { placeButton, locationBody } from './places.js';
+import { historyBody, changesPage, ledgerTable, weeklyLedger, changesTable, bindHistoryChart } from './history.js';
+import { placeButton, locationBody, placeList, placesOf } from './places.js';
 import { setupTracker } from './setup.js';
 import { slotsView, lookName, frameClass } from './slots.js';
 import { playSpin, playWin, playLose } from './sounds.js';
@@ -72,6 +72,8 @@ let maintenance = null;
 let classRoles = [];
 // The game's maps as superusers named them (location sharing, places.js).
 let gameMaps = [];
+// How long the server keeps the Odyle history and the places (Game settings), for the help.
+let keptDays = { historyDays: 30, locationDays: 30 };
 // The party's week (#42): what the characters shared in the room spent since the weekly reset.
 let roomWeek = null;
 // The room's information board (board.js): its text, who wrote it last and when, or null.
@@ -120,7 +122,7 @@ function roomSwitch() {
 }
 function renderRoomSwitch() { document.querySelectorAll('.room-switch').forEach(el => { if (!el.open) el.outerHTML = roomSwitch(); }); }
 let roomsKnown = false;
-async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; roomsKnown = true; renderRoomSwitch(); }
+async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; keptDays = list.kept || keptDays; roomsKnown = true; renderRoomSwitch(); }
 // The account menu behind the avatar: the account page, pairing, invites, help, what's new and
 // signing out. Signed out (or in the demo) the same place offers help and the way back.
 function accountMenu() {
@@ -610,7 +612,28 @@ function toast(message) { const el = document.querySelector('#toast'); if (!el) 
 function formError(form, message) { form.querySelector('.form-error')?.remove(); form.insertAdjacentHTML('beforeend', `<p class="form-error" role="alert">${esc(message)}</p>`); }
 // Backend and SDK errors arrive in English; t() shows them in the page's language.
 const failed = error => toast(t(error?.message || 'Request could not be completed.'));
-function modal(title, body, wide = false) { const el = document.querySelector('#modal'); el.className = wide ? 'wide' : ''; el.innerHTML = `<div class="modal-head"><h2 id="modal-title">${title}</h2><button data-action="close-dialog" class="close-button" aria-label="${esc(t('Close dialog'))}">×</button></div>${body}`; if (!el.open) el.showModal(); }
+// The dialog keeps its title and close button in view: only its body scrolls. The same dialog
+// drawn again (a countdown, a saved change) keeps where its reader scrolled to. `wide` is
+// true or the dialog's classes.
+function modal(title, body, wide = false) {
+  const el = document.querySelector('#modal'), again = el.open && el.dataset.title === title ? el.querySelector('.modal-body')?.scrollTop || 0 : 0;
+  el.className = wide === true ? 'wide' : wide || ''; el.dataset.title = title;
+  el.innerHTML = `<div class="modal-head"><h2 id="modal-title">${title}</h2><button data-action="close-dialog" class="close-button" aria-label="${esc(t('Close dialog'))}">×</button></div><div class="modal-body">${body}</div>`;
+  if (!el.open) el.showModal();
+  if (again) el.querySelector('.modal-body').scrollTop = again;
+}
+// Draws a part of the open dialog again (html is the whole part) and puts the focus back on
+// the pager button the reader used, or on the page number when that button now leads nowhere.
+function redraw(selector, html, used) {
+  const part = document.querySelector('#modal ' + selector);
+  if (!part) return;
+  const step = used?.closest?.('.pager') ? `.pager-step.${used.classList.contains('newer') ? 'newer' : 'older'}${used.classList.contains('edge') ? '.edge' : ':not(.edge)'}` : '';
+  part.outerHTML = html;
+  const fresh = document.querySelector('#modal ' + selector);
+  if (!step || !fresh) return;
+  const again = fresh.querySelector(step), at = fresh.querySelector('.pager-at');
+  if (again && !again.disabled) again.focus(); else if (at) { at.tabIndex = -1; at.focus(); }
+}
 const closeModal = () => document.querySelector('#modal')?.close();
 const signInPrompt = text => modal(t('Sign in to continue'), `<p>${text}</p><button class="button discord-button" data-action="exit-demo">${t('Sign in with Discord')}</button>`);
 // Asks before a change; Keep it closes the dialog, or goes back to the one named.
@@ -678,42 +701,93 @@ async function saveFeatures(features) {
 }
 // The owner connects a Discord channel and chooses when runs are posted there (discord.js).
 const discordSettings = () => discordView(room, Date.now() + serverOffset, remindersPaused, !on('runs'));
-// Demo characters get a made-up history so the chart can be tried without signing in.
-function demoHistory(id) {
+// Demo characters get a made-up history so the chart can be tried without signing in. It
+// spans less than a week, so every period shows all of it.
+function demoHistory(id, days = 30) {
   const c = members.flatMap(m => m.characters || []).find(x => x.id === id), now = Date.now(), readings = [];
   let value = Math.max(0, (c?.value || 100) - 90);
   for (let i = 12; i >= 0; i--) { readings.push({ value, at: new Date(now - i * 5 * 3600000 - 600000).toISOString() }); value = i ? Math.max(0, value + [15, 20, -40, 10, 25, 5][i % 6]) : c?.value || value; }
   readings[readings.length - 1].value = c?.value || value;
-  return { readings };
+  return { readings, days, keepDays: 30 };
 }
-// The history in the dialog, for Show all.
-let shownHistory = null;
+// The history dialog (history.js): the period the reader picks (30 days at first, up to as long
+// as the server keeps it), its chart, its weeks and its changes a page at a time. An answer of
+// more than 1,000 changes is thinned, so its pages come from the server; otherwise from it.
+const changesPerPage = 15;
+let historyView = null;
 async function historyDialog(id, name) {
-  const data = demo ? demoHistory(id) : await pb.send('/api/odyle/history/' + id);
-  if (!demo && data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
-  const now = Date.now() + serverOffset, cost = room?.cost || perCube;
-  modal(esc(t('{name} · Odyle history', { name })), `<p>${data.hourlyBefore ? t('The last 30 days: the newest 1,000 changes, and before them the last change of each hour. A value holds until the next change; the line marks one cube.') : t('Every change in the last 30 days. A value holds until the next change; the line marks one cube.')}</p>${historyChart(data.readings, { now, cost })}${ledgerTable(weeklyLedger(data.readings, { now, cost, resets, clock: data.clock || clockRules, character: data.character }), { hourlyBefore: data.hourlyBefore })}${data.readings.length ? `<div class="history-rows">${historyList(data.readings, 12, data.hourlyBefore)}</div>` : ''}`, true);
-  shownHistory = data;
-  bindHistoryChart(document.querySelector('#modal .history-chart'));
+  historyView = { id, name, week: 1 };
+  await showHistory(0, null, true);
 }
-// Where a character was last seen and its places of the 30 days (places.js), on TH.GL's map.
-// The open dialog follows the character: a newer place recentres the map, at most every 20
-// seconds and only while the pin shows, so a map the viewer moved stays where they put it.
+async function showHistory(days = 0, used = null, opening = false) {
+  const view = historyView, part = opening ? null : document.querySelector('#modal[open] .history-dialog'), ask = view.ask = (view.ask || 0) + 1;
+  part?.classList.add('is-loading');
+  try {
+    const data = demo ? demoHistory(view.id, days || 30) : await pb.send('/api/odyle/history/' + view.id + (days ? '?days=' + days : ''));
+    const changes = await changesOf(view, data, 1);
+    if (historyView !== view || view.ask !== ask) return;
+    if (!demo && data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
+    Object.assign(view, { data, changes, week: 1 });
+    const body = historyHtml();
+    if (part) redraw('.history-dialog', `<div class="history-dialog">${body}</div>`, used); else modal(esc(t('{name} · Odyle history', { name: view.name })), `<div class="history-dialog">${body}</div>`, 'wide split');
+    bindHistoryChart(document.querySelector('#modal .history-chart'));
+    if (used?.dataset?.historyDays) document.querySelector(`#modal [data-history-days="${used.dataset.historyDays}"]`)?.focus();
+  } finally { part?.classList.remove('is-loading'); }
+}
+// A page of the changes: from the answer when it lists each one, else from the server.
+async function changesOf(view, data, page) {
+  if (!data.hourlyBefore) return changesPage(data.readings, page, changesPerPage);
+  return pb.send(`/api/odyle/history/${view.id}/changes?days=${data.days}&page=${page}&perPage=${changesPerPage}`);
+}
+const historyNow = () => Date.now() + serverOffset;
+const historyHtml = () => historyBody({ data: { days: 30, ...historyView.data }, changes: historyView.changes, week: historyView.week, now: historyNow(), cost: room?.cost || perCube, resets, clock: historyView.data.clock || clockRules });
+async function historyPage(page, used) {
+  const view = historyView, part = document.querySelector('#modal .history-changes'), ask = view.ask = (view.ask || 0) + 1;
+  part?.classList.add('is-loading');
+  try {
+    const changes = await changesOf(view, view.data, page);
+    if (historyView !== view || view.ask !== ask) return;
+    view.changes = changes;
+    redraw('.history-changes', changesTable(changes, historyNow()), used);
+  } finally { part?.classList.remove('is-loading'); }
+}
+function historyWeek(page, used) {
+  const view = historyView, now = historyNow(), cost = room?.cost || perCube;
+  view.week = page;
+  redraw('.history-weeks', ledgerTable(weeklyLedger(view.data.readings, { now, cost, resets, clock: view.data.clock || clockRules, character: view.data.character }), { hourlyBefore: view.data.hourlyBefore, thinnedTo: view.data.thinnedTo, page }), used);
+}
+// Where a character was last seen and its kept places (places.js), on TH.GL's map, with the
+// places a page at a time beside it. The open dialog follows the character: a newer place
+// recentres the map, at most every 20 seconds and only while the latest place shows on the
+// first page with its pin, so a map the viewer moved stays where they put it.
+const placesPerPage = 12;
 let placeView = null;
+const placesAt = (id, page) => pb.send(`/api/odyle/locations/${id}?page=${page}&perPage=${placesPerPage}`);
 async function locationDialog(id, name) {
-  const data = await pb.send('/api/odyle/locations/' + id);
+  const data = await placesAt(id, 1);
   if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
   gameMaps = data.maps || gameMaps;
   const own = characters.some(c => c.id === id);
-  placeView = { id, name, own, data, picked: 0, all: false, shownAt: 0 };
-  modal(esc(t('{name} · Location', { name })), `<div class="place-dialog">${placeBody()}</div>`, true);
+  placeView = { id, name, own, data, picked: null, shownAt: 0 };
+  modal(esc(t('{name} · Location', { name })), `<div class="place-dialog">${placeBody()}</div>`, 'wide split');
   placeView.shownAt = Date.now();
 }
-const placeBody = () => locationBody({ data: placeView.data, maps: gameMaps, name: placeView.name, own: placeView.own, now: Date.now() + serverOffset, picked: placeView.picked, all: placeView.all });
+const placeBody = () => locationBody({ data: placeView.data, maps: gameMaps, name: placeView.name, own: placeView.own, now: Date.now() + serverOffset, picked: placeView.picked });
 function renderPlace() {
   const el = document.querySelector('#modal .place-dialog');
   if (!el || !placeView) return;
   el.innerHTML = placeBody(); placeView.shownAt = Date.now();
+}
+async function placePage(page, used) {
+  const view = placeView, part = document.querySelector('#modal .place-list'), ask = view.ask = (view.ask || 0) + 1;
+  part?.classList.add('is-loading');
+  try {
+    const data = await placesAt(view.id, page);
+    if (placeView !== view || view.ask !== ask) return;
+    // The latest place stays the one the dialog heard of last.
+    view.data = { ...data, location: view.data.location };
+    redraw('.place-list', `<div class="place-list">${placeList({ data: view.data, maps: gameMaps, now: Date.now() + serverOffset, picked: view.picked })}</div>`, used);
+  } finally { part?.classList.remove('is-loading'); }
 }
 // Clicking into the embedded map moves focus out of the page: the pin no longer marks the place.
 window.addEventListener('blur', () => setTimeout(() => {
@@ -725,7 +799,7 @@ function followPlace(changed) {
   const c = placeView && changed.find(x => x.id === placeView.id && x.location?.at);
   if (!c || !document.querySelector('#modal .place-dialog') || c.location.at === placeView.data.location?.at) return;
   placeView.data = { ...placeView.data, location: c.location };
-  if (placeView.picked === 0 && !document.querySelector('#modal .place-frame.is-moved') && Date.now() - placeView.shownAt > 20000) renderPlace();
+  if (placeView.picked === null && (placeView.data.page || 1) === 1 && !document.querySelector('#modal .place-frame.is-moved') && Date.now() - placeView.shownAt > 20000) renderPlace();
 }
 // The pairing dialog (Pair Windows app, Connect reader; pairing.js). It shows this
 // browser's unused connection link again, or asks for one, with a countdown to its
@@ -854,7 +928,7 @@ async function library(ticket) {
   const [list, mine, ahead] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), pb.send('/api/odyle/upcoming?days=14', { requestKey: 'next-runs' }).catch(() => null), loadWindowsRelease()]);
   if (ticket !== navigation) return;
   nextRunsList = ahead?.runs || [];
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -957,7 +1031,7 @@ async function refreshPage() {
   else if (shown?.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
@@ -1242,10 +1316,12 @@ app.addEventListener('click', async e => {
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.location) return await locationDialog(el.dataset.location, el.dataset.name);
-    if (el.dataset.place && placeView) { placeView.picked = Number(el.dataset.place); return renderPlace(); }
-    if (el.matches('[data-place-all]') && placeView) { placeView.all = true; return renderPlace(); }
+    if (el.dataset.place && placeView) { placeView.picked = placesOf(placeView.data)[Number(el.dataset.place)] || null; return renderPlace(); }
+    if (el.dataset.placePage && placeView) return await placePage(Number(el.dataset.placePage), el);
     if (el.matches('[data-place-back]') && placeView) return renderPlace();
-    if (el.matches('[data-history-all]')) { const rows = document.querySelector('#modal .history-rows'); if (rows && shownHistory) rows.innerHTML = historyList(shownHistory.readings, Infinity, shownHistory.hourlyBefore); return; }
+    if (el.dataset.historyDays && historyView) return await showHistory(Number(el.dataset.historyDays), el);
+    if (el.dataset.historyPage && historyView) return await historyPage(Number(el.dataset.historyPage), el);
+    if (el.dataset.historyWeek && historyView) return historyWeek(Number(el.dataset.historyWeek), el);
     if (el.dataset.armoryUnmark) { keepBookmarks(removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
@@ -1419,7 +1495,7 @@ app.addEventListener('click', async e => {
         t('Each room keeps a dungeon wishlist and planned runs: add the dungeons you still need, join an entry with Need it too, plan a run with a time and join it with Going. The room owner can clear an entry for everyone.'),
         t('Daily & weekly is your own checklist: add the tasks you run every day or week and tick them off. They uncheck themselves at the daily and weekly reset of the Global service, so nothing is deleted and nothing needs re-adding.'),
         t('The Windows app is a free download from its GitHub releases; My rooms & characters links the newest version, and an installed app updates itself from new releases. It pairs once with a one-time link, stays paired until you disconnect it and reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.'),
-        t('The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for 30 days as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.'),
+        esc(tn(keptDays.historyDays, 'The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for {n} day as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.', 'The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for {n} days as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.')),
         t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
         scopeText(),
         `${t('What Odyle keeps and how long:')} <a href="#/privacy">${t('Privacy notice')}</a> · <a href="https://github.com/oldbear24/odyle-dashboard/issues" target="_blank" rel="noopener">${t('Report a problem or ask')}</a>`,

@@ -15,8 +15,8 @@ test('a shared place shows its map and age on the row, and TH.GL is centred y,x 
   assert.equal(mapName(600001, maps), 'Map 600001'); assert.equal(mapName(42, []), 'Map 42');
   assert.deepEqual(['load', 'arrival', 'flight', 'effect', 'walk'].map(sourceName), ['loading screen', 'arrived', 'in flight', 'skill or effect', '']);
 });
-test('the location dialog shows the latest place on the map, the 30 days, and why there is nothing', async () => {
-  const { locationBody, placesOf } = await import('../src/places.js');
+test('the location dialog shows the latest place on the map, a page of the kept places, and why there is nothing', async () => {
+  const { locationBody, placesOf, shownPlace } = await import('../src/places.js');
   const latest = { map: 1110, x: 10, y: 20, z: 0, heading: null, source: 'flight', at: '2026-10-24 17:59:30.000Z' };
   const history = [{ map: 1110, x: 0, y: 0, z: 0, heading: 90, source: 'load', at: '2026-10-24 17:50:00.000Z' }, { map: 600001, x: 5, y: 5, z: 0, heading: null, source: 'load', at: '2026-10-23 20:00:00.000Z' }];
   // The latest place is newer than the history (a flight keeps a place a minute apart).
@@ -26,20 +26,26 @@ test('the location dialog shows the latest place on the map, the 30 days, and wh
   assert.match(body, /<strong>Altgard<\/strong> · in flight/);
   assert.match(body, /<iframe src="https:\/\/aion2\.th\.gl\/embed\/maps\/Altgard\?center=20,10&amp;zoom=3/);
   assert.match(body, /class="place-pin"/); assert.match(body, /data-place="1"/); assert.match(body, /data-place="2"/);
+  assert.match(body, /<tr class="is-picked"><td>[^<]*<\/td><td>Altgard<\/td><td>in flight<\/td><td><span class="place-shown">Shown/);
   // A place on a map without a TH.GL link says so instead of showing a map.
-  const dungeon = locationBody({ data: { shared: true, location: null, locations: history }, maps, name: 'Scout', now, picked: 1 });
+  const dungeon = locationBody({ data: { shared: true, location: null, locations: history }, maps, name: 'Scout', now, picked: history[1] });
   assert.doesNotMatch(dungeon, /<iframe/); assert.match(dungeon, /Map 600001 has no map linked yet/);
   assert.match(locationBody({ data: { shared: false, locations: [] }, maps, name: 'Scout', now }), /The player of Scout does not share their location/);
   assert.match(locationBody({ data: { shared: false, locations: [] }, maps, name: 'Scout', own: true, now }), /Turn it on under Account &amp; data|Turn it on under Account & data/);
-  assert.match(locationBody({ data: { shared: true, location: null, locations: [] }, maps, name: 'Scout', now }), /No place in the last 30 days yet/);
-  // Twelve rows, then Show all.
-  const many = Array.from({ length: 20 }, (_, i) => ({ ...history[0], at: new Date(now - i * 60000).toISOString() }));
-  const listed = locationBody({ data: { shared: true, location: null, locations: many }, maps, name: 'Scout', now });
-  assert.equal(listed.match(/<tr/g).length, 13); assert.match(listed, /8 earlier places in the last 30 days/); assert.match(listed, /data-place-all/);
-  assert.equal(locationBody({ data: { shared: true, location: null, locations: many }, maps, name: 'Scout', now, all: true }).match(/<tr/g).length, 21);
+  assert.match(locationBody({ data: { shared: true, location: null, locations: [], keepDays: 365 }, maps, name: 'Scout', now }), /No place in the last 365 days yet/);
+  // A page of the server's places with the buttons to the others; a later page lists no latest place,
+  // and its short last page keeps the height of a full one.
+  const many = Array.from({ length: 12 }, (_, i) => ({ ...history[0], at: new Date(now - (i + 1) * 60000).toISOString() }));
+  const first = locationBody({ data: { shared: true, location: latest, locations: many, page: 1, pages: 3, total: 30, perPage: 12, keepDays: 90 }, maps, name: 'Scout', now });
+  assert.equal(first.match(/<tr[ >]/g).length, 14); assert.match(first, /Places <span class="modal-count">30<\/span>/); assert.match(first, /Page 1 of 3/); assert.match(first, /data-place-page="2" title="Older"/); assert.match(first, /Each place is kept for 90 days/);
+  const last = locationBody({ data: { shared: true, location: latest, locations: many.slice(0, 6), page: 3, pages: 3, total: 30, perPage: 12 }, maps, name: 'Scout', now });
+  assert.equal(last.match(/data-place="/g).length, 6); assert.equal(last.match(/pager-filler/g).length, 6); assert.match(last, /data-place-page="2" title="Newer"/);
+  // The map shows the latest place on any page until another is picked.
+  assert.equal(shownPlace({ location: latest, locations: many, page: 3 }), latest); assert.equal(shownPlace({ location: null, locations: many, page: 1 }), many[0]); assert.equal(shownPlace({ location: latest, locations: many }, many[4]), many[4]);
 });
 test('the account page offers location sharing, off until the player turns it on', async () => {
   const { locationCard } = await import('../src/places.js');
   assert.match(locationCard(false), /id="location-form"/); assert.doesNotMatch(locationCard(false), /checked/);
   assert.match(locationCard(true), /name="shareLocation" checked/); assert.match(locationCard(true), /Share my location with my rooms/);
+  assert.match(locationCard(false), /Places are kept for 30 days/); assert.match(locationCard(false, 365), /Places are kept for 365 days/);
 });
