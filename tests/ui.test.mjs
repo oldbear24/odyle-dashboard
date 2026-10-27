@@ -1469,13 +1469,19 @@ test('superusers keep the dungeon catalog and the inactive account period on the
     assert.deepEqual(await page.locator('.odyle-roles [id$="-class"]').evaluateAll(inputs => inputs.map(i => i.value)), ['Templar', 'Gladiator', 'Assassin', 'Ranger', 'Sorcerer', 'Spiritmaster', 'Cleric', 'Chanter']);
     await page.locator('#odyle-role-7-role').selectOption('healer');
     // Maps: a name TH.GL lists links its TH.GL map, and a TH.GL map of one place names the row.
-    const map = (row, field) => page.locator('#odyle-map-' + row + '-' + field), rows = await page.locator('.odyle-maps [id$="-id"]').count();
+    // Rows keep their elements while others are added or removed: the field typed in keeps its focus.
+    const map = (row, field) => page.locator('.odyle-maps tbody tr').nth(row).getByLabel(field, { exact: true }), rows = await page.locator('.odyle-maps [aria-label="Map id"]').count();
     await page.getByRole('button', { name: 'Add a map' }).click();
-    await map(rows, 'id').fill('600101'); await map(rows, 'name').fill('Valka’s Nest'); await map(rows, 'name').blur();
-    assert.equal(await map(rows, 'thgl').inputValue(), "Herb Cave / Valka's Nest (+3)");
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Map id');
+    await page.keyboard.type('600101'); await map(rows, 'Name').fill('Valka’s Nest'); await map(rows, 'Name').blur();
+    assert.equal(await map(rows, 'TH.GL map').inputValue(), "Herb Cave / Valka's Nest (+3)");
     await page.getByRole('button', { name: 'Add a map' }).click();
-    await map(rows + 1, 'id').fill('600102'); await map(rows + 1, 'thgl').fill('fire temple arena'); await map(rows + 1, 'thgl').blur();
-    assert.deepEqual([await map(rows + 1, 'name').inputValue(), await map(rows + 1, 'thgl').inputValue()], ['Fire Temple Arena', 'Fire Temple Arena']);
+    await map(rows + 1, 'Map id').fill('600102'); await map(rows + 1, 'TH.GL map').fill('fire temple arena'); await map(rows + 1, 'TH.GL map').blur();
+    assert.deepEqual([await map(rows + 1, 'Name').inputValue(), await map(rows + 1, 'TH.GL map').inputValue()], ['Fire Temple Arena', 'Fire Temple Arena']);
+    await page.getByRole('button', { name: 'Add a map' }).click(); await map(rows + 2, 'Map id').fill('600103');
+    const kept = await map(rows, 'Name').elementHandle();
+    await map(rows + 2, 'Name').focus(); await page.getByRole('button', { name: 'Remove map 600103' }).click();
+    assert.equal(await kept.evaluate(input => input.isConnected), true, 'the other rows were not drawn again');
     assert.equal(await page.locator('#odyle-thgl-maps option').count(), 151);
     await page.getByRole('button', { name: 'Save changes' }).click();
     await page.getByText('Saved the Odyle game settings.').waitFor();
