@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Server-wide game rules and server controls, kept in the single odyle_settings record.

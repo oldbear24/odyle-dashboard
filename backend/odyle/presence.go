@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Presence. A running Windows app sends a heartbeat every 20 seconds: its reader

@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Class and level from PLAYNC (backend/odyle/portraits.go, #25): the official character search the
 // portrait job already asks lists each character's official id, level and class id (pcId), and

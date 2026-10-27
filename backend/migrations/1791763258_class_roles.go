@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Class roles (#45): odyle_settings.classRoles is a list of { class, role } (tank, healer, support
 // or damage), kept under Game settings; planned runs show their party's make-up and the roles it

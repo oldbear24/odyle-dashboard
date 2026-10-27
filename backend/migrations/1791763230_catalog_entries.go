@@ -3,7 +3,7 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The dungeon catalog lists entries instead of names: each dungeon has its own Odyle cost

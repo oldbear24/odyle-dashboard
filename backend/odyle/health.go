@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Reader health. A Windows app's heartbeat may say what its reader is doing (reader) and

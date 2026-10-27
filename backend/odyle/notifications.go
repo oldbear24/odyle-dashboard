@@ -9,7 +9,7 @@ import (
 	"time"
 	_ "time/tzdata" // quiet hours name IANA time zones, which a minimal container may lack
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // An account's notification settings, kept on the dashboard (Account & data) and followed by

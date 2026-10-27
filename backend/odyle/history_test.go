@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // historyCharacter saves a character while portraits are paused, so no lookup starts.

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"golang.org/x/image/draw"
 )
 
@@ -311,6 +311,10 @@ func cleanArmoryImages(app core.App) (int, error) {
 	}
 	if err := rows.Close(); err != nil {
 		return 0, err
+	}
+	// The classes' emblems (classes.go).
+	for _, c := range gameClasses(app) {
+		named[c.Icon] = true
 	}
 	deleted := 0
 	for _, entry := range entries {

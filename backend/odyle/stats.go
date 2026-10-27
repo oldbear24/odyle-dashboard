@@ -3,8 +3,8 @@ package odyle
 import (
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Activation and feature use for the Server status page: how many accounts reached each

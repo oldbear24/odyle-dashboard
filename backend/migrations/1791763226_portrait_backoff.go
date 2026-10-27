@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // How many portrait lookups in a row the official search did not list the character,
 // so the portrait job waits longer before each new try (odyle/portraits.go). Hidden

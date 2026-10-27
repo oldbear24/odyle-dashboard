@@ -15,6 +15,8 @@ PLAYNC's Global site (`aion2.plaync.com/en-us/characters/<server id>/<character 
 | A board's nodes | `GET https://aion2.plaync.com/api/character/daevanion/detail?region=<code>&lang=en-US&characterId=<id>&serverId=<id>&boardId=<id>` |
 | Icons | `GET https://assets.playnccdn.com/static-aion2-gamedata/resources/<file>.png` (256 or 512 pixels, up to some 500 KB) |
 | Portrait | the `profileImage` of `info`, on `profileimg.plaync.com` (it redirects to `fizz-download.playnccdn.com`) |
+| Classes | `GET https://aion2.plaync.com/en-us/api/gameinfo/pcdata?lang=en`: `{ pcDataList: [{ id, className, classText, genderName, raceName }] }`, every class id (`pcId`) with the class's own name (`ELEMENTALIST`) and the one players see (`Spiritmaster`) |
+| Class emblems | `GET https://assets.playnccdn.com/static-aion2/characters/img/class/class_icon_<className in lower case>.png` (256 pixels) |
 
 - **Search region codes:** `nae` and `naw` (North America East and West), `eu`, `la` (South America) and `as` (Asia).
 - **Server ids:** race × 1000 + region digit × 100 + the server's place in its list. Elyos are race 1 and Asmodians race 2. The region digits are 1 nae, 2 naw, 3 eu, 4 la and 5 as. So Lumiel, the 4th Asmodian server, is 2304 in Europe. The lists are `elyos` and `asmodian` in `backend/odyle/portraits.go`. Every region has the same 50 servers per race.
@@ -108,7 +110,8 @@ Left out: rankings (the Global pages show none) and the official pages' own text
 
 The dashboard's content security policy allows images only from the Odyle server, so browsers never load PLAYNC's images (`backend/odyle/armoryimages.go`). The queue downloads the portrait and the icons a profile names while it looks the character up, six at a time, and keeps them as files in `pb_data/armory_images`:
 - an icon under PLAYNC's file name, shrunk from 256 or 512 pixels to at most 112 (twice the largest the page shows), some 20 KB each; an icon the server keeps already is not downloaded again;
-- the portrait under the SHA-256 of its bytes (`portrait-<32 hex>.jpg`), downloaded at every lookup since it can change.
+- the portrait under the SHA-256 of its bytes (`portrait-<32 hex>.jpg`), downloaded at every lookup since it can change;
+- each class's emblem under PLAYNC's file name (`class_icon_chanter.png`), shrunk like the icons, named in `game_classes.icon`; rooms and profiles show it beside the class.
 
 `GET /api/odyle/armory-images/<name>` serves them, kept for a year by browsers. An image that could not be downloaded is left out of the profile, and the page shows the initials or an empty frame. Two characters at the level cap need some 130 images, 3 MB; the nightly `odyle-armory` job deletes the images no kept profile names, so the folder follows the kept profiles. It is part of `pb_data`, so backups include it.
 
@@ -123,6 +126,7 @@ The dashboard's content security policy allows images only from the Odyle server
 - **Refreshes:** a kept profile is fetched again when someone opens it and it is older than 6 hours. A reader's **Refresh** counts only once it is 15 minutes old.
 - **PLAYNC refusing the server** (403 or 429): the queue waits for the time PLAYNC asks, and at least 10 minutes. Any other failure is tried again after 10 minutes, and the kept copy stays with its age.
 - **Profiles nobody opened for 30 days** are deleted by the nightly `odyle-armory` job.
+- **Classes:** the class list is asked for when a lookup reads a class whose emblem the server does not keep (at most once an hour) and by the nightly `odyle-armory` job; it downloads only the emblems the server lacks. Paused with the armory.
 - **Operator switches:** superusers stop all of it with **Server controls → Pause the armory**. They keep one character out for good with `hidden` on its row (Collections → `armory_profiles`).
 
 Whether NC is fine with this use is not settled: the question to NC (#24) is still open. If NC objects, the pause switch stops it at once.

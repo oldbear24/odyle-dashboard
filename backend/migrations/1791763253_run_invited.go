@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Wishlist invites (#45): room_runs.invited lists the memberships a run planned from the
 // wishlist invited, those who wanted its dungeon; attendees stay those going.

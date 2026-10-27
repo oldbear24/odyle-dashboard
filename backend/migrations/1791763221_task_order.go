@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Checklist tasks keep the order their account gives them (move up and down on the
 // dashboard); existing tasks keep their creation order within each list.

@@ -3,7 +3,7 @@ package migrations
 import (
 	"os"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Discord accounts: users sign in with Discord only, keep their characters and join

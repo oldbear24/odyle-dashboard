@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
 
 // NA-East and NA-West have servers of the same names (odyle-windows#4): characters are kept apart

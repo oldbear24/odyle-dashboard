@@ -3,8 +3,8 @@ package odyle
 import (
 	"errors"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The membership answer (#68), about the game's paid membership, not room memberships: whether

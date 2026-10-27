@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // New characters can reach a room on their own: a member who turns shareNew on for a room has
 // each character they save from then on shared there (backend/odyle/accounts.go shareNew).

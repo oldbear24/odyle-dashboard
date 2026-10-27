@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The funnel counts each account at the furthest step it reached, and feature use counts

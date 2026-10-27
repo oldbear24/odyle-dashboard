@@ -6,8 +6,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The Odyle slot machine (#107), an easter egg of the dashboard (the logo clicked seven times

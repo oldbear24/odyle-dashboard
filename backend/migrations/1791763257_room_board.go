@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The information board and room features. A room keeps a board its owner and officers write
 // for every member (board, up to 2,000 characters with its lines; boardBy is the account that

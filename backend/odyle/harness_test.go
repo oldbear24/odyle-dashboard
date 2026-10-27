@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 
 	_ "github.com/oldbear24/odyle-dashboard/backend/migrations"
 )
@@ -61,6 +61,10 @@ func newTestApp(t testing.TB) *tests.TestApp {
 		t.Fatal(err)
 	}
 	Register(app)
+	// PocketBase starts its cron when the app serves, and every request of a test serves, so
+	// the jobs ran whenever a minute began, even while a test tore its app down (a data race
+	// under go test -race). Tests run the jobs they check themselves.
+	app.OnServe().Unbind("__pbCronStart__")
 	// A character saved by the test starts its portrait lookup in the background; it ends
 	// before the app is torn down, or it races the clean-up (go test -race).
 	t.Cleanup(func() {

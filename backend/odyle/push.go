@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Web Push: planned-run reminders and cap alerts reach a browser or installed app with the

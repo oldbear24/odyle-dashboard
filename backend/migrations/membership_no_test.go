@@ -3,7 +3,7 @@ package migrations
 import (
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Accounts that never answered start without the membership, unless their readings already

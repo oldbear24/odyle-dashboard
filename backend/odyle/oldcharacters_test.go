@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/dbx"
 )
 
 // Characters no reader has read or seen for a year are deleted with their history; any sign of

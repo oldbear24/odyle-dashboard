@@ -3,8 +3,8 @@ package odyle
 import (
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // boardOf is a room's information board for its members: its text, the account that wrote it

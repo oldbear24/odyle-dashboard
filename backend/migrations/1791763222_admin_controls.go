@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Server controls of the superuser dashboard's Odyle page: an announcement the
 // dashboard and the Windows app show, switches that pause portrait refresh, Discord

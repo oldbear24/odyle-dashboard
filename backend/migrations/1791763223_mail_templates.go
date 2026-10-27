@@ -3,7 +3,7 @@ package migrations
 import (
 	"strings"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Mail in the dashboard's look: the emails PocketBase sends to accounts and superusers

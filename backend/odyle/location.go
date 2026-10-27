@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Location sharing (opt-in). An account that turns it on (users.shareLocation, POST

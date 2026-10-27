@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The game's two numbers of a reading (its natural pool and what items added) on the
 // character and on each history point, and what the change was (regen, spend, item,

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Background jobs. Each run is recorded, so the superuser dashboard's Odyle →
@@ -65,7 +65,7 @@ var jobs = map[string]job{
 	"odyle-cap-alerts":     {schedule: "5 * * * *", manual: true, work: capAlerts},
 	"odyle-push":           {schedule: "* * * * *", manual: true, work: pushReminders},
 	"odyle-party-ready":    {schedule: "* * * * *", manual: true, work: partyReady},
-	"odyle-armory":         {schedule: "41 4 * * *", manual: true, work: cleanArmory},
+	"odyle-armory":         {schedule: "41 4 * * *", manual: true, work: armoryNight},
 }
 
 // nextDaily is when a daily schedule ("minute hour * * *", UTC like every job) runs next,

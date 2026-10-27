@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 
 	"github.com/oldbear24/odyle-dashboard/backend/admin"
 )

@@ -3,8 +3,8 @@ package odyle
 import (
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Database vacuum, started by hand from Server status: SQLite keeps the pages that deleted

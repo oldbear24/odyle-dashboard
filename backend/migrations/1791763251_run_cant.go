@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Can't (#45): room_runs.cant lists the memberships that answered they cannot come to a run;
 // attendees stay those going, as installed Windows apps read them.

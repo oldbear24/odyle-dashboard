@@ -3,7 +3,7 @@ package migrations
 import (
 	"slices"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Officers (#43): a fourth membership role the owner grants under Room settings. Officers run the

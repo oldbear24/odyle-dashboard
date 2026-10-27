@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Checklists per character and Global task templates (#38): a task belongs to the account or
 // to one of its own characters (user_tasks.character, gone with the character), and superusers

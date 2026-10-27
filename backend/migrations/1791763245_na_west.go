@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // NA-East and NA-West (odyle-windows#4): the two North American regions have servers of the same
 // names (Siel 1101 in the East, Siel 1201 in the West), so characters are kept apart as GLOBAL_NA
