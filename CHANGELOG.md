@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.46.1 · 2026-10-27
+
+### Fixed
+- Server operators can change **Server controls** (Odyle → Server controls) again. Since location sharing the page stopped drawing after the built-in adapters, so the rest of the form and **Save changes** were missing.
+
 ## 0.46.0 · 2026-10-27
 
 ### New
