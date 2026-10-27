@@ -1,11 +1,16 @@
 package odyle
 
 import (
+	"bytes"
 	"encoding/json"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -115,6 +120,80 @@ func TestTheArmoryNamesTheClassesItReads(t *testing.T) {
 	}
 	if name := classNameOf(app, 36); name != "Chanter" {
 		t.Fatalf("class 36 is %q", name)
+	}
+}
+
+// Each class's emblem comes from PLAYNC's character pages: read once a lookup meets a class
+// without one, and nightly. Profiles, searches and rooms name it, and it stays with the
+// armory's images.
+func TestClassIconsComeFromPLAYNC(t *testing.T) {
+	fastArmory(t)
+	stand := &armoryStand{}
+	stand.serve(t)
+	app := newTestApp(t)
+	const id = "kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="
+	if first := ask(t, app, "GET", armoryPath(id), nil, "", 200); first["classIcon"] != "" {
+		t.Fatalf("no profile yet: %v", first)
+	}
+	stateOf(app).armory.wait()
+	icons := classIcons(app)
+	if icons["Chanter"] != "class_icon_chanter.png" || icons["Spiritmaster"] != "class_icon_elementalist.png" || icons["Ranger"] != "" || len(icons) != 2 || stand.classLists.Load() != 1 {
+		t.Fatalf("icons %v after %d lists", icons, stand.classLists.Load())
+	}
+	// Class ids PLAYNC lists are named, those the seed lacked too; a bad name is left out.
+	if classNameOf(app, 15) != "Ranger" || classNameOf(app, 99) != "" {
+		t.Fatalf("15 is %q, 99 is %q", classNameOf(app, 15), classNameOf(app, 99))
+	}
+	emblem, _ := fetch(t, app, "/api/odyle/armory-images/class_icon_chanter.png", 200)
+	if config, err := png.DecodeConfig(bytes.NewReader(emblem)); err != nil || config.Width != iconSize {
+		t.Fatalf("emblem %v %v", config, err)
+	}
+	if kept := ask(t, app, "GET", armoryPath(id), nil, "", 200); kept["classIcon"] != "class_icon_chanter.png" {
+		t.Fatalf("profile: %v", kept["classIcon"])
+	}
+	// A class with an emblem asks for no list again.
+	if _, err := app.DB().NewQuery("UPDATE armory_profiles SET fetchedAt = {:at}").Bind(dbx.Params{"at": ago(7 * time.Hour)}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, app, "GET", armoryPath(id), nil, "", 200)
+	stateOf(app).armory.wait()
+	if stand.classLists.Load() != 1 {
+		t.Fatalf("%d lists", stand.classLists.Load())
+	}
+	// Searches name each hit's class by its class id.
+	results, _ := ask(t, app, "GET", "/api/odyle/armory/search?name=Ka&server=Lumiel&region=GLOBAL_EU", nil, "", 200)["results"].([]any)
+	if hit := results[0].(map[string]any); hit["class"] != "Chanter" || hit["classIcon"] != "class_icon_chanter.png" || results[1].(map[string]any)["class"] != "" {
+		t.Fatalf("results %v", results)
+	}
+	// Rooms carry the emblems by class name.
+	user := newUser(t, app, "Ka")
+	rooms := ask(t, app, "GET", "/api/odyle/rooms", tokenOf(t, user), "", 200)
+	if listed, _ := rooms["classIcons"].(map[string]any); listed["Spiritmaster"] != "class_icon_elementalist.png" || len(listed) != 2 {
+		t.Fatalf("rooms %v", rooms["classIcons"])
+	}
+	// Nightly: the emblems outlive the clean-up, and the list is read again (the Ranger's
+	// emblem tried again); paused, PLAYNC is not asked.
+	for _, name := range []string{"class_icon_chanter.png", "class_icon_elementalist.png"} {
+		past := time.Now().Add(-2 * time.Hour)
+		os.Chtimes(filepath.Join(imageDir(app), name), past, past)
+	}
+	before := stand.classIcons.Load()
+	if _, err := armoryNight(app); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"class_icon_chanter.png", "class_icon_elementalist.png"} {
+		if _, err := os.Stat(filepath.Join(imageDir(app), name)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if stand.classLists.Load() != 2 || stand.classIcons.Load()-before != 1 {
+		t.Fatalf("%d lists, %d emblems", stand.classLists.Load(), stand.classIcons.Load()-before)
+	}
+	if _, err := writeSettings(app, body{"armoryPaused": true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := armoryNight(app); err != nil || stand.classLists.Load() != 2 {
+		t.Fatalf("paused: %v, %d lists", err, stand.classLists.Load())
 	}
 }
 

@@ -31,7 +31,7 @@ import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
-import { armoryRoute, armoryTarget, armorySearch, armoryProfile, lookupStatus, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
+import { armoryRoute, armoryTarget, armorySearch, armoryProfile, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
@@ -72,6 +72,8 @@ let maintenance = null;
 let classRoles = [];
 // The game's maps as superusers named them (location sharing, places.js).
 let gameMaps = [];
+// The classes' emblems by class name (backend/odyle/classes.go), with the room list and rooms.
+let classIcons = {};
 // How long the server keeps the Odyle history and the places (Game settings), for the help.
 let keptDays = { historyDays: 30, locationDays: 30 };
 // The party's week (#42): what the characters shared in the room spent since the weekly reset.
@@ -122,7 +124,7 @@ function roomSwitch() {
 }
 function renderRoomSwitch() { document.querySelectorAll('.room-switch').forEach(el => { if (!el.open) el.outerHTML = roomSwitch(); }); }
 let roomsKnown = false;
-async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; keptDays = list.kept || keptDays; roomsKnown = true; renderRoomSwitch(); }
+async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; roomsKnown = true; renderRoomSwitch(); }
 // The account menu behind the avatar: the account page, pairing, invites, help, what's new and
 // signing out. Signed out (or in the demo) the same place offers help and the way back.
 function accountMenu() {
@@ -613,7 +615,7 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
   // Orange two days before the natural pool is full, red once it is or within the hour.
   const level = capLevel(clock, now), flag = level === 'soon' ? [t('Nearly full'), t('Its natural pool is full within two days: spend Odyle before regeneration is lost.')]
     : level ? [!clock.full ? t('Full within the hour') : clock.settled ? t('Full') : t('Full at {cap}?', { cap: clock.cap.toLocaleString(locale()) }), t('Its natural pool is full, or will be within the hour: each tick after that is lost.')] : null;
-  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''} ${c.main ? 'is-main' : ''} ${level ? `cap-${level}` : ''}"><div class="row-id">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.main ? `<span class="main-label" title="${esc(t('Main character of {name}', { name: c.displayName }))}">${icon('star')}<span class="main-word">${t('Main')}</span></span>` : ''}</div><div class="member-meta"${classOf(c) ? ` title="${esc(t('Class and level from PLAYNC, checked daily'))}"` : ''}>${meta}</div>${place}</div></div>`
+  return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''} ${c.main ? 'is-main' : ''} ${level ? `cap-${level}` : ''}"><div class="row-id">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.main ? `<span class="main-label" title="${esc(t('Main character of {name}', { name: c.displayName }))}">${icon('star')}<span class="main-word">${t('Main')}</span></span>` : ''}</div><div class="member-meta"${classOf(c) ? ` title="${esc(t('Class and level from PLAYNC, checked daily'))}"` : ''}>${demo ? '' : classBadge(armoryImages(), classIcons[c.className], c.className)}${meta}</div>${place}</div></div>`
     + `<div class="row-state"><span class="status ${state}"><i></i>${labels[state]}</span>${c.characterName && !fresh ? `<span class="status-why">${esc(statusReason(c, now))}</span>` : ''}</div>`
     + `<div class="row-energy"><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}<div class="row-changed">${locked ? t('No Odyle yet · it unlocks at level 22') : changed}</div></div>`
     + `<div class="row-clock">${flag ? `<span class="cap-flag" title="${esc(flag[1])}">${icon('alert')}${esc(flag[0])}</span>` : ''}${clock ? `<div class="energy-clock">${esc(clockLine(clock, now, fresh))}</div>` : ''}${self && capMismatch(c) ? `<div class="energy-clock cap-mismatch">${esc(t('Its natural pool held {max}, more than {cap}: has the membership started? Account & data → Membership.', { max: c.naturalMax.toLocaleString(locale()), cap: c.answeredCap.toLocaleString(locale()) }))}</div>` : ''}</div>`
@@ -923,7 +925,7 @@ async function loadRoom() {
   catch (error) { if (room?.id === id) throw error; return; } // a room left meanwhile is no news
   if (room?.id !== id) return; // navigated elsewhere while loading
   if (edits !== roomEdits) { roomAgain = true; return; } // older than a change drawn meanwhile
-  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; classRoles = snapshot.classRoles || []; gameMaps = snapshot.maps || gameMaps; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
+  room = snapshot.room; remindersPaused = Boolean(snapshot.remindersPaused); maintenance = snapshot.maintenance || null; classRoles = snapshot.classRoles || []; gameMaps = snapshot.maps || gameMaps; classIcons = snapshot.classIcons || classIcons; roomWeek = snapshot.week || null; board = snapshot.board || null; perCube = room.cost; clockRules = snapshot.clock || clockRules; members = snapshot.members; wishlist = snapshot.wishlist || []; runs = snapshot.runs || []; dungeons = snapshot.dungeons || []; catalog = snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })); readers = snapshot.readers || readers; serverOffset = Date.parse(snapshot.serverNow) - Date.now(); online = true;
   characters = me()?.characters || characters; announced(snapshot);
   if (!document.querySelector('#modal')?.open) renderDashboard();
 }
@@ -945,7 +947,7 @@ async function library(ticket) {
   const [list, mine, ahead] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), pb.send('/api/odyle/upcoming?days=14', { requestKey: 'next-runs' }).catch(() => null), loadWindowsRelease()]);
   if (ticket !== navigation) return;
   nextRunsList = ahead?.runs || [];
-  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
+  rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
 }
 async function openRoom(id, ticket) {
   await leaveRoomTopic();
@@ -1048,7 +1050,7 @@ async function refreshPage() {
   else if (shown?.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
   }
   online = true;
 }
