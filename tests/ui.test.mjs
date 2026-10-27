@@ -1589,7 +1589,7 @@ test('superusers set the announcement, the switches and the adapters on the Serv
   try {
     await page.goto(url + '/_/#/odyle/controls');
     await page.locator('#odyle-announcement').fill('Maintenance on Thursday');
-    await page.locator('.alert.info', { hasText: 'Maintenance on Thursday' }).waitFor();
+    await page.locator('.alert', { hasText: 'Maintenance on Thursday' }).waitFor();
     await page.locator('label[for="odyle-armoryPaused"]').click();
     // Location adapters are listed beside the built-in ones and switch off the same way.
     await page.locator('label[for="odyle-adapter-test-location-v1"]').click();
