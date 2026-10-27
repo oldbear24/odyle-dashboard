@@ -19,6 +19,8 @@ export const mapName = (id, maps = []) => mapOf(id, maps)?.name || t('Map {id}',
 export function embedUrl(thgl, place, zoom = 3) {
   return `https://aion2.th.gl/embed/maps/${encodeURIComponent(thgl)}?center=${Math.round(place.y)},${Math.round(place.x)}&zoom=${zoom}&types=kibelisk,dungeon_kibelisk`;
 }
+// The full map on TH.GL's site, linked under the embed as TH.GL's embed terms ask.
+export const mapPage = thgl => `https://aion2.th.gl/maps/${encodeURIComponent(thgl)}`;
 
 // The line on a character's row: the map and how long ago, as a button that opens the dialog.
 export function placeButton(c, maps, now) {
@@ -41,7 +43,7 @@ export function placesOf(data) {
 export function placeMap(place, maps, name) {
   const linked = mapOf(place.map, maps)?.thgl;
   if (!linked) return `<p class="place-nomap">${esc(t('{map} has no map linked yet. A superuser links it under Game settings.', { map: mapName(place.map, maps) }))}</p>`;
-  return `<div class="place-frame"><iframe src="${esc(embedUrl(linked, place))}" title="${esc(t('Map of {map} by TH.GL', { map: mapName(place.map, maps) }))}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><span class="place-pin" aria-hidden="true"></span><button class="button secondary small place-back" type="button" data-place-back hidden>${icon('pin')} ${esc(t('Back to {name}', { name }))}</button></div><p class="place-credit">${t('Map: TH.GL’s AION 2 map, centred on the place. Moving the map hides the pin.')}</p>`;
+  return `<div class="place-frame"><iframe src="${esc(embedUrl(linked, place))}" title="${esc(t('Map of {map} by TH.GL', { map: mapName(place.map, maps) }))}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><span class="place-pin" aria-hidden="true"></span><button class="button secondary small place-back" type="button" data-place-back hidden>${icon('pin')} ${esc(t('Back to {name}', { name }))}</button></div><p class="place-credit">${t('Map: TH.GL’s AION 2 map, centred on the place. Moving the map hides the pin.')} <a href="${esc(mapPage(linked))}" target="_blank" rel="noopener noreferrer">${t('Open on TH.GL')} ↗</a></p>`;
 }
 
 const placeRow = (p, i, picked, maps) => `<tr${i === picked ? ' class="is-picked"' : ''}><td>${esc(when(p.at))}</td><td>${esc(mapName(p.map, maps))}</td><td>${esc(sourceName(p.source))}</td><td>${i === picked ? `<span class="place-shown">${t('Shown')}</span>` : `<button class="text-button" type="button" data-place="${i}">${t('Show')}</button>`}</td></tr>`;

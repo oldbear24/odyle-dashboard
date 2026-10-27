@@ -11,6 +11,8 @@ test('a shared place shows its map and age on the row, and TH.GL is centred y,x 
   // TH.GL keys its markers y:x, so its centre is the game's y, then x.
   assert.equal(embedUrl('Altgard', c.location), 'https://aion2.th.gl/embed/maps/Altgard?center=-33884,-83476&zoom=3&types=kibelisk,dungeon_kibelisk');
   assert.equal(embedUrl('Fire Temple', { x: 1, y: 2 }, 4), 'https://aion2.th.gl/embed/maps/Fire%20Temple?center=2,1&zoom=4&types=kibelisk,dungeon_kibelisk');
+  // A map several places share keeps its slashes and counts inside the one path segment.
+  assert.equal(embedUrl("Herb Cave / Valka's Nest (+3)", { x: 1, y: 2 }), "https://aion2.th.gl/embed/maps/Herb%20Cave%20%2F%20Valka's%20Nest%20(%2B3)?center=2,1&zoom=3&types=kibelisk,dungeon_kibelisk");
   // A map without a name shows its id; the sources read as words.
   assert.equal(mapName(600001, maps), 'Map 600001'); assert.equal(mapName(42, []), 'Map 42');
   assert.deepEqual(['load', 'arrival', 'flight', 'effect', 'walk'].map(sourceName), ['loading screen', 'arrived', 'in flight', 'skill or effect', '']);
@@ -26,6 +28,8 @@ test('the location dialog shows the latest place on the map, the 30 days, and wh
   assert.match(body, /<strong>Altgard<\/strong> · in flight/);
   assert.match(body, /<iframe src="https:\/\/aion2\.th\.gl\/embed\/maps\/Altgard\?center=20,10&amp;zoom=3/);
   assert.match(body, /class="place-pin"/); assert.match(body, /data-place="1"/); assert.match(body, /data-place="2"/);
+  // TH.GL's embed terms ask for a visible link to the full map under it.
+  assert.match(body, /<a href="https:\/\/aion2\.th\.gl\/maps\/Altgard" target="_blank" rel="noopener noreferrer">Open on TH\.GL ↗<\/a>/);
   // A place on a map without a TH.GL link says so instead of showing a map.
   const dungeon = locationBody({ data: { shared: true, location: null, locations: history }, maps, name: 'Scout', now, picked: 1 });
   assert.doesNotMatch(dungeon, /<iframe/); assert.match(dungeon, /Map 600001 has no map linked yet/);

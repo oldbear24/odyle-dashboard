@@ -41,16 +41,19 @@ func acceptedLocationAdapters(app core.App) []string {
 }
 
 // A game map as superusers name it (Game settings): its id from the game, a name, and the map
-// of TH.GL's AION 2 site that shows it ("" for none).
+// of TH.GL's AION 2 site that shows it ("" for none), by its name in TH.GL's addresses (thgl.go).
 type gameMap struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	Thgl string `json:"thgl"`
 }
 
-var thglMap = regexp.MustCompile(`^[\p{L}\p{N} _'.-]{0,60}$`)
+// TH.GL's map names start with a letter or digit and use the punctuation of names like
+// "Up! Up! Up! / Not This Tile?" or "Abyssal Forge: Ludra"; dashboards encode them in addresses.
+var thglMap = regexp.MustCompile(`^(?:[\p{L}\p{N}][\p{L}\p{N} _'’.,:!?&()+/-]{0,119})?$`)
 
-// checkMaps reads the named maps: up to 500, each id once, names up to 60 characters.
+// checkMaps reads the named maps: up to 500, each id once, names up to 60 characters. What a
+// superuser left out is linked from TH.GL's list (linkMap), when maps are saved and read.
 func checkMaps(value any) ([]gameMap, error) {
 	raw, ok := value.([]any)
 	if !ok || len(raw) > 500 {
@@ -74,9 +77,9 @@ func checkMaps(value any) ([]gameMap, error) {
 			return nil, errors.New("Name each map in up to 60 characters.")
 		}
 		if !thglMap.MatchString(thgl) {
-			return nil, errors.New("A TH.GL map is its name from the map's address, like Altgard.")
+			return nil, errors.New("A TH.GL map is its name as TH.GL lists it, like Altgard, in up to 120 characters.")
 		}
-		out = append(out, gameMap{ID: id, Name: name, Thgl: thgl})
+		out = append(out, linkMap(gameMap{ID: id, Name: name, Thgl: thgl}))
 	}
 	return out, nil
 }
