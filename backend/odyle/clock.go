@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The Odyle clock on the server: the projection the dashboard (src/clock.js) and the Windows

@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Slot machine rules (#107): odyle_settings.slots is { dailySpins, perCharacter }, the free spins
 // every account has each day and the spins each character read earns, kept under Game settings.

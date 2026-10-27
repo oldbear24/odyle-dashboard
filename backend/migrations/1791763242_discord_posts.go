@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Discord reminders that link back, update in place and report delivery (#33), and opt-in
 // pings (#34, a notification channel, no field). Rooms choose up to three lead times

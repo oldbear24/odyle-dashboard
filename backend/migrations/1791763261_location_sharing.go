@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Location sharing (opt-in): an account that turns on users.shareLocation lets the Windows app
 // send where its characters are, as the game says on each map load, arrival and flight. The

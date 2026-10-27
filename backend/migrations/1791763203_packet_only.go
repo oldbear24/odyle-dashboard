@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Readings come from game packets only: characters remember the packet adapter, and
 // historical manual totals are kept but no longer count as valid.

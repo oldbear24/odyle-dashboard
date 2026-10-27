@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // PocketBase creates first-time OAuth accounts through its record-create handler,
 // which applies createRule with this server-assigned context.

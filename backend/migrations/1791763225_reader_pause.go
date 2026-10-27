@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // A Server controls switch that pauses every paired Windows app's packet reader: apps
 // learn it from their rooms, session and heartbeat answers, stop capturing and resume

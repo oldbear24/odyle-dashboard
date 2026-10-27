@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Server-wide game rules. Only superusers can edit them, in the PocketBase dashboard
 // (Collections → odyle_settings); rooms no longer set their own cost.

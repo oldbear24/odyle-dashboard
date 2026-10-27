@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The main character: a player marks one of their characters as the one they play most
 // (POST /api/odyle/main-character), and the dashboard highlights it in the library and in

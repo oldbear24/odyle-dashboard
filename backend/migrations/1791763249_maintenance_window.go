@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The game's weekly maintenance window (#47): odyle_settings.maintenance is { day, hour, hours }
 // (UTC; a day of "" for none), kept under Game settings; planned runs inside it say so.

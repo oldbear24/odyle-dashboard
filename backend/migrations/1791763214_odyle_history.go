@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Odyle history: one record each time a character's value changes (the first reading
 // included), so owners and the rooms a character is shared in can see how it moved.

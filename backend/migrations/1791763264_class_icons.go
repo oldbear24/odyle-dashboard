@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Class icons (backend/odyle/classes.go): each class id keeps the file name of its emblem from
 // PLAYNC's character pages (class_icon_chanter.png), kept with the armory's images, so the

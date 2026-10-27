@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Cap alerts (backend/odyle/capalerts.go): the last state a character's owner was told of,
 // soon or full (empty: neither), so alerts are not repeated after a restart. Hidden from

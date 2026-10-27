@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The first release: anonymous rooms with their own member logins (dropped in
 // 1791763211_legacy_rooms) and the server settings.

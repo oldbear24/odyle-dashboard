@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Party ready (#48): once everyone going plays live with enough for a cube, each of them is told

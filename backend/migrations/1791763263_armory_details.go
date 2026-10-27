@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The armory keeps everything PLAYNC's character pages list (backend/odyle/armory.go): each
 // item's details, the skills, titles, skins and the Daevanion boards' nodes. A full profile

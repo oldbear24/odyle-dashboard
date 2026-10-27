@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // state is what the backend keeps in server memory only: the settings, the newest

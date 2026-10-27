@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"golang.org/x/image/draw"
 )
 

@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The dashboard never shows PocketBase's default account avatar, yet the owner update
 // rule let every account upload one (5 MB, rewritten at will). Remove the field so the

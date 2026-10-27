@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Personal daily and weekly checklists. One record per task; doneAt is the last time
 // the account checked it. Clients show a task as done while that time is on or after

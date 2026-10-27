@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Readiness in a run's Discord post (#46): a room can choose to show, in each post, how many of
 // those going can claim a cube (counts only, never names or values: the channel may include

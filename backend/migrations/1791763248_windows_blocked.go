@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Held-back Windows versions (odyle-windows#19): odyle_settings.windowsBlocked lists versions
 // apps never install and move off when they run one (Server controls → Windows app updates).

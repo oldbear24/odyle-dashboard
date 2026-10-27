@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Class roles (#45): rooms get the default table until a superuser saves another; a table that

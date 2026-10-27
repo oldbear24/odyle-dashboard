@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Lasting pairings of Windows apps. Pairing hands the app a device key; the server keeps
 // only its digest. The app trades the key for a fresh account token whenever it starts

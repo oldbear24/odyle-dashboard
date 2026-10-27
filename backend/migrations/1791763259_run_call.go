@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Run now: room_runs.called marks a run a member called the party to, starting a few minutes
 // later; the members it invited are its `invited`. A room calls at most once every 30 minutes.

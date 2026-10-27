@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Background jobs. Each run is recorded, so the superuser dashboard's Odyle →

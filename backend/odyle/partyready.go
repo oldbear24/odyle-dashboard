@@ -3,8 +3,8 @@ package odyle
 import (
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Party ready (#48): the odyle-party-ready job, every minute, looks at the planned runs from an

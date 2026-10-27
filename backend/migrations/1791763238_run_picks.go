@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // The character each attendee brings to a planned run (backend/odyle/accounts.go plan):
 // picks maps a membership to one of its own characters shared in the room. Rooms list it by

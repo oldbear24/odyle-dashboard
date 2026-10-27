@@ -1,6 +1,6 @@
 package migrations
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // Planned runs: a dungeon, a start time and the members who are going. Owners and
 // players plan and join them, viewers read them. Runs are deleted a day after they

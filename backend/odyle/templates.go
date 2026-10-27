@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Checklists per character and Global task templates (#38). A task belongs to the account or

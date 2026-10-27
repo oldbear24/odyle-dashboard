@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Odyle's own log lines: failed jobs, failed lookups at PLAYNC, Discord and GitHub, and
