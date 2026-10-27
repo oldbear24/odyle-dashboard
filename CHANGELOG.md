@@ -11,6 +11,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ### Changed
 - Icons are downloaded several at a time, so a lookup that needs many of them is some 20 seconds faster.
 - The wait the armory tells you is closer to how long PLAYNC really takes, some 40 seconds for a character at the level cap.
+- A profile next in line is followed from the moment its lookup starts, instead of the page checking back only every 15 seconds.
 - While a profile is being fetched, the page no longer redraws itself every two seconds, so an item's card you are reading stays open.
 
 ## 0.46.1 · 2026-10-27

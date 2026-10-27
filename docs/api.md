@@ -380,7 +380,7 @@ Public routes for the armory, signed in or not, with their own rate limits per a
   - `busy`: the queue, or the caller's three places in it, is full.
   - `paused`: superusers paused the armory.
 - Opening a profile older than six hours queues it again, and `?refresh=1` does the same once it is 15 minutes old. The kept copy is answered meanwhile.
-- Clients ask again after `retryAfter` seconds while the state is `queued`, `fetching` or `busy`.
+- Clients ask again after `retryAfter` seconds while the state is `queued`, `fetching` or `busy`. While `queued` it is about when the lookup is due to start (2 to 15 seconds), and 2 while `fetching`.
 - A character PLAYNC does not list, a hidden profile, or an id or server outside the region answers 404.
 
 The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes }` (`images` and `imageBytes` count the kept icons and portraits). `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).

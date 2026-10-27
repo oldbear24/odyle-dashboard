@@ -309,7 +309,8 @@ func TestArmoryFetchesProfilesThroughTheQueueAndKeepsThem(t *testing.T) {
 	app := newTestApp(t)
 	const id = "kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="
 	first := ask(t, app, "GET", armoryPath(id), nil, "", 200)
-	if first["state"] != "queued" || first["profile"] != nil || first["server"] != "Lumiel" || first["retryAfter"].(float64) < 2 {
+	// Next in line: the page asks again in two seconds, to follow the lookup as it starts.
+	if first["state"] != "queued" || first["profile"] != nil || first["server"] != "Lumiel" || first["retryAfter"].(float64) != 2 {
 		t.Fatalf("first look: %v", first)
 	}
 	stateOf(app).armory.wait()
@@ -407,7 +408,8 @@ func TestArmoryQueueLimitsEachAddressAndPauses(t *testing.T) {
 	if again := ask(t, app, "GET", armoryPath("AAAAAAAAAAAAAAAAAAAAAAA1"), nil, "", 200); again["state"] != "fetching" {
 		t.Fatalf("running: %v", again)
 	}
-	if third := ask(t, app, "GET", armoryPath("AAAAAAAAAAAAAAAAAAAAAAA3"), nil, "", 200); third["position"].(float64) != 2 {
+	// Further back, it asks again about when its lookup is due to start, at most 15 seconds on.
+	if third := ask(t, app, "GET", armoryPath("AAAAAAAAAAAAAAAAAAAAAAA3"), nil, "", 200); third["position"].(float64) != 2 || third["retryAfter"].(float64) != 15 {
 		t.Fatalf("third: %v", third)
 	}
 	// Paused: nothing more is asked for, the queue is dropped and searches are refused.

@@ -755,7 +755,7 @@ func seconds(d time.Duration) int { return int((max(0, d) + time.Second - 1) / t
 
 // queued is the state of the profile at index i of the queue. Its wait counts the lookup
 // running now and the ones ahead, each lasting as long as lookups do and armoryPace apart,
-// and its own lookup.
+// and its own lookup. The reader asks again about when its own lookup starts, to follow it.
 func (w *armoryWork) queued(i int, at time.Time) armoryState {
 	start := later(w.nextAt, w.blocked, at)
 	ahead := i
@@ -763,8 +763,9 @@ func (w *armoryWork) queued(i int, at time.Time) armoryState {
 		ahead++
 		start = later(start, w.startedAt.Add(w.took+armoryPace), at.Add(armoryPace))
 	}
-	wait := seconds(start.Sub(at) + time.Duration(i)*(w.took+armoryPace) + w.took + time.Second)
-	return armoryState{State: "queued", Position: ahead, Wait: wait, RetryAfter: min(max(wait, 2), 15)}
+	starts := start.Sub(at) + time.Duration(i)*(w.took+armoryPace)
+	wait := seconds(starts + w.took + time.Second)
+	return armoryState{State: "queued", Position: ahead, Wait: wait, RetryAfter: min(max(seconds(starts), 2), 15)}
 }
 
 // ask queues a profile for its lookup, unless it waits or runs already, or failed a moment
