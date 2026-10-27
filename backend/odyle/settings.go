@@ -15,8 +15,9 @@ import (
 // Server-wide game rules and server controls, kept in the single odyle_settings record.
 // Superusers edit them on the dashboard's Odyle pages (backend/admin) or under
 // Collections → odyle_settings. Launch defaults: 40 Odyle per cube, resets at 07:00 UTC
-// and weekly on Wednesday (the Global service), inactive accounts are kept for good and
-// the dungeon catalog is empty, so wishlists and runs take any name. No announcement,
+// and weekly on Wednesday (the Global service), inactive accounts are kept for good, the
+// Odyle history and places are kept 30 days and the dungeon catalog is empty, so wishlists
+// and runs take any name. No announcement,
 // nothing paused (packet readers included), and the packet adapters of protocols.go
 // are the accepted ones.
 
@@ -168,6 +169,10 @@ type settings struct {
 	Slots slotRules `json:"slots"`
 	// The game's map ids as superusers name them, each linked to a TH.GL map (location.go).
 	Maps []gameMap `json:"maps"`
+	// How many days each change of a character's Odyle (character_readings) and each place
+	// (character_locations) are kept: the expiry job deletes older ones.
+	HistoryDays  int64 `json:"historyDays"`
+	LocationDays int64 `json:"locationDays"`
 }
 
 // slotRules are the slot machine's spins: free spins every account has each daily period (unused
@@ -232,7 +237,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -333,9 +338,16 @@ func loadSettings(app core.App) settings {
 	}
 	out := settings{OdylePerCube: s.GetInt64("odylePerCube"), DailyResetHour: s.GetInt64("dailyResetHour"), WeeklyResetDay: s.GetString("weeklyResetDay"), InactiveAccountDays: s.GetInt64("inactiveAccountDays"),
 		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), TaskTemplates: storedTemplates(parseJSON(s.GetString("taskTemplates"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
-		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused")}
+		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused"),
+		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
+	}
+	// Periods never saved (or cleared under Collections) are the default.
+	for _, days := range []*int64{&out.HistoryDays, &out.LocationDays} {
+		if *days < 1 || *days > maxKeptDays {
+			*days = defaultKeptDays
+		}
 	}
 	// Saved clock rules that no longer check out (or none yet) are the defaults.
 	if clock, err := clockSettings(parseJSON(s.GetString("clock"), "null")); err == nil {
@@ -571,6 +583,15 @@ func inactiveDays(value any) (int64, error) {
 	return days, nil
 }
 
+// How long the Odyle history and the places are kept: 30 days until a superuser sets 1 day to
+// ten years under Game settings.
+const defaultKeptDays, maxKeptDays = 30, 3650
+
+// keptDays checks a period the history or the places are kept.
+func keptDays(value any, name string) (int64, error) {
+	return integer(value, name, 1, maxKeptDays)
+}
+
 // writeSettings saves the given settings (all optional) and creates the record if a
 // superuser deleted it.
 func writeSettings(app core.App, b body) (settings, error) {
@@ -608,6 +629,16 @@ func writeSettings(app core.App, b body) (settings, error) {
 	}
 	if b.has("inactiveAccountDays") {
 		if next.InactiveAccountDays, err = inactiveDays(b["inactiveAccountDays"]); err != nil {
+			return settings{}, err
+		}
+	}
+	if b.has("historyDays") {
+		if next.HistoryDays, err = keptDays(b["historyDays"], "Odyle history days"); err != nil {
+			return settings{}, err
+		}
+	}
+	if b.has("locationDays") {
+		if next.LocationDays, err = keptDays(b["locationDays"], "Place history days"); err != nil {
 			return settings{}, err
 		}
 	}
@@ -693,6 +724,8 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("weeklyResetDay", next.WeeklyResetDay)
 	record.Set("maintenance", next.Maintenance)
 	record.Set("inactiveAccountDays", next.InactiveAccountDays)
+	record.Set("historyDays", next.HistoryDays)
+	record.Set("locationDays", next.LocationDays)
 	record.Set("dungeons", next.Dungeons)
 	record.Set("announcement", next.Announcement)
 	record.Set("announcementLevel", next.AnnouncementLevel)

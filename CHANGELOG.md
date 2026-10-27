@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.45.0 · 2026-10-27
+
+### New
+- The **Odyle history** and **Location** windows page through their lists: 15 changes or 12 places at a time, with buttons to the newer, older, newest and oldest pages, instead of one long list behind **Show all**.
+- The Odyle history picks its period: **7 days**, **30 days**, **90 days** or **1 year**, as far back as the server keeps it. The chart, the weeks and the changes follow the period you pick; the weeks come six at a time.
+- Server operators choose how long the Odyle history and the places of location sharing are kept, from 1 day to ten years (30 days unless they change it), under Odyle → Game settings. Your account page and the help say how long your server keeps them.
+
+### Changed
+- Pop-up windows keep their title and close button in view: only their content scrolls, and the page behind no longer scrolls along. A short last page keeps the list's height, so the page buttons stay under your pointer.
+- On wide screens the Odyle history shows its chart and weeks beside the changes, and the Location window its map beside the places, so both fit without scrolling. A change or place from an earlier year shows the year.
+
 ## 0.44.1 · 2026-10-27
 
 ### Fixed

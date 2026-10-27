@@ -27,7 +27,7 @@ test('sign-in names browsers built into apps and its way out keeps the invite', 
   assert.equal(signInLink('https://odyle.example/'), 'https://odyle.example/');
 });
 test('planned runs count down in local time and history charts round their axis', async () => {
-  const { startsIn, nextHour, runsSection } = await import('../src/runs.js'), { niceMax, historyChart, historyList } = await import('../src/history.js');
+  const { startsIn, nextHour, runsSection } = await import('../src/runs.js'), { niceMax, historyChart, changesPage, changesTable } = await import('../src/history.js');
   const now = Date.parse('2026-10-14T12:00:00Z');
   assert.deepEqual([now + 125 * 60000, now + 26 * 3600000, now + 20000, now - 20 * 60000].map(at => startsIn(at, now)), ['in 2h 5m', 'in 1d 2h', 'starting now', 'started 20m ago']);
   assert.match(nextHour(now), /^\d{4}-\d{2}-\d{2}T\d{2}:00$/);
@@ -42,15 +42,20 @@ test('planned runs count down in local time and history charts round their axis'
   const readings = [{ value: 20, at: '2026-10-13 10:00:00.000Z' }, { value: 55, at: '2026-10-13 18:00:00.000Z' }, { value: 30, at: '2026-10-14 09:00:00.000Z' }];
   const chart = historyChart(readings, { now, cost: 40 });
   assert.match(chart, /class="history-line" d="M[\d.]+,[\d.]+H[\d.]+V[\d.]+H[\d.]+V[\d.]+H[\d.]+"/); assert.match(chart, /1 cube · 40/);
-  assert.match(historyChart([], { now, cost: 40 }), /No changes/);
-  assert.deepEqual([...historyList(readings).matchAll(/<td>([^<]*)<\/td><td>([^<]*)<\/td><\/tr>/g)].map(m => [m[1], m[2]]), [['30', '−25'], ['55', '+35'], ['20', '—']]);
-  // Points before hourlyBefore are each hour's last change, so the count left out is a floor.
-  // Show all lists every change.
-  assert.match(historyList(readings, 2), /<p class="history-more">1 earlier change not listed <button class="text-button" type="button" data-history-all>Show all<\/button><\/p>/);
-  assert.equal([...historyList(readings, Infinity).matchAll(/<tr><td>/g)].length, 3);
-  assert.match(historyList(readings, 1, '2026-10-13 18:00:00.000Z'), /<p class="history-more">At least 2 earlier changes not listed <button/);
+  assert.match(historyChart([], { now, cost: 40 }), /No changes in the last 30 days/); assert.match(historyChart([], { now, cost: 40, days: 1 }), /No changes in the last 1 day\./);
+  const list = page => [...changesTable(page, now).matchAll(/<td>([^<&]*)<\/td><td>([^<]*)<\/td><\/tr>/g)].map(m => [m[1], m[2]]);
+  assert.deepEqual(list(changesPage(readings, 1, 20)), [['30', '−25'], ['55', '+35'], ['20', '—']]);
+  // A page at a time, newest first; the last page keeps the height of a full one.
+  const second = changesPage(readings, 2, 2);
+  assert.deepEqual([second.page, second.pages, second.total, second.changes.map(c => c.value)], [2, 2, 3, [20]]);
+  assert.deepEqual(list(second), [['20', '—']]); assert.equal(changesTable(second, now).match(/class="pager-filler"/g).length, 1);
+  assert.match(changesTable(second, now), /Page 2 of 2/); assert.match(changesTable(second, now), /data-history-page="1" title="Newer"/); assert.match(changesTable(second, now), /data-history-page="3" disabled title="Older"/);
+  assert.doesNotMatch(changesTable(changesPage(readings, 1, 20), now), /class="pager"|pager-filler/);
+  assert.equal(changesTable(changesPage([], 1, 20), now), '');
+  // A page from the server lists its changes as they come.
+  assert.deepEqual(list({ changes: [{ value: 80, at: '2026-10-14 10:00:00.000Z', change: -20 }, { value: 100, at: '2026-10-13 10:00:00.000Z', change: null }], page: 7, pages: 9, total: 170, perPage: 2 }), [['80', '−20'], ['100', '—']]);
   // Newer Windows apps say what each change was.
-  const kinds = historyList([{ value: 910, at: '2026-10-14 22:00:00.000Z', kind: 'regen' }, { value: 830, at: '2026-10-14 22:04:00.000Z', kind: 'spend' }, { value: 870, at: '2026-10-14 22:10:00.000Z', kind: 'item' }, { value: 870, at: '2026-10-14 23:00:00.000Z', kind: 'snapshot' }]);
+  const kinds = changesTable(changesPage([{ value: 910, at: '2026-10-14 22:00:00.000Z', kind: 'regen' }, { value: 830, at: '2026-10-14 22:04:00.000Z', kind: 'spend' }, { value: 870, at: '2026-10-14 22:10:00.000Z', kind: 'item' }, { value: 870, at: '2026-10-14 23:00:00.000Z', kind: 'snapshot' }], 1, 20), now);
   assert.deepEqual([...kinds.matchAll(/<span class="history-kind">([^<]*)<\/span>/g)].map(m => m[1]), ['item', 'spent', 'regeneration']);
 });
 test('runs go to calendars with a reminder, can be changed and count down in Czech', async () => {
@@ -323,4 +328,20 @@ test('the room says what the party spent this week and runs offer Done after a m
   assert.match(section(2, started), /data-run-done="r" data-name="Fire Temple" class="suggested"/);
   assert.doesNotMatch(section(0, started), /run-spent|suggested/);
   assert.doesNotMatch(section(2, new Date(now + 3600000).toISOString()), /run-spent/, 'not before the start');
+});
+test('the history dialog offers periods up to what the server keeps and pages its weeks', async () => {
+  const { periods, periodName, periodSwitch, historyBody, changesPage, changedAt } = await import('../src/history.js');
+  assert.deepEqual([30, 365, 3650, 14, 1].map(periods), [[7, 30], [7, 30, 90, 365], [7, 30, 90, 365, 3650], [7, 14], [1]]);
+  assert.deepEqual([1, 7, 365, 730, 400].map(periodName), ['1 day', '7 days', '1 year', '2 years', '400 days']);
+  assert.equal(periodSwitch(1, 1), '');
+  assert.match(periodSwitch(30, 365), /data-history-days="30" aria-pressed="true"/); assert.match(periodSwitch(30, 365), /data-history-days="365" aria-pressed="false">1 year</);
+  const now = Date.parse('2026-10-14T12:00:00Z'), readings = Array.from({ length: 70 }, (_, i) => ({ value: 100 + (i % 5) * 10, at: new Date(now - (69 - i) * 86400000).toISOString() }));
+  const body = historyBody({ data: { readings, days: 90, keepDays: 365, hourlyBefore: null }, changes: changesPage(readings, 1, 15), now, cost: 40 });
+  assert.match(body, /Every change in the last 90 days/); assert.match(body, /data-history-days="90" aria-pressed="true"/);
+  // Ten weeks or more, six a page; the changes beside them.
+  assert.equal(body.match(/<tr><td>(This week|Week from)/g).length, 6); assert.match(body, /aria-label="Pages of weeks"/); assert.match(body, /aria-label="Pages of changes"/); assert.match(body, /Changes <span class="modal-count">70<\/span>/);
+  const thinned = historyBody({ data: { readings, days: 365, keepDays: 365, hourlyBefore: readings[60].at, thinnedTo: 'day' }, changes: { changes: [], page: 1, pages: 1, total: 0, perPage: 15 }, now, cost: 40 });
+  assert.match(thinned, /The last 365 days: the newest 1,000 changes, and before them the last change of each day/); assert.match(thinned, /only the last change of each day is counted/);
+  // A change of an earlier year says which.
+  assert.match(changedAt('2025-12-31 10:00:00.000Z', now), /2025/); assert.doesNotMatch(changedAt('2026-01-02 10:00:00.000Z', now), /2026/);
 });

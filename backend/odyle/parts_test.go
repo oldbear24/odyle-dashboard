@@ -69,7 +69,7 @@ func TestHistoryAndTheCharacterCarryTheGamesTwoNumbers(t *testing.T) {
 	if err != nil || asJSON(t, stored.PublicExport()["parts"]) != `{"base":0,"bonus":830}` {
 		t.Fatalf("character parts %v, %v", stored.PublicExport()["parts"], err)
 	}
-	readings, _, err := historyOf(app, id)
+	readings, _, err := historyOf(app, id, 30)
 	if err != nil || len(readings) != 2 {
 		t.Fatalf("%v %v", readings, err)
 	}
