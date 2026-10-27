@@ -875,7 +875,7 @@ export function controlsPage() {
         builtIn().map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
         t.div({ className: 'field-help' }, 'Switched off, its readings are refused.'),
         () => (state.data?.locationAdapters || []).length ? [t.div({ className: 'txt-bold m-t-sm m-b-xs' }, 'Location adapters'),
-          state.data.locationAdapters.map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
+          ...state.data.locationAdapters.map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
           t.div({ className: 'field-help' }, 'Switched off, the places apps send for players who share their location are refused.')] : null),
       field('odyle-adapters-extra', 'Also accept', t.textarea({ id: 'odyle-adapters-extra', rows: 3, placeholder: 'One adapter name per line', value: () => text.extra, oninput: e => { text.extra = e.target.value; adapters({ extra: lines(e.target.value) }); } }),
         'Letters, digits, dots, dashes and underscores, up to 20 names.', 8),

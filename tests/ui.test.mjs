@@ -1584,6 +1584,30 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
   } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, historyDays: 30, locationDays: 30, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
 });
+test('superusers set the announcement, the switches and the adapters on the Server controls page', async () => {
+  const { operator, page, errors, close } = await superuser();
+  try {
+    await page.goto(url + '/_/#/odyle/controls');
+    await page.locator('#odyle-announcement').fill('Maintenance on Thursday');
+    await page.locator('.alert.info', { hasText: 'Maintenance on Thursday' }).waitFor();
+    await page.locator('label[for="odyle-armoryPaused"]').click();
+    // Location adapters are listed beside the built-in ones and switch off the same way.
+    await page.locator('label[for="odyle-adapter-test-location-v1"]').click();
+    await page.locator('#odyle-adapters-extra').fill('next-decoder-v3');
+    assert.match(await page.getByText('Readings are stored from:').innerText(), /test-fixture-v1, next-decoder-v3/);
+    await page.locator('#odyle-windows-blocked').fill('0.18.0');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByText('Saved the Odyle server controls.').waitFor();
+    await shot(page, 'admin-controls');
+    const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
+    assert.deepEqual([saved.announcement, saved.armoryPaused, saved.adapters, saved.windowsBlocked], ['Maintenance on Thursday', true, { extra: ['next-decoder-v3'], disabled: ['test-location-v1'] }, ['0.18.0']]);
+    // Reloaded, the page shows what was saved.
+    await page.reload();
+    assert.equal(await page.locator('#odyle-announcement').inputValue(), 'Maintenance on Thursday');
+    assert.equal(await page.locator('#odyle-adapter-test-location-v1').isChecked(), false);
+    assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
+  } finally { await close(); await request('/api/odyle/admin/settings', { announcement: '', armoryPaused: false, adapters: { extra: [], disabled: [] }, windowsBlocked: [] }, operator); }
+});
 test('superusers search, open and export packets and read the server status', async () => {
   const reader = await account('Status reader');
   const session = (await request('/api/odyle/session', { appVersion: '0.6.0.12' }, reader)).data;
