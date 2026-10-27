@@ -1220,7 +1220,11 @@ test('the account page renames, switches to Czech, exports data, deletes charact
 test('pairing shows one link with a countdown, confirms the PC it paired and names the reader', async () => {
   const user = await account('Pairing player');
   const { page, errors, close } = await open(user, '#/');
-  const linkOf = () => page.locator('#modal .link-field').inputValue();
+  // The open dialog's link: a closed dialog keeps its old content until it opens again.
+  const linkOf = () => page.locator('#modal[open] .link-field').inputValue();
+  // Every new link the page asks the server for.
+  const asked = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/api/odyle/desktop-code')) asked.push(request.url()); });
   try {
     await page.locator('.personal-characters .reader-button', { hasText: 'Connect reader' }).click();
     const first = await linkOf(); assert.match(first, /#odyle-pair=[A-Z2-9]{16}$/);
@@ -1232,10 +1236,11 @@ test('pairing shows one link with a countdown, confirms the PC it paired and nam
     await page.waitForFunction(before => document.querySelector('#modal [data-pair-expires]')?.textContent !== before, left);
     await shot(page, 'pairing');
     // The unused link comes back after closing the dialog and after a reload, instead of a new one.
-    await page.keyboard.press('Escape'); await page.locator('.personal-characters .reader-button').click();
-    assert.equal(await linkOf(), first);
+    await page.keyboard.press('Escape'); await page.locator('#modal:not([open])').waitFor({ state: 'attached' });
+    await page.locator('.personal-characters .reader-button').click();
+    assert.equal(await linkOf(), first); assert.equal(asked.length, 1, 'the dialog opened again asks for no new link: ' + JSON.stringify(errors));
     await page.reload(); await page.locator('.personal-characters .reader-button').click();
-    assert.equal(await linkOf(), first);
+    assert.equal(await linkOf(), first); assert.equal(asked.length, 1, 'the dialog after a reload asks for no new link: ' + JSON.stringify(errors));
     // A new link replaces the old one on the server too.
     await page.locator('#modal [data-action="new-pairing"]').click();
     await page.waitForFunction(old => { const field = document.querySelector('#modal .link-field'); return field && field.value !== old; }, first);
