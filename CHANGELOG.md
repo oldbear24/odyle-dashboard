@@ -2,6 +2,18 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.47.0 · 2026-10-27
+
+### New
+- **The armory shows how far a lookup got**: a progress bar with the step it is at (the character page, icons, item details, Daevanion boards).
+- **A character looked up for the first time shows up sooner**: its gear, stats, skills and titles appear after a few seconds, and the items' cards and the Daevanion boards fill in once PLAYNC has listed them.
+
+### Changed
+- Icons are downloaded several at a time, so a lookup that needs many of them is some 20 seconds faster.
+- The wait the armory tells you is closer to how long PLAYNC really takes, some 40 seconds for a character at the level cap.
+- A profile next in line is followed from the moment its lookup starts, instead of the page checking back only every 15 seconds.
+- While a profile is being fetched, the page no longer redraws itself every two seconds, so an item's card you are reading stays open.
+
 ## 0.46.1 · 2026-10-27
 
 ### Fixed

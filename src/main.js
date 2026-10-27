@@ -31,7 +31,7 @@ import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
-import { armoryRoute, armoryTarget, armorySearch, armoryProfile, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
+import { armoryRoute, armoryTarget, armorySearch, armoryProfile, lookupStatus, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
@@ -469,9 +469,13 @@ async function armoryPage(path, ticket, refresh = false) {
     try { answer = await pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`, refresh ? { query: { refresh: 1 } } : {}); }
     catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryAnswer = armoryResults = null; armoryRender(); return toast(t(error.message)); }
     if (ticket !== navigation) return;
+    // The same profile again (a lookup's progress): only the status line changes, so an item
+    // card open on hover or focus stays.
+    const unchanged = same && !refresh && document.querySelector('.armory-status') && answer.partial === armoryAnswer.partial && JSON.stringify(answer.profile) === JSON.stringify(armoryAnswer.profile);
     online = true; armoryAnswer = answer;
-    if (answer.profile && isBookmarked(bookmarks(), answer)) keepBookmarks(refreshBookmark(bookmarks(), answer));
-    armoryRender();
+    if (answer.profile && !answer.partial && isBookmarked(bookmarks(), answer)) keepBookmarks(refreshBookmark(bookmarks(), answer));
+    if (unchanged) document.querySelector('.armory-status').outerHTML = lookupStatus(answer, Date.now() + serverOffset, armoryRefreshable());
+    else armoryRender();
     return armoryPoll(path, ticket);
   }
   armoryAnswer = armoryResults = null;

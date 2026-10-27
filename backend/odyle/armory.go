@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -51,8 +52,9 @@ const (
 // armorySearchGap between two searches, server-wide; the test build shortens them.
 var armoryPace, armoryStep, armorySearchGap = 5 * time.Second, 250 * time.Millisecond, time.Second
 
-// armoryTook is how long a lookup is taken to last until the first one ends.
-const armoryTook = 10 * time.Second
+// armoryTook is how long a lookup is taken to last until the first one ends: PLAYNC answers
+// each page in one to two seconds, and a character at the level cap has some 30 of them.
+const armoryTook = 40 * time.Second
 
 func armoryURL() string {
 	if v := os.Getenv("PLAYNC_ARMORY_URL"); v != "" {
@@ -506,14 +508,20 @@ func askPLAYNC(page string, j armoryJob, params ...string) (map[string]any, erro
 	return found, nil
 }
 
+// The items and boards that have a page of details on PLAYNC.
+func (g *armoryGear) detailed() bool  { return g.id > 0 && g.order > 0 }
+func (b *armoryBoard) detailed() bool { return b.Id > 0 && b.Open > 0 }
+
 // detailArmory asks PLAYNC for the details of each equipped item and of each board with open
 // nodes, armoryStep apart. A detail PLAYNC does not give leaves its item or board without
 // one; PLAYNC refusing the server ends the lookup.
-func detailArmory(p *armoryProfile, j armoryJob) error {
+func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack) error {
 	var refused armoryRefused
+	items, boards := p.detailed()
+	track.begin("items", items, 1)
 	for i := range p.Gear {
 		g := &p.Gear[i]
-		if g.id <= 0 || g.order <= 0 {
+		if !g.detailed() {
 			continue
 		}
 		time.Sleep(armoryStep)
@@ -524,10 +532,12 @@ func detailArmory(p *armoryProfile, j armoryJob) error {
 		if err == nil {
 			g.Detail = readItem(found)
 		}
+		track.tick()
 	}
+	track.begin("boards", boards, 1)
 	for i := range p.Boards {
 		b := &p.Boards[i]
-		if b.Id <= 0 || b.Open == 0 {
+		if !b.detailed() {
 			continue
 		}
 		time.Sleep(armoryStep)
@@ -538,8 +548,134 @@ func detailArmory(p *armoryProfile, j armoryJob) error {
 		if err == nil {
 			readBoard(b, found)
 		}
+		track.tick()
 	}
 	return nil
+}
+
+// detailed counts the items and boards whose pages a lookup asks for.
+func (p *armoryProfile) detailed() (items, boards int) {
+	for i := range p.Gear {
+		if p.Gear[i].detailed() {
+			items++
+		}
+	}
+	for i := range p.Boards {
+		if p.Boards[i].detailed() {
+			boards++
+		}
+	}
+	return items, boards
+}
+
+// armoryProgress is how far the running lookup got, for the reader's progress bar: its step
+// (profile, images, items or boards), how much of that step is done, and the whole lookup
+// in percent.
+type armoryProgress struct {
+	Step    string `json:"step"`
+	Done    int    `json:"done"`
+	Total   int    `json:"total"`
+	Percent int    `json:"percent"`
+}
+
+// armoryTrack follows the running lookup for its readers: its progress and, once PLAYNC's
+// character pages are read, the profile without the items' and boards' details (as JSON),
+// which a reader with no kept profile sees while those load. The steps come in this order:
+// profile (info and equipment), images, items, boards and the details' images. A page of
+// PLAYNC counts as one in the percent and an image, downloaded side by side with others,
+// as a tenth. All methods take a nil track.
+type armoryTrack struct {
+	mu            sync.Mutex
+	progress      armoryProgress
+	stage         int     // steps begun
+	worth         float64 // what one unit of the running step counts for
+	finished      float64 // units of the earlier steps and of the running one done
+	items, boards int     // pages of details, as many as a character at the level cap until known
+	partial       string
+}
+
+const imageWorth = 0.1
+
+func newArmoryTrack() *armoryTrack { return &armoryTrack{items: 20, boards: 4} }
+
+// begin starts the lookup's next step, of total units each worth worth.
+func (t *armoryTrack) begin(step string, total int, worth float64) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.stage++
+	t.worth = worth
+	t.progress.Step, t.progress.Done, t.progress.Total = step, 0, total
+	t.count()
+}
+
+// tick counts one unit of the running step done.
+func (t *armoryTrack) tick() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.progress.Done = min(t.progress.Done+1, t.progress.Total)
+	t.finished += t.worth
+	t.count()
+}
+
+// count works out the percent: what is done of what is done plus the rest of the running
+// step and the steps after it (half a unit for the details' images). It never goes back,
+// and reaches 100 only when the lookup ends.
+func (t *armoryTrack) count() {
+	left := float64(t.progress.Total-t.progress.Done) * t.worth
+	switch t.stage {
+	case 1, 2:
+		left += float64(t.items+t.boards) + 0.5
+	case 3:
+		left += float64(t.boards) + 0.5
+	case 4:
+		left += 0.5
+	}
+	if all := t.finished + left; all > 0 {
+		t.progress.Percent = max(t.progress.Percent, min(99, int(100*t.finished/all)))
+	}
+}
+
+// plan sets how many pages of details the lookup asks for, once PLAYNC's character pages say.
+func (t *armoryTrack) plan(items, boards int) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.items, t.boards = items, boards
+	t.count()
+}
+
+// show keeps the profile as read so far for readers.
+func (t *armoryTrack) show(p *armoryProfile) {
+	if t == nil {
+		return
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.partial = string(raw)
+}
+
+// read is the progress so far and the profile as read so far ("" before PLAYNC's character
+// pages are).
+func (t *armoryTrack) read() (*armoryProgress, string) {
+	if t == nil {
+		return nil, ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	progress := t.progress
+	return &progress, t.partial
 }
 
 // armoryJob is a profile waiting for its lookup, and the address that asked for it.
@@ -561,14 +697,17 @@ type armoryMiss struct {
 }
 
 // armoryState is where a profile's lookup stands, for the reader: queued (position profiles
-// ahead, about wait seconds), fetching, failed (error), busy (the queue or the address has
-// no room), paused, missing or fresh (nothing to do).
+// ahead, about wait seconds), fetching (with its progress and the profile read so far),
+// failed (error), busy (the queue or the address has no room), paused, missing or fresh
+// (nothing to do).
 type armoryState struct {
 	State      string
 	Position   int
 	Wait       int
 	RetryAfter int
 	Error      string
+	Progress   *armoryProgress
+	Partial    string
 }
 
 // armoryWork is the queue of profiles waiting for PLAYNC. One goroutine works it while it
@@ -579,6 +718,7 @@ type armoryWork struct {
 	wake      chan struct{} // ends the worker's wait (dropped queue)
 	waiting   []armoryJob
 	current   string
+	track     *armoryTrack // the running lookup's progress
 	byAddress map[string]int
 	misses    map[string]armoryMiss
 	working   bool
@@ -615,7 +755,7 @@ func seconds(d time.Duration) int { return int((max(0, d) + time.Second - 1) / t
 
 // queued is the state of the profile at index i of the queue. Its wait counts the lookup
 // running now and the ones ahead, each lasting as long as lookups do and armoryPace apart,
-// and its own lookup.
+// and its own lookup. The reader asks again about when its own lookup starts, to follow it.
 func (w *armoryWork) queued(i int, at time.Time) armoryState {
 	start := later(w.nextAt, w.blocked, at)
 	ahead := i
@@ -623,8 +763,9 @@ func (w *armoryWork) queued(i int, at time.Time) armoryState {
 		ahead++
 		start = later(start, w.startedAt.Add(w.took+armoryPace), at.Add(armoryPace))
 	}
-	wait := seconds(start.Sub(at) + time.Duration(i)*(w.took+armoryPace) + w.took + time.Second)
-	return armoryState{State: "queued", Position: ahead, Wait: wait, RetryAfter: min(max(wait, 2), 15)}
+	starts := start.Sub(at) + time.Duration(i)*(w.took+armoryPace)
+	wait := seconds(starts + w.took + time.Second)
+	return armoryState{State: "queued", Position: ahead, Wait: wait, RetryAfter: min(max(seconds(starts), 2), 15)}
 }
 
 // ask queues a profile for its lookup, unless it waits or runs already, or failed a moment
@@ -643,7 +784,8 @@ func (w *armoryWork) ask(app core.App, j armoryJob) armoryState {
 		delete(w.misses, j.key)
 	}
 	if w.current == j.key {
-		return armoryState{State: "fetching", RetryAfter: 2}
+		progress, partial := w.track.read()
+		return armoryState{State: "fetching", RetryAfter: 2, Progress: progress, Partial: partial}
 	}
 	for i, q := range w.waiting {
 		if q.key == j.key {
@@ -697,12 +839,13 @@ func (w *armoryWork) work(app core.App) {
 		if w.byAddress[j.address]--; w.byAddress[j.address] <= 0 {
 			delete(w.byAddress, j.address)
 		}
-		w.current, w.startedAt = j.key, time.Now()
+		w.current, w.startedAt, w.track = j.key, time.Now(), newArmoryTrack()
+		track := w.track
 		w.mu.Unlock()
-		err := lookUpArmory(app, j)
+		err := lookUpArmory(app, j, track)
 		w.mu.Lock()
 		at := time.Now()
-		w.current, w.lastAt, w.nextAt = "", at, at.Add(armoryPace)
+		w.current, w.track, w.lastAt, w.nextAt = "", nil, at, at.Add(armoryPace)
 		var refused armoryRefused
 		switch {
 		case err == nil:
@@ -740,29 +883,35 @@ func (w *armoryWork) wait() {
 	}
 }
 
-// lookUpArmory asks PLAYNC for a character's pages, with the details of its items and boards,
-// keeps the images they name (armoryimages.go) and then the profile. A character PLAYNC no
-// longer lists loses its kept profile (unless hidden); another failure keeps the profile and
-// notes the error. Never call it inside a transaction: it waits on PLAYNC.
-func lookUpArmory(app core.App, j armoryJob) (err error) {
+// lookUpArmory asks PLAYNC for a character's pages, keeps the images they name
+// (armoryimages.go), shows that much to readers waiting for it (track), then asks for the
+// details of its items and boards, keeps their images and then the profile. A character
+// PLAYNC no longer lists loses its kept profile (unless hidden); another failure keeps the
+// profile and notes the error. Never call it inside a transaction: it waits on PLAYNC.
+func lookUpArmory(app core.App, j armoryJob, track *armoryTrack) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("the armory lookup failed: %v", r)
 		}
 	}()
 	var profile armoryProfile
+	track.begin("profile", 2, 1)
 	info, err := askPLAYNC("info", j)
 	if err == nil {
 		var equipment map[string]any
+		track.tick()
 		time.Sleep(armoryStep)
 		if equipment, err = askPLAYNC("equipment", j); err == nil {
+			track.tick()
 			if profile, err = readArmory(info, equipment); err == nil {
-				err = detailArmory(&profile, j)
+				track.plan(profile.detailed())
+				keepArmoryImages(app, &profile, track, true)
+				track.show(&profile)
+				if err = detailArmory(&profile, j, track); err == nil {
+					keepArmoryImages(app, &profile, track, false)
+				}
 			}
 		}
-	}
-	if err == nil {
-		keepArmoryImages(app, &profile)
 	}
 	// The kept profile is read and written after PLAYNC answered, in one transaction: a view
 	// (viewedAt) or the hidden switch set meanwhile is kept.
@@ -846,7 +995,7 @@ func armoryRoute(e *core.RequestEvent) error {
 	if record != nil && record.GetBool("hidden") {
 		return notFound("This character is not in the armory.")
 	}
-	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("fetchedAt", "").set("error", "")
+	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("partial", false).set("fetchedAt", "").set("error", "")
 	var fetched time.Time
 	outdated := false
 	if record != nil {
@@ -875,7 +1024,11 @@ func armoryRoute(e *core.RequestEvent) error {
 	if state.State == "missing" {
 		return notFound("PLAYNC does not list this character.")
 	}
-	return e.JSON(200, out.set("state", state.State).set("position", state.Position).set("wait", state.Wait).set("retryAfter", state.RetryAfter).set("lookupError", state.Error))
+	// Without a kept profile in today's shape, the reader sees the one being read meanwhile.
+	if state.Partial != "" && (record == nil || outdated) {
+		out.set("profile", parseJSON(state.Partial, "null")).set("partial", true)
+	}
+	return e.JSON(200, out.set("state", state.State).set("position", state.Position).set("wait", state.Wait).set("retryAfter", state.RetryAfter).set("lookupError", state.Error).set("progress", state.Progress))
 }
 
 // armoryHit is a character the official search lists.

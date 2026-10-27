@@ -103,7 +103,7 @@ export function lookupLine(answer, now) {
   const kept = answer.profile && answer.fetchedAt;
   switch (answer.state) {
     case 'queued': return answer.position ? tn(answer.position, 'Fetching from PLAYNC · about {s} s, {n} character ahead', 'Fetching from PLAYNC · about {s} s, {n} characters ahead', { s: answer.wait }) : t('Fetching from PLAYNC · about {s} s', { s: answer.wait });
-    case 'fetching': return t('Fetching from PLAYNC now…');
+    case 'fetching': return progressLine(answer.progress);
     case 'failed': return t('PLAYNC did not answer ({error}). Odyle tries again in {n} min.', { error: t(answer.lookupError || 'Request could not be completed.'), n: Math.max(1, Math.ceil(answer.retryAfter / 60)) });
     case 'busy': return t('Many lookups are waiting. Odyle asks again in a moment.');
     case 'paused': return kept ? t('The armory is paused; this is the kept copy.') : t('The armory is paused for now. Try again later.');
@@ -111,6 +111,20 @@ export function lookupLine(answer, now) {
   }
 }
 export const waiting = answer => ['queued', 'fetching', 'busy'].includes(answer.state);
+// The step the running lookup is at (backend/odyle/armory.go armoryProgress).
+function progressLine(progress) {
+  const { step, done = 0, total = 0 } = progress || {}, of = { done: number(done), total: number(total) };
+  if (step === 'images' && total) return t('Downloading icons · {done} of {total}', of);
+  if (step === 'items' && total) return t('Reading item details · {done} of {total}', of);
+  if (step === 'boards' && total) return t('Reading Daevanion boards · {done} of {total}', of);
+  return step === 'profile' ? t('Reading the character page…') : t('Fetching from PLAYNC now…');
+}
+// Where the lookup stands, with its progress bar while it runs and Refresh when it may.
+export function lookupStatus(answer, now, refreshable) {
+  const busy = waiting(answer), progress = answer.state === 'fetching' && answer.progress, percent = Math.min(100, Math.max(0, Number(progress?.percent) || 0));
+  const bar = progress ? `<span class="armory-track armory-progress" role="progressbar" aria-label="${esc(t('Lookup progress'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></span>` : '';
+  return `<div class="armory-status ${busy ? 'is-waiting' : answer.state === 'failed' ? 'is-failed' : ''}" role="status">${busy ? '<span class="armory-spinner" aria-hidden="true"></span>' : icon('info')}<span>${esc(lookupLine(answer, now))}${bar}</span>${refreshable ? `<button class="button secondary" data-action="armory-refresh">${t('Refresh')}</button>` : ''}</div>`;
+}
 
 // ---------------------------------------------------------------- Profile
 
@@ -132,8 +146,9 @@ const lines = list => list.map(l => l.exceed
   ? `<li class="is-exceed"><span>${esc(l.name)}</span><b>${esc(l.extra || l.value)}</b></li>`
   : `<li><span>${esc(l.name)}</span><b>${esc(l.min ? `${l.min} ~ ${l.value}` : l.value)}${l.extra ? ` <em>(+${esc(l.extra)})</em>` : ''}</b></li>`).join('');
 
-// An item's card, shown over its slot on hover or focus: what PLAYNC's item page lists.
-function itemTip(images, g) {
+// An item's card, shown over its slot on hover or focus: what PLAYNC's item page lists, or
+// (loading) that it is on its way.
+function itemTip(images, g, loading) {
   const d = g.detail, names = gradeNames();
   const kind = d?.category ? `${names[g.grade] || g.grade} · ${d.category}` : names[g.grade] || g.grade || '';
   const facts = d ? [
@@ -159,17 +174,18 @@ function itemTip(images, g) {
       + (d.desc ? `<p class="armory-tip-desc">${esc(d.desc)}</p>` : '')
       + `<footer>${[d.skins.length ? `${t('Skin')}: ${d.skins.map(esc).join(', ')}` : '', d.sources.length ? `${t('How to obtain')}: ${d.sources.map(esc).join(', ')}` : '', d.tradable ? t('Tradable') : t('Not tradable')].filter(Boolean).map(s => `<span>${s}</span>`).join('')}</footer>`;
   }
+  if (!d && loading) body = `<p class="armory-tip-desc">${t('Odyle is reading this item\'s details from PLAYNC…')}</p>`;
   return `<div class="armory-tip" role="tooltip"><header class="${gradeClass(g.grade)}">${itemIcon(images, g, 'is-large')}<div><strong>${g.enchant ? `+${number(g.enchant)} ` : ''}${esc(g.name)}</strong><small>${esc(kind)}</small></div></header>${facts.length ? `<dl class="armory-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : ''}${body}</div>`;
 }
 
 // One slot of the paper doll, its card on hover or focus; an empty slot says so.
-function slotTile(images, slot, g) {
+function slotTile(images, slot, g, loading) {
   const label = slotLabel(slot);
   if (!g) return `<li class="armory-gear-slot is-empty"><span class="armory-icon is-empty" aria-hidden="true"></span><span class="armory-gear-text"><small>${esc(label)}</small><strong>${t('Empty')}</strong></span></li>`;
   const d = g.detail, extra = d ? [d.itemLevel ? t('item level {n}', { n: number(d.itemLevel) }) : '', d.stones?.length ? tn(d.stones.length, '{n} stone', '{n} stones') : ''].filter(Boolean).join(' · ') : [gradeName(g.grade), g.exceed ? t('exceed {n}', { n: g.exceed }) : ''].filter(Boolean).join(' · ');
   // Weapons and arcana say what they are (Orb, Chalice); other slots' types repeat the slot.
   const kind = d?.category && /^(MainHand|SubHand|Arcana\d)$/.test(slot) ? ` · ${esc(d.category)}` : '';
-  return `<li class="armory-gear-slot ${gradeClass(g.grade)}" tabindex="0" aria-label="${esc(`${label}: ${g.enchant ? `+${g.enchant} ` : ''}${g.name}`)}">${itemIcon(images, g)}<span class="armory-gear-text"><small>${esc(label)}${kind}</small><strong>${esc(g.name)}</strong>${extra ? `<span>${esc(extra)}</span>` : ''}</span>${itemTip(images, g)}</li>`;
+  return `<li class="armory-gear-slot ${gradeClass(g.grade)}" tabindex="0" aria-label="${esc(`${label}: ${g.enchant ? `+${g.enchant} ` : ''}${g.name}`)}">${itemIcon(images, g)}<span class="armory-gear-text"><small>${esc(label)}${kind}</small><strong>${esc(g.name)}</strong>${extra ? `<span>${esc(extra)}</span>` : ''}</span>${itemTip(images, g, loading)}</li>`;
 }
 
 function statsPanel(p) {
@@ -178,16 +194,17 @@ function statsPanel(p) {
   return `<aside class="armory-panel armory-statpanel"><div class="section-heading"><h2>${t('Stats')}</h2></div><ul class="armory-stats">${primary.map(stat).join('')}</ul>${deity.length ? `<h3>${t('Deity stats')}</h3><ul class="armory-stats is-deity">${deity.map(stat).join('')}</ul>` : ''}</aside>`;
 }
 
-function gearTab(p, images) {
+function gearTab(p, images, loading) {
   const bySlot = new Map(p.gear.map(g => [g.slot, g])), known = new Set([...armourSlots, ...accessorySlots, ...arcanaSlots, ...companionSlots]);
   const others = p.gear.filter(g => !known.has(g.slot)).map(g => g.slot);
-  const column = (title, slots) => `<div class="armory-doll-column"><h3>${title}</h3><ul class="armory-gear">${slots.map(slot => slotTile(images, slot, bySlot.get(slot))).join('')}</ul></div>`;
+  const tile = slot => slotTile(images, slot, bySlot.get(slot), loading);
+  const column = (title, slots) => `<div class="armory-doll-column"><h3>${title}</h3><ul class="armory-gear">${slots.map(tile).join('')}</ul></div>`;
   if (!p.gear.length) return `<div class="armory-loadout"><section class="armory-panel"><p class="armory-empty">${t('PLAYNC lists no equipped items.')}</p></section>${statsPanel(p)}</div>`;
   // The arcana's sets, each once, with how many of its pieces are on.
   const sets = [...new Map(p.gear.filter(g => g.detail?.set).map(g => [g.detail.set.name, g.detail.set])).values()];
   const setList = sets.length ? `<ul class="armory-sets">${sets.map(s => `<li><strong>${esc(s.name)}</strong> <span>${number(s.equipped)} / ${number(s.items.length)}</span>${s.bonuses.filter(b => s.equipped >= b.count).map(b => `<small>${esc(t('{n} pieces', { n: b.count }))}: ${b.effects.map(esc).join(', ')}</small>`).join('')}</li>`).join('')}</ul>` : '';
-  const arcana = arcanaSlots.some(s => bySlot.has(s)) ? `<div class="armory-doll-row"><h3>${t('Arcana')}</h3><ul class="armory-gear is-row">${arcanaSlots.map(slot => slotTile(images, slot, bySlot.get(slot))).join('')}</ul>${setList}</div>` : '';
-  return `<div class="armory-loadout"><section class="armory-panel armory-doll"><div class="armory-doll-columns">${column(t('Weapons and armour'), armourSlots)}${column(t('Accessories'), [...accessorySlots, ...others])}</div>${arcana}<div class="armory-doll-row"><h3>${t('Pet and wings')}</h3><ul class="armory-gear is-row">${companionSlots.map(slot => slotTile(images, slot, bySlot.get(slot))).join('')}</ul></div></section>${statsPanel(p)}</div>`;
+  const arcana = arcanaSlots.some(s => bySlot.has(s)) ? `<div class="armory-doll-row"><h3>${t('Arcana')}</h3><ul class="armory-gear is-row">${arcanaSlots.map(tile).join('')}</ul>${setList}</div>` : '';
+  return `<div class="armory-loadout"><section class="armory-panel armory-doll"><div class="armory-doll-columns">${column(t('Weapons and armour'), armourSlots)}${column(t('Accessories'), [...accessorySlots, ...others])}</div>${arcana}<div class="armory-doll-row"><h3>${t('Pet and wings')}</h3><ul class="armory-gear is-row">${companionSlots.map(tile).join('')}</ul></div></section>${statsPanel(p)}</div>`;
 }
 
 // What the gear's soul bindings and the open Daevanion nodes add to each skill ("Bolt +1").
@@ -211,7 +228,7 @@ function skillsTab(p, images) {
   return `<p class="armory-legend"><span class="is-equipped"></span>${t('On the skill bar')}<span class="is-locked"></span>${t('Not learned yet')}</p>${groups.map(([title, list]) => `<section class="armory-panel"><div class="section-heading"><h2>${esc(title)} <span>${number(list.filter(s => s.acquired).length)} / ${number(list.length)}</span></h2></div><ul class="armory-skills">${list.map(tile).join('')}</ul></section>`).join('')}`;
 }
 
-function daevanionTab(p, images, chosen) {
+function daevanionTab(p, images, chosen, loading) {
   const board = p.boards.find(b => String(b.id) === String(chosen)) || p.boards.find(b => b.open > 0) || p.boards[0];
   const pick = b => `<button type="button" class="armory-board-pick${b === board ? ' is-active' : ''}" data-armory-board="${esc(b.id)}" aria-pressed="${b === board}">${picture(images, b.icon, 'armory-board-art')}<span><strong>${esc(b.name)}</strong><small>${number(b.open)} / ${number(b.total)}</small></span><span class="armory-track"><i style="width:${percent(b.open, b.total)}%"></i></span></button>`;
   // The board's nodes from its first row and column on: PLAYNC's grid has empty edges.
@@ -219,7 +236,7 @@ function daevanionTab(p, images, chosen) {
   const rows = nodes.length ? Math.max(...nodes.map(n => n.r)) - top + 1 : 1, cols = nodes.length ? Math.max(...nodes.map(n => n.c)) - left + 1 : 1;
   const label = n => n.e || n.n || '';
   const grid = nodes.length ? `<div class="armory-board-grid" style="grid-template-columns:repeat(${cols},minmax(0,1fr));grid-template-rows:repeat(${rows},auto)" role="img" aria-label="${esc(t('{name}: {open} of {total} nodes open', { name: board.name, open: number(board.open), total: number(board.total) }))}">${nodes.map(n => `<span class="armory-node ${gradeClass(n.g)} is-${esc(String(n.t).toLowerCase())}${n.o ? ' is-open' : ''}" style="grid-row:${Number(n.r) - top + 1};grid-column:${Number(n.c) - left + 1}" title="${esc(label(n))}${n.o ? '' : ` · ${esc(t('closed'))}`}"></span>`).join('')}</div>`
-    : `<p class="armory-empty">${board.open ? t('PLAYNC did not list this board\'s nodes.') : t('No node of this board is open yet.')}</p>`;
+    : `<p class="armory-empty">${!board.open ? t('No node of this board is open yet.') : loading ? t('Odyle is reading this board from PLAYNC…') : t('PLAYNC did not list this board\'s nodes.')}</p>`;
   const effects = (title, list) => list?.length ? `<h4>${title}</h4><ul>${list.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : '';
   const open = p.boards.reduce((n, b) => n + b.open, 0), total = p.boards.reduce((n, b) => n + b.total, 0);
   return `<section class="armory-panel"><div class="section-heading"><h2>${t('Daevanion')} <span>${number(open)} / ${number(total)}</span></h2></div><div class="armory-board-picks">${p.boards.map(pick).join('')}</div></section>
@@ -244,11 +261,12 @@ export function profileTabs(p) {
     .filter(([key, , has]) => key === '' || has);
 }
 
-// A profile page: the kept profile (or the wait for it) and where its lookup stands. view
-// names the tab, the Daevanion board shown and where the backend serves images.
+// A profile page: the kept profile (or the wait for it, or what the running lookup read so
+// far: partial) and where its lookup stands. view names the tab, the Daevanion board shown
+// and where the backend serves images.
 export function armoryProfile(answer, now, refreshable, bookmarked = false, view = {}) {
-  const p = answer.profile, line = lookupLine(answer, now), busy = waiting(answer), images = view.images || '';
-  const status = `<div class="armory-status ${busy ? 'is-waiting' : answer.state === 'failed' ? 'is-failed' : ''}" role="status">${busy ? '<span class="armory-spinner" aria-hidden="true"></span>' : icon('info')}<span>${esc(line)}</span>${refreshable ? `<button class="button secondary" data-action="armory-refresh">${t('Refresh')}</button>` : ''}</div>`;
+  const p = answer.profile, images = view.images || '', loading = Boolean(answer.partial);
+  const status = lookupStatus(answer, now, refreshable);
   const back = `<a class="text-button armory-back" href="#/armory">${icon('arrow')} ${t('Search another character')}</a>`;
   if (!p) return `<main class="dashboard armory"><div class="heading"><div><h1>${esc(t('A character on {server}', { server: answer.server }))}</h1><p>${t('This character is not in the armory yet. Odyle fetches it from PLAYNC, one character at a time; this page fills in by itself.')}</p></div></div>${status}${back}</main>`;
   const profile = { ...p, stats: p.stats || [], gear: p.gear || [], skills: p.skills || [], skins: p.skins || [], boards: p.boards || [], titles: { owned: 0, total: 0, equipped: [], ...p.titles } };
@@ -264,6 +282,6 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
 <div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="#${esc(profilePath(answer, key))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
-  const content = tab === 'skills' ? skillsTab(profile, images) : tab === 'daevanion' ? daevanionTab(profile, images, view.board) : tab === 'titles' ? titlesTab(profile) : tab === 'appearance' ? appearanceTab(profile, images) : gearTab(profile, images);
+  const content = tab === 'skills' ? skillsTab(profile, images) : tab === 'daevanion' ? daevanionTab(profile, images, view.board, loading) : tab === 'titles' ? titlesTab(profile) : tab === 'appearance' ? appearanceTab(profile, images) : gearTab(profile, images, loading);
   return `<main class="dashboard armory armory-profile">${hero}${status}${nav}<div class="armory-tab">${content}</div>${back}</main>`;
 }

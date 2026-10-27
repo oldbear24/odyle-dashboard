@@ -106,7 +106,7 @@ Left out: rankings (the Global pages show none) and the official pages' own text
 
 ## Images
 
-The dashboard's content security policy allows images only from the Odyle server, so browsers never load PLAYNC's images (`backend/odyle/armoryimages.go`). The queue downloads the portrait and the icons a profile names while it looks the character up, and keeps them as files in `pb_data/armory_images`:
+The dashboard's content security policy allows images only from the Odyle server, so browsers never load PLAYNC's images (`backend/odyle/armoryimages.go`). The queue downloads the portrait and the icons a profile names while it looks the character up, six at a time, and keeps them as files in `pb_data/armory_images`:
 - an icon under PLAYNC's file name, shrunk from 256 or 512 pixels to at most 112 (twice the largest the page shows), some 20 KB each; an icon the server keeps already is not downloaded again;
 - the portrait under the SHA-256 of its bytes (`portrait-<32 hex>.jpg`), downloaded at every lookup since it can change.
 
@@ -114,7 +114,9 @@ The dashboard's content security policy allows images only from the Odyle server
 
 ## How often PLAYNC is asked
 
-- **One queue for the whole server.** A lookup asks for info, equipment, each equipped item (up to 25) and each board with open nodes (up to 6), a quarter of a second apart, then downloads the images it does not keep yet; some 10 to 15 seconds for a character at the level cap. The next lookup starts 5 seconds after one ends. The wait a reader is told counts with how long the last lookups took.
+- **One queue for the whole server.** A lookup asks for info and equipment, downloads the images they name that the server does not keep yet, then asks for each equipped item (up to 25) and each board with open nodes (up to 6), and downloads their images. PLAYNC's pages come a quarter of a second apart, one at a time; images six at a time. The next lookup starts 5 seconds after one ends. The wait a reader is told counts with how long the last lookups took, 40 seconds until one has ended.
+- **How long a lookup takes:** PLAYNC answers each page in 0.5 to 2.3 seconds (1.3 on average for item pages, measured on 2026-10-27 from Czechia; the connection itself takes some 50 ms). A character at the level cap with 20 items and 4 open boards took 40 seconds for its 26 pages, and 72 icons one after another took 25 more on a server that kept none of them; six at a time take some 5.
+- **While a lookup runs**, its readers see how far it got (the step, how much of it is done and a percent) and, with no profile kept in today's shape, the profile as far as info and equipment give it, until the items' and boards' details are in.
 - **A detail PLAYNC does not give** (an item or board page that fails) leaves that item or board without it; the lookup goes on. PLAYNC refusing the server ends it, as below.
 - **Queue limits:** up to 100 characters, at most 3 from one address. A reader whose request doesn't fit is told to try again shortly.
 - **Searches:** at least a second apart, server-wide. Their results are kept for 10 minutes, and repeats are answered from memory.
