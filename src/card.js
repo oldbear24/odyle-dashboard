@@ -81,7 +81,7 @@ export function cardPage(answer, view = {}) {
   if (!p) return `<main class="card-page">${head}<section class="card-wait">${view.status || ''}<p>${t('The card is drawn once Odyle has fetched this character from PLAYNC.')}</p></section><div id="toast" role="status" aria-live="polite"></div></main>`;
   const design = designOf(answer, view.design), finish = finishOf(answer, view.finish);
   const label = t('Player card of {name}: level {level} {class} on {server}, {power} combat power.', { name: p.name, level: p.level, class: p.class, server: p.server || answer.server, power: number(p.combatPower) });
-  return `<main class="card-page design-${design}">${head}
+  return `<main class="card-page design-${design}">${head}<h1 class="sr-only">${esc(cardTitle(answer))}</h1>
 <div class="card-layout${answer.card?.mine ? ' has-studio' : ''}"><section class="card-stage" aria-label="${esc(t('Player card'))}">
 <div class="tcg-scene"><article class="tcg design-${design}${finish ? ' finish-' + finish : ''}" tabindex="0" aria-roledescription="${esc(t('player card'))}" aria-label="${esc(label)}"><div class="tcg-body">${front(answer, images)}${back()}</div></article><div class="tcg-shadow" aria-hidden="true"></div></div>
 <p class="card-hint">${t('Drag the card to turn it. Double-click or press Enter to flip it.')}</p>
