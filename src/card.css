@@ -18,6 +18,9 @@
 .card-layout{flex:1;display:grid;justify-items:center;align-items:center;gap:28px;padding:18px 0 8px}
 .card-layout.has-studio{grid-template-columns:minmax(0,1fr) minmax(280px,360px);max-width:1080px;width:100%;margin:0 auto}
 .card-stage{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
+/* Beside the picker, the card stays in view while the picker scrolls. */
+.card-layout.has-studio{align-items:start}
+.card-layout.has-studio .card-stage{position:sticky;top:clamp(24px,8vh,90px)}
 .card-hint{margin:0;color:#89958f;font-size:13px;text-align:center}
 .card-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
 .card-actions .button{display:inline-flex;align-items:center;gap:6px}
@@ -52,12 +55,17 @@
 .card-choice.is-prism .card-swatch{background:linear-gradient(115deg,#ff5f6d,#ffc371,#c7f464,#4ecdc4,#556cfe,#c06cff)}
 .card-choice.is-starfall .card-swatch{background:radial-gradient(circle,#fff 0 1px,transparent 1.6px) 0 0/7px 7px,radial-gradient(circle,#fff 0 .8px,transparent 1.3px) 3px 4px/11px 11px,linear-gradient(135deg,#6fb7ff,#c38cff,#ff8fb1,#ffd27a)}
 .card-choice.is-etched .card-swatch{background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,.4) 3px 4px),linear-gradient(115deg,#7a5b17,#f5e3a1 50%,#4a3510)}
+.card-choice.is-sunburst .card-swatch{background:repeating-conic-gradient(from 0deg at 50% 40%,rgba(255,255,255,.6) 0deg 6deg,transparent 6deg 24deg),conic-gradient(from 0deg at 50% 40%,#ff6b6b,#ffd166,#06d6a0,#4cc9f0,#7b61ff,#ff6b6b)}
+.card-choice.is-ice .card-swatch{background:conic-gradient(from 20deg at 30% 60%,rgba(255,255,255,.7) 0 40deg,transparent 40deg 110deg,rgba(255,255,255,.4) 110deg 170deg,transparent 170deg 230deg,rgba(255,255,255,.55) 230deg 290deg,transparent 290deg) 0 0/12px 15px,linear-gradient(160deg,#9be7ff,#e0c3fc 50%,#8ec5fc)}
+.card-choice.is-scales .card-swatch{background:radial-gradient(circle at 50% 0,transparent 0 3.4px,rgba(255,240,200,.75) 3.8px 4.6px,transparent 5px) 0 0/8px 4px,radial-gradient(circle at 50% 0,transparent 0 3.4px,rgba(255,240,200,.75) 3.8px 4.6px,transparent 5px) 4px 2px/8px 4px,linear-gradient(160deg,#5b1d0e,#e8b04a 55%,#3a0d0d)}
+.card-choice.is-aether .card-swatch{background:radial-gradient(ellipse 90% 30% at 40% 30%,#78ffd6,transparent 70%),radial-gradient(ellipse 90% 30% at 60% 65%,#b278ff,transparent 70%),linear-gradient(160deg,#10203a,#1d1240)}
 .card-pills{display:flex;flex-wrap:wrap;gap:6px}
 .card-pill{position:relative;margin:0;font-size:inherit;color:inherit}
 .card-pill span{display:inline-block;padding:6px 12px;border:1px solid #2a3530;border-radius:999px;background:#141b18;font-size:13px;font-weight:600;cursor:pointer}
 .card-pill:hover span{border-color:#3d4d45}
 .card-pill:has(input:checked) span{border-color:var(--mint);background:#16221d;color:#fff}
 .card-pill:has(input:disabled){opacity:.45}
+.card-dot{display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:50%;background:var(--dot);box-shadow:0 0 0 1px rgba(255,255,255,.25);vertical-align:-1px}
 .card-pill:has(input:disabled) span{cursor:not-allowed}
 .card-select{display:grid;gap:5px;margin:0;font-size:12px;font-weight:500;color:#a6b3ac}
 .card-select select{width:100%;min-height:36px;padding:6px 10px;border:1px solid #2a3530;border-radius:8px;background:#141b18;color:#eaf1ed;font-size:13px}
@@ -170,9 +178,69 @@
 .tcg.finish-prism .tcg-shine{background-image:repeating-linear-gradient(115deg,#ff5f6d 0%,#ffc371 5%,#c7f464 10%,#4ecdc4 15%,#556cfe 20%,#c06cff 25%,#ff5f6d 30%),radial-gradient(farthest-corner circle at var(--px) var(--py),rgba(255,255,255,.6),rgba(0,0,0,.4) 78%);background-size:400% 400%,100% 100%;background-position:var(--px) var(--py),center;background-blend-mode:soft-light;mix-blend-mode:color-dodge;opacity:calc(.2 + var(--hyp) * .5);filter:saturate(1.25)}
 .tcg.finish-starfall .tcg-shine{background-image:radial-gradient(circle,#fff 0 .35cqw,transparent .65cqw),radial-gradient(circle,#fff 0 .22cqw,transparent .5cqw),repeating-linear-gradient(135deg,#6fb7ff 0%,#c38cff 8%,#ff8fb1 16%,#ffd27a 24%,#6fb7ff 32%);background-size:7cqw 7cqw,11cqw 11cqw,300% 300%;background-position:calc(var(--px) * .4) calc(var(--py) * .4),calc(var(--px) * -.6) calc(var(--py) * -.6),var(--px) var(--py);mix-blend-mode:color-dodge;opacity:calc(.22 + var(--hyp) * .55)}
 .tcg.finish-etched .tcg-shine{background-image:repeating-linear-gradient(45deg,transparent 0 1.2cqw,rgba(255,255,255,.36) 1.2cqw 1.45cqw),repeating-linear-gradient(-45deg,transparent 0 1.2cqw,rgba(255,255,255,.24) 1.2cqw 1.45cqw),linear-gradient(115deg,#7a5b17 0%,#f5e3a1 calc(var(--px) - 12%),#fff6d5 var(--px),#b88a2e calc(var(--px) + 14%),#4a3510 100%);mix-blend-mode:overlay;opacity:calc(.4 + var(--hyp) * .4)}
+/* Sunburst: rays fan out from where the light falls and turn as the card does. */
+.tcg.finish-sunburst .tcg-shine{background-image:repeating-conic-gradient(from calc(var(--hyp) * 60deg) at var(--px) var(--py),rgba(255,255,255,.5) 0deg 1.6deg,transparent 2.4deg 7.5deg),conic-gradient(from calc(var(--hyp) * -90deg) at var(--px) var(--py),#ff6b6b,#ffd166,#06d6a0,#4cc9f0,#7b61ff,#ff6b6b),radial-gradient(farthest-corner circle at var(--px) var(--py),rgba(255,255,255,.6),rgba(0,0,0,.4) 78%);background-blend-mode:normal,soft-light,normal;mix-blend-mode:color-dodge;opacity:calc(.18 + var(--hyp) * .42);filter:saturate(1.2)}
+/* Cracked ice: facets in two sizes, sliding apart as the light moves, over a cold sheen. */
+.tcg.finish-ice .tcg-shine{background-image:conic-gradient(from 20deg at 30% 60%,rgba(255,255,255,.55) 0 40deg,transparent 40deg 110deg,rgba(255,255,255,.3) 110deg 170deg,transparent 170deg 230deg,rgba(255,255,255,.45) 230deg 290deg,transparent 290deg),conic-gradient(from 75deg at 65% 35%,transparent 0 50deg,rgba(255,255,255,.35) 50deg 120deg,transparent 120deg 200deg,rgba(255,255,255,.25) 200deg 260deg,transparent 260deg),linear-gradient(115deg,#9be7ff 0%,#e0c3fc calc(var(--px) - 16%),#fff var(--px),#8ec5fc calc(var(--px) + 16%),#c2f0e6 100%);background-size:13cqw 17cqw,19cqw 23cqw,100% 100%;background-position:calc(var(--px) * .3) calc(var(--py) * .3),calc(var(--px) * -.5) calc(var(--py) * -.4),center;mix-blend-mode:color-dodge;opacity:calc(.18 + var(--hyp) * .5)}
+/* Dragon scale: rows of Balaur scales in burnished foil, bright where the light falls. */
+.tcg.finish-scales .tcg-shine{background-image:radial-gradient(circle at 50% 0,transparent 0 3.3cqw,rgba(255,240,200,.65) 3.6cqw 4.1cqw,transparent 4.4cqw),radial-gradient(circle at 50% 0,transparent 0 3.3cqw,rgba(255,240,200,.65) 3.6cqw 4.1cqw,transparent 4.4cqw),linear-gradient(115deg,#5b1d0e 0%,#e8b04a calc(var(--px) - 14%),#fff1c4 var(--px),#c2541f calc(var(--px) + 16%),#3a0d0d 100%);background-size:8cqw 4cqw,8cqw 4cqw,100% 100%;background-position:0 0,4cqw 2cqw,center;mix-blend-mode:overlay;opacity:calc(.42 + var(--hyp) * .4)}
+/* Aether: bands of light drifting against each other, like an aurora over the art. */
+.tcg.finish-aether .tcg-shine{background-image:radial-gradient(ellipse 80% 26% at calc(100% - var(--px)) 26%,rgba(90,255,210,.95),transparent 72%),radial-gradient(ellipse 75% 24% at var(--px) 56%,rgba(170,105,255,.95),transparent 72%),radial-gradient(ellipse 65% 20% at calc(30% + var(--px) * .4) calc(95% - var(--py) * .3),rgba(255,120,190,.85),transparent 72%),repeating-linear-gradient(172deg,transparent 0 2.2cqw,rgba(255,255,255,.16) 2.5cqw 2.7cqw);mix-blend-mode:color-dodge;opacity:calc(.42 + var(--hyp) * .5)}
+
+/* Accent colours chosen over the design's own: its art border, skill levels, legion and emblem,
+   on the back too. */
+.tcg.accent-gold,.tcg.accent-gold .tcg-back{--c-accent:#e3b54a;--c-art-border:#e3b54a}
+.tcg.accent-silver,.tcg.accent-silver .tcg-back{--c-accent:#d3dae2;--c-art-border:#d3dae2}
+.tcg.accent-ember,.tcg.accent-ember .tcg-back{--c-accent:#ff7a45;--c-art-border:#ff7a45}
+.tcg.accent-jade,.tcg.accent-jade .tcg-back{--c-accent:#4fd1a1;--c-art-border:#4fd1a1}
+.tcg.accent-azure,.tcg.accent-azure .tcg-back{--c-accent:#4aa8ff;--c-art-border:#4aa8ff}
+.tcg.accent-violet,.tcg.accent-violet .tcg-back{--c-accent:#b07cff;--c-art-border:#b07cff}
+.tcg.accent-rose,.tcg.accent-rose .tcg-back{--c-accent:#ff6fa8;--c-art-border:#ff6fa8}
+/* Frames chosen over the design's own. */
+.tcg.frame-gilded,.tcg.frame-gilded .tcg-back{--c-frame:.75cqw double #e3b54a;--c-frame-glow:0 0 1.2cqw rgba(227,181,74,.35)}
+.tcg.frame-silver,.tcg.frame-silver .tcg-back{--c-frame:.45cqw solid rgba(220,226,232,.85);--c-frame-glow:0 0 1.4cqw rgba(220,226,232,.3),inset 0 0 1.4cqw rgba(220,226,232,.18)}
+.tcg.frame-radiant,.tcg.frame-radiant .tcg-back{--c-frame:.4cqw solid var(--c-accent);--c-frame-glow:0 0 2.4cqw var(--c-accent),inset 0 0 1.8cqw color-mix(in srgb,var(--c-accent) 45%,transparent)}
+.tcg.frame-none,.tcg.frame-none .tcg-back{--c-frame:0 solid transparent;--c-frame-glow:none}
+/* Name styles. */
+.tcg.name-gold .tcg-name h2{background:linear-gradient(180deg,#fff8dc 0%,#f0c95a 48%,#b07a22 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none;filter:drop-shadow(0 .25cqw .35cqw rgba(0,0,0,.5))}
+.tcg.name-glow .tcg-name h2{text-shadow:0 0 .6cqw var(--c-accent),0 0 2.4cqw var(--c-accent)}
+
+/* Effects around the card (card.js cardAura): behind it, in its accent colour. They stay put
+   while the card turns, and hold still with reduced motion, each spark where its own
+   (negative) delay puts it. */
+.tcg-aura{position:absolute;inset:-22% -30%;z-index:-1;display:none;pointer-events:none}
+.tcg-aura[class*="aura-"]{display:block}
+.tcg-aura i{position:absolute;display:block}
+/* Glow: a halo that breathes. */
+.tcg-aura.aura-glow::before{content:"";position:absolute;inset:4% 11%;border-radius:18%;background:radial-gradient(closest-side,color-mix(in srgb,var(--c-accent) 90%,transparent) 55%,transparent);filter:blur(6cqw);animation:aura-breathe 4s ease-in-out infinite}
+@keyframes aura-breathe{0%,100%{opacity:.7;transform:scale(.97)}50%{opacity:1;transform:scale(1.05)}}
+/* Embers: sparks rising past the card. */
+.tcg-aura.aura-embers i{bottom:10%;left:var(--x);width:var(--s);height:var(--s);border-radius:50%;background:color-mix(in srgb,var(--c-accent) 55%,#ffcf7a);box-shadow:0 0 1.4cqw .4cqw color-mix(in srgb,var(--c-accent) 65%,#ff7a2a);opacity:0;animation:aura-rise var(--t) linear var(--d) infinite}
+@keyframes aura-rise{0%{opacity:0;transform:translate(0,0) scale(1)}12%{opacity:1}100%{opacity:0;transform:translate(var(--drift),-130cqw) scale(.4)}}
+/* Stardust: four-pointed stars twinkling around it. */
+.tcg-aura.aura-stardust i{left:var(--x);top:var(--y);width:var(--s);height:var(--s);border-radius:50%;background:radial-gradient(circle,#fff 0 12%,color-mix(in srgb,var(--c-accent) 70%,transparent) 22%,transparent 60%);animation:aura-twinkle var(--t) ease-in-out var(--d) infinite}
+.tcg-aura.aura-stardust i::before,.tcg-aura.aura-stardust i::after{content:"";position:absolute;background:linear-gradient(90deg,transparent,#fff,transparent)}
+.tcg-aura.aura-stardust i::before{inset:47% -40%}
+.tcg-aura.aura-stardust i::after{inset:-40% 47%;background:linear-gradient(180deg,transparent,#fff,transparent)}
+@keyframes aura-twinkle{0%,100%{opacity:.12;transform:scale(.45) rotate(0deg)}50%{opacity:1;transform:scale(1) rotate(45deg)}}
+/* Runes: a magic circle turning slowly behind it. */
+.tcg-aura.aura-runes::before,.tcg-aura.aura-runes::after{content:"";position:absolute;left:50%;top:50%;border-radius:50%;translate:-50% -50%}
+.tcg-aura.aura-runes::before{width:150cqw;height:150cqw;background:repeating-conic-gradient(color-mix(in srgb,var(--c-accent) 90%,transparent) 0deg 2deg,transparent 2deg 7deg,color-mix(in srgb,var(--c-accent) 55%,transparent) 7deg 8deg,transparent 8deg 15deg);-webkit-mask:radial-gradient(closest-side,transparent calc(100% - 3.4cqw),#000 calc(100% - 3.2cqw) calc(100% - .4cqw),transparent 100%);mask:radial-gradient(closest-side,transparent calc(100% - 3.4cqw),#000 calc(100% - 3.2cqw) calc(100% - .4cqw),transparent 100%);animation:aura-spin 40s linear infinite}
+.tcg-aura.aura-runes::after{width:134cqw;height:134cqw;border:.35cqw dashed color-mix(in srgb,var(--c-accent) 65%,transparent);box-shadow:0 0 3cqw color-mix(in srgb,var(--c-accent) 30%,transparent),inset 0 0 3cqw color-mix(in srgb,var(--c-accent) 25%,transparent);animation:aura-spin 60s linear infinite reverse}
+@keyframes aura-spin{to{rotate:360deg}}
+/* Storm: lightning flickering beside it, lighting it up. */
+.tcg-aura.aura-storm::before{content:"";position:absolute;inset:10% 16%;border-radius:12%;background:radial-gradient(closest-side,color-mix(in srgb,var(--c-accent) 50%,#bfe3ff),transparent);filter:blur(5cqw);opacity:.35;animation:aura-flash 5.5s steps(1) infinite}
+.tcg-aura.aura-storm i{left:var(--x);top:var(--y);width:9cqw;height:26cqw;background:linear-gradient(180deg,#fff,color-mix(in srgb,var(--c-accent) 55%,#9fd4ff));clip-path:polygon(58% 0,18% 54%,46% 54%,26% 100%,84% 40%,55% 40%,76% 0);rotate:var(--r);opacity:0;animation:aura-bolt 5.5s steps(1) var(--d) infinite}
+@keyframes aura-bolt{0%,100%{opacity:0}2%{opacity:1}4%{opacity:.25}6%{opacity:.95}10%{opacity:.6}14%{opacity:0}}
+@keyframes aura-flash{0%,100%{opacity:.35}2%{opacity:.95}5%{opacity:.5}7%{opacity:.8}12%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){
+  .tcg-aura::before,.tcg-aura::after,.tcg-aura i{animation-play-state:paused}
+  .tcg-aura.aura-storm::before,.tcg-aura.aura-storm i{animation:none;opacity:.5}
+}
 
 @media (max-width:860px){
   .card-layout.has-studio{grid-template-columns:1fr}
+  .card-layout.has-studio .card-stage{position:static}
   .card-studio{max-width:440px}
 }
 @media (max-width:480px){

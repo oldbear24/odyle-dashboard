@@ -4,8 +4,9 @@
 // like the rest of the armory; only its look is chosen, by the player whose Odyle app read the
 // character (backend/odyle/cards.go): one of the designs after AION's realms, for players with
 // the membership a holo finish, and the options: the layout, the back's design, which stats
-// and skills it shows and the line under the class. The page lets that player try looks on
-// the card before saving one.
+// and skills it shows, the line under the class, the effect around the card on its page, the
+// accent colour, the frame and the name's style. The page lets that player try looks on the
+// card before saving one.
 import { t } from './i18n.js';
 import { escape as esc } from './model.js';
 import { icon } from './icons.js';
@@ -14,11 +15,18 @@ import { profilePath, imageUrl, classBadge, gradeClass } from './armory.js';
 
 export const cardDesigns = () => [['elysea', t('Elysea'), t('Pearl and gold leaf under an Elyos sky')], ['asmodae', t('Asmodae'), t('Twilight violet with ember trim')], ['abyss', t('Abyss'), t('Obsidian split by aether light')],
   ['balaur', t('Balaur'), t('Crimson dragon scale and black iron')], ['beluslan', t('Beluslan'), t('Glacier blue over Asmodian snowfields')], ['heiron', t('Heiron'), t('Forest green and bronze of the Elyos wilds')]];
-export const cardFinishes = () => [['', t('Plain'), t('A clean print')], ['prism', t('Prism holo'), t('Rainbow foil that shifts with the light')], ['starfall', t('Starfall holo'), t('Glitter scattered over the foil')], ['etched', t('Etched foil'), t('Engraved metal lines')]];
+export const cardFinishes = () => [['', t('Plain'), t('A clean print')], ['prism', t('Prism holo'), t('Rainbow foil that shifts with the light')], ['starfall', t('Starfall holo'), t('Glitter scattered over the foil')], ['etched', t('Etched foil'), t('Engraved metal lines')],
+  ['sunburst', t('Sunburst holo'), t('Rays of light fanning out from the shine')], ['ice', t('Cracked ice'), t('Shattered foil shards that catch the light')], ['scales', t('Dragon scale'), t('Balaur scales in burnished foil')], ['aether', t('Aether holo'), t('Bands of aether light drifting like an aurora')]];
 export const cardLayouts = () => [['classic', t('Classic')], ['full', t('Full art')]];
 export const cardStatSets = () => [['primary', t('Main stats')], ['deity', t('Deity stats')]];
 export const cardLines = () => [['title', t('Title')], ['legion', t('Legion')], ['none', t('Nothing')]];
-export const defaultOptions = () => ({ layout: 'classic', back: '', stats: 'primary', line: 'title', skills: [] });
+// The effect around the card, the accent colours (with their colour), frames and name styles;
+// "" is none, or the design's own.
+export const cardAuras = () => [['', t('No effect')], ['glow', t('Glow')], ['embers', t('Embers')], ['stardust', t('Stardust')], ['runes', t('Runes')], ['storm', t('Storm')]];
+export const cardAccents = () => [['', t('From the design')], ['gold', t('Gold'), '#e3b54a'], ['silver', t('Silver'), '#d3dae2'], ['ember', t('Ember'), '#ff7a45'], ['jade', t('Jade'), '#4fd1a1'], ['azure', t('Azure'), '#4aa8ff'], ['violet', t('Violet'), '#b07cff'], ['rose', t('Rose'), '#ff6fa8']];
+export const cardFrames = () => [['', t('From the design')], ['gilded', t('Gilded')], ['silver', t('Silvered')], ['radiant', t('Radiant')], ['none', t('No frame')]];
+export const cardNameStyles = () => [['', t('Simple')], ['gold', t('Gold leaf')], ['glow', t('Glowing')]];
+export const defaultOptions = () => ({ layout: 'classic', back: '', stats: 'primary', line: 'title', skills: [], aura: '', accent: '', frame: '', nameStyle: '' });
 export const cardPath = answer => profilePath(answer) + '/card';
 // The page's title in the tab, as the backend names it (backend/odyle/pages.go).
 export const cardTitle = answer => answer?.profile ? t("{name}'s player card · {server} · Odyle Armory", { name: answer.profile.name, server: answer.profile.server || answer.server }) : t('A character on {server} · Odyle Armory', { server: answer?.server || '' });
@@ -37,6 +45,8 @@ export function lookOf(answer, tried = {}) {
     layout: known(cardLayouts(), asked.layout) ? asked.layout : d.layout, back: known(cardDesigns(), asked.back) ? asked.back : '',
     stats: known(cardStatSets(), asked.stats) ? asked.stats : d.stats, line: known(cardLines(), asked.line) ? asked.line : d.line,
     skills: (Array.isArray(asked.skills) ? asked.skills : []).filter(s => typeof s === 'string' && s).slice(0, 2),
+    aura: known(cardAuras(), asked.aura) ? asked.aura : '', accent: known(cardAccents(), asked.accent) ? asked.accent : '',
+    frame: known(cardFrames(), asked.frame) ? asked.frame : '', nameStyle: known(cardNameStyles(), asked.nameStyle) ? asked.nameStyle : '',
   };
   return { design: designOf(answer, tried.design), finish: finishOf(answer, tried.finish), options };
 }
@@ -101,19 +111,39 @@ const back = design => `<div class="tcg-face tcg-back${design ? ' design-' + des
 
 // The card's faces and edge in a look, and the classes that look gives the card.
 export const cardFaces = (answer, images, look) => `${front(answer, images, look)}${edge()}${back(look.options.back)}`;
-export const cardClasses = look => `tcg design-${look.design}${look.finish ? ' finish-' + look.finish : ''}${look.options.layout === 'full' ? ' layout-full' : ''}`;
+export const cardClasses = ({ design, finish, options: o }) => `tcg design-${design}${finish ? ' finish-' + finish : ''}${o.layout === 'full' ? ' layout-full' : ''}${['accent', 'frame', 'nameStyle'].map(k => o[k] ? ` ${k === 'nameStyle' ? 'name' : k}-${o[k]}` : '').join('')}`;
+
+// The effect around the card: behind it on its page, in its accent colour, its sparks and
+// bolts in places that stay the same from one visit to the next (card.css).
+const scatter = (i, k) => { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+// Left or right of the card, which covers the middle of the effect.
+const beside = r => r < 0.5 ? 2 + r * 34 : 66 + r * 32;
+const sparks = (n, style) => Array.from({ length: n }, (_, i) => `<i style="${style(i, scatter(i, 1), scatter(i, 2))}"></i>`).join('');
+export function cardAura(look) {
+  const aura = look.options.aura;
+  const inside = {
+    embers: () => sparks(18, (i, a, b) => `--x:${beside(a).toFixed(1)}%;--s:${(0.9 + b * 1.5).toFixed(2)}cqw;--t:${(5 + b * 4).toFixed(1)}s;--d:${(-a * 9).toFixed(1)}s;--drift:${((b - 0.5) * 24).toFixed(1)}cqw`),
+    stardust: () => sparks(26, (i, a, b) => { const above = i % 3 === 0; return `--x:${(above ? 14 + a * 72 : beside(a)).toFixed(1)}%;--y:${(above ? (b < 0.5 ? 1 + b * 16 : 84 + (b - 0.5) * 28) : 3 + b * 92).toFixed(1)}%;--s:${(2.4 + b * 3.2).toFixed(2)}cqw;--t:${(2.6 + a * 3).toFixed(1)}s;--d:${(-b * 5).toFixed(1)}s`; }),
+    storm: () => sparks(5, (i, a, b) => `--x:${beside(i % 2 ? 0.55 + a * 0.4 : a * 0.45).toFixed(1)}%;--y:${(6 + b * 70).toFixed(1)}%;--r:${((a - 0.5) * 40).toFixed(0)}deg;--d:${(-i * 1.1).toFixed(1)}s`),
+  }[aura];
+  return `<div class="tcg-aura${aura ? ' aura-' + aura : ''}" aria-hidden="true">${inside ? inside() : ''}</div>`;
+}
 
 // The look picker for the card's owner: designs, finishes (holo for members), the options and Save.
 function studio(answer, look) {
   const card = answer.card || {}, p = answer.profile;
   if (!card.mine) return `<p class="card-owner-note">${icon('info')}<span>${esc(t('The player whose Odyle app reads {name} chooses this card\'s design.', { name: p.name }))}</span></p>`;
   const tile = (name, [key, label, hint], chosen, locked = false) => `<label class="card-choice is-${esc(key || 'plain')}${locked ? ' is-locked' : ''}"><input type="radio" name="${name}" value="${esc(key)}" ${key === chosen ? 'checked' : ''} ${locked ? 'disabled' : ''}><span class="card-swatch" aria-hidden="true"></span><span class="card-choice-text"><strong>${esc(label)}</strong><small>${esc(hint)}</small></span></label>`;
-  const pills = (name, list, chosen, off = () => false) => `<div class="card-pills">${list.map(([key, label]) => `<label class="card-pill"><input type="radio" name="${name}" value="${esc(key)}" ${key === chosen ? 'checked' : ''} ${off(key) ? 'disabled' : ''}><span>${esc(label)}</span></label>`).join('')}</div>`;
+  const pills = (name, list, chosen, off = () => false) => `<div class="card-pills">${list.map(([key, label, colour]) => `<label class="card-pill"><input type="radio" name="${name}" value="${esc(key)}" ${key === chosen ? 'checked' : ''} ${off(key) ? 'disabled' : ''}><span>${colour ? `<i class="card-dot" style="--dot:${esc(colour)}"></i>` : ''}${esc(label)}</span></label>`).join('')}</div>`;
   const learned = (p.skills || []).filter(s => s.acquired).sort((a, b) => b.level - a.level || a.name.localeCompare(b.name));
   const skill = i => `<label class="card-select">${i ? t('Second skill') : t('First skill')}<select name="skill${i}"><option value="">${t('Strongest on the skill bar')}</option>${learned.map(s => `<option value="${esc(s.name)}" ${look.options.skills[i] === s.name ? 'selected' : ''}>${esc(`${s.name} · ${t('Lv {level}', { level: s.level })}`)}</option>`).join('')}</select></label>`;
   const changed = !sameLook(look, lookOf(answer));
   return `<form id="card-form" class="card-studio"><fieldset><legend>${t('Design')}</legend><div class="card-choices">${cardDesigns().map(d => tile('design', d, look.design)).join('')}</div></fieldset>
 <fieldset><legend>${t('Finish')}</legend><div class="card-choices">${cardFinishes().map(f => tile('finish', f, look.finish, f[0] !== '' && !card.holo)).join('')}</div>${card.holo ? '' : `<p class="card-locked">${icon('star')}<span>${t('Holo finishes are for players with the membership (Account & data).')}</span></p>`}</fieldset>
+<fieldset><legend>${t('Effect around the card')}</legend>${pills('aura', cardAuras(), look.options.aura)}</fieldset>
+<fieldset><legend>${t('Accent colour')}</legend>${pills('accent', cardAccents(), look.options.accent)}</fieldset>
+<fieldset><legend>${t('Frame')}</legend>${pills('frame', cardFrames(), look.options.frame)}</fieldset>
+<fieldset><legend>${t('Name style')}</legend>${pills('nameStyle', cardNameStyles(), look.options.nameStyle)}</fieldset>
 <fieldset><legend>${t('Layout')}</legend>${pills('layout', cardLayouts(), look.options.layout)}</fieldset>
 <fieldset><legend>${t('Under the class')}</legend>${pills('line', cardLines(), look.options.line, key => key === 'legion' && !p.legion || key === 'title' && !p.title)}</fieldset>
 <fieldset><legend>${t('Stats')}</legend>${pills('stats', cardStatSets(), look.options.stats, key => key === 'deity' && !(p.stats || []).some(s => !s.primary))}</fieldset>
@@ -124,7 +154,7 @@ function studio(answer, look) {
 // The look a picker's form asks for.
 export function formLook(form) {
   const data = new FormData(form), value = name => String(data.get(name) ?? '');
-  return { design: value('design'), finish: value('finish'), options: { layout: value('layout') || 'classic', back: value('back'), stats: value('stats') || 'primary', line: value('line') || 'title', skills: [value('skill0'), value('skill1')].filter(Boolean).filter((s, i, all) => all.indexOf(s) === i) } };
+  return { design: value('design'), finish: value('finish'), options: { layout: value('layout') || 'classic', back: value('back'), stats: value('stats') || 'primary', line: value('line') || 'title', skills: [value('skill0'), value('skill1')].filter(Boolean).filter((s, i, all) => all.indexOf(s) === i), aura: value('aura'), accent: value('accent'), frame: value('frame'), nameStyle: value('nameStyle') } };
 }
 
 // The page: the card on its stage, what to do with it, and the owner's look picker. view.look
@@ -137,7 +167,7 @@ export function cardPage(answer, view = {}) {
   const label = t('Player card of {name}: level {level} {class} on {server}, {power} combat power.', { name: p.name, level: p.level, class: p.class, server: p.server || answer.server, power: number(p.combatPower) });
   return `<main class="card-page design-${look.design}">${head}<h1 class="sr-only">${esc(cardTitle(answer))}</h1>
 <div class="card-layout${answer.card?.mine ? ' has-studio' : ''}"><section class="card-stage" aria-label="${esc(t('Player card'))}">
-<div class="tcg-scene"><article class="${cardClasses(look)}" tabindex="0" aria-roledescription="${esc(t('player card'))}" aria-label="${esc(label)}"><div class="tcg-body">${cardFaces(answer, images, look)}</div></article><div class="tcg-shadow" aria-hidden="true"></div></div>
+<div class="tcg-scene"><article class="${cardClasses(look)}" tabindex="0" aria-roledescription="${esc(t('player card'))}" aria-label="${esc(label)}">${cardAura(look)}<div class="tcg-body">${cardFaces(answer, images, look)}</div></article><div class="tcg-shadow" aria-hidden="true"></div></div>
 <p class="card-hint">${t('Drag the card in any direction to turn it. Double-click or press Enter to flip it.')}</p>
 <div class="card-actions"><button class="button secondary" data-action="card-flip">${t('Flip card')}</button><button class="button secondary" data-action="card-image">${icon('download')} ${t('Save image')}</button><button class="button secondary" data-copy="${esc(address(cardPath(answer)))}" data-copied="${esc(t('Link copied.'))}">${icon('link')} ${t('Copy link')}</button></div>
 ${answer.card?.mine ? '' : studio(answer, look)}</section>${answer.card?.mine ? studio(answer, look) : ''}</div>

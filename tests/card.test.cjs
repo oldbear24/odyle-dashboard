@@ -61,7 +61,8 @@ test('the card page escapes what PLAYNC lists and offers the look picker only to
   assert.match(trying, /<button class="button primary" type="submit" >/);
 
   const player = cardPage(answer({ design: '', finish: '', mine: true, holo: false }));
-  assert.equal((player.match(/name="finish" value="(prism|starfall|etched)" {2}disabled/g) || []).length, 3, 'holo locked');
+  assert.equal((player.match(/name="finish" value="(prism|starfall|etched|sunburst|ice|scales|aether)" {2}disabled/g) || []).length, 7, 'holo locked');
+  assert.match(player, /<input type="radio" name="finish" value="" checked/, 'plain open');
   assert.match(player, /Holo finishes are for players with the membership/);
 
   const waiting = cardPage({ region: 'eu', serverId: 2304, characterId: 'x', server: 'Lumiel', profile: null, card: { design: '' } }, { status: '<p>busy</p>' });
@@ -97,12 +98,20 @@ test('the card turns whichever way it is dragged and rests on the face that show
 });
 
 test('a card\'s options pick from what PLAYNC lists, and anything else falls back', async () => {
-  const { lookOf, cardSkills, cardStats, cardLine, cardPage, defaultOptions } = await import('../src/card.js');
+  const { lookOf, cardSkills, cardStats, cardLine, cardPage, defaultOptions, cardAura } = await import('../src/card.js');
   const { imageName } = await import('../src/cardimage.js');
   assert.deepEqual(lookOf(answer({ design: '', finish: '' })).options, defaultOptions());
   const saved = answer({ design: 'balaur', finish: 'starfall', options: { layout: 'full', back: 'beluslan', stats: 'deity', line: 'legion', skills: ['Rend'] } });
-  assert.deepEqual(lookOf(saved), { design: 'balaur', finish: 'starfall', options: { layout: 'full', back: 'beluslan', stats: 'deity', line: 'legion', skills: ['Rend'] } });
-  assert.deepEqual(lookOf(saved, { options: { layout: 'wide', back: 'gilded', stats: 'all', line: 'motto' } }).options, { layout: 'classic', back: '', stats: 'primary', line: 'title', skills: ['Rend'] });
+  const styles = { aura: '', accent: '', frame: '', nameStyle: '' };
+  assert.deepEqual(lookOf(saved), { design: 'balaur', finish: 'starfall', options: { layout: 'full', back: 'beluslan', stats: 'deity', line: 'legion', skills: ['Rend'], ...styles } });
+  assert.deepEqual(lookOf(saved, { options: { layout: 'wide', back: 'gilded', stats: 'all', line: 'motto', aura: 'fireworks', accent: '#f00', frame: 'diamond', nameStyle: 'comic' } }).options, { layout: 'classic', back: '', stats: 'primary', line: 'title', skills: ['Rend'], ...styles });
+  // The effect around the card, accent colour, frame and name style.
+  const tried = { options: { aura: 'embers', accent: 'jade', frame: 'radiant', nameStyle: 'gold' } }, styled = lookOf(saved, tried);
+  assert.deepEqual([styled.options.aura, styled.options.accent, styled.options.frame, styled.options.nameStyle], ['embers', 'jade', 'radiant', 'gold']);
+  assert.match(cardPage(saved, { look: tried }), /<article class="tcg design-balaur finish-starfall layout-full accent-jade frame-radiant name-gold"[^>]*><div class="tcg-aura aura-embers" aria-hidden="true">(<i style="--x:[\d.]+%;[^"]+"><\/i>){18}<\/div><div class="tcg-body">/);
+  assert.equal(cardAura(lookOf(saved)), '<div class="tcg-aura" aria-hidden="true"></div>', 'no effect, an empty layer');
+  assert.equal(cardAura(styled), cardAura(lookOf(saved, tried)), 'the sparks stay where they were');
+  assert.equal((cardAura(lookOf(saved, { options: { aura: 'stardust' } })).match(/<i /g) || []).length, 26);
   // Chosen skills first, then the strongest on the bar; a skill not learned is left out.
   assert.deepEqual(cardSkills(profile.skills, ['Rend']).map(s => s.name), ['Rend', 'Bolt']);
   assert.deepEqual(cardSkills(profile.skills, ['Soon', 'Smite']).map(s => s.name), ['Smite', 'Bolt']);

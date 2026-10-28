@@ -350,10 +350,26 @@ func TestArmoryFetchesProfilesThroughTheQueueAndKeepsThem(t *testing.T) {
 	if _, err := app.DB().NewQuery("UPDATE armory_profiles SET fetchedAt = {:at}").Bind(dbx.Params{"at": ago(20 * time.Minute)}).Execute(); err != nil {
 		t.Fatal(err)
 	}
+	// The Refresh waits (PLAYNC held off for now): the page asking again without it, and
+	// anyone else, follows that lookup until it ends.
+	work := stateOf(app).armory
+	work.mu.Lock()
+	work.blocked = time.Now().Add(time.Hour)
+	work.mu.Unlock()
 	if again := ask(t, app, "GET", armoryPath(id)+"?refresh=1", nil, "", 200); again["state"] != "queued" || again["profile"] == nil {
 		t.Fatalf("a refresh keeps showing the profile while it waits: %v", again)
 	}
-	stateOf(app).armory.wait()
+	if poll := ask(t, app, "GET", armoryPath(id), nil, "", 200); poll["state"] != "queued" || poll["profile"] == nil {
+		t.Fatalf("the page following a Refresh: %v", poll)
+	}
+	work.mu.Lock()
+	work.blocked = time.Time{}
+	work.mu.Unlock()
+	work.wake <- struct{}{}
+	work.wait()
+	if done := ask(t, app, "GET", armoryPath(id), nil, "", 200); done["state"] != "fresh" || stand.lookups.Load() != 2 {
+		t.Fatalf("after the Refresh: %v after %d lookups", done, stand.lookups.Load())
+	}
 	// Older than six hours: fetched again when opened.
 	if _, err := app.DB().NewQuery("UPDATE armory_profiles SET fetchedAt = {:at}").Bind(dbx.Params{"at": ago(7 * time.Hour)}).Execute(); err != nil {
 		t.Fatal(err)

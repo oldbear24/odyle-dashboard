@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.52.0 · 2026-10-28
+
+### New
+- **Effects around player cards**: a glow, embers, stardust, a ring of runes or a storm around the card on its page, in the card's accent colour. With reduced motion turned on in your system, they hold still.
+- **More ways to style a card**: an accent colour (gold, silver, ember, jade, azure, violet or rose), a frame (gilded, silvered, radiant or none) and the name in gold leaf or glowing. **Save image** draws them too.
+- **Four more holo finishes** for player cards: Sunburst (rays fanning out from the shine), Cracked ice (foil shards that catch the light), Dragon scale (Balaur scales in burnished foil) and Aether (bands of light drifting like an aurora). Like the others, they come with the membership (Account & data), and **Save image** draws them too.
+
+### Changed
+- On a wide screen, the player card stays in view while you scroll its look picker.
+
+### Fixed
+- **Refresh** on an armory profile shows the lookup again: the page says it is waiting for PLAYNC or reading the character until the new copy is in, then shows it. Before, the old copy came back at once, as if nothing had happened, and the new one only appeared after reloading the page.
+
 ## 0.51.0 · 2026-10-28
 
 ### New

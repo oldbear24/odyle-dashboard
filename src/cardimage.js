@@ -1,11 +1,12 @@
 // A player card's front as a picture (card.js, Save image): drawn on a canvas in the card's
-// look, its design, holo finish, layout and options, and saved as a PNG. The canvas draws the
+// look, its design, holo finish, layout and options (the effect around the card, which is not
+// on the card, aside), and saved as a PNG. The canvas draws the
 // card itself rather than copying the page, since the content security policy lets the page
 // load images only from the Odyle server (img-src 'self'); the portrait and icons come from
 // there too, so the canvas may be saved.
 import { t } from './i18n.js';
 import { imageUrl } from './armory.js';
-import { cardSkills, cardStats, cardLine, raceName, gradeName } from './card.js';
+import { cardSkills, cardStats, cardLine, raceName, gradeName, cardAccents } from './card.js';
 
 export const width = 750, height = Math.round(750 * 88 / 63);
 const u = width / 100;
@@ -48,9 +49,10 @@ function fit(ctx, value, max) {
   while (s.length > 1 && ctx.measureText(s + '…').width > max) s = s.slice(0, -1);
   return s + '…';
 }
-function write(ctx, value, x, y, { font, colour, align = 'left', max = Infinity, shadow = false }) {
+function write(ctx, value, x, y, { font, colour, align = 'left', max = Infinity, shadow = false, glow = '' }) {
   ctx.font = font; ctx.fillStyle = colour; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
   if (shadow) { ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 1.2 * u; ctx.shadowOffsetY = 0.3 * u; }
+  if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 2.4 * u; ctx.shadowOffsetY = 0; }
   ctx.fillText(fit(ctx, value, max), x, y);
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 }
@@ -72,11 +74,16 @@ function background(ctx, c) {
     ctx.restore();
   }
 }
+// The frames a card may choose over its design's: [colour, size, double, glow], none at all.
+const frames = accent => ({ gilded: ['#e3b54a', 0.75, true], silver: ['rgba(220,226,232,.85)', 0.45], radiant: [accent, 0.4, false, true], none: null });
 function frame(ctx, c) {
-  const [colour, size, double] = c.frame, inset = 2.4 * u;
+  if (!c.frame) return;
+  const [colour, size, double, glow] = c.frame, inset = 2.4 * u;
+  ctx.save(); if (glow) { ctx.shadowColor = colour; ctx.shadowBlur = 2.4 * u; }
   ctx.strokeStyle = colour; ctx.lineWidth = (double ? size / 3 : size) * u;
   roundRect(ctx, inset, inset, width - inset * 2, height - inset * 2, 3 * u); ctx.stroke();
   if (double) { const i2 = inset + size * u * 0.66; roundRect(ctx, i2, i2, width - i2 * 2, height - i2 * 2, 2.6 * u); ctx.stroke(); }
+  ctx.restore();
 }
 function holo(ctx, finish, seed) {
   ctx.save();
@@ -95,13 +102,47 @@ function holo(ctx, finish, seed) {
     ctx.fillStyle = linear(ctx, 115, [['#7a5b17', 0], ['#f5e3a1', 0.38], ['#fff6d5', 0.5], ['#b88a2e', 0.64], ['#4a3510', 1]], 0, 0, width, height); ctx.fillRect(0, 0, width, height);
     ctx.globalAlpha = 0.3; ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.25 * u;
     for (let d = -height; d < width + height; d += 1.45 * u) { ctx.beginPath(); ctx.moveTo(d, 0); ctx.lineTo(d + height, height); ctx.stroke(); ctx.beginPath(); ctx.moveTo(d, height); ctx.lineTo(d + height, 0); ctx.stroke(); }
+  } else if (finish === 'sunburst') {
+    const x = width / 2, y = height * 0.38, colours = ['#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#7b61ff', '#ff6b6b'];
+    ctx.globalCompositeOperation = 'color-dodge'; ctx.globalAlpha = 0.2;
+    if (ctx.createConicGradient) { const g = ctx.createConicGradient(0, x, y); colours.forEach((c, i) => g.addColorStop(i / (colours.length - 1), c)); ctx.fillStyle = g; }
+    else ctx.fillStyle = linear(ctx, 115, colours.map((c, i) => [c, i / (colours.length - 1)]), 0, 0, width, height);
+    ctx.fillRect(0, 0, width, height);
+    ctx.globalAlpha = 0.2; ctx.fillStyle = '#fff';
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 24) { ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, height * 1.5, a, a + 0.028); ctx.closePath(); ctx.fill(); }
+  } else if (finish === 'ice') {
+    ctx.globalCompositeOperation = 'color-dodge'; ctx.globalAlpha = 0.2;
+    ctx.fillStyle = linear(ctx, 115, [['#9be7ff', 0], ['#e0c3fc', 0.34], ['#ffffff', 0.5], ['#8ec5fc', 0.66], ['#c2f0e6', 1]], 0, 0, width, height); ctx.fillRect(0, 0, width, height);
+    const random = seeded(seed), shard = s => (random() - 0.5) * s; ctx.fillStyle = '#fff';
+    for (let i = 0; i < 160; i++) {
+      const x = random() * width, y = random() * height, s = (4 + random() * 10) * u;
+      ctx.globalAlpha = 0.08 + random() * 0.22; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + shard(s), y + shard(s)); ctx.lineTo(x + shard(s), y + shard(s)); ctx.closePath(); ctx.fill();
+    }
+  } else if (finish === 'scales') {
+    ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.5;
+    ctx.fillStyle = linear(ctx, 115, [['#5b1d0e', 0], ['#e8b04a', 0.36], ['#fff1c4', 0.5], ['#c2541f', 0.66], ['#3a0d0d', 1]], 0, 0, width, height); ctx.fillRect(0, 0, width, height);
+    ctx.globalAlpha = 0.45; ctx.strokeStyle = '#fff0c8'; ctx.lineWidth = 0.5 * u;
+    for (let row = 0, y = 0; y < height + 4 * u; row++, y += 2 * u) for (let x = row % 2 ? 4 * u : 0; x < width + 8 * u; x += 8 * u) { ctx.beginPath(); ctx.arc(x, y, 3.85 * u, 0, Math.PI); ctx.stroke(); }
+  } else if (finish === 'aether') {
+    ctx.globalCompositeOperation = 'color-dodge'; ctx.globalAlpha = 0.75;
+    for (const [y, colour] of [[0.28, 'rgba(120,255,214,.8)'], [0.58, 'rgba(178,120,255,.75)'], [0.85, 'rgba(255,140,200,.6)']]) {
+      ctx.save(); ctx.translate(width / 2, height * y); ctx.scale(1, 0.4);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, width * 0.75); g.addColorStop(0, colour); g.addColorStop(0.7, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(-width, -height * 2.5, width * 2, height * 5); ctx.restore();
+    }
+    ctx.globalAlpha = 0.14; ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.2 * u;
+    for (let y = 0; y < height + width * 0.14; y += 2.6 * u) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y - width * 0.14); ctx.stroke(); }
   }
   ctx.restore();
 }
 
 // The card in look as a PNG (a Blob). images is where the backend serves the armory's images.
 export async function cardImage(answer, look, images) {
-  const p = answer.profile, c = palettes[look.design] || palettes.elysea, full = look.options.layout === 'full';
+  const p = answer.profile, design = palettes[look.design] || palettes.elysea, full = look.options.layout === 'full';
+  // The accent colour and frame the card chose over its design's.
+  const accent = cardAccents().find(([key]) => key && key === look.options.accent)?.[2];
+  const c = { ...design, ...(accent ? { accent, artBorder: accent } : {}) };
+  if (look.options.frame in frames(c.accent)) c.frame = frames(c.accent)[look.options.frame];
   const ink = full ? '#fff' : c.ink, muted = full ? 'rgba(255,255,255,.8)' : c.muted, panelFill = full ? 'rgba(8,10,12,.62)' : c.panel, lineColour = full ? 'rgba(255,255,255,.22)' : c.line;
   const skills = cardSkills(p.skills, look.options.skills), stats = cardStats(p.stats, look.options.stats), line = cardLine(p, look.options.line);
   await Promise.all(['800', '750', '650'].map(w => document.fonts?.load(`${w} 40px "Manrope Variable"`)).concat(['600', '700', '500'].map(w => document.fonts?.load(`${w} 20px "DM Sans Variable"`)))).catch(() => { /* the fallback fonts draw it */ });
@@ -123,7 +164,9 @@ export async function cardImage(answer, look, images) {
   holo(ctx, look.finish, p.name || '');
   frame(ctx, c);
   // Name and level.
-  write(ctx, p.name, pad + u, pad + 6.2 * u, { font: `800 ${7.4 * u}px ${heading}`, colour: ink, max: inner - 24 * u, shadow: full });
+  // The name, in gold leaf or glowing in the accent colour if the card says so.
+  const gold = ctx.createLinearGradient(0, pad, 0, pad + 7.4 * u); [['#fff8dc', 0], ['#f0c95a', 0.48], ['#b07a22', 1]].forEach(([colour, at]) => gold.addColorStop(at, colour));
+  write(ctx, p.name, pad + u, pad + 6.2 * u, { font: `800 ${7.4 * u}px ${heading}`, colour: look.options.nameStyle === 'gold' ? gold : ink, max: inner - 24 * u, shadow: full || look.options.nameStyle === 'gold', glow: look.options.nameStyle === 'glow' ? c.accent : '' });
   let right = width - pad - u;
   if (classIcon) { ctx.drawImage(classIcon, right - 6.4 * u, pad + 0.6 * u, 6.4 * u, 6.4 * u); right -= 7.8 * u; }
   write(ctx, t('Lv {level}', { level: p.level }), right, pad + 6 * u, { font: `750 ${4.2 * u}px ${heading}`, colour: ink, align: 'right', shadow: full });

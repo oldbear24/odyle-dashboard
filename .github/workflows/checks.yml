@@ -1,18 +1,26 @@
 name: Dashboard checks
 # Pull requests only: a push to a branch with a pull request would run everything twice.
-# Every change reaches main through a pull request, and pushes to main run the same checks
-# in the release workflow; a branch without a pull request can be checked by hand.
+# Every change reaches main through a pull request, and the release workflow runs these same
+# checks on each push to main (release: true); a branch without a pull request can be checked
+# by hand.
 on:
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        description: Called by the release, which checks the version and builds the image itself
+        type: boolean
+        default: false
 permissions:
   contents: read
-# A newer push to the same pull request replaces a run still going.
+# A newer push to the same pull request replaces a run still going; the release's own run of the
+# checks is apart from a run by hand on main.
 concurrency:
-  group: checks-${{ github.event.pull_request.number || github.ref }}
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 # The checks run side by side; the job named checks, which branch protection requires, passes
-# once every other job has.
+# once every other job has (or was skipped: the container job, in the release).
 jobs:
   web:
     name: "Web: version, lint and unit tests"
@@ -27,6 +35,7 @@ jobs:
           cache: npm
       # A change to what ships bumps package.json's version (CLAUDE.md, Versioning).
       - name: Version bump
+        if: ${{ !inputs.release }}
         run: node scripts/version.mjs check ${{ github.event.pull_request.base.sha }}
       - run: npm ci
       - run: npm run lint
@@ -136,6 +145,7 @@ jobs:
 
   container:
     name: "Container: web build and upgrade"
+    if: ${{ !inputs.release }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -161,4 +171,4 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
           echo "$RESULTS"
-          for result in $RESULTS; do [ "$result" = success ] || exit 1; done
+          for result in $RESULTS; do [ "$result" = success ] || [ "$result" = skipped ] || exit 1; done
