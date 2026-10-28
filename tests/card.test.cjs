@@ -76,3 +76,22 @@ test('player card paths belong to the armory, apart from its tabs', async () => 
   assert.deepEqual(armoryTarget(at), { card: { region: 'eu', serverId: '2304', characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=' } });
   assert.ok(!armoryTabs.includes('card'));
 });
+
+test('the card turns whichever way it is dragged and rests on the face that shows, upright', async () => {
+  const { orientation: o, dragTurn } = await import('../src/card.js');
+  const start = [0, 0, 0, 1], round = v => v.map(n => Math.round(n * 1000) / 1000 + 0);
+  assert.equal(o.css(start), 'rotate3d(0, 1, 0, 0deg)');
+  // Sideways about the vertical axis, up and down about the horizontal one (half a degree a pixel).
+  assert.equal(o.css(o.times(dragTurn(60, 0), start)), 'rotate3d(0.0000, 1.0000, 0.0000, 30.00deg)');
+  assert.equal(o.css(o.times(dragTurn(0, 60), start)), 'rotate3d(-1.0000, 0.0000, 0.0000, 30.00deg)');
+  // Past 90 degrees either way the back shows.
+  for (const [dx, dy] of [[200, 0], [0, 200], [-150, -150]]) assert.ok(o.normal(o.times(dragTurn(dx, dy), start))[2] < 0, `${dx}, ${dy}`);
+  // Turned in the screen's frame: a drag down after the card is on its back still turns its top toward the viewer's feet.
+  const back = o.times(dragTurn(360, 0), start), down = o.times(dragTurn(0, 60), back);
+  assert.deepEqual(round(o.normal(down)), round(o.normal(o.times(dragTurn(0, 60), [0, 1, 0, 0]))));
+  // It rests on the face that shows, upright; flipping a card turned over top to bottom keeps it on its back.
+  assert.deepEqual(o.rest(o.times(dragTurn(50, 30), start)), [0, 0, 0, 1]);
+  assert.deepEqual(o.rest(o.times(dragTurn(0, 220), start)), [0, 1, 0, 0]);
+  // Halfway between two orientations, the short way round.
+  assert.deepEqual(round(o.toward(start, o.about(0, 1, 0, 90), 0.5)), round(o.about(0, 1, 0, 45)));
+});

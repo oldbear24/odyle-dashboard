@@ -769,18 +769,26 @@ test('a profile has a player card on a page of its own that turns, and the playe
     assert.equal(await page.locator('#card-form').count(), 0);
     assert.match(await page.locator('.card-owner-note').innerText(), /The player whose Odyle app reads Armorer chooses this card's design\./);
     await delay(400); await shot(page, 'card-front');
-    // It turns by drag, and flips to its back.
-    const box = await page.locator('.tcg').boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 });
-    assert.match(await page.locator('.tcg-body').getAttribute('style'), /rotateY\((?:[3-9]\d|\d{3})\./);
-    await page.mouse.up();
-    // Once it settles, Flip shows the other face.
-    await delay(2500);
-    const turned = async () => page.locator('.tcg.is-turned').count(), before = await turned();
+    // It turns whichever way it is dragged, and shows its edge on the way.
+    const box = await page.locator('.tcg').boundingBox(), [cx, cy] = [box.x + box.width / 2, box.y + box.height / 2];
+    const turned = async () => page.locator('.tcg.is-turned').count();
+    await page.mouse.move(cx, cy); await page.mouse.down();
+    await page.mouse.move(cx + 60, cy, { steps: 6 });
+    assert.match(await page.locator('.tcg-body').getAttribute('style'), /rotate3d\(0, 1, 0, 30deg\)/);
+    await page.mouse.move(cx + 110, cy + 60, { steps: 6 }); await shot(page, 'card-edge');
+    await delay(200); await page.mouse.up(); await delay(2500);
+    assert.equal(await turned(), 0);
+    // Dragged down over its top it turns to its back, and stays there, upright.
+    await page.mouse.move(cx, cy - 110); await page.mouse.down();
+    await page.mouse.move(cx, cy + 110, { steps: 12 });
+    assert.equal(await turned(), 1);
+    await delay(200); await page.mouse.up(); await delay(2500);
+    assert.equal(await turned(), 1);
+    // Flip shows the front again, and the back once more.
     await page.locator('[data-action="card-flip"]').click(); await delay(1500);
-    assert.equal(await turned(), 1 - before);
-    if (!await turned()) { await page.locator('[data-action="card-flip"]').click(); await delay(1500); }
+    assert.equal(await turned(), 0);
+    await page.locator('[data-action="card-flip"]').click(); await delay(1500);
+    assert.equal(await turned(), 1);
     await page.mouse.move(5, 5); await shot(page, 'card-back');
     await page.locator('.card-back').click();
     await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
@@ -807,9 +815,17 @@ test('a profile has a player card on a page of its own that turns, and the playe
     await page.locator('#card-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
     await page.mouse.move(10, 10); await delay(600); await shot(page, 'card-studio');
+    // Each design at rest, and turned so its edge shows.
+    const turnedShot = async name => {
+      if (!shots) return;
+      const at = await page.locator('.tcg').boundingBox(), [x, y] = [at.x + at.width / 2, at.y + at.height / 2];
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 120, y + 70, { steps: 6 });
+      await shot(page, name); await delay(200); await page.mouse.up(); await page.mouse.move(5, 5); await delay(1500);
+    };
+    await turnedShot('card-abyss-prism-turned');
     for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched']]) {
       await page.locator('.card-choice.is-' + design).click(); await page.locator('.card-choice.is-' + finish).click();
-      await delay(500); await shot(page, `card-${design}-${finish}`);
+      await delay(500); await shot(page, `card-${design}-${finish}`); await turnedShot(`card-${design}-${finish}-turned`);
     }
     assert.deepEqual(own.errors, []);
   } finally { await own.close(); }

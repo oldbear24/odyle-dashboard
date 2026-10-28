@@ -2,6 +2,15 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.50.1 · 2026-10-28
+
+### Changed
+- Player cards have depth: turn one and you see its edge, in the colours of its design.
+- Drag a player card in any direction (up, down, sideways or diagonally) and it turns that way, all the way over if you like. Let go and it settles on the face that shows, upright. On phones, dragging the card turns it instead of scrolling the page, and the arrow keys turn it up and down as well as sideways.
+
+### Fixed
+- Dragging a player card by its portrait no longer drags the picture away instead of turning the card.
+
 ## 0.50.0 · 2026-10-28
 
 ### New

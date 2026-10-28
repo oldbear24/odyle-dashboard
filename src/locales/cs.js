@@ -1320,7 +1320,7 @@ export default {
   'Back to the profile': 'Zpět na profil',
   'The card is drawn once Odyle has fetched this character from PLAYNC.': 'Karta se vykreslí, jakmile Odyle načte tuto postavu z PLAYNC.',
   'Player card of {name}: level {level} {class} on {server}, {power} combat power.': 'Hráčská karta postavy {name}: {class} úrovně {level} na serveru {server}, bojová síla {power}.',
-  'Drag the card to turn it. Double-click or press Enter to flip it.': 'Tažením kartu otočíte. Dvojklikem nebo klávesou Enter ji obrátíte.',
+  'Drag the card in any direction to turn it. Double-click or press Enter to flip it.': 'Tažením libovolným směrem kartu otočíte. Dvojklikem nebo klávesou Enter ji obrátíte.',
   'Flip card': 'Obrátit kartu',
   "Card data from PLAYNC's official character pages, as Odyle keeps it.": 'Údaje karty pocházejí z oficiálních stránek postav PLAYNC, jak je Odyle uchovává.',
   'Card saved. Everyone who opens it sees this look.': 'Karta uložena. Každý, kdo ji otevře, uvidí tento vzhled.',

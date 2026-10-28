@@ -59,6 +59,9 @@ ${primary.length ? `<dl class="tcg-stats">${primary.map(s => `<div><dt>${esc(s.n
 </div>`;
 }
 
+// The card's thickness: thin layers between its faces, which show as its edge when it turns.
+const edge = (layers = 12) => `<div class="tcg-edge" aria-hidden="true">${Array.from({ length: layers - 1 }, (_, i) => `<i style="--z:${((i + 1) / layers).toFixed(3)}"></i>`).join('')}</div>`;
+
 // The back: the same for every card of a design.
 const back = () => `<div class="tcg-face tcg-back" aria-hidden="true"><div class="tcg-frame"></div><div class="tcg-emblem"><span class="tcg-rings"></span>${icon('diamond')}<strong>odyle<em>.</em></strong><small>${t('AION 2 armory')}</small></div><div class="tcg-glare"></div></div>`;
 
@@ -83,8 +86,8 @@ export function cardPage(answer, view = {}) {
   const label = t('Player card of {name}: level {level} {class} on {server}, {power} combat power.', { name: p.name, level: p.level, class: p.class, server: p.server || answer.server, power: number(p.combatPower) });
   return `<main class="card-page design-${design}">${head}<h1 class="sr-only">${esc(cardTitle(answer))}</h1>
 <div class="card-layout${answer.card?.mine ? ' has-studio' : ''}"><section class="card-stage" aria-label="${esc(t('Player card'))}">
-<div class="tcg-scene"><article class="tcg design-${design}${finish ? ' finish-' + finish : ''}" tabindex="0" aria-roledescription="${esc(t('player card'))}" aria-label="${esc(label)}"><div class="tcg-body">${front(answer, images)}${back()}</div></article><div class="tcg-shadow" aria-hidden="true"></div></div>
-<p class="card-hint">${t('Drag the card to turn it. Double-click or press Enter to flip it.')}</p>
+<div class="tcg-scene"><article class="tcg design-${design}${finish ? ' finish-' + finish : ''}" tabindex="0" aria-roledescription="${esc(t('player card'))}" aria-label="${esc(label)}"><div class="tcg-body">${front(answer, images)}${edge()}${back()}</div></article><div class="tcg-shadow" aria-hidden="true"></div></div>
+<p class="card-hint">${t('Drag the card in any direction to turn it. Double-click or press Enter to flip it.')}</p>
 <div class="card-actions"><button class="button secondary" data-action="card-flip">${t('Flip card')}</button><button class="button secondary" data-copy="${esc(address(cardPath(answer)))}" data-copied="${esc(t('Link copied.'))}">${icon('link')} ${t('Copy link')}</button></div>
 ${answer.card?.mine ? '' : studio(answer, design, finish)}</section>${answer.card?.mine ? studio(answer, design, finish) : ''}</div>
 <p class="card-source">${t('Card data from PLAYNC\'s official character pages, as Odyle keeps it.')}</p>
@@ -93,60 +96,104 @@ ${answer.card?.mine ? '' : studio(answer, design, finish)}</section>${answer.car
 
 // ---------------------------------------------------------------- Motion
 
-// Turns the card on screen: it sways a little on its own, leans toward the pointer, spins
-// when dragged (and keeps spinning a moment after) and settles on the nearest face. The
-// light on its foil and glare follows the angle. Returns flip(); it stops by itself once the
-// card leaves the page, and waits while the tab is hidden (no animation frames). With reduced motion it neither sways nor spins on.
+// The card's orientation is a quaternion [x, y, z, w], turned in the screen's frame, so a
+// drag turns it the way the pointer goes whatever way up it is. CSS draws it as rotate3d().
+const radians = Math.PI / 180;
+export const orientation = {
+  // A turn about the axis (x, y, z) by deg degrees.
+  about(x, y, z, deg) { const length = Math.hypot(x, y, z) || 1, half = deg * radians / 2, s = Math.sin(half) / length; return [x * s, y * s, z * s, Math.cos(half)]; },
+  // a after b: b first, then a in the screen's frame.
+  times([ax, ay, az, aw], [bx, by, bz, bw]) { return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz]; },
+  unit(q) { const length = Math.hypot(...q) || 1; return q.map(v => v / length); },
+  // From a toward b by t (0 to 1), the short way round.
+  toward(a, b, t) {
+    let dot = a.reduce((sum, v, i) => sum + v * b[i], 0);
+    if (dot < 0) { b = b.map(v => -v); dot = -dot; }
+    if (dot > 0.9995) return orientation.unit(a.map((v, i) => v + (b[i] - v) * t));
+    const angle = Math.acos(dot), s = Math.sin(angle), wa = Math.sin((1 - t) * angle) / s, wb = Math.sin(t * angle) / s;
+    return a.map((v, i) => v * wa + b[i] * wb);
+  },
+  // Where the front faces: its normal (z toward the viewer).
+  normal([x, y, z, w]) { return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)]; },
+  // The face that shows, upright: the front, or the back turned about the vertical axis. A
+  // card turned over top to bottom stays on its back and rights itself.
+  rest(q) { return orientation.normal(q)[2] >= 0 ? [0, 0, 0, 1] : [0, 1, 0, 0]; },
+  css(q) {
+    const [x, y, z, w] = orientation.unit(q), s = Math.sqrt(Math.max(0, 1 - w * w));
+    return s < 1e-6 ? 'rotate3d(0, 1, 0, 0deg)' : `rotate3d(${(x / s).toFixed(4)}, ${(y / s).toFixed(4)}, ${(z / s).toFixed(4)}, ${(2 * Math.acos(Math.max(-1, Math.min(1, w))) / radians).toFixed(2)}deg)`;
+  },
+};
+// A drag of dx, dy pixels as a turn in the screen's frame: sideways about the vertical axis,
+// up and down about the horizontal one, diagonally about both.
+export const dragTurn = (dx, dy, perPixel = 0.5) => orientation.about(-dy, dx, 0, Math.hypot(dx, dy) * perPixel);
+
+// Turns the card on screen: it sways a little on its own and leans toward the pointer.
+// Dragged in any direction it turns that way, keeps turning a moment after, and settles on
+// the nearer face, upright. The light on its foil and glare follows the face's angle.
+// Returns flip(); it stops by itself once the card leaves the page, and waits while the tab
+// is hidden (no animation frames). With reduced motion it neither sways nor turns on.
 export function animateCard(card, window = globalThis) {
   const body = card.querySelector('.tcg-body'), shadow = card.parentElement?.querySelector('.tcg-shadow');
   const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const state = { x: 0, y: 0, face: 0, spin: 0, drag: null, lean: null, frame: 0 };
+  const { about, times, toward, normal, rest, css } = orientation;
+  const state = { q: [0, 0, 0, 1], target: [0, 0, 0, 1], spin: [0, 0], drag: null, lean: null, frame: 0 };
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const settle = () => { state.face = Math.round(state.y / 180) * 180; };
+  const settle = () => { state.target = rest(state.q); };
   function draw(time) {
     if (!card.isConnected) return;
+    const speed = Math.hypot(...state.spin);
     if (!state.drag) {
-      if (!still && Math.abs(state.spin) > 0.15) { state.y += state.spin; state.spin *= 0.93; if (Math.abs(state.spin) <= 0.15) settle(); }
-      else {
-        const sway = still || state.lean ? 0 : Math.sin(time / 2600) * 9, nod = still || state.lean ? 0 : Math.cos(time / 3700) * 3;
-        const leanY = state.lean ? (state.lean.x - 0.5) * 26 : 0, leanX = state.lean ? (0.5 - state.lean.y) * 18 : 0;
-        const ease = still ? 1 : 0.09;
-        state.y += (state.face + sway + leanY - state.y) * ease;
-        state.x += (nod + leanX - state.x) * ease;
-      }
+      if (!still && speed > 0.15) { state.q = times(about(state.spin[0], state.spin[1], 0, speed), state.q); state.spin = state.spin.map(v => v * 0.93); if (Math.hypot(...state.spin) <= 0.15) settle(); }
+      else state.q = still ? state.target : toward(state.q, state.target, 0.09);
     }
-    // The light: where the pointer is, else where the angle puts it.
-    const facing = ((state.y % 360) + 360) % 360, local = facing > 180 ? facing - 360 : facing, turned = Math.abs(local) > 90;
-    const across = turned ? (local > 0 ? local - 180 : local + 180) : local;
-    const px = state.lean && !state.drag ? state.lean.x * 100 : clamp(50 + across * 1.6, 0, 100), py = state.lean && !state.drag ? state.lean.y * 100 : clamp(50 - state.x * 3, 0, 100);
+    // On top of where it rests: the sway, or the lean toward the pointer.
+    const lean = state.lean && !state.drag ? times(about(1, 0, 0, (0.5 - state.lean.y) * 18), about(0, 1, 0, (state.lean.x - 0.5) * 26))
+      : still || state.drag || speed > 0.15 ? [0, 0, 0, 1] : times(about(1, 0, 0, Math.cos(time / 3700) * 3), about(0, 1, 0, Math.sin(time / 2600) * 9));
+    const shown = times(lean, state.q), [nx, ny, nz] = normal(shown), turned = nz < 0;
+    // The light: where the pointer is, else where the face's angle puts it.
+    const side = turned ? -1 : 1;
+    const px = state.lean && !state.drag ? state.lean.x * 100 : clamp(50 - nx * side * 90, 0, 100), py = state.lean && !state.drag ? state.lean.y * 100 : clamp(50 - ny * side * 90, 0, 100);
     const hyp = clamp(Math.hypot(px - 50, py - 50) / 50, 0, 1);
     card.style.setProperty('--px', px.toFixed(1) + '%'); card.style.setProperty('--py', py.toFixed(1) + '%'); card.style.setProperty('--hyp', hyp.toFixed(3));
-    body.style.transform = `rotateX(${state.x.toFixed(2)}deg) rotateY(${state.y.toFixed(2)}deg)`;
-    if (shadow) shadow.style.transform = `scaleX(${(0.55 + 0.45 * Math.abs(Math.cos(state.y * Math.PI / 180))).toFixed(3)})`;
+    body.style.transform = css(shown);
+    if (shadow) shadow.style.transform = `scale(${(0.55 + 0.45 * Math.abs(nz)).toFixed(3)}, ${(0.7 + 0.3 * Math.abs(nz)).toFixed(3)})`;
     card.classList.toggle('is-turned', turned);
     state.frame = window.requestAnimationFrame(draw);
   }
   const point = e => { const r = card.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) / r.width, 0, 1), y: clamp((e.clientY - r.top) / r.height, 0, 1) }; };
   card.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
-    state.drag = { x: e.clientX, y: e.clientY, last: e.clientX, at: e.timeStamp, moved: 0 }; state.spin = 0;
+    state.drag = { x: e.clientX, y: e.clientY, at: e.timeStamp }; state.spin = [0, 0]; state.lean = null;
     card.setPointerCapture?.(e.pointerId); card.classList.add('is-dragging');
   });
   card.addEventListener('pointermove', e => {
     if (!state.drag) { if (e.pointerType === 'mouse') state.lean = point(e); return; }
-    const dx = e.clientX - state.drag.last, dt = Math.max(1, e.timeStamp - state.drag.at);
-    state.drag.moved += Math.abs(dx); state.drag.last = e.clientX; state.drag.at = e.timeStamp;
-    state.y += dx * 0.6; state.x = clamp((state.drag.y - e.clientY) * 0.15, -20, 20);
-    state.spin = clamp(dx * 0.6 * 16 / dt, -18, 18);
+    const dx = e.clientX - state.drag.x, dy = e.clientY - state.drag.y, dt = Math.max(1, e.timeStamp - state.drag.at);
+    if (!dx && !dy) return;
+    Object.assign(state.drag, { x: e.clientX, y: e.clientY, at: e.timeStamp });
+    state.q = times(dragTurn(dx, dy), state.q);
+    // The turn's speed in degrees a frame, as the axis it turns about, for the follow-through.
+    const k = 0.5 * 16 / dt, limit = Math.min(1, 18 / (Math.hypot(dx, dy) * k));
+    state.spin = [-dy * k * limit, dx * k * limit];
   });
-  const release = () => { if (!state.drag) return; state.drag = null; card.classList.remove('is-dragging'); if (still || Math.abs(state.spin) <= 0.15) { state.spin = 0; settle(); } };
+  // Let go while moving, it turns on a moment; held still first, it just settles.
+  const release = e => {
+    if (!state.drag) return;
+    if (e.timeStamp - state.drag.at > 80) state.spin = [0, 0];
+    state.drag = null; card.classList.remove('is-dragging');
+    if (still || Math.hypot(...state.spin) <= 0.15) { state.spin = [0, 0]; settle(); }
+  };
   card.addEventListener('pointerup', release); card.addEventListener('pointercancel', release);
+  // A drag that starts on the portrait or an icon turns the card instead of dragging the picture away.
+  card.addEventListener('dragstart', e => e.preventDefault());
   card.addEventListener('pointerleave', () => { state.lean = null; });
-  const flip = () => { state.spin = 0; state.face = Math.round(state.y / 180) * 180 + 180; };
+  const flip = () => { state.spin = [0, 0]; state.target = times(about(0, 1, 0, 180), rest(state.q)); };
   card.addEventListener('dblclick', flip);
+  // The arrow keys turn it 30 degrees that way, where it then rests.
+  const keys = { ArrowLeft: [0, 1, -30], ArrowRight: [0, 1, 30], ArrowUp: [1, 0, 30], ArrowDown: [1, 0, -30] };
   card.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
-    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); state.face += e.key === 'ArrowLeft' ? -30 : 30; }
+    else if (keys[e.key]) { e.preventDefault(); const [x, y, deg] = keys[e.key]; state.spin = [0, 0]; state.target = times(about(x, y, 0, deg), state.target); }
   });
   state.frame = window.requestAnimationFrame(draw);
   return flip;
