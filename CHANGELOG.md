@@ -2,6 +2,14 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.49.0 · 2026-10-28
+
+### New
+- Every page has a real address instead of a `#/` one (`/armory/eu/2304/…`, `/tasks`), and search engines and link previews see what each page is about: an armory profile shows the character's name, level, class, server, combat power and portrait when you share it in Discord, and turns up in search results under its own title. Old `#/…` links still open the same page; invite links stay as they are.
+
+### Changed
+- The browser tab names the page you are on, such as a character's profile or What's new.
+
 ## 0.48.1 · 2026-10-27
 
 ### Changed

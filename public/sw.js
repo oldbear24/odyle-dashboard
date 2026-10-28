@@ -16,10 +16,13 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET' || url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
   const path = url.pathname.slice(scope.pathname.length);
   if (skipped(path)) return;
-  // Pages: the network first, so a deploy reaches every visitor at once; the kept page offline.
+  // Pages: the network first, so a deploy reaches every visitor at once; the kept start page
+  // offline. Pages under other paths name their files relative to their own folder, so
+  // offline they lead to the start instead.
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then(response => { if (response.ok) { const copy = response.clone(); caches.open(cache).then(c => c.put('./', copy)); } return response; })
-      .catch(() => caches.match('./').then(kept => kept || Response.error())));
+    const start = path === '' || path === 'index.html';
+    event.respondWith(fetch(request).then(response => { if (response.ok && start) { const copy = response.clone(); caches.open(cache).then(c => c.put('./', copy)); } return response; })
+      .catch(() => start ? caches.match('./').then(kept => kept || Response.error()) : Response.redirect(scope.href)));
     return;
   }
   // Built files carry a content hash in their name and never change; the rest is refreshed in the background.

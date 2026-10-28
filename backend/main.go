@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase"
-	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/plugins/migratecmd"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/hook"
@@ -91,12 +90,12 @@ func printInstaller(app core.App, systemSuperuser *core.Record, baseURL string) 
 }
 
 // dashboard serves the dashboard compiled in, or the public dir when --publicDir names
-// one or the binary holds none.
+// one or the binary holds none, each page named for what it shows (odyle.DescribePage).
 func dashboard(chosen bool, publicDir string, indexFallback bool) (func(*core.RequestEvent) error, error) {
 	if built := web.Dashboard(); built != nil && !chosen {
-		return web.Serve(built, indexFallback)
+		return web.Serve(built, indexFallback, odyle.DescribePage)
 	}
-	return apis.Static(os.DirFS(publicDir), indexFallback), nil
+	return web.Folder(os.DirFS(publicDir), indexFallback, odyle.DescribePage), nil
 }
 
 // The default pb_public dir sits next to the executable.

@@ -387,6 +387,12 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 
 The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes }` (`images` and `imageBytes` count the kept icons and portraits). `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
 
+## Pages, robots.txt and sitemap.xml
+
+`GET` on any other path answers the dashboard (`backend/web`): a file of the build, or the page named for the path (`backend/odyle/pages.go`). Each page gets a `<base>` back to the dashboard's root, `<meta name="odyle-routes" content="paths">` (the dashboard then uses paths instead of `#/` fragments, `src/routes.js`), its `<title>`, description, Open Graph and Twitter tags, and, with a public Application URL, a canonical link, `og:url`, absolute pictures and schema.org JSON-LD (`WebSite` on the start, `BreadcrumbList` in the armory). Armory profiles (`/armory/<region>/<server id>/<character id>[/skills|daevanion|titles|appearance]`) are named after the kept copy: name, level, class, server, combat power and item level, with the portrait as picture. Signed-in pages (`/room/<id>`, `/tasks`, `/account`, `/slots`), searches (`/armory/find/…`) and profiles not kept yet get `noindex`; hidden profiles and paths that are no page answer 404 with the dashboard, which opens the start. Pages are revalidated by their content hash (ETag).
+
+`GET /robots.txt` lets crawlers read the dashboard and the armory's routes and images, not the rest of `/api/` or `/_/`, and names the sitemap under a public Application URL. `GET /sitemap.xml` lists the public pages (`/`, `/armory`, `/changelog`, `/privacy`, `/demo`) and up to 45,000 kept, visible armory profiles (most recently opened first, with their fetch date as `lastmod`); without a public Application URL it answers 404.
+
 ## Account and data
 
 | Method / route | Body | Result |
