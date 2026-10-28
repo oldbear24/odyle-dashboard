@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/subscriptions"
 )
 
 // The newest release of the Windows companion, so the dashboard can offer its download
@@ -344,18 +345,38 @@ func windowsRelease(e *core.RequestEvent) error {
 // downloads that release, installs it and restarts, handing its live character over; an app
 // already on it does nothing, and dashboards ignore the news. version is the release the
 // backend knows, never looked up here; without one it is left out and the apps ask GitHub
-// themselves. Apps not connected now install new releases at their next start anyway. The
-// answer counts the connections told, dashboards in browsers included.
+// themselves. Apps whose connection is down now hear it when they subscribe again within
+// updateReplay (replayUpdate); apps started later install new releases at their next start
+// anyway. The answer counts the connections told, dashboards in browsers included.
 func updateAppsRoute(e *core.RequestEvent) error {
-	s := stateOf(e.App)
+	s, now := stateOf(e.App), time.Now()
 	s.mu.Lock()
 	version, _ := s.release["version"].(string)
-	s.mu.Unlock()
-	update := map[string]any{"at": iso(time.Now())}
+	update := map[string]any{"at": iso(now)}
 	if version != "" {
 		update["version"] = version
 	}
+	s.updateAsked, s.updateAskedAt = update, now
+	s.mu.Unlock()
 	told := tellEveryone(e.App, map[string]any{"windowsUpdate": update})
 	info(e.App, "Windows apps were asked to update", "version", version, "connections", told)
 	return e.JSON(200, map[string]any{"told": told, "version": version})
+}
+
+// updateReplay is how long Update all apps now is told again to connections that start
+// listening to their account's topic. The button is pressed mostly right after the server was
+// updated, when the apps' realtime connections are down for a while (they try again after 1,
+// 2, 5 and 10 seconds, then every 30), and such an app would otherwise never hear it.
+const updateReplay = 10 * time.Minute
+
+// replayUpdate tells a connection that started listening to its account's topic of the last
+// Update all apps now, if it was asked less than updateReplay ago.
+func replayUpdate(app core.App, c subscriptions.Client, account string) {
+	s := stateOf(app)
+	s.mu.Lock()
+	update, at := s.updateAsked, s.updateAskedAt
+	s.mu.Unlock()
+	if update != nil && time.Since(at) < updateReplay {
+		post(c, userTopic+account, map[string]any{"windowsUpdate": update})
+	}
 }

@@ -53,6 +53,9 @@ type state struct {
 	releaseError     string        // why the last lookup failed
 	releaseNotBefore time.Time     // GitHub's rate limit allows no lookup before then
 	releaseInFlight  chan struct{} // closed when the running lookup is done; nil while none runs
+
+	updateAsked   map[string]any // the last Update all apps now (releases.go), told again for updateReplay
+	updateAskedAt time.Time
 }
 
 func stateOf(app core.App) *state {

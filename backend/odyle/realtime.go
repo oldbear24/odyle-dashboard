@@ -3,6 +3,7 @@ package odyle
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,8 @@ import (
 //     {"announcement": {text, level} | null} when the announcement changed,
 //     {"windowsBlocked": [...]} when the held-back Windows versions changed and
 //     {"windowsUpdate": {version?, at}} when a superuser asks every running Windows app to
-//     update now (releases.go).
+//     update now (releases.go), and to a connection that starts listening to the topic
+//     within ten minutes of that.
 //
 // Every room message carries "refresh", so a dashboard that only knows to fetch the
 // snapshot again keeps working. Changes are collected and delivered together a moment
@@ -468,7 +470,19 @@ func watchSubscriptions(app core.App) {
 				}
 			}
 		}
-		return e.Next()
+		// A connection that starts listening to its account's topic (a new one, mostly an
+		// app back after a drop) hears a recent call to update every app (replayUpdate).
+		own := ""
+		if e.Auth != nil && e.Auth.Collection().Name == "users" && slices.Contains(e.Subscriptions, userTopic+e.Auth.Id) && !e.Client.HasSubscription(userTopic+e.Auth.Id) {
+			own = e.Auth.Id
+		}
+		if err := e.Next(); err != nil {
+			return err
+		}
+		if own != "" {
+			replayUpdate(e.App, e.Client, own)
+		}
+		return nil
 	})
 	app.OnRealtimeMessageSend().BindFunc(func(e *core.RealtimeMessageEvent) error {
 		name := e.Message.Name
