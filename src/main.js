@@ -30,7 +30,8 @@ import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
-import { cardPage, cardTitle, animateCard, designOf, finishOf } from './card.js';
+import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses } from './card.js';
+import { saveCardImage } from './cardimage.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
 import { armoryRoute, armoryTarget, armorySearch, armoryProfile, armoryTitle, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
@@ -465,19 +466,22 @@ function armoryPoll(path, ticket) {
 // is left (animateCard).
 let cardLook = {}, cardFlip = null;
 function cardRender() {
-  app.innerHTML = cardPage(armoryAnswer, { images: armoryImages(), design: cardLook.design, finish: cardLook.finish, status: armoryAnswer.profile ? '' : lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
+  app.innerHTML = cardPage(armoryAnswer, { images: armoryImages(), look: cardLook, status: armoryAnswer.profile ? '' : lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
   retitle(cardTitle(armoryAnswer));
   const card = app.querySelector('.tcg');
   cardFlip = card ? animateCard(card) : null;
 }
 // Another look tried on the card on screen, without drawing it again (it keeps turning).
 function cardPreview(form) {
-  const data = new FormData(form);
-  cardLook = { design: data.get('design') || '', finish: data.get('finish') || '' };
-  const design = designOf(armoryAnswer, cardLook.design), finish = finishOf(armoryAnswer, cardLook.finish), card = app.querySelector('.tcg');
-  if (card) { card.classList.remove(...[...card.classList].filter(c => /^(design|finish)-/.test(c))); card.classList.add('design-' + design); if (finish) card.classList.add('finish-' + finish); }
-  app.querySelector('.card-page')?.classList.remove('design-elysea', 'design-asmodae', 'design-abyss'); app.querySelector('.card-page')?.classList.add('design-' + design);
-  const save = form.querySelector('[type="submit"]'); if (save) save.disabled = design === designOf(armoryAnswer) && finish === finishOf(armoryAnswer);
+  cardLook = formLook(form);
+  const look = lookOf(armoryAnswer, cardLook), card = app.querySelector('.tcg'), page = app.querySelector('.card-page');
+  if (card) {
+    const turning = [...card.classList].filter(c => c.startsWith('is-'));
+    card.className = [cardClasses(look), ...turning].join(' ');
+    card.querySelector('.tcg-body').innerHTML = cardFaces(armoryAnswer, armoryImages(), look);
+  }
+  if (page) page.className = 'card-page design-' + look.design;
+  const save = form.querySelector('[type="submit"]'); if (save) save.disabled = sameLook(look, lookOf(armoryAnswer));
 }
 async function cardShow(path, target, ticket) {
   const { region, serverId, characterId } = target;
@@ -1308,7 +1312,8 @@ app.addEventListener('submit', async e => {
     if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites, Date.now() + serverOffset); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
     else if (form.id === 'armory-form') await go(findPath(data.region, data.server, data.name.trim()));
     else if (form.id === 'card-form' && armoryAnswer) {
-      armoryAnswer.card = await send('card', { region: armoryAnswer.region, serverId: Number(armoryAnswer.serverId), characterId: armoryAnswer.characterId, design: data.design, finish: data.finish || '' });
+      const look = formLook(form);
+      armoryAnswer.card = await send('card', { region: armoryAnswer.region, serverId: Number(armoryAnswer.serverId), characterId: armoryAnswer.characterId, ...look });
       // Save stays off until another look is tried, once this handler has let the button go.
       cardLook = {}; setTimeout(() => cardPreview(form)); toast(t('Card saved. Everyone who opens it sees this look.'));
     }
@@ -1557,6 +1562,7 @@ app.addEventListener('click', async e => {
       case 'armory-refresh': await armoryPage(shown, navigation, true); break;
       case 'armory-bookmark': toggleBookmark(); break;
       case 'card-flip': cardFlip?.(); break;
+      case 'card-image': if (armoryAnswer?.profile) { await saveCardImage(armoryAnswer, lookOf(armoryAnswer, cardLook), armoryImages()); toast(t('The card is saved as a picture in your downloads.')); } break;
       case 'account': if (!pb.authStore.isValid || demo) await go('/'); else await go('/account'); break;
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;

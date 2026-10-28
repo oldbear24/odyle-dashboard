@@ -8,7 +8,7 @@ import { pushService } from './push-service.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -42,7 +42,7 @@ before(async () => {
     const at = new URL(req.url, 'http://plaync'), q = at.searchParams, json = body => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     const icon = name => 'https://assets.playnccdn.com/static-aion2-gamedata/resources/' + name;
     if (at.pathname === '/search') return json({ list: /^armorer$/i.test(q.get('keyword')) ? [armorer, armorerAlt].map(([characterId, name, level, pcId]) => ({ characterId: encodeURIComponent(characterId), name, level, pcId, race: 2, serverId: Number(q.get('serverId')), region: q.get('region') })) : [] });
-    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', genderName: 'Female', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique', profileImage: 'https://profileimg.plaync.com/game_profile_images/aion2global/images?gameServerKey=2304&charKey=7' },
+    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', genderName: 'Female', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique', regionName: 'Golden Order', profileImage: 'https://profileimg.plaync.com/game_profile_images/aion2global/images?gameServerKey=2304&charKey=7' },
       stat: { statList: [{ type: 'STR', name: 'Might', value: 45, statSecondList: ['Attack increase +4.5%'] }, { type: 'WIS', name: 'Willpower', value: 8 }, { type: 'Justice', name: 'Justice [Nezekan]', value: 41 }, { type: 'ItemLevel', name: 'ItemLevel', value: 1671 }] },
       title: { ownedCount: 94, totalCount: 304, titleList: [{ equipCategory: 'Attack', name: 'Guardian of Altgard', grade: 'Legend', ownedCount: 36, totalCount: 105, equipStatList: [{ desc: 'PvE Damage Boost +3%' }], statList: [{ desc: 'PvE Attack +4' }] }] },
       daevanion: { boardList: [{ id: 71, name: 'Nezekan', openNodeCount: 12, totalNodeCount: 40, open: 1 }] } });
@@ -696,7 +696,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     // The profile has its own address, named for search engines and link previews before the
     // dashboard runs, and the tab keeps the same title.
     const served = await (await fetch(page.url())).text();
-    assert.match(served, /<title>Armorer · Level 45 Chanter on Lumiel · Odyle Armory<\/title><meta name="description" content="Armorer is a level 45 Asmodian Chanter on Lumiel \(Europe\) with 107,458 combat power, item level 1,671\./);
+    assert.match(served, /<title>Armorer · Level 45 Chanter on Lumiel · Odyle Armory<\/title><meta name="description" content="Armorer is a level 45 Asmodian Chanter on Lumiel \(Europe\), legion Golden Order with 107,458 combat power, item level 1,671\./);
     assert.match(served, /<base href="..\/..\/..\/"><meta name="odyle-routes" content="paths">/);
     assert.match(served, /<meta property="og:image" content="..\/..\/..\/api\/odyle\/armory-images\/[^"]+\.(png|jpg|webp)">/);
     assert.equal(await page.title(), 'Armorer · Level 45 Chanter on Lumiel · Odyle Armory');
@@ -769,23 +769,34 @@ test('a profile has a player card on a page of its own that turns, and the playe
     assert.equal(await page.locator('#card-form').count(), 0);
     assert.match(await page.locator('.card-owner-note').innerText(), /The player whose Odyle app reads Armorer chooses this card's design\./);
     await delay(400); await shot(page, 'card-front');
-    // It turns by drag, and flips to its back.
-    const box = await page.locator('.tcg').boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 });
-    assert.match(await page.locator('.tcg-body').getAttribute('style'), /rotateY\((?:[3-9]\d|\d{3})\./);
-    await page.mouse.up();
-    // Once it settles, Flip shows the other face.
-    await delay(2500);
-    const turned = async () => page.locator('.tcg.is-turned').count(), before = await turned();
+    // It turns whichever way it is dragged, and shows its edge on the way.
+    const box = await page.locator('.tcg').boundingBox(), [cx, cy] = [box.x + box.width / 2, box.y + box.height / 2];
+    const turned = async () => page.locator('.tcg.is-turned').count();
+    await page.mouse.move(cx, cy); await page.mouse.down();
+    await page.mouse.move(cx + 60, cy, { steps: 6 });
+    assert.match(await page.locator('.tcg-body').getAttribute('style'), /rotate3d\(0, 1, 0, 30deg\)/);
+    await page.mouse.move(cx + 110, cy + 60, { steps: 6 }); await shot(page, 'card-edge');
+    await delay(200); await page.mouse.up(); await delay(2500);
+    assert.equal(await turned(), 0);
+    // Dragged down over its top it turns to its back, and stays there, upright.
+    await page.mouse.move(cx, cy - 110); await page.mouse.down();
+    await page.mouse.move(cx, cy + 110, { steps: 12 });
+    assert.equal(await turned(), 1);
+    await delay(200); await page.mouse.up(); await delay(2500);
+    assert.equal(await turned(), 1);
+    // Flip shows the front again, and the back once more.
     await page.locator('[data-action="card-flip"]').click(); await delay(1500);
-    assert.equal(await turned(), 1 - before);
-    if (!await turned()) { await page.locator('[data-action="card-flip"]').click(); await delay(1500); }
+    assert.equal(await turned(), 0);
+    await page.locator('[data-action="card-flip"]').click(); await delay(1500);
+    assert.equal(await turned(), 1);
     await page.mouse.move(5, 5); await shot(page, 'card-back');
     await page.locator('.card-back').click();
     await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
     assert.equal(await page.locator('.sidebar').count(), 1);
     assert.equal(await page.locator('.armory-card-link').getAttribute('href'), '.' + cardAt);
+    // The profile names the legion, and its pictures stay put when dragged.
+    assert.equal(await page.locator('.armory-legion').innerText(), 'Golden Order');
+    assert.equal(await page.locator('.armory-portrait img').getAttribute('draggable'), 'false');
     assert.deepEqual(visitor.errors, []);
   } finally { await visitor.close(); }
   // Its player picks a design; holo finishes wait for the membership.
@@ -807,9 +818,40 @@ test('a profile has a player card on a page of its own that turns, and the playe
     await page.locator('#card-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
     await page.mouse.move(10, 10); await delay(600); await shot(page, 'card-studio');
+    // Each design at rest, and turned so its edge shows.
+    const turnedShot = async name => {
+      if (!shots) return;
+      const at = await page.locator('.tcg').boundingBox(), [x, y] = [at.x + at.width / 2, at.y + at.height / 2];
+      await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 120, y + 70, { steps: 6 });
+      await shot(page, name); await delay(200); await page.mouse.up(); await page.mouse.move(5, 5); await delay(1500);
+    };
+    await turnedShot('card-abyss-prism-turned');
+    // The options: full art, the legion under the class, the deity stats, a chosen skill and another back.
+    await page.locator('.card-pill', { hasText: 'Full art' }).click();
+    await page.locator('.card-pill', { hasText: 'Legion' }).click();
+    await page.locator('.card-pill', { hasText: 'Deity stats' }).click();
+    await page.locator('#card-form select[name="skill0"]').selectOption('Bolt');
+    await page.locator('#card-form select[name="back"]').selectOption('heiron');
+    assert.equal(await page.locator('.tcg.design-abyss.finish-prism.layout-full').count(), 1);
+    assert.equal(await page.locator('.tcg-back.design-heiron').count(), 1);
+    assert.equal(await page.locator('.tcg-line.is-legion').innerText(), 'Legion Golden Order');
+    assert.match(await page.locator('.tcg-stats').innerText(), /Justice\s+41/);
+    await page.locator('#card-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
+    await page.mouse.move(5, 5); await delay(600); await shot(page, 'card-full-art');
+    // Saved as a picture of its front, in this look.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
+    assert.equal(download.suggestedFilename(), 'Armorer-odyle-card.png');
+    const picture = await readFile(await download.path());
+    assert.equal(picture.subarray(1, 4).toString(), 'PNG'); assert.ok(picture.length > 20000, `${picture.length} bytes`);
+    if (shots) await download.saveAs(join(shots, 'card-export-full-art.png'));
+    await page.reload(); await page.locator('.tcg.layout-full').waitFor();
+    await page.locator('.card-pill', { hasText: 'Classic' }).click(); await page.locator('.card-pill', { hasText: 'Title' }).click();
+    const [classic] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
+    if (shots) await classic.saveAs(join(shots, 'card-export-classic.png'));
     for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched']]) {
       await page.locator('.card-choice.is-' + design).click(); await page.locator('.card-choice.is-' + finish).click();
-      await delay(500); await shot(page, `card-${design}-${finish}`);
+      await delay(500); await shot(page, `card-${design}-${finish}`); await turnedShot(`card-${design}-${finish}-turned`);
     }
     assert.deepEqual(own.errors, []);
   } finally { await own.close(); }

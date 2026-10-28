@@ -22,7 +22,7 @@ func keepProfile(t *testing.T, app core.App, characterId string, hidden bool) {
 	}
 	record := core.NewRecord(collection)
 	record.Load(map[string]any{"region": "eu", "serverId": 2304, "characterId": characterId, "name": "Kai", "fetchedAt": time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC), "viewedAt": time.Now(), "hidden": hidden,
-		"profile": armoryProfile{Version: armoryVersion, Name: "Kai", Level: 45, Class: "Gladiator", Race: "Elyos", Server: "Lumiel", CombatPower: 107458, ItemLevel: 1671, Portrait: "portrait-kai.jpg",
+		"profile": armoryProfile{Version: armoryVersion, Name: "Kai", Legion: "Golden Order", Level: 45, Class: "Gladiator", Race: "Elyos", Server: "Lumiel", CombatPower: 107458, ItemLevel: 1671, Portrait: "portrait-kai.jpg",
 			Skills: []armorySkill{{Name: "Bolt", Acquired: true}, {Name: "Rend"}}, Boards: []armoryBoard{{Open: 12, Total: 40}}, Titles: armoryTitles{Owned: 94, Total: 304}}})
 	if err := app.Save(record); err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 	profile := "/armory/eu/2304/" + pageId
 	title, description, private, missing, image := describe(profile)
 	if title != "Kai · Level 45 Gladiator on Lumiel · Odyle Armory" || private || missing || image != "api/odyle/armory-images/portrait-kai.jpg" ||
-		description != "Kai is a level 45 Elyo Gladiator on Lumiel (Europe) with 107,458 combat power, item level 1,671. See the gear with every item's stats and stones, the stats, skills, Daevanion boards, titles and skins, as PLAYNC lists them." {
+		description != "Kai is a level 45 Elyo Gladiator on Lumiel (Europe), legion Golden Order with 107,458 combat power, item level 1,671. See the gear with every item's stats and stones, the stats, skills, Daevanion boards, titles and skins, as PLAYNC lists them." {
 		t.Fatalf("the profile: %q %q %v %v %q", title, description, private, missing, image)
 	}
 	for tab, want := range map[string][2]string{
@@ -54,7 +54,7 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 		"daevanion":  {"Kai's Daevanion boards · Lumiel · Odyle Armory", "The Daevanion boards (12 of 40 nodes open"},
 		"titles":     {"Kai's titles · Lumiel · Odyle Armory", "The titles (94 of 304 owned"},
 		"appearance": {"Kai's appearance · Lumiel · Odyle Armory", "The look (the skins"},
-		"card":       {"Kai's player card · Lumiel · Odyle Armory", "The player card of Kai, a level 45 Elyo Gladiator on Lumiel (Europe)"},
+		"card":       {"Kai's player card · Lumiel · Odyle Armory", "The player card of Kai, a level 45 Elyo Gladiator on Lumiel (Europe), legion Golden Order"},
 	} {
 		if title, description, _, _, _ := describe(profile + "/" + tab); title != want[0] || !strings.HasPrefix(description, want[1]) {
 			t.Errorf("%s: %q %q", tab, title, description)

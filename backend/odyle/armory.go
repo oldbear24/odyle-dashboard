@@ -104,6 +104,7 @@ type armoryProfile struct {
 	Server       string        `json:"server"`
 	Title        string        `json:"title"`
 	TitleGrade   string        `json:"titleGrade"`
+	Legion       string        `json:"legion"` // PLAYNC's profile.regionName, which its own pages call the guild's name
 	CombatPower  int64         `json:"combatPower"`
 	ItemLevel    int64         `json:"itemLevel"`
 	Portrait     string        `json:"portrait"`
@@ -332,7 +333,7 @@ var errArmoryAnswer = errors.New("PLAYNC answered something else than a characte
 func readArmory(info, equipment map[string]any) (armoryProfile, error) {
 	profile := jsonObject(info["profile"])
 	p := armoryProfile{Version: armoryVersion, Name: jsonText(profile, "characterName", 40), Level: whole(profile["characterLevel"]), Class: jsonText(profile, "className", 40), Race: jsonText(profile, "raceName", 40),
-		Gender: jsonText(profile, "genderName", 20), Server: jsonText(profile, "serverName", 40), Title: jsonText(profile, "titleName", 60), TitleGrade: jsonText(profile, "titleGrade", 20), CombatPower: whole(profile["combatPower"]),
+		Gender: jsonText(profile, "genderName", 20), Server: jsonText(profile, "serverName", 40), Title: jsonText(profile, "titleName", 60), TitleGrade: jsonText(profile, "titleGrade", 20), Legion: jsonText(profile, "regionName", 40), CombatPower: whole(profile["combatPower"]),
 		Stats: []armoryStat{}, Gear: []armoryGear{}, Skins: []armorySkin{}, Skills: []armorySkill{}, Titles: armoryTitles{Equipped: []armoryTitle{}}, Boards: []armoryBoard{},
 		pcId: whole(profile["pcId"]), portraitLink: jsonText(profile, "profileImage", 300)}
 	if p.Name == "" {

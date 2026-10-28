@@ -2,6 +2,21 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.51.0 · 2026-10-28
+
+### New
+- **More player card designs**: Balaur (crimson dragon scale), Beluslan (glacier blue) and Heiron (forest green and bronze) join Elysea, Asmodae and Abyss.
+- **More ways to make a card yours**: a full-art layout with the portrait across the whole card, a back in another design, the main or the deity stats, the two skills it shows, and what stands under the class: the title, the legion or nothing.
+- **Save image**: save a player card as a picture (PNG) in its look, to share anywhere.
+- **Legions**: the armory shows a character's legion on its profile, and a card can show it too, when PLAYNC lists one.
+
+### Changed
+- Player cards have depth: turn one and you see its edge, in the colours of its design.
+- Drag a player card in any direction (up, down, sideways or diagonally) and it turns that way, all the way over if you like. Let go and it settles on the face that shows, upright. On phones, dragging the card turns it instead of scrolling the page, and the arrow keys turn it up and down as well as sideways.
+
+### Fixed
+- Dragging a profile's portrait or a player card by its picture no longer drags the picture away.
+
 ## 0.50.0 · 2026-10-28
 
 ### New
