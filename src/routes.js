@@ -21,7 +21,7 @@ export function link(path) {
 }
 // The full address of a page, to copy or post elsewhere.
 export function address(path) {
-  if (!usesPaths()) { const url = new URL(location.href); url.search = ''; url.hash = path; return url.href; }
+  if (!usesPaths()) { if (typeof location === 'undefined') return '#' + path; const url = new URL(location.href); url.search = ''; url.hash = path; return url.href; }
   return new URL(link(path), rootURL()).href;
 }
 // The page the address bar names: its path (or an invite's fragment), or its fragment.

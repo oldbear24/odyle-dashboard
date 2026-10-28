@@ -1,0 +1,140 @@
+/* Player cards (src/card.js): a page of its own, the card on a stage in the middle. The card is
+   sized by its own width (cqw), so it reads the same on a phone and a desktop. Three designs
+   after AION's realms set the face's colours; a holo finish adds a foil layer between the art
+   and the text panels, lit from where the pointer or the card's angle puts the light. */
+.card-page{--stage:rgba(181,242,205,.12);min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:14px clamp(16px,4vw,48px) 20px;background:radial-gradient(ellipse 60% 55% at 50% 42%,var(--stage),transparent 70%),#0c100f;color:#eaf1ed;overflow-x:hidden}
+.card-page.design-elysea{--stage:rgba(214,176,100,.17)}
+.card-page.design-asmodae{--stage:rgba(124,74,190,.22)}
+.card-page.design-abyss{--stage:rgba(95,227,208,.13)}
+.card-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
+.card-bar .brand{padding:0;color:#eaf1ed;text-decoration:none}
+.card-back{display:inline-flex;align-items:center;gap:6px;margin:0;color:#c9d6cf;text-decoration:none;font-size:14px}
+.card-back svg{width:16px;height:16px;transform:scaleX(-1)}
+.card-back:hover{color:#fff}
+.card-layout{flex:1;display:grid;justify-items:center;align-items:center;gap:28px;padding:18px 0 8px}
+.card-layout.has-studio{grid-template-columns:minmax(0,1fr) minmax(260px,330px);max-width:1040px;width:100%;margin:0 auto}
+.card-stage{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
+.card-hint{margin:0;color:#89958f;font-size:13px;text-align:center}
+.card-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.card-actions .button{display:inline-flex;align-items:center;gap:6px}
+.card-actions svg{width:15px;height:15px}
+.card-source{margin:8px 0 0;color:#6f7c75;font-size:12px;text-align:center}
+.card-wait{flex:1;display:grid;place-content:center;gap:12px;max-width:520px;margin:0 auto;text-align:center;color:#a6b3ac}
+.card-owner-note{display:flex;gap:8px;align-items:flex-start;max-width:330px;margin:0;color:#a6b3ac;font-size:13px;line-height:1.45}
+.card-owner-note svg{flex:none;width:16px;height:16px;margin-top:2px;color:var(--mint)}
+
+/* The look picker. */
+.card-studio{display:grid;gap:18px;width:100%;max-width:330px}
+.card-studio fieldset{display:grid;gap:8px;min-width:0;margin:0;padding:0;border:0}
+.card-studio legend{margin-bottom:8px;padding:0;font:650 14px/1.3 'Manrope Variable','Manrope',sans-serif;color:#eaf1ed}
+.card-choice{position:relative;margin:0;font-size:inherit;color:inherit;display:grid;grid-template-columns:30px 1fr;gap:12px;align-items:center;padding:9px 12px;border:1px solid #2a3530;border-radius:10px;background:#141b18;cursor:pointer}
+.card-choice:hover{border-color:#3d4d45}
+.card-choice:has(input:checked){border-color:var(--mint);background:#16221d}
+.card-choice:has(input:focus-visible){outline:2px solid var(--mint);outline-offset:2px}
+.card-choice input{position:absolute;opacity:0;pointer-events:none}
+.card-choice.is-locked{cursor:not-allowed;opacity:.5}
+.card-choice-text{display:grid;gap:1px;min-width:0}
+.card-choice-text strong{font-size:14px;font-weight:600}
+.card-choice-text small{color:#89958f;font-size:12px;line-height:1.35}
+.card-swatch{width:30px;height:42px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.card-choice.is-elysea .card-swatch{background:linear-gradient(180deg,#8fc3ec 0 34%,transparent 34%),linear-gradient(155deg,#f4ecd6,#d9bb72 55%,#b8862e)}
+.card-choice.is-asmodae .card-swatch{background:linear-gradient(180deg,#7c4abe 0 34%,transparent 34%),linear-gradient(160deg,#2c1e4d,#170f2c 60%,#e2603f)}
+.card-choice.is-abyss .card-swatch{background:linear-gradient(118deg,transparent 46%,#b5f2cd 48%,transparent 52%),linear-gradient(165deg,#1b2726,#0b1211)}
+.card-choice.is-plain .card-swatch{background:linear-gradient(160deg,#3a4440,#232a27)}
+.card-choice.is-prism .card-swatch{background:linear-gradient(115deg,#ff5f6d,#ffc371,#c7f464,#4ecdc4,#556cfe,#c06cff)}
+.card-choice.is-starfall .card-swatch{background:radial-gradient(circle,#fff 0 1px,transparent 1.6px) 0 0/7px 7px,radial-gradient(circle,#fff 0 .8px,transparent 1.3px) 3px 4px/11px 11px,linear-gradient(135deg,#6fb7ff,#c38cff,#ff8fb1,#ffd27a)}
+.card-choice.is-etched .card-swatch{background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,.4) 3px 4px),linear-gradient(115deg,#7a5b17,#f5e3a1 50%,#4a3510)}
+.card-locked{display:flex;gap:8px;align-items:flex-start;margin:4px 0 0;color:#a6b3ac;font-size:12px;line-height:1.45}
+.card-locked svg{flex:none;width:14px;height:14px;margin-top:2px;color:#e3c46a}
+.card-studio .button{justify-self:start}
+
+/* The card. */
+.tcg-scene{position:relative;padding:8px 0 26px}
+.tcg{--px:50%;--py:50%;--hyp:0;position:relative;display:block;width:min(330px,78vw);aspect-ratio:63/88;perspective:1300px;container-type:inline-size;touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;border-radius:4.6%/3.3%}
+.tcg.is-dragging{cursor:grabbing}
+.tcg:focus-visible{outline:2px solid var(--mint);outline-offset:10px}
+.tcg-body{position:absolute;inset:0;transform-style:preserve-3d;will-change:transform}
+.tcg-shadow{position:absolute;left:14%;right:14%;bottom:2px;height:22px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,0,0,.6),transparent 70%);filter:blur(5px);pointer-events:none}
+.tcg-face{position:absolute;inset:0;display:flex;flex-direction:column;gap:1.8cqw;padding:5.4cqw 5.4cqw 4.4cqw;border-radius:4.6cqw;overflow:hidden;backface-visibility:hidden;-webkit-backface-visibility:hidden;transform:translateZ(.6px);color:var(--ink);box-shadow:inset 0 0 0 .5cqw rgba(0,0,0,.28);font-family:'DM Sans Variable','DM Sans',sans-serif}
+.tcg-back{transform:rotateY(180deg) translateZ(.6px);justify-content:center;align-items:center}
+.tcg-face > *{position:relative;z-index:3}
+.tcg-face > .tcg-frame{position:absolute;inset:2.4cqw;z-index:1;border-radius:3cqw;pointer-events:none}
+.tcg-face > .tcg-art{z-index:1}
+.tcg-face > .tcg-shine,.tcg-face > .tcg-glare{position:absolute;inset:0;pointer-events:none}
+.tcg-face > .tcg-shine{z-index:2;display:none}
+.tcg-face > .tcg-glare{z-index:4;background:radial-gradient(farthest-corner circle at var(--px) var(--py),rgba(255,255,255,.55) 0%,rgba(255,255,255,.12) 28%,rgba(0,0,0,.28) 92%);mix-blend-mode:overlay;opacity:calc(.22 + var(--hyp) * .5)}
+
+.tcg-name{display:flex;align-items:baseline;justify-content:space-between;gap:2cqw;padding:0 1cqw}
+.tcg-name h2{min-width:0;margin:0;overflow:hidden;font:800 7.4cqw/1.05 'Manrope Variable','Manrope',sans-serif;letter-spacing:-.03em;text-overflow:ellipsis;white-space:nowrap}
+.tcg-level{display:flex;flex:none;align-items:center;gap:1.4cqw;font:750 4.2cqw/1 'Manrope Variable','Manrope',sans-serif;font-variant-numeric:tabular-nums}
+.tcg-level .class-icon{width:6.4cqw;height:6.4cqw;margin:0}
+.tcg-art{position:relative;flex:none;height:50cqw;display:grid;place-items:center;overflow:hidden;border:.7cqw solid var(--accent);border-radius:2.4cqw;box-shadow:inset 0 0 4cqw rgba(0,0,0,.35)}
+.tcg-initials{font:800 20cqw/1 'Manrope Variable','Manrope',sans-serif;letter-spacing:-.05em;color:var(--ink);opacity:.28}
+.tcg-portrait{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%}
+.tcg-type{display:flex;justify-content:space-between;gap:2cqw;margin:0;padding:0 1cqw;font-size:3.6cqw;font-weight:600;color:var(--muted)}
+.tcg-title{margin:-1cqw 0 0;padding:0 1cqw;overflow:hidden;font-size:3.5cqw;font-style:italic;font-weight:600;text-overflow:ellipsis;white-space:nowrap;color:color-mix(in srgb,var(--grade,var(--ink)) 72%,var(--ink))}
+.tcg-panel{display:flex;flex:1;flex-direction:column;justify-content:center;gap:1.3cqw;min-height:0;padding:2.4cqw 3.2cqw;border:.3cqw solid var(--line);border-radius:2.4cqw;background:var(--panel)}
+.tcg-power{display:flex;align-items:baseline;justify-content:space-between;gap:2cqw;font-size:3.4cqw;color:var(--muted)}
+.tcg-power strong{font:800 7.6cqw/1 'Manrope Variable','Manrope',sans-serif;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.tcg-power.is-minor strong{font-size:4.8cqw}
+.tcg-moves{display:grid;gap:.6cqw;margin:0;padding:1.2cqw 0;border-block:.3cqw solid var(--line);list-style:none}
+.tcg-moves li{display:grid;grid-template-columns:5.6cqw 1fr auto;gap:2cqw;align-items:center;font-size:3.6cqw;font-weight:600}
+.tcg-move-icon{width:5.6cqw;height:5.6cqw;overflow:hidden;border-radius:1cqw;background:rgba(0,0,0,.25)}
+.tcg-move-icon img{display:block;width:100%;height:100%}
+.tcg-move-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tcg-moves b{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.tcg-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.8cqw 2cqw;margin:0}
+.tcg-stats div{display:flex;justify-content:space-between;gap:1cqw;min-width:0}
+.tcg-stats dt{overflow:hidden;font-size:2.9cqw;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
+.tcg-stats dd{margin:0;font-size:3.2cqw;font-weight:700;font-variant-numeric:tabular-nums}
+.tcg-foot{display:flex;flex-wrap:nowrap;align-items:flex-end;justify-content:space-between;gap:2cqw;margin:0;padding:0 1cqw;border:0;font-size:2.8cqw;line-height:1.35;color:var(--muted)}
+.tcg-mark{display:flex;align-items:center;gap:1.2cqw;white-space:nowrap;font-weight:700}
+.tcg-mark em,.tcg-emblem em{font-style:normal;color:var(--accent)}
+.tcg-gem{display:inline-block;width:2.6cqw;height:2.6cqw;rotate:45deg;background:var(--grade);box-shadow:0 0 1.4cqw var(--grade)}
+
+/* The back. */
+.tcg-emblem{display:grid;justify-items:center;gap:1.6cqw;color:var(--accent)}
+.tcg-emblem svg{position:relative;width:22cqw;height:26cqw}
+.tcg-emblem strong{position:relative;font:800 10cqw/1 'Manrope Variable','Manrope',sans-serif;letter-spacing:-.05em;color:var(--ink)}
+.tcg-emblem small{position:relative;font-size:3.4cqw;color:var(--muted)}
+.tcg-rings{position:absolute;left:50%;top:32%;width:96cqw;height:96cqw;translate:-50% -50%;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 3.4cqw,var(--line) 3.4cqw 3.7cqw);-webkit-mask-image:radial-gradient(circle,#000 30%,transparent 70%);mask-image:radial-gradient(circle,#000 30%,transparent 70%)}
+
+/* Elysea: pearl and gold leaf under an Elyos sky. */
+.tcg.design-elysea .tcg-face{--ink:#2b2416;--muted:#6c5a37;--accent:#b0832c;--panel:rgba(255,251,240,.84);--line:rgba(150,110,40,.38);background:radial-gradient(120% 55% at 50% 0%,rgba(255,252,243,.9),transparent 60%),linear-gradient(155deg,#f4ecd6 0%,#e7d4a3 36%,#cfa050 60%,#f2e4ba 80%,#d2ad62 100%)}
+.tcg.design-elysea .tcg-frame{border:.8cqw double rgba(150,108,34,.55)}
+.tcg.design-elysea .tcg-art{background:linear-gradient(180deg,#86bde9 0%,#cbe5f8 58%,#f6efdc 100%)}
+.tcg.design-elysea .tcg-back{background:radial-gradient(circle at 50% 38%,#fffaf0 0%,transparent 55%),linear-gradient(155deg,#efe3c2,#d6b46c 55%,#f1e2b6)}
+
+/* Asmodae: twilight violet with ember trim. */
+.tcg.design-asmodae .tcg-face{--ink:#f2edff;--muted:#b9abd8;--accent:#ff7d55;--panel:rgba(22,13,40,.8);--line:rgba(255,125,85,.4);background:radial-gradient(95% 45% at 50% 100%,rgba(226,96,63,.32),transparent 70%),linear-gradient(160deg,#2d1f4f 0%,#170f2c 46%,#2a1636 72%,#1c1335 100%)}
+.tcg.design-asmodae .tcg-face{box-shadow:inset 0 0 0 .45cqw rgba(201,206,214,.38),inset 0 0 0 1.1cqw rgba(0,0,0,.25)}
+.tcg.design-asmodae .tcg-frame{border:.5cqw solid rgba(201,206,214,.5);box-shadow:inset 0 0 0 .6cqw rgba(226,96,63,.28)}
+.tcg.design-asmodae .tcg-art{border-color:#c9ced6;background:radial-gradient(circle at 50% 28%,#8a55c8 0%,#3a2068 42%,#140b26 86%)}
+.tcg.design-asmodae .tcg-back{background:radial-gradient(circle at 50% 38%,rgba(138,85,200,.55),transparent 55%),linear-gradient(160deg,#2d1f4f,#130c25 60%,#3a1a2e)}
+
+/* Abyss: obsidian split by aether light, in Odyle's mint. */
+.tcg.design-abyss .tcg-face{--ink:#e6f5ee;--muted:#8fb3a5;--accent:#b5f2cd;--panel:rgba(7,14,13,.8);--line:rgba(181,242,205,.32);background:linear-gradient(118deg,transparent 47.4%,rgba(181,242,205,.6) 48%,transparent 48.6%),linear-gradient(63deg,transparent 71.5%,rgba(95,227,208,.45) 72%,transparent 72.5%),linear-gradient(151deg,transparent 22.5%,rgba(181,242,205,.35) 23%,transparent 23.5%),radial-gradient(80% 45% at 28% 82%,rgba(95,227,208,.2),transparent 70%),linear-gradient(165deg,#151f1e 0%,#0a1110 55%,#121a19 100%)}
+.tcg.design-abyss .tcg-face{box-shadow:inset 0 0 0 .45cqw rgba(181,242,205,.4),inset 0 0 0 1.1cqw rgba(0,0,0,.3)}
+.tcg.design-abyss .tcg-frame{border:.4cqw solid rgba(181,242,205,.35);box-shadow:0 0 2.4cqw rgba(95,227,208,.18),inset 0 0 2.4cqw rgba(95,227,208,.12)}
+.tcg.design-abyss .tcg-art{border-color:rgba(181,242,205,.65);background:radial-gradient(circle at 50% 76%,#2a7a6b 0%,#0f2a26 50%,#060b0a 90%);box-shadow:0 0 3cqw rgba(95,227,208,.25),inset 0 0 4cqw rgba(0,0,0,.4)}
+.tcg.design-abyss .tcg-back{background:linear-gradient(118deg,transparent 47.4%,rgba(181,242,205,.5) 48%,transparent 48.6%),radial-gradient(circle at 50% 38%,rgba(95,227,208,.3),transparent 55%),linear-gradient(165deg,#151f1e,#070c0b)}
+
+/* Holo finishes, for players with the membership. */
+.tcg[class*="finish-"] .tcg-front > .tcg-shine{display:block}
+.tcg.finish-prism .tcg-shine{background-image:repeating-linear-gradient(115deg,#ff5f6d 0%,#ffc371 5%,#c7f464 10%,#4ecdc4 15%,#556cfe 20%,#c06cff 25%,#ff5f6d 30%),radial-gradient(farthest-corner circle at var(--px) var(--py),rgba(255,255,255,.6),rgba(0,0,0,.4) 78%);background-size:400% 400%,100% 100%;background-position:var(--px) var(--py),center;background-blend-mode:soft-light;mix-blend-mode:color-dodge;opacity:calc(.2 + var(--hyp) * .5);filter:saturate(1.25)}
+.tcg.finish-starfall .tcg-shine{background-image:radial-gradient(circle,#fff 0 .35cqw,transparent .65cqw),radial-gradient(circle,#fff 0 .22cqw,transparent .5cqw),repeating-linear-gradient(135deg,#6fb7ff 0%,#c38cff 8%,#ff8fb1 16%,#ffd27a 24%,#6fb7ff 32%);background-size:7cqw 7cqw,11cqw 11cqw,300% 300%;background-position:calc(var(--px) * .4) calc(var(--py) * .4),calc(var(--px) * -.6) calc(var(--py) * -.6),var(--px) var(--py);mix-blend-mode:color-dodge;opacity:calc(.22 + var(--hyp) * .55)}
+.tcg.finish-etched .tcg-shine{background-image:repeating-linear-gradient(45deg,transparent 0 1.2cqw,rgba(255,255,255,.36) 1.2cqw 1.45cqw),repeating-linear-gradient(-45deg,transparent 0 1.2cqw,rgba(255,255,255,.24) 1.2cqw 1.45cqw),linear-gradient(115deg,#7a5b17 0%,#f5e3a1 calc(var(--px) - 12%),#fff6d5 var(--px),#b88a2e calc(var(--px) + 14%),#4a3510 100%);mix-blend-mode:overlay;opacity:calc(.4 + var(--hyp) * .4)}
+
+@media (max-width:860px){
+  .card-layout.has-studio{grid-template-columns:1fr}
+  .card-studio{max-width:420px}
+}
+@media (max-width:480px){
+  .card-page{padding-inline:16px}
+  .card-back{font-size:13px}
+}
+@media (prefers-reduced-motion:reduce){.tcg-body{will-change:auto}}
+
+/* The profile's way to its card (armory.js). */
+.armory-card-link{display:inline-flex;align-items:center;gap:6px}
+.armory-card-link svg{width:14px;height:14px;color:#e3c46a}

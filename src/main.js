@@ -30,6 +30,7 @@ import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
+import { cardPage, cardTitle, animateCard, designOf, finishOf } from './card.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
 import { armoryRoute, armoryTarget, armorySearch, armoryProfile, armoryTitle, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
@@ -40,6 +41,7 @@ import './style.css';
 import './accounts.css';
 import './features.css';
 import './layout.css';
+import './card.css';
 
 const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8090' : window.location.origin);
 // Persisted in localStorage: the sign-in is shared by every tab of this browser and survives restarts.
@@ -458,11 +460,45 @@ function armoryRender(searching = false) {
 function armoryPoll(path, ticket) {
   if (armoryAnswer && (waiting(armoryAnswer) || armoryAnswer.state === 'failed')) armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, armoryAnswer.retryAfter || 5) * 1000);
 }
+// A profile's player card (card.js): a page of its own, without the sidebar. The look shown
+// is the saved one until its player tries another (cardLook); the card turns until the page
+// is left (animateCard).
+let cardLook = {}, cardFlip = null;
+function cardRender() {
+  app.innerHTML = cardPage(armoryAnswer, { images: armoryImages(), design: cardLook.design, finish: cardLook.finish, status: armoryAnswer.profile ? '' : lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
+  retitle(cardTitle(armoryAnswer));
+  const card = app.querySelector('.tcg');
+  cardFlip = card ? animateCard(card) : null;
+}
+// Another look tried on the card on screen, without drawing it again (it keeps turning).
+function cardPreview(form) {
+  const data = new FormData(form);
+  cardLook = { design: data.get('design') || '', finish: data.get('finish') || '' };
+  const design = designOf(armoryAnswer, cardLook.design), finish = finishOf(armoryAnswer, cardLook.finish), card = app.querySelector('.tcg');
+  if (card) { card.classList.remove(...[...card.classList].filter(c => /^(design|finish)-/.test(c))); card.classList.add('design-' + design); if (finish) card.classList.add('finish-' + finish); }
+  app.querySelector('.card-page')?.classList.remove('design-elysea', 'design-asmodae', 'design-abyss'); app.querySelector('.card-page')?.classList.add('design-' + design);
+  const save = form.querySelector('[type="submit"]'); if (save) save.disabled = design === designOf(armoryAnswer) && finish === finishOf(armoryAnswer);
+}
+async function cardShow(path, target, ticket) {
+  const { region, serverId, characterId } = target;
+  const same = armoryAnswer && armoryAnswer.region === region && String(armoryAnswer.serverId) === serverId && armoryAnswer.characterId === characterId;
+  if (!same) cardLook = {};
+  let answer;
+  try { answer = await pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`); }
+  catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryAnswer = armoryResults = null; armoryRender(); return toast(t(error.message)); }
+  if (ticket !== navigation) return;
+  // The same card again (a lookup still waiting for PLAYNC): drawn again only once its profile changed.
+  const unchanged = same && armoryTab === 'card' && document.querySelector('.tcg') && JSON.stringify(answer.profile) === JSON.stringify(armoryAnswer.profile);
+  online = true; armoryAnswer = answer; armoryTab = 'card';
+  if (!unchanged) cardRender();
+  armoryPoll(path, ticket);
+}
 async function armoryPage(path, ticket, refresh = false) {
   clearTimeout(armoryTimer);
   if (!armoryServers) armoryServers = (await pb.send('/api/odyle/armory/servers')).regions;
   if (ticket !== navigation) return;
   const target = armoryTarget(path);
+  if (target.card) return cardShow(path, target.card, ticket);
   if (target.profile) {
     const { region, serverId, characterId, tab } = target.profile;
     const same = armoryAnswer && armoryAnswer.region === region && String(armoryAnswer.serverId) === serverId && armoryAnswer.characterId === characterId;
@@ -1096,7 +1132,7 @@ function currentPath() { return pageOf(current()) || '/'; }
 // The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
 // armory names its profiles once they are fetched (armoryRender).
 function pageTitle(path) {
-  if (path.startsWith('/armory')) return armoryTarget(path).profile ? document.title : armoryTitle(null);
+  if (path.startsWith('/armory')) return armoryTarget(path).profile || armoryTarget(path).card ? document.title : armoryTitle(null);
   return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle') }[path] || t('Odyle — Party command');
 }
 async function show(force = false) {
@@ -1271,6 +1307,11 @@ app.addEventListener('submit', async e => {
   try {
     if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites, Date.now() + serverOffset); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
     else if (form.id === 'armory-form') await go(findPath(data.region, data.server, data.name.trim()));
+    else if (form.id === 'card-form' && armoryAnswer) {
+      armoryAnswer.card = await send('card', { region: armoryAnswer.region, serverId: Number(armoryAnswer.serverId), characterId: armoryAnswer.characterId, design: data.design, finish: data.finish || '' });
+      // Save stays off until another look is tried, once this handler has let the button go.
+      cardLook = {}; setTimeout(() => cardPreview(form)); toast(t('Card saved. Everyone who opens it sees this look.'));
+    }
     else if (form.id === 'join-form') { const result = await send('join', { code: data.code }); toast(joinedMessage(result)); await go('/room/' + result.room.id); }
     else if (form.id === 'invite-form') {
       const result = await send('invite-create', { roomId: room.id, role: data.role, expiresIn: Number(data.expiresIn), maxUses: Number(data.maxUses), label: data.label });
@@ -1515,6 +1556,7 @@ app.addEventListener('click', async e => {
       case 'armory': closeModal(); await go('/armory'); break;
       case 'armory-refresh': await armoryPage(shown, navigation, true); break;
       case 'armory-bookmark': toggleBookmark(); break;
+      case 'card-flip': cardFlip?.(); break;
       case 'account': if (!pb.authStore.isValid || demo) await go('/'); else await go('/account'); break;
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;
@@ -1666,6 +1708,7 @@ async function remindRuns() {
 }
 app.addEventListener('change', async e => {
   const el = e.target;
+  if (el.closest?.('#card-form')) return cardPreview(el.form);
   if (el.id === 'language-select') {
     try { await useLanguage(el.value); } catch (error) { return failure(error); }
     document.documentElement.lang = language(); retitle(pageTitle(currentPath())); storage.setItem(languageKey, language());

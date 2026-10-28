@@ -1036,6 +1036,12 @@ func armoryRoute(e *core.RequestEvent) error {
 		class, _ := shown["class"].(string)
 		out.set("classIcon", classIcons(e.App)[class])
 	}
+	// Its player card's look (cards.go), and whether the reader may change it.
+	card, err := cardOf(e.App, region, serverId, characterId, e.Auth)
+	if err != nil {
+		return err
+	}
+	out.set("card", card)
 	return e.JSON(200, out.set("state", state.State).set("position", state.Position).set("wait", state.Wait).set("retryAfter", state.RetryAfter).set("lookupError", state.Error).set("progress", state.Progress))
 }
 

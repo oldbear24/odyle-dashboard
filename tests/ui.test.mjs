@@ -748,6 +748,76 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
   } finally { await room.close(); }
 });
 
+test('a profile has a player card on a page of its own that turns, and the player of its character picks its look', async () => {
+  const cardAt = '/armory/eu/2304/' + armorer[0] + '/card';
+  // The player whose Odyle app read the character; the daily lookup ties it to the profile.
+  const player = await account('Card player');
+  const session = (await request('/api/odyle/session', {}, player)).data;
+  await request('/api/odyle/report', { sessionId: session.sessionId, characterName: 'Armorer', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, sequence: 1, value: 90 }, player);
+  for (let i = 0; i < 60 && !(await request('/api/odyle' + cardAt.slice(0, -5), undefined, player, 'GET')).data.card?.mine; i++) await delay(250);
+  // Anyone: the card alone, in the design of the character's race, without the dashboard around it.
+  const visitor = await open(null, '#' + cardAt);
+  try {
+    const { page } = visitor;
+    await page.waitForURL(url + cardAt);
+    await page.locator('.tcg-name h2', { hasText: 'Armorer' }).waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('.sidebar, .bottom-nav').count(), 0);
+    assert.equal(await page.title(), "Armorer's player card · Lumiel · Odyle Armory");
+    assert.match(await (await fetch(url + cardAt)).text(), /<title>Armorer&#39;s player card · Lumiel · Odyle Armory<\/title>/);
+    assert.equal(await page.locator('.tcg.design-asmodae').count(), 1);
+    assert.match(await page.locator('.tcg-front').innerText(), /Armorer\s+Lv 45[\s\S]*Chanter\s+Asmodians[\s\S]*Golden Glow[\s\S]*Combat power\s+107,458\s+Item level\s+1,671[\s\S]*Bolt\s+Lv 13[\s\S]*Might\s+45/);
+    assert.equal(await page.locator('#card-form').count(), 0);
+    assert.match(await page.locator('.card-owner-note').innerText(), /The player whose Odyle app reads Armorer chooses this card's design\./);
+    await delay(400); await shot(page, 'card-front');
+    // It turns by drag, and flips to its back.
+    const box = await page.locator('.tcg').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 6 });
+    assert.match(await page.locator('.tcg-body').getAttribute('style'), /rotateY\((?:[3-9]\d|\d{3})\./);
+    await page.mouse.up();
+    // Once it settles, Flip shows the other face.
+    await delay(2500);
+    const turned = async () => page.locator('.tcg.is-turned').count(), before = await turned();
+    await page.locator('[data-action="card-flip"]').click(); await delay(1500);
+    assert.equal(await turned(), 1 - before);
+    if (!await turned()) { await page.locator('[data-action="card-flip"]').click(); await delay(1500); }
+    await page.mouse.move(5, 5); await shot(page, 'card-back');
+    await page.locator('.card-back').click();
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
+    assert.equal(await page.locator('.sidebar').count(), 1);
+    assert.equal(await page.locator('.armory-card-link').getAttribute('href'), '.' + cardAt);
+    assert.deepEqual(visitor.errors, []);
+  } finally { await visitor.close(); }
+  // Its player picks a design; holo finishes wait for the membership.
+  const own = await open(player, cardAt.slice(1));
+  try {
+    const { page } = own;
+    await page.locator('#card-form').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('#card-form input[name="finish"][value="prism"]').isDisabled(), true);
+    assert.match(await page.locator('.card-locked').innerText(), /Holo finishes are for players with the membership/);
+    await page.locator('.card-choice.is-abyss').click();
+    assert.equal(await page.locator('.tcg.design-abyss').count(), 1);
+    await page.locator('#card-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Card saved. Everyone who opens it sees this look.' }).waitFor();
+    assert.equal(await page.locator('#card-form [type="submit"]').isDisabled(), true);
+    assert.equal((await request('/api/odyle/membership', { membership: 'yes' }, player)).status, 200);
+    await page.reload(); await page.locator('#card-form').waitFor();
+    await page.locator('.card-choice.is-prism').click();
+    assert.equal(await page.locator('.tcg.design-abyss.finish-prism').count(), 1);
+    await page.locator('#card-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
+    await page.mouse.move(10, 10); await delay(600); await shot(page, 'card-studio');
+    for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched']]) {
+      await page.locator('.card-choice.is-' + design).click(); await page.locator('.card-choice.is-' + finish).click();
+      await delay(500); await shot(page, `card-${design}-${finish}`);
+    }
+    assert.deepEqual(own.errors, []);
+  } finally { await own.close(); }
+  // Everyone sees the saved look.
+  const again = await open(null, cardAt.slice(1));
+  try { await again.page.locator('.tcg.design-abyss.finish-prism').waitFor({ timeout: 15000 }); } finally { await again.close(); }
+});
+
 test('the armory keeps bookmarked characters in this browser, without an account', async () => {
   const profileAt = '#/armory/eu/2304/' + armorer[0];
   const { page, errors, close } = await open(null, profileAt);
@@ -966,7 +1036,7 @@ test('the main pages pass the axe accessibility check, signed out and in', async
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
   const profileAt = '#/armory/eu/2304/' + armorer[0];
-  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/card'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);

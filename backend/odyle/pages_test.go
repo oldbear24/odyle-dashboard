@@ -54,6 +54,7 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 		"daevanion":  {"Kai's Daevanion boards · Lumiel · Odyle Armory", "The Daevanion boards (12 of 40 nodes open"},
 		"titles":     {"Kai's titles · Lumiel · Odyle Armory", "The titles (94 of 304 owned"},
 		"appearance": {"Kai's appearance · Lumiel · Odyle Armory", "The look (the skins"},
+		"card":       {"Kai's player card · Lumiel · Odyle Armory", "The player card of Kai, a level 45 Elyo Gladiator on Lumiel (Europe)"},
 	} {
 		if title, description, _, _, _ := describe(profile + "/" + tab); title != want[0] || !strings.HasPrefix(description, want[1]) {
 			t.Errorf("%s: %q %q", tab, title, description)
