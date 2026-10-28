@@ -35,6 +35,9 @@
 .odyle-live:before{animation:odyle-pulse 1.6s ease-in-out infinite}
 .odyle-live.paused:before{background:var(--warningColor);animation:none}
 .odyle-feed-head{flex-wrap:wrap}
+/* Apps & packets: Update all apps now beside the connected apps, its hint and result below. */
+.odyle-apps-head{flex-wrap:wrap}
+.odyle-update{flex-wrap:wrap;gap:2px 12px;margin-top:-6px}
 .odyle-toggle{display:inline-flex;align-items:center;margin:0}
 .odyle-feed{max-height:560px;overflow:auto;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);font-size:var(--smFontSize)}
 .odyle-packet{display:grid;grid-template-columns:auto 130px minmax(70px,160px) 1fr auto;gap:12px;align-items:baseline;padding:6px 12px;border-bottom:1px solid var(--surfaceAlt2Color)}

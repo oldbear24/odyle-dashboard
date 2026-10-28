@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.54.0 · 2026-10-28
+
+### New
+- **Update all apps now**: server operators can ask every connected Odyle for Windows app to update at once, from the Apps & packets page of the superuser dashboard. Apps older than the newest release download it, install it and restart, and the reader hands the live character over; apps already on it carry on. Apps not running at that moment update at their next start, as before.
+
 ## 0.53.0 · 2026-10-28
 
 ### New

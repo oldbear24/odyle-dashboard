@@ -338,3 +338,24 @@ func windowsRelease(e *core.RequestEvent) error {
 	}
 	return e.JSON(200, map[string]any{"repository": repository(), "releasesUrl": "https://github.com/" + repository() + "/releases/latest", "latest": latest, "blocked": blocked})
 }
+
+// updateAppsRoute is Apps & packets → Update all apps now: every signed-in client hears
+// {"windowsUpdate": {version, at}} on its account's topic. A Windows app older than version
+// downloads that release, installs it and restarts, handing its live character over; an app
+// already on it does nothing, and dashboards ignore the news. version is the release the
+// backend knows, never looked up here; without one it is left out and the apps ask GitHub
+// themselves. Apps not connected now install new releases at their next start anyway. The
+// answer counts the connections told, dashboards in browsers included.
+func updateAppsRoute(e *core.RequestEvent) error {
+	s := stateOf(e.App)
+	s.mu.Lock()
+	version, _ := s.release["version"].(string)
+	s.mu.Unlock()
+	update := map[string]any{"at": iso(time.Now())}
+	if version != "" {
+		update["version"] = version
+	}
+	told := tellEveryone(e.App, map[string]any{"windowsUpdate": update})
+	info(e.App, "Windows apps were asked to update", "version", version, "connections", told)
+	return e.JSON(200, map[string]any{"told": told, "version": version})
+}

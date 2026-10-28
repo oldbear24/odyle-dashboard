@@ -24,8 +24,11 @@ import (
 //     characters, rooms, tasks, Windows apps or profile changed, {"characters": […]}
 //     when only its characters did, and {"seen": {…}, "contact": {<reader session id>:
 //     <time>}} for its readers' heartbeats. News for everyone comes on each account's topic
-//     too: {"release": {version, publishedAt, url}} when a newer Windows release is out and
-//     {"announcement": {text, level} | null} when the announcement changed.
+//     too: {"release": {version, publishedAt, url}} when a newer Windows release is out,
+//     {"announcement": {text, level} | null} when the announcement changed,
+//     {"windowsBlocked": [...]} when the held-back Windows versions changed and
+//     {"windowsUpdate": {version?, at}} when a superuser asks every running Windows app to
+//     update now (releases.go).
 //
 // Every room message carries "refresh", so a dashboard that only knows to fetch the
 // snapshot again keeps working. Changes are collected and delivered together a moment
@@ -310,14 +313,17 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 }
 
 // tellEveryone tells every signed-in client, on its own account's topic, news that concerns
-// everyone: a new Windows release or a changed announcement. Clients that know no such key
-// ignore it.
-func tellEveryone(app core.App, message map[string]any) {
+// everyone: a new Windows release, a changed announcement or a superuser's call to update.
+// Clients that know no such key ignore it. It answers how many connections it went to.
+func tellEveryone(app core.App, message map[string]any) int {
+	told := 0
 	for _, c := range app.SubscriptionsBroker().Clients() {
 		if id := clientAccount(c); id != "" && c.HasSubscription(userTopic+id) {
 			post(c, userTopic+id, message)
+			told++
 		}
 	}
+	return told
 }
 
 // changes are delivered at once (150 ms), heartbeats every two seconds.

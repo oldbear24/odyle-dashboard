@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // releaseFeed stands in for GitHub's latest release API: it answers after delay, with an
@@ -125,4 +127,67 @@ func TestReleaseNotesGiveTheChangesBetweenTheirMarkers(t *testing.T) {
 	if got := releaseChanges("## What's Changed\n- a PR"); len(got) != 0 {
 		t.Fatalf("notes without markers: %v", got)
 	}
+}
+
+// Update all apps now (Apps & packets): every signed-in client hears windowsUpdate on its own
+// account's topic with the release the backend knows, the answer counts them, and only
+// superusers may ask.
+func TestSuperusersAskEveryRunningAppToUpdate(t *testing.T) {
+	app := newTestApp(t)
+	lead, other := newUser(t, app, "Lead"), newUser(t, app, "Other")
+	operator, err := newRecord(app, core.CollectionNameSuperusers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operator.SetEmail("operator@test.invalid")
+	operator.SetPassword("password-for-tests-only")
+	if err := app.Save(operator); err != nil {
+		t.Fatal(err)
+	}
+	const url = "/api/odyle/admin/update-apps"
+	ask(t, app, http.MethodPost, url, nil, "", 401)
+	ask(t, app, http.MethodPost, url, tokenOf(t, lead), "", 403)
+
+	mine, theirs := listen(t, app, lead, userTopic+lead.Id), listen(t, app, other, userTopic+other.Id)
+	// A connection without its account's topic is not told.
+	quiet := listen(t, app, other)
+	update := func(l *listener) map[string]any {
+		t.Helper()
+		topic, data, ok := l.next()
+		u, _ := data["windowsUpdate"].(map[string]any)
+		if !ok || u == nil || !strings.HasPrefix(topic, userTopic) {
+			t.Fatalf("no update: %s %v", topic, data)
+		}
+		if at, err := time.Parse(time.RFC3339, u["at"].(string)); err != nil || time.Since(at) > time.Minute {
+			t.Fatalf("at %v %v", u["at"], err)
+		}
+		return u
+	}
+
+	// No release known: the version is left out and the apps ask GitHub themselves.
+	out := ask(t, app, http.MethodPost, url, tokenOf(t, operator), "", 200)
+	if out["told"] != float64(2) || out["version"] != "" {
+		t.Fatalf("answer %v", out)
+	}
+	for _, l := range []*listener{mine, theirs} {
+		if u := update(l); u["version"] != nil {
+			t.Fatalf("a version without a release: %v", u)
+		}
+	}
+	quiet.quiet()
+
+	s := stateOf(app)
+	s.mu.Lock()
+	s.release, s.releaseChecked, s.releaseAt = map[string]any{"version": "0.30.0"}, true, time.Now()
+	s.mu.Unlock()
+	out = ask(t, app, http.MethodPost, url, tokenOf(t, operator), "", 200)
+	if out["told"] != float64(2) || out["version"] != "0.30.0" {
+		t.Fatalf("answer %v", out)
+	}
+	for _, l := range []*listener{mine, theirs} {
+		if u := update(l); u["version"] != "0.30.0" {
+			t.Fatalf("version %v", u)
+		}
+	}
+	quiet.quiet()
 }
