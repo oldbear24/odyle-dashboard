@@ -64,6 +64,12 @@ func TestPlayerCardsAreChosenByTheCharactersPlayer(t *testing.T) {
 	if card := cardFor(nil); card["design"] != "elysea" || card["finish"] != "starfall" {
 		t.Fatalf("everyone sees the holo: %v", card)
 	}
+	for _, finish := range []string{"sunburst", "ice", "scales", "aether"} {
+		if saved := choose(ownerAuth, "heiron", finish, 200); saved["finish"] != finish {
+			t.Fatalf("holo %s: %v", finish, saved)
+		}
+	}
+	choose(ownerAuth, "heiron", "chrome", 400)
 	// Its options pick from what PLAYNC lists: a learned skill, nothing typed in.
 	withOptions := func(options string, status int) map[string]any {
 		t.Helper()
@@ -76,7 +82,16 @@ func TestPlayerCardsAreChosenByTheCharactersPlayer(t *testing.T) {
 	if card := cardFor(nil); card["options"].(map[string]any)["layout"] != "full" {
 		t.Fatalf("everyone sees the options: %v", card)
 	}
-	for _, refused := range []string{`{"layout":"wide"}`, `{"back":"gilded"}`, `{"stats":"all"}`, `{"line":"motto"}`, `{"skills":["Rend"]}`, `{"skills":["Bolt","Bolt","Bolt"]}`, `{"skills":["Typed in"]}`, `"full"`} {
+	// The effect around it, the accent colour, frame and name style (0.52.0).
+	styled := withOptions(`{"aura":"runes","accent":"jade","frame":"radiant","nameStyle":"gold"}`, 200)
+	if options, _ := styled["options"].(map[string]any); options["aura"] != "runes" || options["accent"] != "jade" || options["frame"] != "radiant" || options["nameStyle"] != "gold" {
+		t.Fatalf("styled: %v", styled)
+	}
+	if options := cardFor(nil)["options"].(map[string]any); options["aura"] != "runes" || options["accent"] != "jade" {
+		t.Fatalf("everyone sees the style: %v", options)
+	}
+	for _, refused := range []string{`{"layout":"wide"}`, `{"back":"gilded"}`, `{"stats":"all"}`, `{"line":"motto"}`, `{"skills":["Rend"]}`, `{"skills":["Bolt","Bolt","Bolt"]}`, `{"skills":["Typed in"]}`, `"full"`,
+		`{"aura":"fireworks"}`, `{"accent":"#ff0000"}`, `{"frame":"diamond"}`, `{"nameStyle":"comic"}`} {
 		withOptions(refused, 400)
 	}
 	// Options left out keep their defaults.

@@ -15,17 +15,18 @@ RUN npm run build
 
 # The backend cross-compiles natively too: PocketBase's SQLite driver is pure Go.
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS server
-ARG TARGETOS
-ARG TARGETARCH
-# The release names the build (the Server status page shows it); a local build reads "dev".
-ARG VERSION=""
-ARG COMMIT=""
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend ./
 # The dashboard is compiled in (backend/web).
 COPY --from=web /src/dist ./web/dist
+# Declared here, so the steps above stay cached across architectures and releases.
+ARG TARGETOS
+ARG TARGETARCH
+# The release names the build (the Server status page shows it); a local build reads "dev".
+ARG VERSION=""
+ARG COMMIT=""
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/oldbear24/odyle-dashboard/backend/odyle.Version=$VERSION -X github.com/oldbear24/odyle-dashboard/backend/odyle.Commit=$COMMIT" -o /out/odyle . \
  && mkdir -p /out/pb/pb_data
 

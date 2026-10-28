@@ -30,7 +30,7 @@ import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
-import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses } from './card.js';
+import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses, cardAura } from './card.js';
 import { saveCardImage } from './cardimage.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
@@ -479,6 +479,7 @@ function cardPreview(form) {
     const turning = [...card.classList].filter(c => c.startsWith('is-'));
     card.className = [cardClasses(look), ...turning].join(' ');
     card.querySelector('.tcg-body').innerHTML = cardFaces(armoryAnswer, armoryImages(), look);
+    card.querySelector('.tcg-aura').outerHTML = cardAura(look);
   }
   if (page) page.className = 'card-page design-' + look.design;
   const save = form.querySelector('[type="submit"]'); if (save) save.disabled = sameLook(look, lookOf(armoryAnswer));

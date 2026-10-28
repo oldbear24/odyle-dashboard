@@ -849,15 +849,33 @@ test('a profile has a player card on a page of its own that turns, and the playe
     await page.locator('.card-pill', { hasText: 'Classic' }).click(); await page.locator('.card-pill', { hasText: 'Title' }).click();
     const [classic] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
     if (shots) await classic.saveAs(join(shots, 'card-export-classic.png'));
-    for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched']]) {
+    for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched'], ['heiron', 'sunburst'], ['beluslan', 'ice'], ['balaur', 'scales'], ['abyss', 'aether']]) {
       await page.locator('.card-choice.is-' + design).click(); await page.locator('.card-choice.is-' + finish).click();
       await delay(500); await shot(page, `card-${design}-${finish}`); await turnedShot(`card-${design}-${finish}-turned`);
+      // Its picture draws the finish too.
+      const [art] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
+      if (shots) await art.saveAs(join(shots, `card-export-${design}-${finish}.png`));
     }
+    // An effect around it, an accent colour, a frame and a name style, each tried on the card.
+    const pick = (name, value) => page.locator(`#card-form label.card-pill:has(input[name="${name}"][value="${value}"])`).click();
+    for (const [aura, accent, frame, nameStyle, design] of [['glow', 'gold', 'gilded', 'gold', 'asmodae'], ['embers', 'ember', 'radiant', 'glow', 'balaur'], ['stardust', 'azure', 'silver', '', 'beluslan'], ['runes', 'jade', 'radiant', 'gold', 'abyss'], ['storm', 'violet', 'none', 'glow', 'heiron']]) {
+      await page.locator('.card-choice.is-' + design).click();
+      await pick('aura', aura); await pick('accent', accent); await pick('frame', frame); await pick('nameStyle', nameStyle);
+      assert.equal(await page.locator(`.tcg.accent-${accent}.frame-${frame}${nameStyle ? '.name-' + nameStyle : ''} > .tcg-aura.aura-${aura}`).count(), 1);
+      await delay(900); await shot(page, `card-aura-${aura}`); await turnedShot(`card-aura-${aura}-turned`);
+      const [art] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
+      if (shots) await art.saveAs(join(shots, `card-export-style-${aura}.png`));
+    }
+    // Saved with the rest of the look, and kept.
+    await page.locator('.card-choice.is-abyss').click(); await page.locator('.card-choice.is-prism').click();
+    await page.locator('#card-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
+    await page.reload(); await page.locator('.tcg.accent-violet.frame-none.name-glow > .tcg-aura.aura-storm').waitFor();
     assert.deepEqual(own.errors, []);
   } finally { await own.close(); }
   // Everyone sees the saved look.
   const again = await open(null, cardAt.slice(1));
-  try { await again.page.locator('.tcg.design-abyss.finish-prism').waitFor({ timeout: 15000 }); } finally { await again.close(); }
+  try { await again.page.locator('.tcg.design-abyss.finish-prism.accent-violet > .tcg-aura.aura-storm').waitFor({ timeout: 15000 }); } finally { await again.close(); }
 });
 
 test('the armory keeps bookmarked characters in this browser, without an account', async () => {

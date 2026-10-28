@@ -18,18 +18,23 @@ import (
 // account's character to its profile (officialId, officialRegion, officialServerId,
 // classes.go). Players who say they have the game's membership (membership.go) may add a
 // holo finish. The rest of the look are the card's options: the layout, the design of its
-// back, which stats and which two skills it shows, and the line under the class (the title,
-// the legion or none). Every option picks from what PLAYNC lists; nothing is typed in. The
+// back, which stats and which two skills it shows, the line under the class (the title, the
+// legion or none), the effect around it, its accent colour, frame and name style. Every option
+// picks from what PLAYNC lists or what Odyle offers; nothing is typed in. The
 // choice is kept on the account's character (cardDesign, cardFinish, cardOptions), and a holo
 // finish shows only while its owner's answer is yes. A card nobody chose a design for has
 // none (""): the dashboard draws it after the character's race.
 
 var (
 	cardDesigns  = []string{"elysea", "asmodae", "abyss", "balaur", "beluslan", "heiron"}
-	cardFinishes = []string{"", "prism", "starfall", "etched"}
+	cardFinishes = []string{"", "prism", "starfall", "etched", "sunburst", "ice", "scales", "aether"}
 	cardLayouts  = []string{"classic", "full"}
 	cardStats    = []string{"primary", "deity"}
 	cardLines    = []string{"title", "legion", "none"}
+	cardAuras    = []string{"", "glow", "embers", "stardust", "runes", "storm"}
+	cardAccents  = []string{"", "gold", "silver", "ember", "jade", "azure", "violet", "rose"}
+	cardFrames   = []string{"", "gilded", "silver", "radiant", "none"}
+	cardNames    = []string{"", "gold", "glow"}
 )
 
 // cardOptions are a card's look beyond its design and finish.
@@ -39,6 +44,11 @@ type cardOptions struct {
 	Stats  string   `json:"stats"`  // primary or deity
 	Line   string   `json:"line"`   // under the class: title, legion or none
 	Skills []string `json:"skills"` // up to two skills to show; none for the strongest on the skill bar
+	// Since 0.52.0, each "" for the design's own or none.
+	Aura      string `json:"aura"`      // the effect around the card on its page
+	Accent    string `json:"accent"`    // the accent colour
+	Frame     string `json:"frame"`     // the frame around the face
+	NameStyle string `json:"nameStyle"` // how the name is printed
 }
 
 func defaultCardOptions() cardOptions {
@@ -59,6 +69,18 @@ func (o cardOptions) known() cardOptions {
 	}
 	if slices.Contains(cardLines, o.Line) {
 		d.Line = o.Line
+	}
+	if slices.Contains(cardAuras, o.Aura) {
+		d.Aura = o.Aura
+	}
+	if slices.Contains(cardAccents, o.Accent) {
+		d.Accent = o.Accent
+	}
+	if slices.Contains(cardFrames, o.Frame) {
+		d.Frame = o.Frame
+	}
+	if slices.Contains(cardNames, o.NameStyle) {
+		d.NameStyle = o.NameStyle
 	}
 	for _, s := range o.Skills {
 		if s != "" && len(s) <= 80 && len(d.Skills) < 2 && !slices.Contains(d.Skills, s) {
@@ -142,7 +164,8 @@ func readCardOptions(app core.App, raw any, serverId int, characterId string) (c
 		return cardOptions{}, errCardOptions
 	}
 	options := asked.known()
-	if options.Layout != asked.Layout || options.Back != asked.Back || options.Stats != asked.Stats || options.Line != asked.Line || len(options.Skills) != len(asked.Skills) {
+	if options.Layout != asked.Layout || options.Back != asked.Back || options.Stats != asked.Stats || options.Line != asked.Line || len(options.Skills) != len(asked.Skills) ||
+		options.Aura != asked.Aura || options.Accent != asked.Accent || options.Frame != asked.Frame || options.NameStyle != asked.NameStyle {
 		return cardOptions{}, errCardOptions
 	}
 	if len(options.Skills) > 0 {

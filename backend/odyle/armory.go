@@ -786,14 +786,8 @@ func (w *armoryWork) ask(app core.App, j armoryJob) armoryState {
 		}
 		delete(w.misses, j.key)
 	}
-	if w.current == j.key {
-		progress, partial := w.track.read()
-		return armoryState{State: "fetching", RetryAfter: 2, Progress: progress, Partial: partial}
-	}
-	for i, q := range w.waiting {
-		if q.key == j.key {
-			return w.queued(i, at)
-		}
+	if state, ok := w.pending(j.key, at); ok {
+		return state
 	}
 	if len(w.waiting) >= armoryQueueSize || w.byAddress[j.address] >= armoryPerAddress {
 		return armoryState{State: "busy", RetryAfter: 30}
@@ -805,6 +799,28 @@ func (w *armoryWork) ask(app core.App, j armoryJob) armoryState {
 		go w.work(app)
 	}
 	return w.queued(len(w.waiting)-1, at)
+}
+
+// peek says where the profile's lookup stands while it waits or runs, without queuing it:
+// a Refresh followed by the page asking again without it, or by another reader.
+func (w *armoryWork) peek(key string) (armoryState, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.pending(key, time.Now())
+}
+
+// pending is the state of the profile's lookup while it runs or waits (w.mu held).
+func (w *armoryWork) pending(key string, at time.Time) (armoryState, bool) {
+	if w.current == key {
+		progress, partial := w.track.read()
+		return armoryState{State: "fetching", RetryAfter: 2, Progress: progress, Partial: partial}, true
+	}
+	for i, q := range w.waiting {
+		if q.key == key {
+			return w.queued(i, at), true
+		}
+	}
+	return armoryState{}, false
 }
 
 // drop empties the queue (paused), and wakes a worker waiting for PLAYNC so it ends.
@@ -985,7 +1001,8 @@ func isoTime(t time.Time) string {
 // armoryRoute answers GET /api/odyle/armory/{region}/{serverId}/{characterId}: the kept
 // profile (or null) with its age and where its lookup stands. A profile kept in an older
 // shape is asked for again, and ?refresh=1 asks PLAYNC again once the profile is
-// armoryReaderRefresh old. Public; rate limited per address.
+// armoryReaderRefresh old; every reader then sees that lookup until it ends. Public; rate
+// limited per address.
 func armoryRoute(e *core.RequestEvent) error {
 	region, characterId := e.Request.PathValue("region"), e.Request.PathValue("characterId")
 	serverId, _ := strconv.Atoi(e.Request.PathValue("serverId"))
@@ -1025,6 +1042,9 @@ func armoryRoute(e *core.RequestEvent) error {
 		} else {
 			state = stateOf(e.App).armory.ask(e.App, armoryJob{key: armoryKey(serverId, characterId), region: region, serverId: serverId, characterId: characterId, address: e.RealIP()})
 		}
+	} else if pending, ok := stateOf(e.App).armory.peek(armoryKey(serverId, characterId)); ok {
+		// A lookup a Refresh asked for: followed until it ends, never "fresh" meanwhile.
+		state = pending
 	}
 	if state.State == "missing" {
 		return notFound("PLAYNC does not list this character.")
