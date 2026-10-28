@@ -8,7 +8,7 @@ import { pushService } from './push-service.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -42,7 +42,7 @@ before(async () => {
     const at = new URL(req.url, 'http://plaync'), q = at.searchParams, json = body => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     const icon = name => 'https://assets.playnccdn.com/static-aion2-gamedata/resources/' + name;
     if (at.pathname === '/search') return json({ list: /^armorer$/i.test(q.get('keyword')) ? [armorer, armorerAlt].map(([characterId, name, level, pcId]) => ({ characterId: encodeURIComponent(characterId), name, level, pcId, race: 2, serverId: Number(q.get('serverId')), region: q.get('region') })) : [] });
-    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', genderName: 'Female', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique', profileImage: 'https://profileimg.plaync.com/game_profile_images/aion2global/images?gameServerKey=2304&charKey=7' },
+    if (at.pathname === '/api/character/info') return json({ profile: { characterName: 'Armorer', characterLevel: 45, className: 'Chanter', pcId: 36, raceName: 'Asmodians', genderName: 'Female', serverName: 'Lumiel', combatPower: 107458, titleName: 'Golden Glow', titleGrade: 'Unique', regionName: 'Golden Order', profileImage: 'https://profileimg.plaync.com/game_profile_images/aion2global/images?gameServerKey=2304&charKey=7' },
       stat: { statList: [{ type: 'STR', name: 'Might', value: 45, statSecondList: ['Attack increase +4.5%'] }, { type: 'WIS', name: 'Willpower', value: 8 }, { type: 'Justice', name: 'Justice [Nezekan]', value: 41 }, { type: 'ItemLevel', name: 'ItemLevel', value: 1671 }] },
       title: { ownedCount: 94, totalCount: 304, titleList: [{ equipCategory: 'Attack', name: 'Guardian of Altgard', grade: 'Legend', ownedCount: 36, totalCount: 105, equipStatList: [{ desc: 'PvE Damage Boost +3%' }], statList: [{ desc: 'PvE Attack +4' }] }] },
       daevanion: { boardList: [{ id: 71, name: 'Nezekan', openNodeCount: 12, totalNodeCount: 40, open: 1 }] } });
@@ -794,6 +794,9 @@ test('a profile has a player card on a page of its own that turns, and the playe
     await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
     assert.equal(await page.locator('.sidebar').count(), 1);
     assert.equal(await page.locator('.armory-card-link').getAttribute('href'), '.' + cardAt);
+    // The profile names the legion, and its pictures stay put when dragged.
+    assert.equal(await page.locator('.armory-legion').innerText(), 'Golden Order');
+    assert.equal(await page.locator('.armory-portrait img').getAttribute('draggable'), 'false');
     assert.deepEqual(visitor.errors, []);
   } finally { await visitor.close(); }
   // Its player picks a design; holo finishes wait for the membership.
@@ -823,6 +826,29 @@ test('a profile has a player card on a page of its own that turns, and the playe
       await shot(page, name); await delay(200); await page.mouse.up(); await page.mouse.move(5, 5); await delay(1500);
     };
     await turnedShot('card-abyss-prism-turned');
+    // The options: full art, the legion under the class, the deity stats, a chosen skill and another back.
+    await page.locator('.card-pill', { hasText: 'Full art' }).click();
+    await page.locator('.card-pill', { hasText: 'Legion' }).click();
+    await page.locator('.card-pill', { hasText: 'Deity stats' }).click();
+    await page.locator('#card-form select[name="skill0"]').selectOption('Bolt');
+    await page.locator('#card-form select[name="back"]').selectOption('heiron');
+    assert.equal(await page.locator('.tcg.design-abyss.finish-prism.layout-full').count(), 1);
+    assert.equal(await page.locator('.tcg-back.design-heiron').count(), 1);
+    assert.equal(await page.locator('.tcg-line.is-legion').innerText(), 'Legion Golden Order');
+    assert.match(await page.locator('.tcg-stats').innerText(), /Justice\s+41/);
+    await page.locator('#card-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
+    await page.mouse.move(5, 5); await delay(600); await shot(page, 'card-full-art');
+    // Saved as a picture of its front, in this look.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
+    assert.equal(download.suggestedFilename(), 'Armorer-odyle-card.png');
+    const picture = await readFile(await download.path());
+    assert.equal(picture.subarray(1, 4).toString(), 'PNG'); assert.ok(picture.length > 20000, `${picture.length} bytes`);
+    if (shots) await download.saveAs(join(shots, 'card-export-full-art.png'));
+    await page.reload(); await page.locator('.tcg.layout-full').waitFor();
+    await page.locator('.card-pill', { hasText: 'Classic' }).click(); await page.locator('.card-pill', { hasText: 'Title' }).click();
+    const [classic] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
+    if (shots) await classic.saveAs(join(shots, 'card-export-classic.png'));
     for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched']]) {
       await page.locator('.card-choice.is-' + design).click(); await page.locator('.card-choice.is-' + finish).click();
       await delay(500); await shot(page, `card-${design}-${finish}`); await turnedShot(`card-${design}-${finish}-turned`);

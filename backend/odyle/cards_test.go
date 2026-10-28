@@ -64,8 +64,27 @@ func TestPlayerCardsAreChosenByTheCharactersPlayer(t *testing.T) {
 	if card := cardFor(nil); card["design"] != "elysea" || card["finish"] != "starfall" {
 		t.Fatalf("everyone sees the holo: %v", card)
 	}
+	// Its options pick from what PLAYNC lists: a learned skill, nothing typed in.
+	withOptions := func(options string, status int) map[string]any {
+		t.Helper()
+		return ask(t, app, "POST", "/api/odyle/card", ownerAuth, `{"region":"eu","serverId":2304,"characterId":"`+pageId+`","design":"balaur","finish":"starfall","options":`+options+`}`, status)
+	}
+	saved := withOptions(`{"layout":"full","back":"abyss","stats":"deity","line":"legion","skills":["Bolt"]}`, 200)
+	if options, _ := saved["options"].(map[string]any); saved["design"] != "balaur" || options["layout"] != "full" || options["back"] != "abyss" || options["stats"] != "deity" || options["line"] != "legion" || len(options["skills"].([]any)) != 1 {
+		t.Fatalf("options: %v", saved)
+	}
+	if card := cardFor(nil); card["options"].(map[string]any)["layout"] != "full" {
+		t.Fatalf("everyone sees the options: %v", card)
+	}
+	for _, refused := range []string{`{"layout":"wide"}`, `{"back":"gilded"}`, `{"stats":"all"}`, `{"line":"motto"}`, `{"skills":["Rend"]}`, `{"skills":["Bolt","Bolt","Bolt"]}`, `{"skills":["Typed in"]}`, `"full"`} {
+		withOptions(refused, 400)
+	}
+	// Options left out keep their defaults.
+	if saved := withOptions(`{"line":"none"}`, 200); saved["options"].(map[string]any)["layout"] != "classic" || saved["options"].(map[string]any)["line"] != "none" {
+		t.Fatalf("defaults: %v", saved)
+	}
 	ask(t, app, "POST", "/api/odyle/membership", ownerAuth, `{"membership":"no"}`, 200)
-	if card := cardFor(nil); card["design"] != "elysea" || card["finish"] != "" {
+	if card := cardFor(nil); card["design"] != "balaur" || card["finish"] != "" {
 		t.Fatalf("without the membership the holo is gone: %v", card)
 	}
 	// A profile no Odyle account read has nobody to choose.

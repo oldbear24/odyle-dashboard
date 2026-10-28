@@ -28,7 +28,7 @@ func icon(name string) string { return armoryIconBase + name }
 // answers (docs/armory.md).
 func officialInfo(name string) map[string]any {
 	return map[string]any{
-		"profile": map[string]any{"characterName": name, "characterLevel": 45, "className": "Chanter", "pcId": 36, "combatPower": 107458, "raceName": "Asmodians", "genderName": "Female", "serverName": "Lumiel", "titleName": "Golden Glow", "titleGrade": "Unique",
+		"profile": map[string]any{"characterName": name, "characterLevel": 45, "className": "Chanter", "pcId": 36, "combatPower": 107458, "raceName": "Asmodians", "genderName": "Female", "serverName": "Lumiel", "titleName": "Golden Glow", "titleGrade": "Unique", "regionName": "Golden Order",
 			"profileImage": "https://profileimg.plaync.com/game_profile_images/aion2global/images?gameServerKey=2304&charKey=1"},
 		"stat": map[string]any{"statList": []any{
 			map[string]any{"type": "STR", "name": "Might", "value": 45, "statSecondList": []any{"Attack increase +4.5%"}}, map[string]any{"type": "WIS", "name": "Willpower", "value": 8, "statSecondList": nil},
@@ -118,7 +118,7 @@ func TestArmoryKeepsWhatTheOfficialPagesList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Version != armoryVersion || p.Name != "Ka" || p.Level != 45 || p.Class != "Chanter" || p.Gender != "Female" || p.CombatPower != 107458 || p.ItemLevel != 1671 || p.Server != "Lumiel" || p.Title != "Golden Glow" {
+	if p.Version != armoryVersion || p.Name != "Ka" || p.Legion != "Golden Order" || p.Level != 45 || p.Class != "Chanter" || p.Gender != "Female" || p.CombatPower != 107458 || p.ItemLevel != 1671 || p.Server != "Lumiel" || p.Title != "Golden Glow" {
 		t.Fatalf("profile %+v", p)
 	}
 	if len(p.Stats) != 3 || !p.Stats[0].Primary || p.Stats[2].Primary || p.Stats[2].Name != "Justice" || p.Stats[2].Deity != "Nezekan" ||

@@ -98,7 +98,7 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
 
 test('a class shows its emblem where the server keeps one: profile, search, bookmarks', async () => {
   const { armoryProfile, armorySearch, addBookmark, classBadge } = await import('../src/armory.js');
-  assert.equal(classBadge(images, 'class_icon_chanter.png', 'Chanter'), '<img class="class-icon" src="/api/odyle/armory-images/class_icon_chanter.png" alt="" title="Chanter" loading="lazy" decoding="async">');
+  assert.equal(classBadge(images, 'class_icon_chanter.png', 'Chanter'), '<img class="class-icon" src="/api/odyle/armory-images/class_icon_chanter.png" alt="" title="Chanter" loading="lazy" decoding="async" draggable="false">');
   assert.deepEqual([classBadge(images, '', 'Chanter'), classBadge(images, '../x.png', 'Chanter'), classBadge(images, undefined)], ['', '', '']);
   const shown = answer({ classIcon: 'class_icon_chanter.png' });
   assert.match(armoryProfile(shown, now, false, false, { images }), /<span>Level 45<\/span><span><img class="class-icon" src="\/api\/odyle\/armory-images\/class_icon_chanter.png" alt="" title="Chanter"[^>]*>Chanter<\/span><span>Asmodians<\/span>/);

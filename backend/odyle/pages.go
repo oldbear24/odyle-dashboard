@@ -83,6 +83,9 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	race := strings.TrimSuffix(p.Race, "s")
 	who := strings.TrimSpace(fmt.Sprintf("level %d %s %s", p.Level, race, p.Class))
 	where := server + " (" + regionTitles[region] + ")"
+	if p.Legion != "" {
+		where += ", legion " + p.Legion
+	}
 	power := fmt.Sprintf("%s combat power, item level %s", grouped(p.CombatPower), grouped(p.ItemLevel))
 	page := web.Page{Kind: "profile", ImageAlt: "Portrait of " + p.Name, Heading: p.Name, Text: fmt.Sprintf("%s, %s on %s: %s.", p.Name, who, where, power)}
 	if p.Portrait != "" {
