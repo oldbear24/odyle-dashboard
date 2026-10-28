@@ -696,7 +696,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     // The profile has its own address, named for search engines and link previews before the
     // dashboard runs, and the tab keeps the same title.
     const served = await (await fetch(page.url())).text();
-    assert.match(served, /<title>Armorer · Level 45 Chanter on Lumiel · Odyle Armory<\/title><meta name="description" content="Armorer is a level 45 Asmodian Chanter on Lumiel \(Europe\) with 107,458 combat power, item level 1,671\./);
+    assert.match(served, /<title>Armorer · Level 45 Chanter on Lumiel · Odyle Armory<\/title><meta name="description" content="Armorer is a level 45 Asmodian Chanter on Lumiel \(Europe\), legion Golden Order with 107,458 combat power, item level 1,671\./);
     assert.match(served, /<base href="..\/..\/..\/"><meta name="odyle-routes" content="paths">/);
     assert.match(served, /<meta property="og:image" content="..\/..\/..\/api\/odyle\/armory-images\/[^"]+\.(png|jpg|webp)">/);
     assert.equal(await page.title(), 'Armorer · Level 45 Chanter on Lumiel · Odyle Armory');
