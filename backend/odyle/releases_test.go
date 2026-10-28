@@ -1,6 +1,8 @@
 package odyle
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
 
 // releaseFeed stands in for GitHub's latest release API: it answers after delay, with an
@@ -134,16 +137,7 @@ func TestReleaseNotesGiveTheChangesBetweenTheirMarkers(t *testing.T) {
 // superusers may ask.
 func TestSuperusersAskEveryRunningAppToUpdate(t *testing.T) {
 	app := newTestApp(t)
-	lead, other := newUser(t, app, "Lead"), newUser(t, app, "Other")
-	operator, err := newRecord(app, core.CollectionNameSuperusers)
-	if err != nil {
-		t.Fatal(err)
-	}
-	operator.SetEmail("operator@test.invalid")
-	operator.SetPassword("password-for-tests-only")
-	if err := app.Save(operator); err != nil {
-		t.Fatal(err)
-	}
+	lead, other, operator := newUser(t, app, "Lead"), newUser(t, app, "Other"), newOperator(t, app)
 	const url = "/api/odyle/admin/update-apps"
 	ask(t, app, http.MethodPost, url, nil, "", 401)
 	ask(t, app, http.MethodPost, url, tokenOf(t, lead), "", 403)
@@ -190,4 +184,72 @@ func TestSuperusersAskEveryRunningAppToUpdate(t *testing.T) {
 		}
 	}
 	quiet.quiet()
+}
+
+// An app whose realtime connection was down when a superuser asked every app to update (the
+// server had just been updated, say) hears it when it subscribes to its account's topic again
+// within ten minutes. A connection that already heard it, or one back later, is not told.
+func TestAnAppBackSoonAfterTheCallToUpdateHearsIt(t *testing.T) {
+	app := newTestApp(t)
+	lead, operator := newUser(t, app, "Lead"), newOperator(t, app)
+	own := userTopic + lead.Id
+	// Through /api/realtime, as the apps and dashboards subscribe.
+	subscribe := func(l *listener, topics ...string) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"clientId": l.client.Id(), "subscriptions": topics})
+		if err != nil {
+			t.Fatal(err)
+		}
+		(&tests.ApiScenario{Name: "subscribe", Method: http.MethodPost, URL: "/api/realtime", Headers: tokenOf(t, lead), Body: bytes.NewReader(body), ExpectedStatus: 204,
+			TestAppFactory: func(testing.TB) *tests.TestApp { return app }, DisableTestAppCleanup: true}).Test(t)
+	}
+	heard := func(l *listener) {
+		t.Helper()
+		topic, data, ok := l.next()
+		if u, _ := data["windowsUpdate"].(map[string]any); !ok || topic != own || u["version"] != "0.31.0" {
+			t.Fatalf("no update: %s %v", topic, data)
+		}
+	}
+
+	// Nothing asked yet.
+	before := listen(t, app, nil)
+	subscribe(before, own)
+	before.quiet()
+
+	s := stateOf(app)
+	s.mu.Lock()
+	s.release, s.releaseChecked, s.releaseAt = map[string]any{"version": "0.31.0"}, true, time.Now()
+	s.mu.Unlock()
+	if out := ask(t, app, http.MethodPost, "/api/odyle/admin/update-apps", tokenOf(t, operator), "", 200); out["told"] != float64(1) {
+		t.Fatalf("answer %v", out)
+	}
+	heard(before)
+	// Subscribing again on the same connection (the account joined a room, say) tells it nothing new.
+	subscribe(before, own)
+	before.quiet()
+
+	back := listen(t, app, nil)
+	subscribe(back, own)
+	heard(back)
+
+	s.mu.Lock()
+	s.updateAskedAt = s.updateAskedAt.Add(-updateReplay)
+	s.mu.Unlock()
+	late := listen(t, app, nil)
+	subscribe(late, own)
+	late.quiet()
+}
+
+func newOperator(t *testing.T, app core.App) *core.Record {
+	t.Helper()
+	operator, err := newRecord(app, core.CollectionNameSuperusers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operator.SetEmail("operator@test.invalid")
+	operator.SetPassword("password-for-tests-only")
+	if err := app.Save(operator); err != nil {
+		t.Fatal(err)
+	}
+	return operator
 }

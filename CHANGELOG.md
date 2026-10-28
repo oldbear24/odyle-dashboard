@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.55.1 · 2026-10-29
+
+### Fixed
+- **Update all apps now** also reaches Odyle for Windows apps that were reconnecting when it was pressed, usually right after a server update. Until now those apps never heard it and kept running the old version. An app that reconnects within ten minutes now updates and restarts like the others.
+
 ## 0.55.0 · 2026-10-28
 
 ### New
