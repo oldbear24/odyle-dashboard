@@ -1,8 +1,9 @@
 // The armory (#67): public AION 2 Global character profiles as PLAYNC's official character
 // pages list them, kept by the backend and fetched from PLAYNC one at a time
 // (backend/odyle/armory.go). Pages: #/armory (search), #/armory/find/<region>/<server>/<name>
-// (a search, as character cards link it) and #/armory/<search region>/<server id>/<character
-// id>[/<tab>] (a profile: gear and stats, or its skills, daevanion, titles or appearance tab).
+// (a search, as character cards link it), #/armory/<search region>/<server id>/<character
+// id>[/<tab>] (a profile: gear and stats, or its skills, daevanion, titles or appearance tab)
+// and the profile's player card, /card, a page of its own (card.js).
 // Nothing here is typed in or changed by players. Bookmarks (#72) are kept in the browser
 // only, so they need no account. Images (the game's icons, the character's portrait) come
 // from the Odyle server only (backend/odyle/armoryimages.go).
@@ -18,7 +19,7 @@ const regionLabel = region => regionNames()[searchRegions[region]] || '';
 // A profile's tabs after its first one (gear and stats), as their paths name them.
 export const armoryTabs = ['skills', 'daevanion', 'titles', 'appearance'];
 // PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes.
-export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance))?)?$/;
+export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|card))?)?$/;
 export const profilePath = (hit, tab = '') => `/armory/${hit.region}/${hit.serverId}/${hit.characterId}${armoryTabs.includes(tab) ? '/' + tab : ''}`;
 // A character's own profile, once the daily lookup found it on PLAYNC (officialId), else "".
 export const officialPath = c => {
@@ -26,10 +27,12 @@ export const officialPath = c => {
   return path && armoryRoute.test(path) ? path : '';
 };
 export const findPath = (region, server, name) => `/armory/find/${region}/${server}/${encodeURIComponent(name)}`;
-// What a path asks for: { search } (the form), { find: { region, server, name } } or { profile: { region, serverId, characterId, tab } }.
+// What a path asks for: { search } (the form), { find: { region, server, name } }, { profile: { region, serverId, characterId, tab } }
+// or { card: { region, serverId, characterId } }.
 export function armoryTarget(path) {
   const parts = path.split('/').slice(2);
   if (parts[0] === 'find') { try { return { find: { region: parts[1], server: parts[2], name: decodeURIComponent(parts[3]) } }; } catch { return { search: true }; } }
+  if (parts.length === 4 && parts[3] === 'card') return { card: { region: parts[0], serverId: parts[1], characterId: parts[2] } };
   if (parts.length === 3 || parts.length === 4 && armoryTabs.includes(parts[3])) return { profile: { region: parts[0], serverId: parts[1], characterId: parts[2], tab: parts[3] || '' } };
   return { search: true };
 }
@@ -294,7 +297,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
     profile.skills.length ? [t('Skills'), number(profile.skills.filter(s => s.acquired).length), t('of {n} learned', { n: number(profile.skills.length) })] : null].filter(Boolean);
   const hero = `<section class="armory-hero ${race}"><div class="armory-portrait" aria-hidden="true"><span>${esc(initials(profile.name))}</span>${picture(images, profile.portrait)}</div>
 <div class="armory-identity"><p class="armory-eyebrow">${esc([profile.server || answer.server, regionLabel(answer.region)].filter(Boolean).join(' · '))}</p><h1>${esc(profile.name)}</h1>${profile.title ? `<p class="armory-title ${gradeClass(profile.titleGrade)}">${esc(profile.title)}</p>` : ''}<p class="armory-tags"><span>${esc(t('Level {level}', { level: profile.level }))}</span>${profile.class ? `<span>${classBadge(images, answer.classIcon, profile.class)}${esc(profile.class)}</span>` : ''}${[profile.race, profile.gender].filter(Boolean).map(s => `<span>${esc(s)}</span>`).join('')}</p></div>
-<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
+<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
   const content = tab === 'skills' ? skillsTab(profile, images) : tab === 'daevanion' ? daevanionTab(profile, images, view.board, loading) : tab === 'titles' ? titlesTab(profile) : tab === 'appearance' ? appearanceTab(profile, images) : gearTab(profile, images, loading);

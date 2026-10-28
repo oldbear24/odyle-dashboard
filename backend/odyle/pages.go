@@ -26,7 +26,8 @@ const armorySite = "Odyle Armory"
 // Search regions in PLAYNC's codes, by name.
 var regionTitles = map[string]string{"nae": "North America East", "naw": "North America West", "eu": "Europe", "la": "South America", "as": "Asia"}
 
-// The profile tabs (src/armory.js armoryTabs) as titles name them.
+// The profile tabs (src/armory.js armoryTabs) as titles name them; the player card
+// (/card, cards.go) is a page of its own.
 var tabTitles = map[string]string{"skills": "skills", "daevanion": "Daevanion boards", "titles": "titles", "appearance": "appearance"}
 
 // DescribePage tells what the dashboard page at route shows (web.Describe).
@@ -64,7 +65,7 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 		tab = parts[4]
 	}
 	server := armoryServer(region, serverId)
-	if _, known := tabTitles[tab]; server == "" || !armoryIds.MatchString(characterId) || tab != "" && !known {
+	if _, known := tabTitles[tab]; server == "" || !armoryIds.MatchString(characterId) || tab != "" && tab != "card" && !known {
 		return web.Page{Missing: true}
 	}
 	waiting := web.Page{Title: "A character on " + server + " · " + armorySite, Description: "An AION 2 Global character on " + server + " (" + regionTitles[region] + "), as PLAYNC's official character pages list it.", Private: true}
@@ -90,6 +91,10 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	path := "/armory/" + region + "/" + strconv.Itoa(serverId) + "/" + characterId
 	trail := [][2]string{{armorySite, "/armory"}, {p.Name, path}}
 	switch tab {
+	case "card":
+		trail = append(trail, [2]string{"Player card", path + "/card"})
+		page.Title = fmt.Sprintf("%s's player card · %s · %s", p.Name, server, armorySite)
+		page.Description = fmt.Sprintf("The player card of %s, a %s on %s with %s: a trading card of the character's portrait, stats and strongest skills that turns in 3D.", p.Name, who, where, power)
 	case "":
 		page.Title = fmt.Sprintf("%s · Level %d %s on %s · %s", p.Name, p.Level, p.Class, server, armorySite)
 		page.Description = fmt.Sprintf("%s is a %s on %s with %s. See the gear with every item's stats and stones, the stats, skills, Daevanion boards, titles and skins, as PLAYNC lists them.", p.Name, who, where, power)

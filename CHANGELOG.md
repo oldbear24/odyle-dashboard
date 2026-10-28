@@ -2,6 +2,12 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.50.0 · 2026-10-28
+
+### New
+- **Player cards**: every armory profile has a trading card of its own (**Player card** on the profile), with the portrait, level, class, combat power, item level, the strongest skills on the skill bar and the main stats. It turns in 3D: drag it, double-click it or press Enter to flip it to its back. Share its link like the profile's.
+- If your Odyle app reads the character, you pick its card's design: Elysea, Asmodae or Abyss. Until you do, it follows the character's race. With the membership (Account & data) you can add a holo finish: Prism, Starfall or Etched. Everyone who opens the card sees your choice.
+
 ## 0.49.0 · 2026-10-28
 
 ### New

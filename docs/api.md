@@ -362,11 +362,13 @@ Public routes for the armory, signed in or not, with their own rate limits per a
       "nodes": [{ "r": 3, "c": 3, "g": "Unique", "t": "Stat", "o": true, "e": "Combat Speed +1.5%" }, { "r": 8, "c": 8, "g": "None", "t": "Start", "n": "Nezekan - Start" }],
       "statEffects": ["Combat Speed +1.5%"], "skillEffects": ["Bolt +1"] }] },
   "partial": false, "classIcon": "class_icon_chanter.png", "fetchedAt": "2026-10-16T10:00:00.000Z", "error": "",
-  "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": "", "progress": null
+  "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": "", "progress": null,
+  "card": { "design": "abyss", "finish": "prism", "mine": false, "holo": false }
 }
 ```
 
 - `profile` is `null` until PLAYNC was first asked. `fetchedAt` is when it was, and `error` is why the last lookup of a kept profile failed. `classIcon` (dashboard 0.48.0) is the emblem of the profile's class, `""` while the server keeps none.
+- `card` (dashboard 0.50.0) is the profile's player card (`/armory/<region>/<server id>/<character id>/card`, `backend/odyle/cards.go`): `design` (`elysea`, `asmodae` or `abyss`; `""` until its player chose one, and the dashboard then draws it after the character's race) and `finish` (`prism`, `starfall`, `etched`, or `""` for plain; a holo finish shows only while its player's membership answer is `yes`). `mine` is `true` when the signed-in reader's account has a character the daily lookup tied to this profile (`officialId`, `officialRegion`, `officialServerId`), and `holo` when that account may also choose a holo finish. Several accounts with the profile: the reader's own choice, else the one saved last.
 - `partial` (dashboard 0.47.0) is `true` while a lookup runs for a character with no profile kept in today's shape: `profile` is then what PLAYNC's info and equipment pages gave, without `detail` on the items and `nodes` on the boards, which follow once the lookup ends. It is not kept.
 - `v` is the profile's shape; profiles kept before dashboard 0.46.0 have none and hold only the name to `itemLevel`, `stats` without `effects`, `gear` without `icon` and `detail`, and `boards` with `name`, `open` and `total`. Opening one queues it again.
 - `gear` lists the equipped items in PLAYNC's slot order (`MainHand`, `SubHand`, `Helmet`, …, `Arcana1`–`5`), then `Wings` and `Pet`. `detail` is the item's official item page for this character, missing when PLAYNC did not give it: `main` are its properties (`min` ~ `value`, `extra` from its enchantment; an `exceed` line has only `extra`), `sub` and `subSkills` its soul binding (`soulBind` is the rate in %, `subCount` the lines it can hold), `stones` its manastones (soulstones on accessories) of `stoneSlots`, `godStones` its theostones (`name`, `grade`, `desc`) of `godSlots`, and `set` the set it belongs to.
@@ -386,6 +388,8 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 - A character PLAYNC does not list, a hidden profile, or an id or server outside the region answers 404.
 
 The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes }` (`images` and `imageBytes` count the kept icons and portraits). `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
+
+`POST /api/odyle/card` (signed in) saves the look of a player card: `{ region, serverId, characterId, design, finish }` with the profile's search region, server id and PLAYNC character id. It answers the card as the armory route does. Only an account with a character tied to that profile may change it (403), and a holo finish needs the account's membership answer `yes` (403). An unknown design or finish answers 400, and a profile that is not in the armory 404. Every character of the account tied to the profile keeps the choice (`cardDesign`, `cardFinish`); it is no character news for rooms.
 
 ## Pages, robots.txt and sitemap.xml
 
