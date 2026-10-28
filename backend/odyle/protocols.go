@@ -26,3 +26,10 @@ var verifiedAdapters = []string{"global-reference-v1", "global-reference-v2"}
 // global-location-v1: map loads (21 36), arrivals (23 36) and the own character's effect events
 // (2A 38) of the Global stream, read only for the own character.
 var verifiedLocationAdapters = []string{"global-location-v1"}
+
+// The group adapters (groups.go), listed and switched off the same way.
+//
+// global-group-v1: the own party's roster (00 92) and its end (1F 92), the own force's roster
+// (02 96), a member leaving it (22 96) and its end (2E 96) on the Global stream; only the ids of
+// the own party and force are read, never the other members.
+var verifiedGroupAdapters = []string{"global-group-v1"}

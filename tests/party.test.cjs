@@ -63,3 +63,24 @@ test('the summary gives the numbers, then reads like a sentence, in English and 
   assert.match(partySummary(explain(entries, now, 40), now), /Kaelen · Kael brzdí partu/);
   await useLanguage('en');
 });
+test('players in one party or one force in the game stand together in a band', async () => {
+  const { inGame } = await import('../src/partyview.js');
+  const p = (user, gameGroup, extra = {}) => [live(user[0], user, user, 100, { gameGroup, ...extra })];
+  const shape = items => items.map(i => i.force ? { force: i.force, parts: shape(i.parts) } : i.party ? { party: i.party, players: i.players.map(g => g[0].user) } : i.player[0].user);
+  // Two players of one party, a third of the same force in another party, one outside both.
+  const room = [p('Anna', { party: 'p1', force: 'f1' }), p('Bram'), p('Cleo', { party: 'p1', force: 'f1' }), p('Dax', { party: 'p2', force: 'f1' })];
+  assert.deepEqual(shape(inGame(room, now)), [{ force: 'f1', parts: [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Dax'] }, 'Bram']);
+  // A band takes the place of its first player.
+  assert.deepEqual(shape(inGame([room[1], room[3], room[0], room[2]], now)), ['Bram', { force: 'f1', parts: ['Dax', { party: 'p1', players: ['Anna', 'Cleo'] }] }]);
+  // A force whose players all share one party is that party; one player alone makes no band.
+  assert.deepEqual(shape(inGame(room.slice(0, 3), now)), [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Bram']);
+  assert.deepEqual(shape(inGame([room[0], room[1]], now)), ['Anna', 'Bram']);
+  // A party without a force yet takes the force one of its players reported.
+  assert.deepEqual(shape(inGame([p('Anna', { party: 'p1' }), p('Cleo', { party: 'p1', force: 'f1' }), p('Dax', { force: 'f1' })], now)), [{ force: 'f1', parts: [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Dax'] }]);
+  // Only live characters count: an old group says nothing about now.
+  assert.deepEqual(shape(inGame([room[0], p('Cleo', { party: 'p1' }, { lastSeenAt: ago(7200) })], now)), ['Anna', 'Cleo']);
+  assert.deepEqual(shape(inGame([room[0], p('Cleo', { party: 'p1' }, { valid: false })], now)), ['Anna', 'Cleo']);
+  // A player's live character speaks for them, whichever of their characters comes first.
+  assert.deepEqual(shape(inGame([room[0], [live('c2', 'Cleo', 'Alt', 0, { lastSeenAt: ago(7200) }), ...room[2]]], now)), [{ party: 'p1', players: ['Anna', 'Cleo'] }]);
+  assert.deepEqual(inGame([], now), []);
+});

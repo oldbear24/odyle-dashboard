@@ -22,7 +22,7 @@ import { accountView } from './account.js';
 import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applyShared, applyMembership } from './live.js';
 import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, onlineReader, countdown, readerLabel, pairingSlot } from './pairing.js';
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
-import { partySummary, statusReason, readyOrder, byPlayer } from './partyview.js';
+import { partySummary, statusReason, readyOrder, byPlayer, inGame } from './partyview.js';
 import { dungeonKey, entryOf, cubeCost, dungeonFacts, dungeonField } from './catalog.js';
 import changelogText from '../CHANGELOG.md?raw';
 import privacyText from '../docs/privacy.md?raw';
@@ -628,17 +628,24 @@ function dashboard() {
   keepingDrafts(() => shell(`<main class="dashboard room-page"><section class="heading"><div><h1>${esc(room.name)}</h1><p>${esc(tn(members.length, '{n} member', '{n} members'))} · ${esc(tn(actual.length, '{n} character in this room', '{n} characters in this room'))} · ${esc(t('{cost} Odyle per cube', { cost: room.cost }))}${focus && focus.cost !== room.cost ? ' · ' + esc(t('next run {dungeon}: {cost} Odyle per cube', focus)) : ''}</p>${demo || !on('week') ? '' : weekLine(roomWeek)}</div><div class="heading-actions">${actions}</div></section>${on('board') ? boardSection(board, { canEdit: manager(), name: id => id === pb.authStore.record?.id ? t('You') : members.find(m => m.user === id)?.displayName || '', now }) : ''}${partySummary(explained, now, { estimated, focus })}<section class="party-section"><div class="section-heading"><h2>${t('Party characters')} <span>${actual.length}</span></h2><span class="section-tools"><button class="chip-toggle" data-action="live-only" aria-pressed="${liveOnly()}">${t('Live only')}</button></span></div>${demo ? '' : addBar()}<div class="member-grid party-list">${shown.length ? listHead() : ''}${playerGroups(shown, now, counted, cost)}${liveOnly() && hidden ? `<p class="wish-note live-only-note">${esc(tn(hidden, '{n} character not live is hidden', '{n} characters not live are hidden'))}</p>` : ''}</div></section>${columns ? `<div class="room-columns">${columns}</div>` : ''}</main>`));
 }
 // The party's characters grouped by the player whose account owns them, under that player's
-// name, look, leader crown and character count; the owner removes a player from here.
+// name, look, leader crown and character count; the owner removes a player from here. Players
+// in one party or one force in the game stand together in a band (inGame).
 function playerGroups(shown, now, counted, cost) {
   let index = 0;
-  return byPlayer(shown, demo ? null : pb.authStore.record?.id).map(group => {
+  const players = list => tn(list.length, '{n} player', '{n} players');
+  const band = (kind, label, count, inner) => `<div class="game-band is-${kind}" role="group" aria-label="${esc(label)}"><p class="band-label">${icon(kind === 'force' ? 'shield' : 'people')}<span>${esc(label)}</span><span class="band-count">${esc(count)}</span></p>${inner}</div>`;
+  const party = p => band('party', t('In one party in game'), players(p.players), p.players.map(section).join(''));
+  return inGame(byPlayer(shown, demo ? null : pb.authStore.record?.id), now).map(item => item.force
+    ? band('force', t('In one force in game'), players(item.parts.flatMap(p => p.players || [p.player])), item.parts.map(p => p.party ? party(p) : section(p.player)).join(''))
+    : item.party ? party(item) : section(item.player)).join('');
+  function section(group) {
     const p = group[0], ready = group.filter(c => readinessOf(c, now, cost).ready).length, you = p.user === pb.authStore.record?.id && !demo;
     const leader = p.role === 'owner' ? `<span class="leader-label" title="${esc(t('Room leader'))}">${icon('crown')}<span class="sr-only">${t('leader')}</span></span>` : '';
     const remove = owner() && p.membershipId && p.role !== 'owner' && !demo ? `<button class="remove" data-remove="${esc(p.membershipId)}" data-name="${esc(p.displayName)}" title="${esc(t('Remove {name} from this room', { name: p.displayName }))}">${t('Remove')}</button>` : '';
     const count = [tn(group.length, '{n} character', '{n} characters'), ready ? tn(ready, '{n} ready', '{n} ready') : ''].filter(Boolean).join(' · ');
     const head = `<div class="group-head"><span class="group-name">${lookName(p.displayName, p.look)}</span>${leader}${you ? `<span class="group-you">${t('You')}</span>` : ''}<span class="group-count">${esc(count)}</span>${remove ? `<span class="card-actions">${remove}</span>` : ''}</div>`;
     return `<section class="party-group" aria-label="${esc(p.displayName)}">${head}${group.map(c => card(c, index++, counted, cost)).join('')}</section>`;
-  }).join('');
+  }
 }
 // Column names over the character rows on wide screens.
 const listHead = () => `<div class="party-head" aria-hidden="true"><span>${t('Character')}</span><span>${t('Status')}</span><span>${t('Odyle')}</span><span>${t('Regeneration')}</span><span>${t('Cubes')}</span><span></span></div>`;
@@ -1303,10 +1310,10 @@ async function logout() {
 function demoSession() {
   clearRoom(); demo = true; room = { id: 'demo', owner: 'demo', name: t('The evening expedition'), cost: 40 }; const now = Date.now();
   members = [{ id: 'd1', user: 'dave', displayName: 'DaveCZ', role: 'owner', sharing: true, characters: [
-    { id: 'c1', characterName: 'DaveCZ', className: 'Templar', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 265, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 3000).toISOString() },
+    { id: 'c1', characterName: 'DaveCZ', className: 'Templar', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 265, confirmed: true, valid: true, gameGroup: { party: 'demo-party', force: 'demo-force' }, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 3000).toISOString() },
     { id: 'c2', characterName: 'DaveAlt', className: 'Chanter', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 80, confirmed: true, valid: false, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 120000).toISOString() },
-  ] }, { id: 'd2', user: 'lumina', displayName: 'Lumina', role: 'reporter', sharing: true, characters: [{ id: 'c3', characterName: 'Lumina', className: 'Cleric', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 180, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 9000).toISOString() }] },
-  { id: 'd3', user: 'kaelen', displayName: 'Kaelen', role: 'reporter', sharing: true, characters: [{ id: 'c4', characterName: 'Kaelen', className: 'Ranger', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 35, confirmed: true, valid: true, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 12000).toISOString() }] },
+  ] }, { id: 'd2', user: 'lumina', displayName: 'Lumina', role: 'reporter', sharing: true, characters: [{ id: 'c3', characterName: 'Lumina', className: 'Cleric', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 180, confirmed: true, valid: true, gameGroup: { party: 'demo-party', force: 'demo-force' }, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 9000).toISOString() }] },
+  { id: 'd3', user: 'kaelen', displayName: 'Kaelen', role: 'reporter', sharing: true, characters: [{ id: 'c4', characterName: 'Kaelen', className: 'Ranger', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 35, confirmed: true, valid: true, gameGroup: { party: 'demo-party-2', force: 'demo-force' }, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 12000).toISOString() }] },
   { id: 'd4', user: 'nyx', displayName: 'Nyx', role: 'reporter', sharing: false, characters: [] }];
   wishlist = [{ key: 'fire temple', dungeon: 'Fire Temple', users: ['dave', 'lumina', 'kaelen'] }, { key: 'draupnir cave', dungeon: 'Draupnir Cave', users: ['lumina', 'nyx'] }, { key: 'udas temple (hard)', dungeon: 'Udas Temple (Hard)', users: ['kaelen'] }];
   classRoles = [{ class: 'Templar', role: 'tank' }, { class: 'Cleric', role: 'healer' }, { class: 'Chanter', role: 'support' }, { class: 'Ranger', role: 'damage' }];
