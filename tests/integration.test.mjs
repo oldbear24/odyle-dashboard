@@ -337,11 +337,13 @@ test('owners make invite links one by one, list them from any browser and revoke
 test('invite links unfurl with the general page tags, the icon under a public Application URL', async () => {
   const page = async (headers = {}) => { const res = await fetch(url + '/', { headers }); return { status: res.status, etag: res.headers.get('etag'), text: await res.text() }; };
   const plain = await page(); assert.equal(plain.status, 200);
-  assert.ok(plain.text.includes('<meta property="og:title" content="Odyle — Party command"/>')); assert.ok(plain.text.includes('<meta property="og:image" content="./icon-512.png"/>'));
+  assert.ok(plain.text.includes('<meta property="og:title" content="Odyle — Party command">')); assert.ok(plain.text.includes('<meta property="og:image" content="./icon-512.png">'));
+  assert.ok(!plain.text.includes('rel="canonical"'), 'no address to name without a public Application URL');
   const operator = (await request('/__test__/superuser', {})).data, appURL = value => request('/api/settings', { meta: { appURL: value } }, operator, 'PATCH');
   assert.equal((await appURL('https://odyle.example')).status, 200);
   try {
-    const named = await page(); assert.ok(named.text.includes('<meta property="og:image" content="https://odyle.example/icon-512.png"/>'), named.text);
+    const named = await page(); assert.ok(named.text.includes('<meta property="og:image" content="https://odyle.example/icon-512.png">'), named.text);
+    assert.ok(named.text.includes('<link rel="canonical" href="https://odyle.example/">'), named.text);
     assert.notEqual(named.etag, plain.etag); assert.equal((await page({ 'If-None-Match': named.etag })).status, 304);
   } finally { assert.equal((await appURL('http://localhost:8090')).status, 200); }
   assert.equal((await page()).etag, plain.etag);
