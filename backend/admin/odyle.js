@@ -132,8 +132,9 @@ export function monitorPage(route) {
   const query = name => route?.query?.[name]?.[0] || '';
   // feed is always current; frozen holds what is shown while the list is paused. open is
   // the packet whose fields are shown.
+  // updated is the server's answer to the last Update all apps now, updateFailed why it failed.
   const state = store({ loading: true, failed: '', apps: [], latestVersion: '', feed: [], frozen: null, heartbeats: true, offset: 0, now: Date.now(), open: 0,
-    filter: filters.some(f => f.id === query('filter')) ? query('filter') : 'all', kind: query('kind'), account: query('account'), search: '' });
+    filter: filters.some(f => f.id === query('filter')) ? query('filter') : 'all', kind: query('kind'), account: query('account'), search: '', updating: false, updated: null, updateFailed: '' });
   const now = () => state.now + state.offset;
   let alive = true, poll = 0, tick = 0, unsubscribe = null;
   async function load() {
@@ -171,6 +172,20 @@ export function monitorPage(route) {
     const packets = shown().slice().reverse().map(plain);
     app.utils.downloadJSON({ exportedAt: new Date().toISOString(), server: location.origin, filters: { source: state.filter, kind: state.kind, account: state.account, search: state.search.trim(), heartbeats: state.heartbeats }, packets }, 'odyle-packets-' + new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-'));
   }
+  // Update all apps now (backend/odyle/releases.go): every connected Windows app older than the
+  // newest release the server knows downloads it, installs it and restarts; the others do
+  // nothing. The server counts every realtime connection it told, dashboards in browsers included.
+  const updateHint = () => (state.latestVersion ? 'Every connected Windows app older than ' + state.latestVersion + ' downloads it and restarts.' : 'Every connected Windows app looks up the newest release and, if it is newer, downloads it and restarts.') + ' The reader hands the live character over.';
+  const connections = n => number(n) + (n === 1 ? ' connection' : ' connections');
+  function updateApps() {
+    app.modals.confirm('Update all Windows apps now? ' + updateHint() + ' Apps not running now install new releases at their next start anyway.', async () => {
+      state.updating = true; state.updateFailed = '';
+      try { state.updated = await app.pb.send('/api/odyle/admin/update-apps', { method: 'POST', requestKey: null }); }
+      catch (error) { state.updated = null; if (!error.isAbort) state.updateFailed = error.message || 'The apps could not be asked to update.'; }
+      state.updating = false;
+    }, null, { yesButton: 'Update all apps' });
+  }
+  const updated = () => 'Sent to ' + connections(state.updated.told) + ' · ' + (state.updated.version ? 'apps older than ' + state.updated.version + ' update now' : 'apps look up the newest release and update if it is newer');
   const chip = (label, value, clear) => t.span({ className: 'label sm odyle-chip' }, t.span({ className: 'txt-hint' }, label), ' ', value,
     t.button({ type: 'button', className: 'odyle-chip-clear', title: 'Clear', ariaLabel: 'Clear ' + label.toLowerCase(), onclick: clear }, t.i({ className: 'ri-close-line', ariaHidden: true })));
 
@@ -227,7 +242,12 @@ export function monitorPage(route) {
       stat('Newest Windows app', () => state.latestVersion || '—', () => outdated().length ? number(outdated().length) + (outdated().length === 1 ? ' connected app is older' : ' connected apps are older') : 'no connected app is older'),
       stat('Packets last minute', () => number(recent().length), () => number(recent().filter(p => p.kind === 'report' && p.ok).length) + ' readings saved'),
       stat('Rejected', () => number(state.feed.filter(p => !p.ok).length), () => 'of the last ' + number(state.feed.length) + ' packets')),
-    t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Connected apps'), t.span({ className: 'txt-hint txt-sm' }, 'one row per running Windows app (reader session), by account')),
+    t.div({ className: 'flex m-b-sm odyle-apps-head' }, t.div({ className: 'txt-lg' }, 'Connected apps'), t.span({ className: 'txt-hint txt-sm' }, 'one row per running Windows app (reader session), by account'),
+      t.div({ className: 'm-r-auto' }),
+      t.button({ type: 'button', className: () => 'btn sm secondary' + (state.updating ? ' loading' : ''), disabled: () => state.updating, title: 'Ask every connected Windows app to update to the newest release and restart', onclick: updateApps },
+        t.i({ className: 'ri-download-cloud-2-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Update all apps now'))),
+    t.div({ className: 'flex m-b-sm odyle-update' }, t.span({ className: 'txt-hint txt-sm' }, () => updateHint()),
+      () => state.updateFailed ? t.span({ className: 'txt-sm txt-danger odyle-update-result' }, state.updateFailed) : state.updated ? t.span({ className: 'txt-sm txt-bold odyle-update-result' }, updated()) : null),
     t.div({ className: 'odyle-table m-b-base' }, t.table(null,
       t.thead(null, t.tr(null, ...heads.map(h => t.th({ className: h === 'Odyle' || h === 'Readings' ? 'txt-right' : '' }, h)))),
       t.tbody(null, () => state.apps.length ? state.apps.map(appRow) : t.tr(null, t.td({ colSpan: heads.length, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'No Windows app is connected.'))))),

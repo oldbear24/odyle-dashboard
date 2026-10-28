@@ -1770,6 +1770,26 @@ test('superusers set the announcement, the switches and the adapters on the Serv
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
   } finally { await close(); await request('/api/odyle/admin/settings', { announcement: '', armoryPaused: false, adapters: { extra: [], disabled: [] }, windowsBlocked: [] }, operator); }
 });
+test('superusers ask every connected Windows app to update now, after confirming', async () => {
+  const { page, errors, close } = await superuser();
+  try {
+    await page.goto(url + '/_/#/odyle');
+    const button = page.getByRole('button', { name: 'Update all apps now' });
+    await button.waitFor();
+    assert.match(await page.locator('.odyle-update').innerText(), /Every connected Windows app .*restarts\. The reader hands the live character over\./);
+    // Nothing is sent before the confirmation.
+    await button.click();
+    assert.equal(await page.locator('.odyle-update-result').count(), 0);
+    const confirm = page.locator('.modal.popup', { hasText: 'Update all Windows apps now?' });
+    await confirm.waitFor();
+    await confirm.getByRole('button', { name: 'Update all apps' }).click();
+    const result = page.locator('.odyle-update-result');
+    await result.waitFor(); await confirm.waitFor({ state: 'hidden' });
+    assert.match(await result.innerText(), /^Sent to \d+ connections? · apps (older than \d+(\.\d+)+ update now|look up the newest release and update if it is newer)$/);
+    await shot(page, 'admin-update-apps');
+    assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
+  } finally { await close(); }
+});
 test('superusers search, open and export packets and read the server status', async () => {
   const reader = await account('Status reader');
   const session = (await request('/api/odyle/session', { appVersion: '0.6.0.12' }, reader)).data;

@@ -160,6 +160,8 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/admin/settings", settingsRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/retention", retentionRoute).Bind(superuser)
 	se.Router.POST("/api/odyle/admin/vacuum/{name}", vacuumRoute).Bind(superuser)
+	// Every running Windows app updates to the newest release now (releases.go).
+	se.Router.POST("/api/odyle/admin/update-apps", updateAppsRoute).Bind(superuser)
 	// A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.
 	se.Router.POST("/api/odyle/admin/settings", saveSettingsRoute).Bind(superuser, apis.BodyLimit(65536))
 }
