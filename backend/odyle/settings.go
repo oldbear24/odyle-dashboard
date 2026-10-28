@@ -551,13 +551,14 @@ func adapterSettings(value any) (adapterLists, error) {
 	}
 	lists := adapterLists{Extra: []string{}, Disabled: []string{}}
 	for _, name := range extraNames {
-		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) {
+		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) && !contains(verifiedGroupAdapters, name) {
 			lists.Extra = append(lists.Extra, name)
 		}
 	}
-	// The location adapters (location.go) are switched off here too, never accepted as reading ones.
+	// The location and group adapters (location.go, groups.go) are switched off here too, never
+	// accepted as reading ones.
 	for _, name := range disabledNames {
-		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) {
+		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) || contains(verifiedGroupAdapters, name) {
 			lists.Disabled = append(lists.Disabled, name)
 		}
 	}

@@ -61,3 +61,33 @@ export function byPlayer(characters, you = null) {
   const all = [...groups.values()].map(g => [...g.filter(c => c.main), ...g.filter(c => !c.main)]);
   return you && groups.has(you) ? [...all.filter(g => g[0].user === you), ...all.filter(g => g[0].user !== you)] : all;
 }
+
+// The players the game put together (backend groups.go): the player groups (byPlayer) whose live
+// characters are in one party, or in one force (an alliance of parties), as their Windows apps
+// read it. A band needs two of the room's players. A force band holds its parties' bands and its
+// players in no party shared here; a force whose players all share one party is that party. A
+// band takes the place of its first player, so the order stays. Each item is { player },
+// { party, players } or { force, parts }, with parts { party, players } or { player }.
+export function inGame(groups, now) {
+  const ids = groups.map(g => g.find(c => c.gameGroup && status(c, now) === 'live')?.gameGroup || {});
+  const counted = values => values.reduce((n, v) => v ? n.set(v, (n.get(v) || 0) + 1) : n, new Map());
+  const parties = counted(ids.map(g => g.party)), party = ids.map(g => parties.get(g.party) >= 2 ? g.party : '');
+  // A party's force is the one any of its players reported: a roster may reach one app first.
+  const forceOf = new Map();
+  ids.forEach((g, i) => { if (party[i] && g.force && !forceOf.has(party[i])) forceOf.set(party[i], g.force); });
+  const force = ids.map((g, i) => party[i] ? forceOf.get(party[i]) || '' : g.force || '');
+  const of = f => force.flatMap((o, i) => o === f ? [i] : []);
+  const band = f => { const m = of(f); return m.length >= 2 && !(party[m[0]] && m.every(i => party[i] === party[m[0]])); };
+  const placed = new Set(), take = i => { placed.add(i); return groups[i]; };
+  const together = p => ({ party: p, players: groups.flatMap((g, j) => party[j] === p ? [take(j)] : []) });
+  const out = [];
+  groups.forEach((g, i) => {
+    if (placed.has(i)) return;
+    if (force[i] && band(force[i])) {
+      const parts = [];
+      for (const j of of(force[i])) if (!placed.has(j)) parts.push(party[j] ? together(party[j]) : { player: take(j) });
+      out.push({ force: force[i], parts });
+    } else out.push(party[i] ? together(party[i]) : { player: take(i) });
+  });
+  return out;
+}

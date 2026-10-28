@@ -1319,6 +1319,8 @@ func invalidate(e *core.RequestEvent) error {
 			return nil, nil
 		}
 		c.SetValid(false)
+		// What the party did while nothing was read is unknown (groups.go).
+		c.Set("gameGroup", nil)
 		return nil, app.Save(c)
 	})
 }

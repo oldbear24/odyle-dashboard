@@ -21,6 +21,8 @@ var verifiedAdapters = []string{"test-fixture-v1"}
 
 var verifiedLocationAdapters = []string{"test-location-v1"}
 
+var verifiedGroupAdapters = []string{"test-group-v1"}
+
 // The armory asks the PLAYNC stand-in of the tests without its pauses between lookups.
 func init() {
 	testFixtures = fixtures

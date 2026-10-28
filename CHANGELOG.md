@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.55.0 · 2026-10-28
+
+### New
+- **Who plays together**: players in one party in the game now stand together on the room page in a blue frame, and players of one force in a violet frame around their parties. Odyle for Windows 0.31.0 reads it from the game when the party or force forms or changes, and only for live characters. It sends only the ids the game gives the party and the force, never who else is in them. The demo room shows it too.
+
 ## 0.54.0 · 2026-10-28
 
 ### New

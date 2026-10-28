@@ -1247,6 +1247,9 @@ export default {
   'Saved: your rooms see where your characters were last seen.': 'Uloženo: tvoje místnosti vidí, kde byly tvoje postavy naposledy.',
   'Saved: location sharing is off, and the saved places are deleted.': 'Uloženo: sdílení polohy je vypnuté a uložená místa jsou smazaná.',
   'This location adapter is not accepted.': 'Tento adaptér polohy server nepřijímá.',
+  'This group adapter is not accepted.': 'Tento adaptér party a force server nepřijímá.',
+  'A party id is 16 hexadecimal digits or null.': 'Id party je 16 šestnáctkových číslic nebo null.',
+  'A force id is 16 hexadecimal digits or null.': 'Id force je 16 šestnáctkových číslic nebo null.',
   'Location sharing must be true or false.': 'Sdílení polohy musí být true nebo false.',
   'Maps must be a list of up to 500 maps.': 'Mapy musí být seznam nejvýš 500 map.',
   'List each map id once.': 'Uveď každé id mapy jen jednou.',
@@ -1412,4 +1415,7 @@ export default {
   'Effects': 'Efekty',
   'Contents': 'Obsah',
   'Card look': 'Vzhled karty',
+  // Players in one party or force in the game (main.js playerGroups)
+  'In one party in game': 'Ve hře v jedné partě',
+  'In one force in game': 'Ve hře v jedné force',
 };
