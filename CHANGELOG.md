@@ -2,6 +2,21 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.53.0 · 2026-10-28
+
+### New
+- **Six more player card designs**: Sanctum (white marble and gold), Pandaemonium (black iron and lantern light), Eltnen (desert sand and copper), Inggison (a twilight jungle of glowing blooms), Dredgion (warship steel and warning lights) and Tiamaranta (dragon gold over dark jade).
+- **Six more finishes** that come with the membership: Opal, Galaxy, Lenticular, Brushed metal, Stained glass and Aether shield. **Save image** draws them too.
+- **Five more effects around the card**: a Daeva's wings, Orbits, Feathers, Shards and a Rift.
+
+### Changed
+- Player cards have more depth. As a card turns, its backdrop, portrait and foil shift under its surface, while the stats panel and the emblem on its back stand out of it. Every effect around the card turns with it in 3D, partly in front of the card and partly behind it.
+- The look picker on a player card is much shorter: its choices sit under four tabs (Design, Finish, Effects and Contents), and the designs and finishes are small tiles.
+- **Save image** saves the card at twice the size (1500 × 2095 pixels).
+
+### Fixed
+- Player cards look sharp on high-resolution screens. In Chrome and Edge, a turning card was drawn at a low resolution, and holo finishes made the dark parts of a portrait look blocky.
+
 ## 0.52.0 · 2026-10-28
 
 ### New

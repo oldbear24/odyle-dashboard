@@ -61,7 +61,7 @@ test('the card page escapes what PLAYNC lists and offers the look picker only to
   assert.match(trying, /<button class="button primary" type="submit" >/);
 
   const player = cardPage(answer({ design: '', finish: '', mine: true, holo: false }));
-  assert.equal((player.match(/name="finish" value="(prism|starfall|etched|sunburst|ice|scales|aether)" {2}disabled/g) || []).length, 7, 'holo locked');
+  assert.equal((player.match(/name="finish" value="(prism|starfall|etched|sunburst|ice|scales|aether|opal|galaxy|lenticular|brushed|stained|shield)" {2}disabled/g) || []).length, 13, 'holo locked');
   assert.match(player, /<input type="radio" name="finish" value="" checked/, 'plain open');
   assert.match(player, /Holo finishes are for players with the membership/);
 
@@ -95,6 +95,14 @@ test('the card turns whichever way it is dragged and rests on the face that show
   assert.deepEqual(o.rest(o.times(dragTurn(0, 220), start)), [0, 1, 0, 0]);
   // Halfway between two orientations, the short way round.
   assert.deepEqual(round(o.toward(start, o.about(0, 1, 0, 90), 0.5)), round(o.about(0, 1, 0, 45)));
+  // What lies under the face that shows shifts toward where the viewer is: turned the same way,
+  // the front's and the back's shift the same way on screen; facing the viewer, not at all.
+  const [fx] = o.view(o.about(0, 1, 0, 20)), [bx] = o.view(o.times(o.about(0, 1, 0, 20), [0, 1, 0, 0]));
+  assert.ok(fx < -0.3 && Math.abs(fx - bx) < 1e-9, `${fx} ${bx}`);
+  assert.ok(o.view(o.about(1, 0, 0, 20))[1] > 0.3);
+  assert.deepEqual(o.view(start).map(v => v + 0), [0, 0]);
+  // The sparks around it face the viewer: the turn back undoes the turn.
+  assert.deepEqual(round(o.times(o.inverse(o.about(1, 2, 0, 50)), o.about(1, 2, 0, 50))), [0, 0, 0, 1]);
 });
 
 test('a card\'s options pick from what PLAYNC lists, and anything else falls back', async () => {
@@ -108,7 +116,7 @@ test('a card\'s options pick from what PLAYNC lists, and anything else falls bac
   // The effect around the card, accent colour, frame and name style.
   const tried = { options: { aura: 'embers', accent: 'jade', frame: 'radiant', nameStyle: 'gold' } }, styled = lookOf(saved, tried);
   assert.deepEqual([styled.options.aura, styled.options.accent, styled.options.frame, styled.options.nameStyle], ['embers', 'jade', 'radiant', 'gold']);
-  assert.match(cardPage(saved, { look: tried }), /<article class="tcg design-balaur finish-starfall layout-full accent-jade frame-radiant name-gold"[^>]*><div class="tcg-aura aura-embers" aria-hidden="true">(<i style="--x:[\d.]+%;[^"]+"><\/i>){18}<\/div><div class="tcg-body">/);
+  assert.match(cardPage(saved, { look: tried }), /<article class="tcg design-balaur finish-starfall layout-full accent-jade frame-radiant name-gold"[^>]*><div class="tcg-body"><div class="tcg-aura aura-embers" aria-hidden="true">(<i style="--x:[\d.]+%;--z:-?[\d.]+cqw;[^"]+"><\/i>){18}<\/div><div class="tcg-face tcg-front">/);
   assert.equal(cardAura(lookOf(saved)), '<div class="tcg-aura" aria-hidden="true"></div>', 'no effect, an empty layer');
   assert.equal(cardAura(styled), cardAura(lookOf(saved, tried)), 'the sparks stay where they were');
   assert.equal((cardAura(lookOf(saved, { options: { aura: 'stardust' } })).match(/<i /g) || []).length, 26);
@@ -127,4 +135,46 @@ test('a card\'s options pick from what PLAYNC lists, and anything else falls bac
   assert.match(page, /data-action="card-image"/);
   assert.equal(imageName({ name: 'Ka<b>' }), 'Kab-odyle-card.png');
   assert.equal(imageName({ name: 'Žluťoučký' }), 'Žluťoučký-odyle-card.png');
+});
+
+test('the effects around the card are in its 3D space, in front of it and behind it', async () => {
+  const { lookOf, cardAura, cardAuras, cardDesigns, cardFinishes } = await import('../src/card.js');
+  const look = aura => lookOf(answer({ design: 'abyss', finish: '', options: { aura } }));
+  assert.equal(cardAuras().length, 11);
+  assert.deepEqual([cardDesigns().length, cardFinishes().length], [12, 14]);
+  for (const design of ['sanctum', 'pandaemonium', 'eltnen', 'inggison', 'dredgion', 'tiamaranta']) assert.equal(lookOf(answer({ design })).design, design);
+  for (const finish of ['opal', 'galaxy', 'lenticular', 'brushed', 'stained', 'shield']) assert.equal(lookOf(answer({ design: 'abyss', finish })).finish, finish);
+  // A plane behind each face, the back's turned with it.
+  assert.equal(cardAura(look('glow')), '<div class="tcg-aura aura-glow" aria-hidden="true"><b class="tcg-plane tcg-halo"></b><b class="tcg-plane tcg-halo is-back"></b></div>');
+  assert.equal((cardAura(look('rift')).match(/class="tcg-plane tcg-vortex/g) || []).length, 4);
+  // Sparks spread in front of the card and behind it, the same each time.
+  const depths = [...cardAura(look('embers')).matchAll(/--z:(-?[\d.]+)cqw/g)].map(m => Number(m[1]));
+  assert.ok(depths.some(z => z > 0) && depths.some(z => z < 0), depths.join());
+  assert.ok(depths.every(z => Math.abs(z) <= 30));
+  assert.equal(cardAura(look('feathers')), cardAura(look('feathers')));
+  assert.equal((cardAura(look('feathers')).match(/<i style="--x:[^"]*--axis:-?[\d.]+ 1 -?[\d.]+"><\/i>/g) || []).length, 14);
+  assert.equal((cardAura(look('shards')).match(/<i /g) || []).length, 10);
+  // Rings tilted around it, and a pair of wings of feathers.
+  assert.equal((cardAura(look('orbit')).match(/<b class="tcg-ring is-orbit" style="--w:\d+cqw;--tilt:\d+deg;--roll:-?\d+deg;--t:\d+s;--at:50%"><b><\/b><\/b>/g) || []).length, 3);
+  assert.match(cardAura(look('runes')), /<b class="tcg-ring is-runes" style="[^"]*--at:84%">/);
+  const wings = cardAura(look('wings'));
+  assert.match(wings, /^<div class="tcg-aura aura-wings" aria-hidden="true"><i class="tcg-wing is-left"><svg viewBox="-12 -14 160 120" focusable="false">(<path class="is-(flight|covert)" transform="translate\(-?[\d.]+ -?[\d.]+\) rotate\(-?[\d.]+\)" d="[^"]+"\/>){20}<\/svg><\/i><i class="tcg-wing is-right">/);
+});
+
+test('the look picker keeps its choices under tabs', async () => {
+  const { cardPage, studioTabs } = await import('../src/card.js');
+  const own = answer({ design: 'abyss', finish: '', mine: true, holo: true });
+  const page = cardPage(own);
+  assert.deepEqual(studioTabs().map(([key]) => key), ['design', 'finish', 'effects', 'content']);
+  assert.match(page, /<div class="card-tabs" role="tablist" aria-label="Card look"><button type="button" role="tab" id="card-tab-design" aria-controls="card-panel-design" aria-selected="true" tabindex="0" data-card-tab="design">Design<\/button>/);
+  assert.match(page, /<div class="card-panel" role="tabpanel" id="card-panel-design" aria-labelledby="card-tab-design" data-card-panel="design">/);
+  for (const tab of ['finish', 'effects', 'content']) assert.match(page, new RegExp(`id="card-panel-${tab}" aria-labelledby="card-tab-${tab}" data-card-panel="${tab}" hidden>`));
+  // Every choice is in the form, whichever tab is open, and the chosen design and finish say what they are.
+  for (const name of ['design', 'finish', 'aura', 'accent', 'frame', 'nameStyle', 'layout', 'line', 'stats', 'skill0', 'skill1', 'back']) assert.match(page, new RegExp(`name="${name}"`), name);
+  assert.match(page, /<p class="card-about" data-about="design">Obsidian split by aether light<\/p>/);
+  assert.match(page, /<span class="card-swatch design-tiamaranta" aria-hidden="true"><\/span><strong>Tiamaranta<\/strong>/);
+  // The tab last opened stays open; an unknown one opens the first.
+  assert.match(cardPage(own, { tab: 'effects' }), /aria-selected="true" tabindex="0" data-card-tab="effects"/);
+  assert.match(cardPage(own, { tab: 'effects' }), /data-card-panel="design" hidden>/);
+  assert.match(cardPage(own, { tab: 'nope' }), /aria-selected="true" tabindex="0" data-card-tab="design"/);
 });
