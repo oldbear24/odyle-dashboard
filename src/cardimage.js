@@ -1,14 +1,14 @@
 // A player card's front as a picture (card.js, Save image): drawn on a canvas in the card's
 // look, its design, holo finish, layout and options (the effect around the card, which is not
-// on the card, aside), and saved as a PNG. The canvas draws the
-// card itself rather than copying the page, since the content security policy lets the page
+// on the card, aside), and saved as a PNG at twice the size of a card on a phone (1500 pixels
+// wide), so it stays sharp when zoomed in or printed. The canvas draws the card itself rather than copying the page, since the content security policy lets the page
 // load images only from the Odyle server (img-src 'self'); the portrait and icons come from
 // there too, so the canvas may be saved.
 import { t } from './i18n.js';
 import { imageUrl } from './armory.js';
 import { cardSkills, cardStats, cardLine, raceName, gradeName, cardAccents } from './card.js';
 
-export const width = 750, height = Math.round(750 * 88 / 63);
+export const width = 1500, height = Math.round(1500 * 88 / 63);
 const u = width / 100;
 const heading = '"Manrope Variable", Manrope, sans-serif', text = '"DM Sans Variable", "DM Sans", sans-serif';
 
@@ -20,6 +20,12 @@ const palettes = {
   balaur: { ink: '#f9ece0', muted: '#d0a58e', accent: '#e8b04a', panel: 'rgba(24,7,7,.82)', line: 'rgba(232,176,74,.38)', frame: ['rgba(232,176,74,.55)', 0.6], art: ['radial', ['#c4381f', 0], ['#4d0d0d', 0.55], ['#120404', 0.9]], face: [160, ['#3d0e0e', 0], ['#170606', 0.5], ['#4a1111', 1]], glow: ['rgba(232,176,74,.18)', 0.5, 0], scales: true },
   beluslan: { ink: '#10283a', muted: '#4c6b80', accent: '#2f7fb0', panel: 'rgba(246,251,255,.85)', line: 'rgba(47,127,176,.35)', frame: ['rgba(47,127,176,.4)', 0.5], artBorder: '#7fb1d3', art: [180, ['#4d7fa8', 0], ['#a7c9e3', 0.55], ['#f2f8fc', 1]], face: [160, ['#eef6fc', 0], ['#cfe3f2', 0.4], ['#a9cbe6', 0.7], ['#e6f2fa', 1]], glow: ['rgba(255,255,255,.95)', 0.18, 0.12] },
   heiron: { ink: '#f0f3e4', muted: '#b7c39a', accent: '#d6aa5c', panel: 'rgba(14,28,17,.8)', line: 'rgba(214,170,92,.38)', frame: ['rgba(214,170,92,.55)', 0.7, true], art: ['radial', ['#93c36d', 0], ['#2f5a2f', 0.55], ['#0e1d12', 0.9]], face: [160, ['#22422b', 0], ['#11251a', 0.5], ['#2d4b25', 1]], glow: ['rgba(214,170,92,.25)', 0.5, 0] },
+  sanctum: { ink: '#1c2738', muted: '#56657a', accent: '#c6922f', panel: 'rgba(255,255,255,.86)', line: 'rgba(70,110,160,.3)', frame: ['rgba(198,146,47,.75)', 0.6, true], art: [180, ['#6fa8e0', 0], ['#bcd8f2', 0.6], ['#fdfaf2', 1]], face: [160, ['#ffffff', 0], ['#eef2f7', 0.45], ['#dce4ee', 0.75], ['#f7f9fc', 1]], glow: ['rgba(255,255,255,.9)', 0.3, 0.1], columns: true },
+  pandaemonium: { ink: '#e9eef2', muted: '#93a3ad', accent: '#46d3c6', panel: 'rgba(12,16,20,.82)', line: 'rgba(70,211,198,.3)', frame: ['rgba(150,165,175,.55)', 0.5], artBorder: '#8d9aa3', art: ['radial', ['#3a6f73', 0], ['#172629', 0.55], ['#080b0d', 0.9]], face: [165, ['#232a31', 0], ['#12171c', 0.5], ['#1b2127', 1]], glow: ['rgba(70,211,198,.16)', 0.5, 0] },
+  eltnen: { ink: '#3a2210', muted: '#7c5432', accent: '#c4561f', panel: 'rgba(255,246,228,.86)', line: 'rgba(196,86,31,.32)', frame: ['rgba(196,86,31,.5)', 0.6], art: [180, ['#f2a65a', 0], ['#f7d08a', 0.5], ['#fbefd6', 1]], face: [170, ['#f6e2b5', 0], ['#e9c58a', 0.45], ['#d99a5a', 0.75], ['#f0d29c', 1]], glow: ['rgba(255,235,180,.7)', 0.5, 0] },
+  inggison: { ink: '#eefaf4', muted: '#9cc7b8', accent: '#ff7ccf', panel: 'rgba(10,26,26,.8)', line: 'rgba(255,124,207,.32)', frame: ['rgba(120,230,200,.45)', 0.5], artBorder: '#78e6c8', art: ['radial', ['#4fb59a', 0], ['#173f39', 0.55], ['#08130f', 0.9]], face: [160, ['#143a37', 0], ['#0b201f', 0.5], ['#1d1838', 1]], glow: ['rgba(255,124,207,.22)', 0.8, 1] },
+  dredgion: { ink: '#eef1f4', muted: '#9aa4ad', accent: '#ff4a3d', panel: 'rgba(16,18,21,.84)', line: 'rgba(255,74,61,.35)', frame: ['rgba(170,180,190,.5)', 0.5], artBorder: '#aab4be', art: ['radial', ['#7a2622', 0], ['#2a1414', 0.55], ['#0b0c0e', 0.9]], face: [165, ['#30363d', 0], ['#1a1e23', 0.5], ['#262b31', 1]], glow: ['rgba(255,74,61,.3)', 0.5, 1.04] },
+  tiamaranta: { ink: '#f6f0dc', muted: '#c2b48a', accent: '#f2c14e', panel: 'rgba(6,20,17,.82)', line: 'rgba(242,193,78,.36)', frame: ['rgba(242,193,78,.7)', 0.75, true], art: ['radial', ['#2f8a72', 0], ['#0e2a24', 0.55], ['#040b09', 0.9]], face: [160, ['#123a32', 0], ['#071815', 0.5], ['#0f2c26', 1]], glow: ['rgba(242,193,78,.12)', 0.5, 0.5] },
 };
 const gradeColours = { common: '#e6e9e7', rare: '#52b35c', legend: '#3d94d8', unique: '#fb9800', epic: '#ee6c2a', mythic: '#d33939' };
 
@@ -72,6 +78,9 @@ function background(ctx, c) {
     ctx.save(); ctx.strokeStyle = 'rgba(255,110,70,.14)'; ctx.lineWidth = 0.35 * u;
     for (let row = 0, y = 0; y < height + 5 * u; row++, y += 5 * u) for (let x = row % 2 ? 3.5 * u : 0; x < width + 7 * u; x += 7 * u) { ctx.beginPath(); ctx.arc(x, y, 3.5 * u, 0, Math.PI); ctx.stroke(); }
     ctx.restore();
+  }
+  if (c.columns) {
+    for (let x = 8 * u; x < width; x += 20 * u) { ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(x + 0.6 * u, 0, 2.8 * u, height); ctx.fillStyle = 'rgba(130,140,170,.28)'; ctx.fillRect(x, 0, 0.6 * u, height); ctx.fillRect(x + 3.4 * u, 0, 0.6 * u, height); }
   }
 }
 // The frames a card may choose over its design's: [colour, size, double, glow], none at all.
@@ -132,8 +141,49 @@ function holo(ctx, finish, seed) {
     }
     ctx.globalAlpha = 0.14; ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.2 * u;
     for (let y = 0; y < height + width * 0.14; y += 2.6 * u) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y - width * 0.14); ctx.stroke(); }
+  } else if (finish === 'opal') {
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.32;
+    for (const [x, y, r, colour] of [[0.22, 0.24, 0.3, 'rgba(110,255,215,.9)'], [0.78, 0.38, 0.32, 'rgba(255,130,215,.85)'], [0.4, 0.72, 0.34, 'rgba(130,165,255,.9)'], [0.82, 0.86, 0.26, 'rgba(255,225,130,.8)'], [0.12, 0.92, 0.24, 'rgba(255,160,120,.75)']]) glowAt(ctx, x, y, r, 1, colour);
+  } else if (finish === 'galaxy') {
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.5;
+    for (const [x, y, r, squash, colour] of [[0.32, 0.28, 0.62, 0.4, 'rgba(120,90,255,.9)'], [0.72, 0.7, 0.55, 0.4, 'rgba(255,70,170,.75)'], [0.4, 0.88, 0.45, 0.35, 'rgba(70,200,255,.7)']]) glowAt(ctx, x, y, r, squash, colour);
+    const random = seeded(seed); ctx.globalAlpha = 0.9; ctx.fillStyle = '#fff';
+    for (let i = 0; i < 360; i++) { ctx.beginPath(); ctx.arc(random() * width, random() * height, (0.1 + random() * 0.25) * u, 0, Math.PI * 2); ctx.fill(); }
+  } else if (finish === 'lenticular') {
+    ctx.globalCompositeOperation = 'color-dodge'; ctx.globalAlpha = 0.16;
+    for (let x = 0, i = 0; x < width; x += 0.8 * u, i++) { ctx.fillStyle = i % 2 ? '#e040fb' : '#29b6f6'; ctx.fillRect(x, 0, 0.8 * u, height); }
+    ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.22; ctx.fillStyle = '#fff';
+    for (let x = 0; x < width; x += 1.6 * u) ctx.fillRect(x, 0, 0.14 * u, height);
+  } else if (finish === 'brushed') {
+    ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.5;
+    ctx.fillStyle = linear(ctx, 115, [['#7d858e', 0], ['#dfe5ea', 0.48], ['#69717a', 1]], 0, 0, width, height); ctx.fillRect(0, 0, width, height);
+    const streak = ctx.createLinearGradient(0, height * 0.24, 0, height * 0.52);
+    [['rgba(255,255,255,0)', 0], ['rgba(255,255,255,.9)', 0.5], ['rgba(255,255,255,0)', 1]].forEach(([colour, at]) => streak.addColorStop(at, colour));
+    ctx.fillStyle = streak; ctx.fillRect(0, 0, width, height);
+    const random = seeded(seed); ctx.globalAlpha = 0.16;
+    for (let y = 0; y < height; y += 0.35 * u) { ctx.fillStyle = random() < 0.5 ? '#fff' : '#000'; ctx.fillRect(0, y, width, 0.12 * u); }
+  } else if (finish === 'stained') {
+    ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.5;
+    ctx.fillStyle = linear(ctx, 160, [['#ff8a3d', 0], ['#c23dff', 1]], 0, 0, width, height); ctx.fillRect(0, 0, width, height);
+    for (const [x, y, r, colour] of [[0.18, 0.22, 0.34, '#ff3d5a'], [0.8, 0.18, 0.34, '#2fd6c0'], [0.52, 0.52, 0.32, '#ffc84a'], [0.2, 0.82, 0.36, '#7a4dff'], [0.84, 0.8, 0.36, '#3d8bff']]) glowAt(ctx, x, y, r, 1, colour);
+    ctx.globalAlpha = 0.3; ctx.strokeStyle = '#19120a'; ctx.lineWidth = 0.4 * u;
+    hatch(ctx, 30, 11 * u); hatch(ctx, -30, 11 * u);
+  } else if (finish === 'shield') {
+    ctx.globalCompositeOperation = 'color-dodge'; ctx.globalAlpha = 0.3; ctx.strokeStyle = 'rgba(130,255,235,.9)'; ctx.lineWidth = 0.25 * u;
+    for (const angle of [0, 60, 120]) hatch(ctx, angle, 3.35 * u);
   }
   ctx.restore();
+}
+// A soft round light at x, y (parts of the card), r of its width across, squashed to an ellipse.
+function glowAt(ctx, x, y, r, squash, colour) {
+  ctx.save(); ctx.translate(width * x, height * y); ctx.scale(1, squash);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, width * r); g.addColorStop(0, colour); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(-width * 2, -height * 4, width * 4, height * 8); ctx.restore();
+}
+// Parallel lines across the whole card at angle degrees (0 is across), spacing apart.
+function hatch(ctx, angle, spacing) {
+  const a = angle * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), reach = Math.hypot(width, height);
+  for (let k = -reach; k <= reach; k += spacing) { const x = width / 2 - dy * k, y = height / 2 + dx * k; ctx.beginPath(); ctx.moveTo(x - dx * reach, y - dy * reach); ctx.lineTo(x + dx * reach, y + dy * reach); ctx.stroke(); }
 }
 
 // The card in look as a PNG (a Blob). images is where the backend serves the armory's images.
@@ -149,6 +199,8 @@ export async function cardImage(answer, look, images) {
   const [portrait, classIcon, ...skillIcons] = await Promise.all([load(imageUrl(images, p.portrait)), load(imageUrl(images, answer.classIcon)), ...skills.map(s => load(imageUrl(images, s.icon)))]);
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext('2d');
+  // The portrait (512 pixels from PLAYNC) and the icons are drawn larger than they are: smoothly.
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   roundRect(ctx, 0, 0, width, height, 4.6 * u); ctx.clip();
   background(ctx, c);
   const pad = 5.4 * u, inner = width - pad * 2;

@@ -26,12 +26,12 @@ import (
 // none (""): the dashboard draws it after the character's race.
 
 var (
-	cardDesigns  = []string{"elysea", "asmodae", "abyss", "balaur", "beluslan", "heiron"}
-	cardFinishes = []string{"", "prism", "starfall", "etched", "sunburst", "ice", "scales", "aether"}
+	cardDesigns  = []string{"elysea", "asmodae", "abyss", "balaur", "beluslan", "heiron", "sanctum", "pandaemonium", "eltnen", "inggison", "dredgion", "tiamaranta"}
+	cardFinishes = []string{"", "prism", "starfall", "etched", "sunburst", "ice", "scales", "aether", "opal", "galaxy", "lenticular", "brushed", "stained", "shield"}
 	cardLayouts  = []string{"classic", "full"}
 	cardStats    = []string{"primary", "deity"}
 	cardLines    = []string{"title", "legion", "none"}
-	cardAuras    = []string{"", "glow", "embers", "stardust", "runes", "storm"}
+	cardAuras    = []string{"", "glow", "embers", "stardust", "runes", "storm", "wings", "orbit", "feathers", "shards", "rift"}
 	cardAccents  = []string{"", "gold", "silver", "ember", "jade", "azure", "violet", "rose"}
 	cardFrames   = []string{"", "gilded", "silver", "radiant", "none"}
 	cardNames    = []string{"", "gold", "glow"}

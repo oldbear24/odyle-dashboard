@@ -64,9 +64,15 @@ func TestPlayerCardsAreChosenByTheCharactersPlayer(t *testing.T) {
 	if card := cardFor(nil); card["design"] != "elysea" || card["finish"] != "starfall" {
 		t.Fatalf("everyone sees the holo: %v", card)
 	}
-	for _, finish := range []string{"sunburst", "ice", "scales", "aether"} {
+	for _, finish := range []string{"sunburst", "ice", "scales", "aether", "opal", "galaxy", "lenticular", "brushed", "stained", "shield"} {
 		if saved := choose(ownerAuth, "heiron", finish, 200); saved["finish"] != finish {
 			t.Fatalf("holo %s: %v", finish, saved)
+		}
+	}
+	// The designs of 0.53.0.
+	for _, design := range []string{"sanctum", "pandaemonium", "eltnen", "inggison", "dredgion", "tiamaranta"} {
+		if saved := choose(ownerAuth, design, "", 200); saved["design"] != design {
+			t.Fatalf("design %s: %v", design, saved)
 		}
 	}
 	choose(ownerAuth, "heiron", "chrome", 400)
@@ -89,6 +95,12 @@ func TestPlayerCardsAreChosenByTheCharactersPlayer(t *testing.T) {
 	}
 	if options := cardFor(nil)["options"].(map[string]any); options["aura"] != "runes" || options["accent"] != "jade" {
 		t.Fatalf("everyone sees the style: %v", options)
+	}
+	// The effects of 0.53.0.
+	for _, aura := range []string{"wings", "orbit", "feathers", "shards", "rift"} {
+		if saved := withOptions(`{"aura":"`+aura+`"}`, 200); saved["options"].(map[string]any)["aura"] != aura {
+			t.Fatalf("effect %s: %v", aura, saved)
+		}
 	}
 	for _, refused := range []string{`{"layout":"wide"}`, `{"back":"gilded"}`, `{"stats":"all"}`, `{"line":"motto"}`, `{"skills":["Rend"]}`, `{"skills":["Bolt","Bolt","Bolt"]}`, `{"skills":["Typed in"]}`, `"full"`,
 		`{"aura":"fireworks"}`, `{"accent":"#ff0000"}`, `{"frame":"diamond"}`, `{"nameStyle":"comic"}`} {

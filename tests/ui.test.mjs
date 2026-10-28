@@ -799,21 +799,34 @@ test('a profile has a player card on a page of its own that turns, and the playe
     assert.equal(await page.locator('.armory-portrait img').getAttribute('draggable'), 'false');
     assert.deepEqual(visitor.errors, []);
   } finally { await visitor.close(); }
-  // Its player picks a design; holo finishes wait for the membership.
+  // Its player picks a design; holo finishes wait for the membership. The picker keeps its
+  // choices under tabs.
   const own = await open(player, cardAt.slice(1));
   try {
     const { page } = own;
+    const tab = name => page.locator(`[data-card-tab="${name}"]`).click();
     await page.locator('#card-form').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('[data-card-tab="design"]').getAttribute('aria-selected'), 'true');
+    assert.equal(await page.locator('#card-panel-finish').isVisible(), false);
+    await tab('finish');
     assert.equal(await page.locator('#card-form input[name="finish"][value="prism"]').isDisabled(), true);
     assert.match(await page.locator('.card-locked').innerText(), /Holo finishes are for players with the membership/);
+    await tab('design');
     await page.locator('.card-choice.is-abyss').click();
     assert.equal(await page.locator('.tcg.design-abyss').count(), 1);
+    assert.equal(await page.locator('.card-about[data-about="design"]').innerText(), 'Obsidian split by aether light');
     await page.locator('#card-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Card saved. Everyone who opens it sees this look.' }).waitFor();
     assert.equal(await page.locator('#card-form [type="submit"]').isDisabled(), true);
     assert.equal((await request('/api/odyle/membership', { membership: 'yes' }, player)).status, 200);
     await page.reload(); await page.locator('#card-form').waitFor();
-    await page.locator('.card-choice.is-prism').click();
+    // The arrow keys move between the tabs, round from the last to the first.
+    await page.locator('[data-card-tab="design"]').focus(); await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.cardTab), 'finish');
+    assert.equal(await page.locator('#card-panel-finish').isVisible(), true);
+    await page.keyboard.press('End'); await page.keyboard.press('ArrowRight');
+    assert.equal(await page.locator('#card-panel-design').isVisible(), true);
+    await tab('finish'); await page.locator('.card-choice.is-prism').click();
     assert.equal(await page.locator('.tcg.design-abyss.finish-prism').count(), 1);
     await page.locator('#card-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
@@ -827,11 +840,12 @@ test('a profile has a player card on a page of its own that turns, and the playe
     };
     await turnedShot('card-abyss-prism-turned');
     // The options: full art, the legion under the class, the deity stats, a chosen skill and another back.
+    await tab('content');
     await page.locator('.card-pill', { hasText: 'Full art' }).click();
     await page.locator('.card-pill', { hasText: 'Legion' }).click();
     await page.locator('.card-pill', { hasText: 'Deity stats' }).click();
     await page.locator('#card-form select[name="skill0"]').selectOption('Bolt');
-    await page.locator('#card-form select[name="back"]').selectOption('heiron');
+    await tab('design'); await page.locator('#card-form select[name="back"]').selectOption('heiron');
     assert.equal(await page.locator('.tcg.design-abyss.finish-prism.layout-full').count(), 1);
     assert.equal(await page.locator('.tcg-back.design-heiron').count(), 1);
     assert.equal(await page.locator('.tcg-line.is-legion').innerText(), 'Legion Golden Order');
@@ -839,18 +853,22 @@ test('a profile has a player card on a page of its own that turns, and the playe
     await page.locator('#card-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
     await page.mouse.move(5, 5); await delay(600); await shot(page, 'card-full-art');
-    // Saved as a picture of its front, in this look.
+    // Saved as a picture of its front, in this look, at twice a phone's card size.
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
     assert.equal(download.suggestedFilename(), 'Armorer-odyle-card.png');
     const picture = await readFile(await download.path());
     assert.equal(picture.subarray(1, 4).toString(), 'PNG'); assert.ok(picture.length > 20000, `${picture.length} bytes`);
+    assert.deepEqual([picture.readUInt32BE(16), picture.readUInt32BE(20)], [1500, 2095]);
     if (shots) await download.saveAs(join(shots, 'card-export-full-art.png'));
     await page.reload(); await page.locator('.tcg.layout-full').waitFor();
-    await page.locator('.card-pill', { hasText: 'Classic' }).click(); await page.locator('.card-pill', { hasText: 'Title' }).click();
+    await tab('content'); await page.locator('.card-pill', { hasText: 'Classic' }).click(); await page.locator('.card-pill', { hasText: 'Title' }).click();
     const [classic] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
     if (shots) await classic.saveAs(join(shots, 'card-export-classic.png'));
-    for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched'], ['heiron', 'sunburst'], ['beluslan', 'ice'], ['balaur', 'scales'], ['abyss', 'aether']]) {
-      await page.locator('.card-choice.is-' + design).click(); await page.locator('.card-choice.is-' + finish).click();
+    for (const [design, finish] of [['elysea', 'starfall'], ['asmodae', 'etched'], ['heiron', 'sunburst'], ['beluslan', 'ice'], ['balaur', 'scales'], ['abyss', 'aether'],
+      ['sanctum', 'opal'], ['pandaemonium', 'galaxy'], ['eltnen', 'lenticular'], ['inggison', 'brushed'], ['dredgion', 'stained'], ['tiamaranta', 'shield']]) {
+      await tab('design'); await page.locator('.card-choice.is-' + design).click();
+      await tab('finish'); await page.locator('.card-choice.is-' + finish).click();
+      assert.equal(await page.locator(`.tcg.design-${design}.finish-${finish}`).count(), 1);
       await delay(500); await shot(page, `card-${design}-${finish}`); await turnedShot(`card-${design}-${finish}-turned`);
       // Its picture draws the finish too.
       const [art] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
@@ -858,24 +876,26 @@ test('a profile has a player card on a page of its own that turns, and the playe
     }
     // An effect around it, an accent colour, a frame and a name style, each tried on the card.
     const pick = (name, value) => page.locator(`#card-form label.card-pill:has(input[name="${name}"][value="${value}"])`).click();
-    for (const [aura, accent, frame, nameStyle, design] of [['glow', 'gold', 'gilded', 'gold', 'asmodae'], ['embers', 'ember', 'radiant', 'glow', 'balaur'], ['stardust', 'azure', 'silver', '', 'beluslan'], ['runes', 'jade', 'radiant', 'gold', 'abyss'], ['storm', 'violet', 'none', 'glow', 'heiron']]) {
-      await page.locator('.card-choice.is-' + design).click();
-      await pick('aura', aura); await pick('accent', accent); await pick('frame', frame); await pick('nameStyle', nameStyle);
-      assert.equal(await page.locator(`.tcg.accent-${accent}.frame-${frame}${nameStyle ? '.name-' + nameStyle : ''} > .tcg-aura.aura-${aura}`).count(), 1);
+    for (const [aura, accent, frame, nameStyle, design] of [['glow', 'gold', 'gilded', 'gold', 'asmodae'], ['embers', 'ember', 'radiant', 'glow', 'balaur'], ['stardust', 'azure', 'silver', '', 'beluslan'], ['runes', 'jade', 'radiant', 'gold', 'abyss'],
+      ['wings', 'gold', 'gilded', 'gold', 'sanctum'], ['orbit', 'azure', 'silver', 'glow', 'pandaemonium'], ['feathers', 'rose', 'radiant', '', 'elysea'], ['shards', 'jade', 'gilded', 'glow', 'inggison'], ['rift', 'ember', 'silver', 'gold', 'dredgion'],
+      ['storm', 'violet', 'none', 'glow', 'heiron']]) {
+      await tab('design'); await page.locator('.card-choice.is-' + design).click();
+      await tab('effects'); await pick('aura', aura); await pick('accent', accent); await pick('frame', frame); await pick('nameStyle', nameStyle);
+      assert.equal(await page.locator(`.tcg.accent-${accent}.frame-${frame}${nameStyle ? '.name-' + nameStyle : ''} .tcg-aura.aura-${aura}`).count(), 1);
       await delay(900); await shot(page, `card-aura-${aura}`); await turnedShot(`card-aura-${aura}-turned`);
       const [art] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="card-image"]').click()]);
       if (shots) await art.saveAs(join(shots, `card-export-style-${aura}.png`));
     }
     // Saved with the rest of the look, and kept.
-    await page.locator('.card-choice.is-abyss').click(); await page.locator('.card-choice.is-prism').click();
+    await tab('design'); await page.locator('.card-choice.is-abyss').click(); await tab('finish'); await page.locator('.card-choice.is-prism').click();
     await page.locator('#card-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Card saved.' }).waitFor();
-    await page.reload(); await page.locator('.tcg.accent-violet.frame-none.name-glow > .tcg-aura.aura-storm').waitFor();
+    await page.reload(); await page.locator('.tcg.accent-violet.frame-none.name-glow .tcg-aura.aura-storm').waitFor();
     assert.deepEqual(own.errors, []);
   } finally { await own.close(); }
   // Everyone sees the saved look.
   const again = await open(null, cardAt.slice(1));
-  try { await again.page.locator('.tcg.design-abyss.finish-prism.accent-violet > .tcg-aura.aura-storm').waitFor({ timeout: 15000 }); } finally { await again.close(); }
+  try { await again.page.locator('.tcg.design-abyss.finish-prism.accent-violet .tcg-aura.aura-storm').waitFor({ timeout: 15000 }); } finally { await again.close(); }
 });
 
 test('the armory keeps bookmarked characters in this browser, without an account', async () => {

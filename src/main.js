@@ -30,7 +30,7 @@ import { privacyPage } from './privacy.js';
 import { parseChangelog } from './changelog.js';
 import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
-import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses, cardAura } from './card.js';
+import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses, openStudioTab, studioAbout } from './card.js';
 import { saveCardImage } from './cardimage.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
@@ -145,6 +145,14 @@ document.addEventListener('click', event => document.querySelectorAll('details.r
 document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelectorAll('details.room-switch[open], details.account-menu[open]').forEach(menu => { menu.open = false; }); });
 // An armory item's or skill's card, open while its tile has focus, closes on Escape too.
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.activeElement?.matches('.armory-gear-slot, .armory-skill')) document.activeElement.blur(); });
+// The card picker's tabs follow the arrow keys, Home and End.
+document.addEventListener('keydown', event => {
+  const tab = event.target.closest?.('[data-card-tab]'), tabs = tab ? [...tab.parentElement.children] : [];
+  const to = { ArrowLeft: tabs.indexOf(tab) - 1, ArrowRight: tabs.indexOf(tab) + 1, Home: 0, End: tabs.length - 1 }[event.key];
+  if (!tab || to === undefined || event.altKey || event.ctrlKey || event.metaKey) return;
+  event.preventDefault(); const next = tabs[(to + tabs.length) % tabs.length];
+  cardTab = next.dataset.cardTab; openStudioTab(tab.form, cardTab); next.focus();
+});
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
 const seenKey = 'odyle.seenVersion';
@@ -462,11 +470,11 @@ function armoryPoll(path, ticket) {
   if (armoryAnswer && (waiting(armoryAnswer) || armoryAnswer.state === 'failed')) armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, armoryAnswer.retryAfter || 5) * 1000);
 }
 // A profile's player card (card.js): a page of its own, without the sidebar. The look shown
-// is the saved one until its player tries another (cardLook); the card turns until the page
-// is left (animateCard).
-let cardLook = {}, cardFlip = null;
+// is the saved one until its player tries another (cardLook), the picker on the tab last
+// opened (cardTab); the card turns until the page is left (animateCard).
+let cardLook = {}, cardTab = 'design', cardFlip = null;
 function cardRender() {
-  app.innerHTML = cardPage(armoryAnswer, { images: armoryImages(), look: cardLook, status: armoryAnswer.profile ? '' : lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
+  app.innerHTML = cardPage(armoryAnswer, { images: armoryImages(), look: cardLook, tab: cardTab, status: armoryAnswer.profile ? '' : lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
   retitle(cardTitle(armoryAnswer));
   const card = app.querySelector('.tcg');
   cardFlip = card ? animateCard(card) : null;
@@ -479,9 +487,9 @@ function cardPreview(form) {
     const turning = [...card.classList].filter(c => c.startsWith('is-'));
     card.className = [cardClasses(look), ...turning].join(' ');
     card.querySelector('.tcg-body').innerHTML = cardFaces(armoryAnswer, armoryImages(), look);
-    card.querySelector('.tcg-aura').outerHTML = cardAura(look);
   }
   if (page) page.className = 'card-page design-' + look.design;
+  studioAbout(form);
   const save = form.querySelector('[type="submit"]'); if (save) save.disabled = sameLook(look, lookOf(armoryAnswer));
 }
 async function cardShow(path, target, ticket) {
@@ -1403,6 +1411,7 @@ app.addEventListener('click', async e => {
   try {
     if (el.matches('.brand')) { e.preventDefault(); return await go('/'); }
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
+    if (el.dataset.cardTab) { cardTab = el.dataset.cardTab; return openStudioTab(el.form, cardTab); }
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.location) return await locationDialog(el.dataset.location, el.dataset.name);
