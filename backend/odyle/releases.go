@@ -360,6 +360,7 @@ func updateAppsRoute(e *core.RequestEvent) error {
 	s.mu.Unlock()
 	told := tellEveryone(e.App, map[string]any{"windowsUpdate": update})
 	info(e.App, "Windows apps were asked to update", "version", version, "connections", told)
+	auditedUpdate(e.App, e.Auth, version, told)
 	return e.JSON(200, map[string]any{"told": told, "version": version})
 }
 

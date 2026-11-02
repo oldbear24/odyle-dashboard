@@ -103,5 +103,6 @@ func vacuumRoute(e *core.RequestEvent) error {
 	if !ok {
 		return badRequest("A vacuum is running right now. Try again in a moment.")
 	}
+	auditedVacuum(e.App, e.Auth, name, record)
 	return e.JSON(200, map[string]any{"result": record, "database": databaseStatus(e.App)})
 }

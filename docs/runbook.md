@@ -1,6 +1,6 @@
 # Runbook
 
-What an operator of an Odyle server does in the common situations, step by step. Background and every setting are in [Deployment](deployment.md); the server's own pages are the PocketBase dashboard's **Odyle** pages (`/_/#/odyle`): **Apps & packets**, **Server status**, **Background jobs**, **Game settings** and **Server controls**.
+What an operator of an Odyle server does in the common situations, step by step. Background and every setting are in [Deployment](deployment.md); the server's own pages are the PocketBase dashboard's **Odyle** pages (`/_/#/odyle`): **Apps & packets**, **Server status**, **Background jobs**, **Game settings**, **Server controls** and the **Audit log** of what superusers changed there.
 
 Self-hosting works with these documents, but it is not supported: the project runs one server, and questions go to the [issues](https://github.com/oldbear24/odyle-dashboard/issues).
 
@@ -66,7 +66,7 @@ After the game's Wednesday maintenance the decoder may stop matching the game's 
 
 ## Post an announcement
 
-**Server controls → Announcement**: up to 300 characters of plain text, *info* or *warning*. Players can hide it until a new one is posted. Empty text removes it.
+**Server controls → Announcement**: up to 300 characters of plain text, *info* or *warning*. Players can hide it until a new one is posted. Empty text removes it. For planned maintenance, set **Show from** and **Show until** (your local time) when you post it: it appears and goes by itself within a minute of those times, and the page says whether it shows now, is scheduled or has ended.
 
 ## Restore a backup
 
@@ -76,7 +76,7 @@ See [Backups and restore](deployment.md#backups-and-restore): restore in the sup
 
 - The server keeps running the version it has. With `latest` and no automatic pulls nothing changes until someone deploys; pin a version (above) to be sure.
 - Players' Windows apps keep their pairing and update only from published releases.
-- Another superuser can do everything in this runbook: post announcements, pause readers or features, switch adapters off, and back up or restore. Give that access deliberately: a superuser sees every account.
+- Another superuser can do everything in this runbook: post announcements, pause readers or features, switch adapters off, and back up or restore. Give that access deliberately: a superuser sees every account. **Audit log** shows who changed which setting or control, ran a job by hand, asked the apps to update or vacuumed the database, and when, for a year.
 
 ### Who holds the keys
 

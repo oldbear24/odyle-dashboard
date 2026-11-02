@@ -1,7 +1,7 @@
 // Odyle pages of the PocketBase superuser dashboard, imported by main.js: the Windows
 // apps connected right now and the requests ("packets") the apps and the dashboard
 // send as they arrive, the server's status with the last hour's traffic, the background
-// jobs, the game settings and the server controls.
+// jobs, the game settings, the server controls and the audit log of what superusers did.
 // `app`, `t`, `store` and `watch` are globals of the PocketBase UI (extension API of
 // PocketBase 0.37+, still marked experimental). Everything players control is rendered
 // as text nodes, never as HTML.
@@ -15,6 +15,7 @@ const pages = [
   { href: '#/odyle/jobs', icon: 'ri-timer-line', label: 'Background jobs' },
   { href: '#/odyle/settings', icon: 'ri-equalizer-line', label: 'Game settings' },
   { href: '#/odyle/controls', icon: 'ri-toggle-line', label: 'Server controls' },
+  { href: '#/odyle/audit', icon: 'ri-file-list-3-line', label: 'Audit log' },
 ];
 const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const timestamp = value => Date.parse(String(value || '').replace(' ', 'T'));
@@ -31,6 +32,9 @@ const when = at => Number.isFinite(timestamp(at)) ? new Date(timestamp(at)).toLo
 // Today's date, so the local time follows summer and winter time.
 const localHour = (hour, minute = 0) => new Date(new Date().setUTCHours(hour, minute, 0, 0)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const copy = value => JSON.parse(JSON.stringify(value));
+// datetime-local inputs hold the browser's local time to the minute; the API takes and answers UTC.
+const localInput = value => { const at = timestamp(value); return Number.isFinite(at) ? new Date(at - new Date(at).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''; };
+const fromLocal = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : '';
 // Row keys: the backend writes Go maps with sorted keys and its own objects in the order
 // it built them, so rows are compared by sorted keys and key order never counts as a change.
 const signature = value => value && typeof value === 'object' ? '{' + Object.keys(value).sort().map(key => key + ':' + signature(value[key])).join(',') + '}' : String(value);
@@ -108,8 +112,8 @@ const first = ['id', 'at', 'kind', 'source', 'ok', 'ms', 'error', 'account', 'us
 const fields = p => first.filter(key => key in p).concat(Object.keys(p).filter(key => !first.includes(key) && key !== 'fresh').sort()).map(key => [key, p[key]]);
 const plain = p => Object.fromEntries(fields(p));
 
-// The apps, status and jobs pages use PocketBase's wide wrapper; the forms keep the narrow one.
-const wide = ['#/odyle', '#/odyle/status', '#/odyle/jobs'];
+// The apps, status, jobs and audit pages use PocketBase's wide wrapper; the forms keep the narrow one.
+const wide = ['#/odyle', '#/odyle/status', '#/odyle/jobs', '#/odyle/audit'];
 function layout(active, actions, ...content) {
   return t.div({ className: 'page odyle-page' },
     app.components.pageSidebar({ className: 'odyle-sidebar' }, t.nav({ className: 'sidebar-content scrollable' },
@@ -548,7 +552,7 @@ export function statusPage() {
 
 // What each background job does; the backend's odyle/jobs.go holds the schedules and the records.
 const jobInfo = {
-  'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes invite links three days after they expired, expired pairing codes and reader sessions, Odyle history older than 30 days and runs a day after they started.' },
+  'odyle-expiry': { label: 'Clean-up', schedule: () => 'Every 5 minutes', unit: 'removed', about: 'Removes invite links three days after they expired, expired pairing codes and reader sessions, Odyle history and places older than Game settings keep them, runs a day after they started and audit log entries older than a year.' },
   'odyle-portraits': { label: 'Portrait refresh', schedule: () => 'Every minute', unit: 'portraits checked', about: 'Up to five characters a run, two at a time, get their official portrait from PLAYNC: ones not looked up yet, the others daily. A character the search does not list is tried again after an hour, six hours and a day, then weekly; characters no reader has seen for 60 days wait until one does. New characters are looked up as soon as they are saved, up to ten at a time.' },
   'odyle-reminders': { label: 'Discord reminders', schedule: () => 'Every minute', unit: 'reminders posted', about: 'Posts planned runs to their room\'s Discord channel 15 minutes before they start.' },
   'odyle-retention': { label: 'Inactive accounts', schedule: () => 'Daily at 03:17 UTC (' + localHour(3, 17) + ' here)', unit: 'accounts deleted', about: 'Deletes accounts unused for the period set under Game settings, up to 200 a night.' },
@@ -560,6 +564,7 @@ const jobInfo = {
   'odyle-party-ready': { label: 'Party ready', schedule: () => 'Every minute', unit: 'runs told', about: 'From an hour before a planned run to half an hour after its start: once everyone going plays live with enough Odyle for a cube, tells each of them once (dashboards, Windows apps and push, by their notification settings).' },
   'odyle-armory': { label: 'Armory clean-up', schedule: () => 'Daily at 04:41 UTC (' + localHour(4, 41) + ' here)', unit: 'profiles deleted', about: 'Deletes armory profiles nobody opened for 30 days and the images no profile names. Hidden profiles stay, so the armory keeps them out. Then reads PLAYNC\'s class list again and downloads the class emblems the server lacks. Profiles are fetched from PLAYNC when readers open them, one at a time, not by this job.' },
   'odyle-release': { label: 'Release check', schedule: () => 'Every 2 minutes', unit: 'lookups', about: 'Asks GitHub for the newest Windows release. A newer one is news for every open dashboard and running app at once, so run it by hand right after publishing a release.' },
+  'odyle-announcement': { label: 'Announcement schedule', schedule: () => 'Every minute', unit: 'changes told', about: 'When a scheduled announcement (Server controls) starts or ends, tells every open dashboard and running Windows app at once, so it shows or goes within a minute. A saved change is told when it is saved.' },
 };
 const skips = { paused: 'Skipped, paused under Server controls', off: 'Skipped, Game settings keep every account', clock: 'Skipped, the Odyle clock is hidden under Game settings' };
 
@@ -625,12 +630,18 @@ function settingsForm(keys, sync = () => {}) {
     state.saving = false;
   }
   const cancel = () => { state.form = JSON.parse(state.initial); sync(state.form); };
+  // The newest change of the settings in the audit log, on either page.
+  const changed = () => {
+    const last = state.data?.lastChange;
+    return last ? t.div({ className: 'col-lg-12 txt-hint txt-sm odyle-last-change' }, 'Last change ', t.span({ title: when(last.created) }, ago(last.created, timestamp(state.data.serverNow))),
+      ' by ', last.actorEmail || 'a superuser', last.via === 'collections' ? ' under Collections' : '', ': ', last.summary, ' · ', t.a({ href: '#/odyle/audit?kind=settings' }, 'Audit log')) : null;
+  };
   const buttons = (...left) => t.div({ className: 'col-lg-12' }, t.div({ className: 'flex' }, ...left, t.div({ className: 'm-r-auto' }),
     () => state.changed ? [
       t.button({ rid: 'cancel', type: 'button', className: 'btn transparent secondary', onclick: cancel }, t.span({ className: 'txt' }, 'Cancel')),
       t.button({ rid: 'save', className: () => 'btn expanded-lg ' + (state.saving ? 'loading' : ''), disabled: () => state.saving }, t.span({ className: 'txt' }, 'Save changes')),
     ] : null));
-  return { state, load, save, buttons };
+  return { state, load, save, buttons, changed };
 }
 
 export function settingsPage() {
@@ -659,7 +670,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'historyDays', 'locationDays', 'catalog', 'classRoles', 'clock', 'taskTemplates', 'slots', 'maps'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons, changed } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'historyDays', 'locationDays', 'catalog', 'classRoles', 'clock', 'taskTemplates', 'slots', 'maps'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   // A kept period's help: what the expiry job keeps, or the allowed range.
   const kept = (days, before, after) => Number.isInteger(days) && days >= 1 && days <= 3650 ? before + number(days) + (days === 1 ? ' day' : ' days') + (days % 365 === 0 ? ' (' + number(days / 365) + (days === 365 ? ' year)' : ' years)') : '') + after + ' The expiry job deletes older ones every five minutes, so a shorter period applies at once.' : 'From 1 day to 3,650 days (ten years). 30 by default.';
@@ -775,6 +786,7 @@ export function settingsPage() {
   return layout('#/odyle/settings', null,
     () => state.loading ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' })) : t.form({ className: 'grid', inert: () => state.saving, onsubmit: e => { e.preventDefault(); save('Saved the Odyle game settings.'); } },
       t.div({ className: 'col-lg-12 txt-lg' }, t.p(null, 'Server-wide rules for every room, the dashboard and the Windows app.')),
+      changed,
       field('odyle-per-cube', 'Odyle per cube', t.input({ id: 'odyle-per-cube', type: 'number', min: 1, max: 1000, step: 1, required: true, value: () => state.form.odylePerCube ?? '', oninput: e => state.form.odylePerCube = integer(e.target.value) }),
         'What one dungeon cube costs. Every room reports it as its cost and counts cubes with it; open dashboards follow within 15 seconds.'),
       field('odyle-daily-reset', 'Daily reset (hour, UTC)', t.input({ id: 'odyle-daily-reset', type: 'number', min: 0, max: 23, step: 1, required: true, value: () => state.form.dailyResetHour ?? '', oninput: e => state.form.dailyResetHour = integer(e.target.value) }),
@@ -862,7 +874,18 @@ export function controlsPage() {
   app.store.title = 'Server controls';
   // extra is the extra adapter list as typed; form.adapters.extra is the list it saves.
   const text = store({ extra: '', blocked: '' });
-  const { state, load, save, buttons } = settingsForm(['announcement', 'announcementLevel', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'adapters', 'windowsBlocked'], form => { text.extra = form.adapters.extra.join('\n'); text.blocked = (form.windowsBlocked || []).join('\n'); });
+  const { state, load, save, buttons, changed } = settingsForm(['announcement', 'announcementLevel', 'announcementFrom', 'announcementUntil', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'adapters', 'windowsBlocked'], form => { text.extra = form.adapters.extra.join('\n'); text.blocked = (form.windowsBlocked || []).join('\n'); });
+  // The announcement's schedule as the form holds it, saved or not: shown now, waiting for its
+  // start, over, or impossible.
+  const shortTime = ms => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  function timing() {
+    const from = timestamp(state.form.announcementFrom), until = timestamp(state.form.announcementUntil), at = Date.now();
+    const end = Number.isFinite(until) ? ' until ' + shortTime(until) : '';
+    if (Number.isFinite(from) && Number.isFinite(until) && until <= from) return { className: 'txt-danger', text: 'The end must come after the start.' };
+    if (Number.isFinite(until) && until <= at) return { className: 'txt-bold', text: 'Ended ' + shortTime(until) + ': players no longer see it. Clear the end to show it again, or the message to remove it.' };
+    if (Number.isFinite(from) && from > at) return { className: 'txt-bold', text: 'Scheduled: players see it from ' + shortTime(from) + end + '.' };
+    return { className: 'txt-hint', text: 'Players see it now' + end + '.' };
+  }
   const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
   const builtIn = () => state.data?.builtInAdapters || [];
   const adapters = next => state.form.adapters = { ...state.form.adapters, ...next };
@@ -878,12 +901,21 @@ export function controlsPage() {
   load();
   return layout('#/odyle/controls', null,
     () => state.loading ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' })) : t.form({ className: 'grid', inert: () => state.saving, onsubmit: e => { e.preventDefault(); save('Saved the Odyle server controls.'); } },
-      section('Announcement', 'A message above every page of the dashboard and on the Windows app card, for example planned maintenance or an update to install. Players see it within about a minute; leave it empty to remove it.'),
+      changed,
+      section('Announcement', 'A message above every page of the dashboard and on the Windows app card, for example planned maintenance or an update to install. Players see it within about a minute; leave it empty to remove it, or give it a start and an end, and it shows and goes by itself.'),
       field('odyle-announcement', 'Message', t.textarea({ id: 'odyle-announcement', rows: 2, maxLength: 300, placeholder: 'For example: Server maintenance on Thursday 10:00–11:00 UTC.', value: () => state.form.announcement, oninput: e => state.form.announcement = e.target.value }),
         () => 'One line of plain text, ' + number(state.form.announcement.trim().length) + ' of 300 characters. Updated Windows apps show it on their card too.', 8),
       field('odyle-announcement-level', 'Style', app.components.select({ id: 'odyle-announcement-level', required: true, options: [{ label: 'Information', value: 'info' }, { label: 'Warning', value: 'warning' }], value: () => state.form.announcementLevel, onchange: e => state.form.announcementLevel = e?.[0]?.value || 'info' }),
         'Warnings stand out in amber.'),
-      t.div({ className: 'col-lg-12' }, () => state.form.announcement.trim() ? t.div({ className: () => 'alert ' + (state.form.announcementLevel === 'warning' ? 'warning' : 'info') }, t.i({ className: state.form.announcementLevel === 'warning' ? 'ri-alert-line' : 'ri-information-line', ariaHidden: true }), t.span({ className: 'txt' }, state.form.announcement.trim().replace(/\s+/g, ' '))) : t.div({ className: 'txt-hint txt-sm' }, 'No announcement is shown.')),
+      // The schedule in the browser's local time, to the minute; the server keeps UTC.
+      field('odyle-announcement-from', 'Show from', t.input({ id: 'odyle-announcement-from', type: 'datetime-local', value: () => localInput(state.form.announcementFrom), onchange: e => state.form.announcementFrom = fromLocal(e.target.value) }),
+        'In your time zone. Empty: as soon as it is saved.', 6),
+      field('odyle-announcement-until', 'Show until', t.input({ id: 'odyle-announcement-until', type: 'datetime-local', value: () => localInput(state.form.announcementUntil), onchange: e => state.form.announcementUntil = fromLocal(e.target.value) }),
+        'In your time zone. Empty: until you remove it. It goes within a minute of this time.', 6),
+      t.div({ className: 'col-lg-12' }, () => state.form.announcement.trim() ? [
+        t.div({ className: () => 'alert ' + (state.form.announcementLevel === 'warning' ? 'warning' : 'info') }, t.i({ className: state.form.announcementLevel === 'warning' ? 'ri-alert-line' : 'ri-information-line', ariaHidden: true }), t.span({ className: 'txt' }, state.form.announcement.trim().replace(/\s+/g, ' '))),
+        t.div({ className: () => 'txt-sm odyle-timing ' + timing().className }, () => timing().text),
+      ] : t.div({ className: 'txt-hint txt-sm' }, 'No announcement is shown.')),
       section('Switches', 'Pause a part of Odyle without a redeploy, for example while an outside service fails. Background jobs shows what each job did last.'),
       switchField('portraitsPaused', 'Pause portrait refresh', 'Stops asking PLAYNC for character portraits. New characters get theirs once it runs again.'),
       switchField('armoryPaused', 'Pause the armory', 'Stops every armory lookup and search at PLAYNC and empties its queue. Kept profiles stay readable, marked with their age. To keep one character out for good, set hidden on its row under Collections → armory_profiles.'),
@@ -913,4 +945,143 @@ export function controlsPage() {
         'Versions like 0.18.0, up to 20. Unpaired apps and apps from before 0.18.0 do not know this list.', 8),
       t.div({ className: 'col-lg-12' }, t.hr()),
       buttons()));
+}
+
+// The audit log (backend/odyle/audit.go): what superusers did, newest first, 50 at a time,
+// and what they do next as it happens. Links open it filtered: #/odyle/audit?kind=settings,
+// ?actor=<superuser id>.
+const auditKinds = [
+  { id: '', label: 'All' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'job', label: 'Jobs' },
+  { id: 'update-apps', label: 'App updates' },
+  { id: 'vacuum', label: 'Vacuums' },
+];
+const auditLabels = { settings: 'settings', job: 'job run', 'update-apps': 'update all apps', vacuum: 'vacuum' };
+const auditClass = { settings: 'info', 'update-apps': 'warning' };
+const isoMoment = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
+// A value an entry keeps, in words: switches on and off, nothing as none, moments in local time
+// with their UTC, and list entries by their name first, then what they hold.
+function auditText(v) {
+  if (v === undefined || v === null || v === '') return 'none';
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (typeof v === 'number') return number(v);
+  if (typeof v === 'string') return isoMoment.test(v) ? when(v) + ' (' + v.slice(0, 16).replace('T', ' ') + ' UTC)' : v;
+  if (Array.isArray(v)) return v.length ? v.map(auditText).join(', ') : 'none';
+  const names = ['name', 'class', 'title', 'id'], pairs = Object.entries(v);
+  return [...pairs.filter(([key]) => names.includes(key)).map(([key, x]) => key === 'id' ? 'map ' + x : String(x)),
+    ...pairs.filter(([key, x]) => !names.includes(key) && x !== '' && x !== false && x !== 0 && x !== null).map(([key, x]) => x === true ? key : key + ' ' + auditText(x))].join(' · ');
+}
+// The rows of one changed setting: a value before and after, or each list entry added, removed
+// or changed, the setting named on its first row only.
+function changeRows(c) {
+  if (!('added' in c || 'removed' in c || 'changed' in c || c.reordered)) return [[c.label, auditText(c.before), auditText(c.after)]];
+  const rows = [...(c.added || []).map(v => [c.label, '—', 'added: ' + auditText(v)]), ...(c.removed || []).map(v => [c.label, auditText(v), 'removed']),
+    ...(c.changed || []).map(e => [c.label, auditText(e.before), auditText(e.after)])];
+  if (c.reordered) rows.push([c.label, '', 'in another order']);
+  if (c.omitted) rows.push([c.label, '', number(c.omitted) + ' more, too many to keep']);
+  return rows.map((row, i) => i ? ['', row[1], row[2]] : row);
+}
+const bytes = n => typeof n === 'number' ? (n / 1e6).toLocaleString([], { maximumFractionDigits: 1 }) + ' MB' : '—';
+
+export function auditPage(route) {
+  app.store.title = 'Audit log';
+  const query = name => route?.query?.[name]?.[0] || '';
+  // asked numbers the loads, so an older answer never replaces a newer one.
+  const state = store({ loading: true, failed: '', entries: [], more: false, actors: [], keptDays: 365, kind: auditKinds.some(k => k.id === query('kind')) ? query('kind') : '', actor: query('actor'),
+    search: '', open: '', loadingMore: false, live: false, offset: 0, now: Date.now() });
+  const now = () => state.now + state.offset;
+  let alive = true, tick = 0, typing = 0, asked = 0, unsubscribe = null;
+  const filters = (extra = {}) => ({ ...(state.kind ? { kind: state.kind } : {}), ...(state.actor ? { actor: state.actor } : {}), ...(state.search.trim() ? { q: state.search.trim() } : {}), ...extra });
+  async function load() {
+    const ask = ++asked;
+    try {
+      const data = await app.pb.send('/api/odyle/admin/audit', { query: filters(), requestKey: null });
+      if (ask === asked && Array.isArray(data?.entries)) Object.assign(state, { offset: timestamp(data.serverNow) - Date.now(), entries: data.entries, more: data.more, actors: data.actors || [], keptDays: data.keptDays || 365, failed: '' });
+    } catch (error) { if (!error.isAbort && ask === asked) state.failed = error.message || 'The audit log could not be loaded.'; }
+    if (ask === asked) state.loading = false;
+  }
+  const filter = next => { Object.assign(state, next); state.open = ''; load(); };
+  async function older() {
+    const last = state.entries.at(-1), ask = asked;
+    if (!last || state.loadingMore) return;
+    state.loadingMore = true;
+    try {
+      const data = await app.pb.send('/api/odyle/admin/audit', { query: filters({ before: last.created, beforeId: last.id }), requestKey: null });
+      if (ask === asked && Array.isArray(data?.entries)) { const known = new Set(state.entries.map(e => e.id)); state.entries = [...state.entries, ...data.entries.filter(e => !known.has(e.id))]; state.more = data.more; }
+    } catch (error) { if (!error.isAbort) app.checkApiError(error); }
+    state.loadingMore = false;
+  }
+  // A new entry arrives over realtime as its record; it joins the list when the filters keep it.
+  const words = () => state.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = e => (!state.kind || e.kind === state.kind) && (!state.actor || e.actor === state.actor) && words().every(word => (e.summary + ' ' + e.actorEmail + ' ' + JSON.stringify(e.details)).toLowerCase().includes(word));
+  function arrive(record) {
+    const entry = { id: record.id, created: record.created, kind: record.kind, via: record.via, actor: record.actor, actorEmail: record.actorEmail, summary: record.summary, details: record.details || {} };
+    if (entry.actor && !state.actors.some(a => a.id === entry.actor)) state.actors = [{ id: entry.actor, email: entry.actorEmail }, ...state.actors];
+    if (matches(entry) && !state.entries.some(e => e.id === entry.id)) state.entries = [{ ...entry, fresh: true }, ...state.entries];
+  }
+  const actorName = () => state.actors.find(a => a.id === state.actor)?.email || state.entries.find(e => e.actor === state.actor)?.actorEmail || state.actor;
+  const narrowed = () => state.kind || state.actor || words().length;
+  function exportShown() {
+    const entries = state.entries.map(({ fresh, ...entry }) => entry);
+    app.utils.downloadJSON({ exportedAt: new Date().toISOString(), server: location.origin, filters: { kind: state.kind, actor: state.actor, search: state.search.trim() }, entries }, 'odyle-audit-' + new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-'));
+  }
+  const chip = (label, value, clear) => t.span({ className: 'label sm odyle-chip' }, t.span({ className: 'txt-hint' }, label), ' ', value,
+    t.button({ type: 'button', className: 'odyle-chip-clear', title: 'Clear', ariaLabel: 'Clear ' + label.toLowerCase(), onclick: clear }, t.i({ className: 'ri-close-line', ariaHidden: true })));
+  const moment = at => Number.isFinite(timestamp(at)) ? new Date(timestamp(at)).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const fact = (label, value) => [t.dt({ className: 'txt-hint' }, label), t.dd(null, value)];
+  function detail(e) {
+    const d = e.details || {};
+    let body = null;
+    if (e.kind === 'settings') body = t.div({ className: 'odyle-table odyle-changes' }, t.table(null,
+      t.thead(null, t.tr(null, t.th(null, 'Setting'), t.th(null, 'Before'), t.th(null, 'After'))),
+      t.tbody(null, (d.changes || []).flatMap(changeRows).map(([label, before, after]) => t.tr(null, t.td({ className: 'txt-bold' }, label), t.td({ className: 'txt-hint' }, before), t.td(null, after))))));
+    else if (e.kind === 'job') body = t.dl({ className: 'odyle-fields' }, fact('Job', (jobInfo[d.job]?.label || d.job) + ' · ' + d.job), fact('Done', number(d.done)), fact('Failed', number(d.failed)), d.skipped ? fact('Skipped', skips[d.skipped] || d.skipped) : null, d.error ? fact('Error', d.error) : null);
+    else if (e.kind === 'update-apps') body = t.dl({ className: 'odyle-fields' }, fact('Version sent', d.version || 'none: each app looked up the newest release'), fact('Connections told', number(d.told)));
+    else if (e.kind === 'vacuum') body = t.dl({ className: 'odyle-fields' }, fact('Database', d.file || d.database), fact('Before', bytes(d.beforeBytes)), fact('After', bytes(d.afterBytes)), fact('Took', millis(d.ms)), d.error ? fact('Error', d.error) : null);
+    return t.div({ className: 'odyle-packet-detail', onclick: ev => ev.stopPropagation() },
+      body,
+      t.div({ className: 'txt-hint txt-sm m-t-xs' }, when(e.created) + ' · ' + (e.actorEmail || 'no superuser signed in') + (e.via === 'collections' ? ' · under Collections → odyle_settings' : ' · on the Odyle pages')),
+      t.div({ className: 'flex odyle-detail-actions m-t-xs' },
+        e.actor ? t.button({ type: 'button', className: 'btn sm secondary', disabled: () => state.actor === e.actor, onclick: () => filter({ actor: e.actor }) }, t.i({ className: 'ri-user-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Only this superuser')) : null,
+        t.button({ type: 'button', className: 'btn sm transparent secondary', onclick: async () => { const { fresh, ...entry } = e; await app.utils.copyToClipboard(JSON.stringify(entry, null, 2)); app.toasts.success('Entry copied as JSON.'); } },
+          t.i({ className: 'ri-file-copy-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Copy JSON'))));
+  }
+  // A click opens what an entry changed, unless it selected text to copy.
+  const expand = e => { if (!String(window.getSelection?.() || '')) state.open = state.open === e.id ? '' : e.id; };
+  const entryRow = e => t.div({ rid: e.id, className: () => 'odyle-packet odyle-audit-entry' + (e.fresh ? ' fresh' : '') + (state.open === e.id ? ' open' : ''), onclick: () => expand(e) },
+    t.span({ className: 'txt-nowrap', title: when(e.created) }, moment(e.created)),
+    t.button({ type: 'button', className: 'label sm odyle-kind ' + (auditClass[e.kind] || ''), title: 'Show only ' + (auditLabels[e.kind] || e.kind) + ' entries', onclick: ev => { ev.stopPropagation(); filter({ kind: e.kind }); } }, auditLabels[e.kind] || e.kind),
+    e.actor ? t.button({ type: 'button', className: 'odyle-link txt-bold txt-ellipsis', title: 'Show only what ' + (e.actorEmail || 'this superuser') + ' did', onclick: ev => { ev.stopPropagation(); filter({ actor: e.actor }); } }, e.actorEmail || e.actor) : t.span({ className: 'txt-hint' }, '—'),
+    t.button({ type: 'button', className: 'odyle-packet-text', ariaExpanded: () => state.open === e.id, title: 'Show what it changed', onclick: ev => { ev.stopPropagation(); expand(e); } }, e.summary, e.via === 'collections' ? t.span({ className: 'txt-hint' }, ' · under Collections') : null),
+    t.span({ className: 'odyle-packet-ms txt-hint txt-nowrap' }, () => ago(e.created, now())),
+    () => state.open === e.id ? detail(e) : null);
+
+  return layout('#/odyle/audit', app.components.refreshButton({ onclick: load }),
+    t.div({
+      className: 'odyle-audit',
+      onmount: async () => {
+        load(); tick = setInterval(() => state.now = Date.now(), 15000);
+        try {
+          const stop = await app.pb.collection('odyle_audit').subscribe('*', e => { if (e.action === 'create') arrive(e.record); });
+          if (alive) { unsubscribe = stop; state.live = true; } else stop();
+        } catch (error) { console.warn('Odyle audit log: new entries show after a refresh:', error); }
+      },
+      onunmount: () => { alive = false; clearInterval(tick); clearTimeout(typing); unsubscribe?.(); },
+    },
+    () => state.failed ? t.div({ className: 'alert danger m-b-sm' }, state.failed) : null,
+    t.div({ className: 'flex m-b-sm odyle-feed-head' },
+      t.div({ className: 'txt-lg' }, 'What superusers did'),
+      () => state.live ? t.span({ className: 'odyle-live' }, 'Live') : null,
+      t.div({ className: 'odyle-filters' }, auditKinds.map(k => t.button({ type: 'button', className: () => 'btn sm ' + (state.kind === k.id ? 'secondary' : 'transparent'), onclick: () => filter({ kind: k.id }) }, t.span({ className: 'txt' }, k.label))))),
+    t.div({ className: 'flex m-b-sm odyle-feed-tools' },
+      t.div({ className: 'odyle-search' }, t.i({ className: 'ri-search-line txt-hint', ariaHidden: true }),
+        t.input({ type: 'search', id: 'odyle-audit-search', placeholder: 'Search: a setting, a dungeon, a job, an email…', ariaLabel: 'Search the audit log', value: () => state.search, oninput: e => { state.search = e.target.value; clearTimeout(typing); typing = setTimeout(() => filter({}), 300); } })),
+      () => state.actor ? chip('Superuser', actorName(), () => filter({ actor: '' })) : null,
+      t.div({ className: 'm-r-auto' }),
+      t.span({ className: 'txt-hint txt-sm txt-nowrap' }, () => number(state.entries.length) + (state.more ? '+' : '') + (state.entries.length === 1 ? ' entry' : ' entries') + (narrowed() ? ' match' + (state.entries.length === 1 && !state.more ? 'es' : '') : '')),
+      t.button({ type: 'button', className: 'btn sm transparent secondary', disabled: () => !state.entries.length, title: 'The entries shown, as JSON', onclick: exportShown }, t.i({ className: 'ri-download-line', ariaHidden: true }), t.span({ className: 'txt' }, 'Export'))),
+    t.div({ className: 'odyle-feed odyle-audit-feed' }, () => state.entries.length ? state.entries.map(entryRow) : t.div({ className: 'odyle-packet txt-hint' }, () => state.loading ? 'Loading…' : narrowed() ? 'No entry matches these filters.' : 'Nothing recorded yet. Saving settings or server controls, running a job by hand, Update all apps now and vacuums show up here.')),
+    () => state.more ? t.button({ type: 'button', className: () => 'btn sm secondary m-t-sm' + (state.loadingMore ? ' loading' : ''), disabled: () => state.loadingMore, onclick: older }, t.span({ className: 'txt' }, 'Show older entries')) : null,
+    t.p({ className: 'txt-hint txt-sm m-t-sm' }, () => 'What superusers did to Odyle: the game settings and server controls they saved, on these pages or under Collections → odyle_settings, with every value that changed and what it was before; the jobs they ran by hand; Update all apps now; and database vacuums. Entries are kept for ' + number(state.keptDays) + ' days, and nobody can change or delete one, superusers included. Edits of other collections and PocketBase\'s own settings are not recorded here.')));
 }

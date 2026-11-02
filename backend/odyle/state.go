@@ -56,6 +56,8 @@ type state struct {
 
 	updateAsked   map[string]any // the last Update all apps now (releases.go), told again for updateReplay
 	updateAskedAt time.Time
+
+	announcementCheckedAt time.Time // the announcement schedule's last run (settings.go)
 }
 
 func stateOf(app core.App) *state {

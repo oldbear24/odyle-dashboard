@@ -23,3 +23,4 @@ app.routes.superuserOnly('#/odyle/status', async route => (await load()).statusP
 app.routes.superuserOnly('#/odyle/jobs', async route => (await load()).jobsPage(route));
 app.routes.superuserOnly('#/odyle/settings', async route => (await load()).settingsPage(route));
 app.routes.superuserOnly('#/odyle/controls', async route => (await load()).controlsPage(route));
+app.routes.superuserOnly('#/odyle/audit', async route => (await load()).auditPage(route));
