@@ -104,3 +104,12 @@
 .odyle-templates .col-label{width:auto;min-width:220px}.odyle-templates .odyle-col-cadence{width:130px}
 .odyle-roles .col-label{width:auto;min-width:220px}.odyle-roles .odyle-col-role{width:150px}
 .odyle-maps .col-label{width:auto;min-width:200px}.odyle-maps .odyle-col-map{width:140px}.odyle-maps .odyle-col-thgl{width:320px}
+/* Audit log: entries laid out like packets, with room for a superuser's email and summaries in
+   the page's font; a settings entry opens a table of what changed. */
+.odyle-packet.odyle-audit-entry{grid-template-columns:auto 120px minmax(90px,220px) 1fr auto}
+.odyle-audit-entry .odyle-packet-text{font-family:inherit}
+.odyle-changes{margin-bottom:4px}
+.odyle-changes td{overflow-wrap:anywhere}
+@media (max-width:900px){.odyle-packet.odyle-audit-entry{grid-template-columns:auto auto 1fr auto}}
+/* Server controls: where the announcement's schedule stands, under its preview. */
+.odyle-timing{margin-top:6px}

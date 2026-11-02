@@ -1811,7 +1811,12 @@ func cleanup(app core.App) (result, error) {
 	if err != nil {
 		return result{}, err
 	}
-	return result{Done: done + history + runs + places}, nil
+	// The audit log keeps a year (audit.go).
+	audited, err := purge(app, "odyle_audit", "created < {:cutoff}", stamp(at.Add(-daysOf(auditDays))))
+	if err != nil {
+		return result{}, err
+	}
+	return result{Done: done + history + runs + places + audited}, nil
 }
 
 // Rows purge deletes per statement, and statements per run: a backlog (after a long

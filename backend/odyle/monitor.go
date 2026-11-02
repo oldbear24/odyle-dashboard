@@ -408,6 +408,7 @@ func runJobRoute(e *core.RequestEvent) error {
 	if out.Skipped == "running" {
 		return badRequest("This job is running right now. Try again in a moment.")
 	}
+	auditedJob(e.App, e.Auth, name, out)
 	return e.JSON(200, jobsJSON(e.App, map[string]any{"result": out}))
 }
 
@@ -438,7 +439,8 @@ func seenAdapters(app core.App) []any {
 }
 
 func settingsJSON(app core.App, current settings) map[string]any {
-	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app), "locationAdapters": verifiedLocationAdapters, "groupAdapters": verifiedGroupAdapters, "unnamedMaps": unnamedMaps(app, current.Maps), "thglMaps": thglCatalog()}
+	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app), "locationAdapters": verifiedLocationAdapters, "groupAdapters": verifiedGroupAdapters, "unnamedMaps": unnamedMaps(app, current.Maps), "thglMaps": thglCatalog(),
+		"lastChange": lastSettingsChange(app), "serverNow": now()}
 }
 
 // learnedClasses are the class names the armory learned from PLAYNC (classes.go), for the class
@@ -455,11 +457,21 @@ func settingsRoute(e *core.RequestEvent) error {
 	return e.JSON(200, settingsJSON(e.App, readSettings(e.App)))
 }
 
+// saveSettingsRoute saves the settings and records what changed in the audit log, both or
+// neither.
 func saveSettingsRoute(e *core.RequestEvent) error {
 	b, err := requestBody(e)
 	if err == nil {
 		var saved settings
-		if saved, err = writeSettings(e.App, b); err == nil {
+		err = e.App.RunInTransaction(func(tx core.App) error {
+			before := loadSettings(tx)
+			var err error
+			if saved, err = writeSettings(tx, b); err != nil {
+				return err
+			}
+			return auditedSettings(tx, e.Auth, viaOdyle, before, saved)
+		})
+		if err == nil {
 			return e.JSON(200, settingsJSON(e.App, saved))
 		}
 	}

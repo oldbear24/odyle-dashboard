@@ -1746,12 +1746,22 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
   } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, historyDays: 30, locationDays: 30, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
 });
-test('superusers set the announcement, the switches and the adapters on the Server controls page', async () => {
+test('superusers set the announcement with its schedule, the switches and the adapters on the Server controls page', async () => {
   const { operator, page, errors, close } = await superuser();
+  // Tomorrow at 10:00 in this time zone, as a datetime-local input holds it.
+  const start = new Date(Date.now() + 86400000); start.setHours(10, 0, 0, 0);
+  const local = at => new Date(at - at.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   try {
     await page.goto(url + '/_/#/odyle/controls');
     await page.locator('#odyle-announcement').fill('Maintenance on Thursday');
     await page.locator('.alert', { hasText: 'Maintenance on Thursday' }).waitFor();
+    await page.locator('.odyle-timing', { hasText: 'Players see it now.' }).waitFor();
+    // Scheduled for tomorrow: the page says so before it is saved, and an end before the start is refused.
+    await page.locator('#odyle-announcement-from').fill(local(start));
+    await page.locator('.odyle-timing', { hasText: /^Scheduled: players see it from / }).waitFor();
+    await page.locator('#odyle-announcement-until').fill(local(new Date(start - 3600000)));
+    await page.locator('.odyle-timing', { hasText: 'The end must come after the start.' }).waitFor();
+    await page.locator('#odyle-announcement-until').fill('');
     await page.locator('label[for="odyle-armoryPaused"]').click();
     // Location adapters are listed beside the built-in ones and switch off the same way.
     await page.locator('label[for="odyle-adapter-test-location-v1"]').click();
@@ -1763,12 +1773,55 @@ test('superusers set the announcement, the switches and the adapters on the Serv
     await shot(page, 'admin-controls');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
     assert.deepEqual([saved.announcement, saved.armoryPaused, saved.adapters, saved.windowsBlocked], ['Maintenance on Thursday', true, { extra: ['next-decoder-v3'], disabled: ['test-location-v1'] }, ['0.18.0']]);
+    assert.deepEqual([saved.announcementFrom, saved.announcementUntil], [start.toISOString(), '']);
+    // Nobody sees it before its start.
+    assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
+    // The page names the last change and links the audit log.
+    assert.match(await page.locator('.odyle-last-change').innerText(), /^Last change \d+s ago by operator@test\.invalid: Announcement none → “Maintenance on Thursday” · Announcement shown from none → .+ · Pause the armory: on · .* · Audit log$/);
     // Reloaded, the page shows what was saved.
     await page.reload();
     assert.equal(await page.locator('#odyle-announcement').inputValue(), 'Maintenance on Thursday');
+    assert.equal(await page.locator('#odyle-announcement-from').inputValue(), local(start));
     assert.equal(await page.locator('#odyle-adapter-test-location-v1').isChecked(), false);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
-  } finally { await close(); await request('/api/odyle/admin/settings', { announcement: '', armoryPaused: false, adapters: { extra: [], disabled: [] }, windowsBlocked: [] }, operator); }
+  } finally { await close(); await request('/api/odyle/admin/settings', { announcement: '', announcementFrom: '', announcementUntil: '', armoryPaused: false, adapters: { extra: [], disabled: [] }, windowsBlocked: [] }, operator); }
+});
+test('superusers read who changed what in the audit log, narrow it and see new entries arrive', async () => {
+  const { operator, page, errors, close } = await superuser();
+  let before = null;
+  try {
+    // Done before the page opens: a job run by hand.
+    assert.equal((await request('/api/odyle/admin/jobs/odyle-expiry', {}, operator)).status, 200);
+    await page.goto(url + '/_/#/odyle/audit');
+    const rows = page.locator('.odyle-audit-feed .odyle-audit-entry');
+    await rows.filter({ hasText: 'Ran odyle-expiry by hand' }).first().waitFor();
+    await page.locator('.odyle-live').waitFor();
+    // Saved while the page is open: it arrives without a refresh, with who saved it.
+    before = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings.odylePerCube;
+    assert.equal((await request('/api/odyle/admin/settings', { odylePerCube: before + 1 }, operator)).status, 200);
+    const entry = rows.filter({ hasText: 'Odyle per cube ' + before + ' → ' + (before + 1) }).first();
+    await entry.waitFor();
+    assert.match(await entry.innerText(), /operator@test\.invalid/);
+    // A click opens what it changed.
+    await entry.locator('.odyle-packet-text').click();
+    assert.match(await entry.locator('.odyle-changes').innerText(), new RegExp('Odyle per cube\\s+' + before + '\\s+' + (before + 1)));
+    await shot(page, 'admin-audit');
+    // The kind and words narrow the list.
+    await page.locator('.odyle-filters').getByRole('button', { name: 'Jobs' }).click();
+    await rows.filter({ hasText: 'Odyle per cube' }).first().waitFor({ state: 'detached' });
+    assert.ok(await rows.count() >= 1);
+    for (const text of await rows.allInnerTexts()) assert.match(text, /job run/);
+    await page.locator('.odyle-filters').getByRole('button', { name: 'All' }).click();
+    await page.locator('#odyle-audit-search').fill('per cube');
+    await rows.filter({ hasText: 'Ran odyle-expiry' }).first().waitFor({ state: 'detached' });
+    for (const text of await rows.allInnerTexts()) assert.match(text, /Odyle per cube/);
+    // The export holds the entries shown.
+    const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export' }).click()]);
+    const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
+    assert.equal(exported.filters.search, 'per cube'); assert.equal(exported.entries.length, await rows.count());
+    assert.ok(exported.entries.every(e => e.kind === 'settings' && e.actorEmail === 'operator@test.invalid' && !('fresh' in e)));
+    assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
+  } finally { await close(); if (before !== null) await request('/api/odyle/admin/settings', { odylePerCube: before }, operator); }
 });
 test('superusers ask every connected Windows app to update now, after confirming', async () => {
   const { page, errors, close } = await superuser();

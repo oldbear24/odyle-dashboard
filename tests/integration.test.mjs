@@ -454,7 +454,7 @@ test('superusers watch connected apps and their packets live and edit the server
   } finally { await stream.close(); }
   // Server-wide settings: validated, partial changes keep the rest, and every client follows.
   const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
-  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, armoryPaused: false, adapters: { extra: [], disabled: [] }, taskTemplates: [], clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, windowsBlocked: [], maintenance: { day: '', hour: 0, hours: 0 },
+  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', announcementFrom: '', announcementUntil: '', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, armoryPaused: false, adapters: { extra: [], disabled: [] }, taskTemplates: [], clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, windowsBlocked: [], maintenance: { day: '', hour: 0, hours: 0 },
     classRoles: [['Templar', 'tank'], ['Gladiator', 'damage'], ['Assassin', 'damage'], ['Ranger', 'damage'], ['Sorcerer', 'damage'], ['Spiritmaster', 'damage'], ['Cleric', 'healer'], ['Chanter', 'support']].map(([name, role]) => ({ class: name, role })), slots: { dailySpins: 3, perCharacter: 1 }, maps: [], historyDays: 30, locationDays: 30 };
   assert.deepEqual((await settings()).data.settings, initial);
   assert.deepEqual((await settings()).data.thglMaps.find(m => m.name.startsWith('Herb Cave')), { name: "Herb Cave / Valka's Nest (+3)", places: ['Herb Cave', "Valka's Nest"] }, 'TH.GL maps with the places they list');
@@ -483,7 +483,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
   assert.equal((await jobs(null)).status, 401); assert.equal((await jobs(member)).status, 403); assert.equal((await run('odyle-expiry', member)).status, 403);
   const listed = (await jobs(operator)).data;
-  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-old-characters', true, 'active'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active'], ['odyle-party-ready', true, 'active'], ['odyle-armory', true, 'active']]);
+  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-old-characters', true, 'active'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active'], ['odyle-party-ready', true, 'active'], ['odyle-armory', true, 'active'], ['odyle-announcement', true, 'active']]);
   assert.ok(Date.parse(listed.startedAt) <= Date.now());
   // A run by hand is recorded with its result; the account clean-up only runs on its schedule.
   const ran = await run('odyle-expiry'); assert.equal(ran.status, 200, JSON.stringify(ran.data));
@@ -510,6 +510,20 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     assert.deepEqual((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, notice);
     // Room snapshots carry it too, so an open room needs no separate request.
     assert.deepEqual(await snapshotNotice(), notice);
+    // Scheduled for later, nobody sees it yet; its start and end are times in the right order, kept to the minute.
+    for (const bad of [{ announcementFrom: 'soon' }, { announcementUntil: 5 }, { announcementFrom: '2026-11-05T12:00:00Z', announcementUntil: '2026-11-05T11:00:00Z' }]) assert.equal((await settings(bad)).status, 400, JSON.stringify(bad));
+    const later = new Date(Date.now() + 3600000).toISOString();
+    assert.equal((await settings({ announcementFrom: later })).data.settings.announcementFrom, later.slice(0, 17) + '00.000Z');
+    assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
+    assert.equal(await snapshotNotice(), null);
+    assert.equal((await settings({ announcementFrom: '' })).status, 200);
+    assert.deepEqual(await snapshotNotice(), notice);
+    // The saves and the job run by hand are in the audit log with the superuser who made them; members cannot read it.
+    assert.equal((await request('/api/odyle/admin/audit', undefined, member, 'GET')).status, 403);
+    const audited = (await request('/api/odyle/admin/audit', undefined, operator, 'GET')).data.entries;
+    assert.ok(audited.some(e => e.kind === 'settings' && e.summary.startsWith('Announcement none → “Maintenance at 10:00 UTC” · Announcement style “info” → “warning” · Pause portrait refresh: on')), JSON.stringify(audited.map(e => e.summary)));
+    assert.ok(audited.some(e => e.kind === 'job' && e.summary.startsWith('Ran odyle-expiry by hand')));
+    assert.ok(audited.every(e => e.actorEmail === 'operator@test.invalid' && e.actor));
     const link = await action('desktop-code', {}, member); assert.equal(link.status, 400); assert.equal(link.data.message, 'Pairing new PCs is paused for now. Try again later.');
     const pairing = await action('pair', { code: 'ABCDEFGH23456789', name: 'Paused PC' }); assert.equal(pairing.status, 400); assert.equal(pairing.data.message, 'Pairing new PCs is paused for now. Try again later.');
     const refused = (await request('/api/odyle/admin/monitor', undefined, operator, 'GET')).data.packets.find(p => p.kind === 'pair' && p.name === 'Paused PC');
@@ -543,7 +557,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
   assert.equal(await snapshotNotice(), null);
-  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active']);
+  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active']);
   // A body id never replaces a packet's own number.
   const added = (await action('task', { title: 'Watched task', cadence: 'daily' }, member)).data.tasks.find(x => x.title === 'Watched task');
   assert.equal((await action('task', { id: added.id, done: true }, member)).status, 200);
