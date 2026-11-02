@@ -8,8 +8,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/types"
 )
 
 // Server-wide game rules and server controls, kept in the single odyle_settings record.
@@ -148,6 +150,8 @@ type settings struct {
 	Dungeons            []dungeonEntry `json:"catalog"`
 	Announcement        string         `json:"announcement"`
 	AnnouncementLevel   string         `json:"announcementLevel"`
+	AnnouncementFrom    string         `json:"announcementFrom"`
+	AnnouncementUntil   string         `json:"announcementUntil"`
 	PortraitsPaused     bool           `json:"portraitsPaused"`
 	RemindersPaused     bool           `json:"remindersPaused"`
 	PairingPaused       bool           `json:"pairingPaused"`
@@ -311,11 +315,12 @@ func watchSettings(app core.App) {
 	app.OnRecordAfterCreateError("odyle_settings").BindFunc(dropFailed)
 	app.OnRecordAfterUpdateError("odyle_settings").BindFunc(dropFailed)
 	app.OnRecordAfterDeleteError("odyle_settings").BindFunc(dropFailed)
-	// A changed announcement reaches every open dashboard and running app at once.
+	// A change to the announcement shown now reaches every open dashboard and running app at
+	// once; one scheduled for later reaches them when it starts (announcementSchedule).
 	announce := func(e *core.RecordEvent) error {
-		before, after := e.Record.Original(), e.Record
-		if before.GetString("announcement") != after.GetString("announcement") || before.GetString("announcementLevel") != after.GetString("announcementLevel") {
-			tellEveryone(e.App, map[string]any{"announcement": announcement(settings{Announcement: after.GetString("announcement"), AnnouncementLevel: after.GetString("announcementLevel")})})
+		before, after, at := e.Record.Original(), e.Record, time.Now()
+		if shown := announcementAt(announcementOf(after), at); !sameJSON(announcementAt(announcementOf(before), at), shown) {
+			tellEveryone(e.App, map[string]any{"announcement": shown})
 		}
 		// Running apps learn a held-back version at once, so one running it moves off it.
 		if blocked := stringList(parseJSON(after.GetString("windowsBlocked"), "[]")); fmt.Sprint(stringList(parseJSON(before.GetString("windowsBlocked"), "[]"))) != fmt.Sprint(blocked) {
@@ -338,6 +343,7 @@ func loadSettings(app core.App) settings {
 	}
 	out := settings{OdylePerCube: s.GetInt64("odylePerCube"), DailyResetHour: s.GetInt64("dailyResetHour"), WeeklyResetDay: s.GetString("weeklyResetDay"), InactiveAccountDays: s.GetInt64("inactiveAccountDays"),
 		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), TaskTemplates: storedTemplates(parseJSON(s.GetString("taskTemplates"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
+		AnnouncementFrom: isoOf(s.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(s.GetDateTime("announcementUntil")),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused"),
 		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays")}
 	if out.OdylePerCube == 0 {
@@ -673,6 +679,19 @@ func writeSettings(app core.App, b body) (settings, error) {
 		}
 		next.AnnouncementLevel = level
 	}
+	for _, d := range []struct {
+		key    string
+		target *string
+	}{{"announcementFrom", &next.AnnouncementFrom}, {"announcementUntil", &next.AnnouncementUntil}} {
+		if b.has(d.key) {
+			if *d.target, err = scheduleTime(b[d.key]); err != nil {
+				return settings{}, err
+			}
+		}
+	}
+	if next.AnnouncementFrom != "" && next.AnnouncementUntil != "" && next.AnnouncementUntil <= next.AnnouncementFrom {
+		return settings{}, errors.New("The announcement must end after it starts.")
+	}
 	for _, s := range []struct {
 		key    string
 		target *bool
@@ -730,6 +749,8 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("dungeons", next.Dungeons)
 	record.Set("announcement", next.Announcement)
 	record.Set("announcementLevel", next.AnnouncementLevel)
+	record.Set("announcementFrom", next.AnnouncementFrom)
+	record.Set("announcementUntil", next.AnnouncementUntil)
 	record.Set("portraitsPaused", next.PortraitsPaused)
 	record.Set("remindersPaused", next.RemindersPaused)
 	record.Set("pairingPaused", next.PairingPaused)
@@ -751,7 +772,9 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
-	return readSettings(app), nil
+	// Read from the record: inside a transaction (the settings route's, which records the change
+	// in the audit log) the cached settings are dropped only once it commits.
+	return loadSettings(app), nil
 }
 
 // catalogName is the catalog spelling of a dungeon, the typed one while the catalog is
@@ -776,10 +799,86 @@ func catalogName(app core.App, typed any) (*dungeonName, error) {
 // acceptedAdapters are the packet adapters whose readings are stored now.
 func acceptedAdapters(app core.App) []string { return accepted(readSettings(app).Adapters) }
 
-// announcement is the message clients show above their pages, or nil.
-func announcement(s settings) any {
+// announcement is the message clients show above their pages now, or nil.
+func announcement(s settings) any { return announcementAt(s, time.Now()) }
+
+// announcementAt is the message clients show above their pages at a moment, or nil: none is
+// set, or its schedule has not started or has ended by then. The schedule is AnnouncementFrom
+// until AnnouncementUntil (UTC, isoLayout, whole minutes), "" for no limit.
+func announcementAt(s settings, at time.Time) any {
 	if s.Announcement == "" {
 		return nil
 	}
+	if from, err := time.Parse(isoLayout, s.AnnouncementFrom); err == nil && at.Before(from) {
+		return nil
+	}
+	if until, err := time.Parse(isoLayout, s.AnnouncementUntil); err == nil && !at.Before(until) {
+		return nil
+	}
 	return map[string]any{"text": s.Announcement, "level": s.AnnouncementLevel}
+}
+
+// announcementOf is the announcement a settings record holds, with its schedule.
+func announcementOf(r *core.Record) settings {
+	s := settings{Announcement: r.GetString("announcement"), AnnouncementLevel: r.GetString("announcementLevel"),
+		AnnouncementFrom: isoOf(r.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(r.GetDateTime("announcementUntil"))}
+	if !contains(levels, s.AnnouncementLevel) {
+		s.AnnouncementLevel = "info"
+	}
+	return s
+}
+
+// isoOf writes a stored date as the API does, "" for none.
+func isoOf(d types.DateTime) string {
+	if d.IsZero() {
+		return ""
+	}
+	return iso(d.Time())
+}
+
+// scheduleTime reads when a scheduled announcement starts or ends: a date and time as
+// browsers send them (parseDate; send UTC, 'Z', or an offset), from 2000 to 2099, kept to
+// the minute in UTC; "" or null is no limit.
+func scheduleTime(value any) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", errors.New("The announcement's start and end must be text, a date and time.")
+	}
+	if text = trim(text); text == "" {
+		return "", nil
+	}
+	at, ok := parseDate(text)
+	if !ok || at.UTC().Year() < 2000 || at.UTC().Year() > 2099 {
+		return "", errors.New("Give the announcement's start and end as a date and time, for example 2026-11-05T10:00Z.")
+	}
+	return iso(at.UTC().Truncate(time.Minute)), nil
+}
+
+// announcementSchedule is the odyle-announcement job: when a scheduled announcement's start
+// or end passed since its last run (the last minute, on its first run since the server
+// started), every open dashboard and running app hears the announcement shown now, so it
+// appears or goes within a minute without a request. A change saved is told at once
+// (watchSettings).
+func announcementSchedule(app core.App) (result, error) {
+	s, at := stateOf(app), time.Now()
+	s.mu.Lock()
+	since := s.announcementCheckedAt
+	s.announcementCheckedAt = at
+	s.mu.Unlock()
+	if since.IsZero() || !since.Before(at) {
+		since = at.Add(-time.Minute)
+	}
+	current := readSettings(app)
+	passed := func(value string) bool {
+		moment, err := time.Parse(isoLayout, value)
+		return err == nil && moment.After(since) && !moment.After(at)
+	}
+	if current.Announcement == "" || !passed(current.AnnouncementFrom) && !passed(current.AnnouncementUntil) {
+		return result{}, nil
+	}
+	tellEveryone(app, map[string]any{"announcement": announcementAt(current, at)})
+	return result{Done: 1}, nil
 }

@@ -7,7 +7,7 @@ import "ganigeorgiev.com/pocketbase/pocketbase/core"
 // links, runs planned…), when each achievement was reached and when the account last looked.
 // Hidden: only the achievements route and the account's export answer it.
 func init() {
-	register("1791763268_achievements.go", func(app core.App) error {
+	register("1791763269_achievements.go", func(app core.App) error {
 		users, err := app.FindCollectionByNameOrId("users")
 		if err != nil {
 			return err

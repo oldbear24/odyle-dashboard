@@ -2,7 +2,7 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
-## 0.56.0 · 2026-11-02
+## 0.57.0 · 2026-11-02
 
 ### New
 - **Timers**: a new page anyone can open, signed in or not. It counts down to the daily and weekly reset, the next Odyle regeneration tick and the weekly maintenance, every second and in your own time. It lists the ticks of the next 24 hours, when an empty natural pool would be full (560 without the membership, 840 with it) and what a day of regeneration is worth. With the server's dungeon catalog it also shows what a cube of each dungeon costs and how many cubes a day of regeneration and a full pool pay for. Find it in the sidebar, on the welcome page and on Daily & weekly.
@@ -14,6 +14,12 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ### Changed
 - On phones, My week, Achievements and Timers are in the account menu at the top. Signed out, Timers sits right beside it.
 - The slot machine marks the items that only achievements give, and links to the achievements.
+
+## 0.56.0 · 2026-11-02
+
+### New
+- **Announcements on a schedule**: the server's operators can give a notice a start and an end, so a maintenance notice appears above every page and on your Windows app card at the time they chose, and disappears by itself once it is over, within a minute.
+- **Audit log** for the server's operators: the Odyle pages of the superuser dashboard now record who changed the game settings or the server controls and what each value was before, who ran a background job by hand, asked every Windows app to update or vacuumed the database. Entries are kept for a year and cannot be changed or deleted, so a pause or a changed cube cost always has a name and a time.
 
 ## 0.55.1 · 2026-10-29
 
