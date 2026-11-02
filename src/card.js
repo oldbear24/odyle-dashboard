@@ -13,7 +13,8 @@ import { t } from './i18n.js';
 import { escape as esc } from './model.js';
 import { icon } from './icons.js';
 import { link, address } from './routes.js';
-import { profilePath, imageUrl, classBadge, gradeClass } from './armory.js';
+import { profilePath, imageUrl, classBadge } from './armorylinks.js';
+import { gradeClass } from './armory.js';
 
 export const cardDesigns = () => [['elysea', t('Elysea'), t('Pearl and gold leaf under an Elyos sky')], ['asmodae', t('Asmodae'), t('Twilight violet with ember trim')], ['abyss', t('Abyss'), t('Obsidian split by aether light')],
   ['balaur', t('Balaur'), t('Crimson dragon scale and black iron')], ['beluslan', t('Beluslan'), t('Glacier blue over Asmodian snowfields')], ['heiron', t('Heiron'), t('Forest green and bronze of the Elyos wilds')],

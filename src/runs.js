@@ -11,7 +11,7 @@ export function nextHour(now) { const d = new Date(now); d.setHours(d.getHours()
 // to 60 days ahead, in whole minutes, as the bounds of a datetime-local input. Some
 // browsers ignore the bounds, so forms check the time again before sending (forms.js).
 export const runWindow = now => ({ min: Math.ceil((now - 3600000) / 60000) * 60000, max: Math.floor((now + 60 * 86400000) / 60000) * 60000 });
-const bounds = (now, earliest = Infinity) => { const { min, max } = runWindow(now); return `min="${localInput(Math.min(min, earliest))}" max="${localInput(max)}"`; };
+export const bounds = (now, earliest = Infinity) => { const { min, max } = runWindow(now); return `min="${localInput(Math.min(min, earliest))}" max="${localInput(max)}"`; };
 // Compact spans: "2d 3h", "5h 12m", "45m" (Czech "2 d 3 h", "5 h 12 min", "45 min").
 export function span(minutes) {
   const days = Math.floor(minutes / 1440), hours = Math.floor(minutes / 60) % 24;
@@ -21,16 +21,6 @@ export function span(minutes) {
 export function startsIn(at, now) {
   const minutes = Math.round((at - now) / 60000), text = span(Math.abs(minutes));
   return Math.abs(minutes) < 1 ? t('starting now') : minutes > 0 ? t('in {time}', { time: text }) : t('started {time} ago', { time: text });
-}
-// An iCalendar file of one run with a reminder 15 minutes ahead, for "Add to calendar".
-// Times are UTC; calendars show them in local time. The run lasts an hour by default.
-const ics = text => String(text || '').replace(/[\\;,]/g, m => '\\' + m).replace(/\r?\n/g, '\\n');
-const utc = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-// Lines longer than 75 octets continue on the next line after a space (RFC 5545).
-function fold(line) {
-  const out = []; let current = '', size = 0;
-  for (const char of line) { const bytes = new TextEncoder().encode(char).length; if (size + bytes > (out.length ? 74 : 75)) { out.push(current); current = ''; size = 0; } current += char; size += bytes; }
-  return [...out, current].join('\r\n ');
 }
 // A run as a Discord message anyone in the room can paste (#35), no webhook needed: Discord
 // shows <t:…> in every reader's own time zone. Names and the note are escaped, so they can
@@ -46,20 +36,6 @@ export function discordText({ dungeon, startsAt, note }, { going = [], waiting =
   if (event) parts.push(event);
   if (link) parts.push(link);
   return parts.join(' · ');
-}
-function calendarEvent({ id, dungeon, startsAt, note }, { room, going = [], now }) {
-  const start = timestamp(startsAt), summary = room ? `${dungeon} · ${room}` : dungeon, details = [note, going.length ? t('Going: {names}', { names: going.join(', ') }) : ''].filter(Boolean).join('\n');
-  return ['BEGIN:VEVENT', `UID:${id}@odyle`, `DTSTAMP:${utc(now)}`, `DTSTART:${utc(start)}`, `DTEND:${utc(start + 3600000)}`, `SUMMARY:${ics(summary)}`, ...(details ? [`DESCRIPTION:${ics(details)}`] : []),
-    'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${ics(summary)}`, 'TRIGGER:-PT15M', 'END:VALARM', 'END:VEVENT'];
-}
-const calendar = events => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Odyle//Party dashboard//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events.flat(), 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
-export function calendarFile(run, { room, going, now }) {
-  return calendar([calendarEvent(run, { room, going, now })]);
-}
-// Every run you go to in one file (#51): "Add all to calendar" on Rooms & characters. A run the
-// calendar already has (the same UID) is updated, not added twice.
-export function calendarOfRuns(runs, now) {
-  return calendar(runs.map(r => calendarEvent(r, { room: r.room, now })));
 }
 
 // Your next runs on Rooms & characters (#51): the runs you are going to in the next two weeks,
@@ -206,9 +182,4 @@ export function runsSection({ runs, members, myId, viewer, owner, live, now, sug
     return `<div class="wish-row run-row ${going ? 'mine' : ''}"><div class="run-when"><strong>${esc(when)}</strong><small data-starts="${esc(r.startsAt)}">${esc(startsIn(at, now))}</small></div><div class="wish-name"><strong>${esc(r.dungeon)}</strong><small>${r.note ? esc(r.note) : esc(goingCount(r))}${r.planner ? ' · ' + esc(t('planned by {name}', { name: name(r.planner) })) : ''}</small>${claim}${facts(r.dungeon)}</div><div class="wish-people">${people}</div><div class="wish-actions">${actions}</div></div>`;
   }).join('');
   return `<section class="party-section wishlist runs"><div class="section-heading"><h2>${t('Planned runs')} <span>${runs.length}</span></h2><span class="refresh-label">${t('Soonest first · your local time')}${discord ? ` · ${t('Discord reminders on')}` : ''}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('No runs planned. Pick a dungeon and a time; the party joins with Going.')}</p>`}</div></section>`;
-}
-// The form that changes a run: dungeon, start (local time) and note. An unchanged start
-// stays valid even when it is past the window, and so does a dungeon the catalog dropped.
-export function runEditForm(r, { suggestions = [], catalog = [], perCube = 40 } = {}, now = Date.now()) {
-  return `<form id="run-edit-form" class="run-edit"><input type="hidden" name="runId" value="${esc(r.id)}"><label>${t('Dungeon')}${dungeonField({ catalog, suggestions, list: 'run-edit-dungeons', value: r.dungeon, perCube })}</label><label>${t('Start')}<input name="startsAt" type="datetime-local" required value="${localInput(timestamp(r.startsAt))}" ${bounds(now, timestamp(r.startsAt))}></label><label>${t('Event link (optional)')}<input name="link" type="url" maxlength="300" autocomplete="off" placeholder="https://…" value="${esc(r.link || '')}"></label><label>${t('Note (optional)')}<input name="note" maxlength="120" autocomplete="off" value="${esc(r.note)}"></label><button class="button primary" type="submit">${t('Save run')}</button></form>`;
 }

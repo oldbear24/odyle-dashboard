@@ -25,7 +25,7 @@ const images = '/api/odyle/armory-images/';
 const answer = extra => ({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', server: 'Lumiel', profile, fetchedAt: new Date(now - 2 * 3600000).toISOString(), error: '', state: 'fresh', position: 0, wait: 0, retryAfter: 0, lookupError: '', ...extra });
 
 test('armory paths say what they show', async () => {
-  const { armoryRoute, armoryTarget, profilePath, findPath } = await import('../src/armory.js');
+  const { armoryRoute, armoryTarget, profilePath, findPath } = await import('../src/armorylinks.js');
   const profileAt = profilePath({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=' });
   for (const path of ['/armory', profileAt, profileAt + '/skills', profileAt + '/appearance', findPath('GLOBAL_EU', 'Lumiel', 'Ka'), findPath('GLOBAL_NA', 'Siel', 'Žluťoučký'), findPath('GLOBAL_NAW', 'Siel', 'Ka')]) assert.ok(armoryRoute.test(path), path);
   for (const path of ['/armory/', '/armory/xx/2304/kdPX-_ocYSqMloiCy7IXZ0CDm', '/armory/eu/2304/short', '/armory/find/GLOBAL_XX/Lumiel/Ka', '/armory/eu/2304/a/b', profileAt + '/gear', profileAt + '/']) assert.ok(!armoryRoute.test(path), path);
@@ -97,7 +97,7 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
 });
 
 test('a class shows its emblem where the server keeps one: profile, search, bookmarks', async () => {
-  const { armoryProfile, armorySearch, addBookmark, classBadge } = await import('../src/armory.js');
+  const { armoryProfile, armorySearch, addBookmark } = await import('../src/armory.js'), { classBadge } = await import('../src/armorylinks.js');
   assert.equal(classBadge(images, 'class_icon_chanter.png', 'Chanter'), '<img class="class-icon" src="/api/odyle/armory-images/class_icon_chanter.png" alt="" title="Chanter" loading="lazy" decoding="async" draggable="false">');
   assert.deepEqual([classBadge(images, '', 'Chanter'), classBadge(images, '../x.png', 'Chanter'), classBadge(images, undefined)], ['', '', '']);
   const shown = answer({ classIcon: 'class_icon_chanter.png' });
@@ -139,7 +139,7 @@ test('a running lookup shows its step and a progress bar, and the profile read s
 });
 
 test('a profile\'s tabs show its skills, Daevanion boards, titles and appearance', async () => {
-  const { armoryProfile, profileTabs, imageUrl } = await import('../src/armory.js');
+  const { armoryProfile, profileTabs } = await import('../src/armory.js'), { imageUrl } = await import('../src/armorylinks.js');
   const view = (tab, extra = {}) => armoryProfile(answer(), now, false, false, { images, tab, ...extra });
   const skills = view('skills');
   assert.match(skills, /aria-current="page">Skills<\/a>/);
@@ -222,7 +222,7 @@ test('bookmarks keep characters in this browser, newest first, with their last o
 });
 
 test('a character found on PLAYNC opens its own profile, else a search by name (#25)', async () => {
-  const { officialPath, armoryRoute } = await import('../src/armory.js');
+  const { officialPath, armoryRoute } = await import('../src/armorylinks.js');
   const found = { officialId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', officialRegion: 'eu', officialServerId: 2304 };
   assert.equal(officialPath(found), '/armory/eu/2304/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=');
   assert.ok(armoryRoute.test(officialPath(found)));

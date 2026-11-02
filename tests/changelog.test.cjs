@@ -32,7 +32,7 @@ test('release notes carry the entries between markers the backend reads back', a
 });
 
 test('What\'s new lists the versions, this one marked, and the newest Windows app release', async () => {
-  const { parseChangelog } = await import('../src/changelog.js'), { whatsNew, updated, updatedNote, inline } = await import('../src/whatsnew.js'), { useLanguage } = await import('../src/i18n.js');
+  const { parseChangelog } = await import('../src/changelog.js'), { whatsNew, inline } = await import('../src/whatsnew.js'), { updated, updatedNote } = await import('../src/updatenote.js'), { useLanguage } = await import('../src/i18n.js');
   await useLanguage('en');
   assert.equal(inline('**A** <b> `x`'), '<strong>A</strong> &lt;b&gt; <code>x</code>');
   const page = whatsNew(parseChangelog(sample), '0.10.0', { version: '0.9.0', publishedAt: '2026-10-16T20:21:26Z', url: 'https://github.com/oldbear24/odyle-windows/releases/tag/v0.9.0', changes: [{ title: 'Fixed', items: ['Updates **work** again.'] }] });

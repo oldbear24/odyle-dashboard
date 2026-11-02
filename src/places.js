@@ -1,8 +1,8 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, age, timestamp } from './model.js';
+import { escape as esc, age, timestamp, changedAt } from './model.js';
 import { icon } from './icons.js';
 import { pager, fillers } from './pager.js';
-import { changedAt } from './history.js';
+import { mapOf, mapName } from './placeline.js';
 
 // Location sharing (opt-in): where a character was last seen, as the game said it to the
 // Windows app at a loading screen, on arrival, while flying or with some skills; the game says
@@ -12,8 +12,6 @@ import { changedAt } from './history.js';
 
 const sourceNames = { load: 'loading screen', arrival: 'arrived', flight: 'in flight', effect: 'skill or effect' };
 export const sourceName = source => sourceNames[source] ? t(sourceNames[source]) : '';
-export const mapOf = (id, maps = []) => maps.find(m => m.id === id) || null;
-export const mapName = (id, maps = []) => mapOf(id, maps)?.name || t('Map {id}', { id });
 
 // TH.GL's embed centred on a place. Its coordinates are the game's with the axes swapped
 // (keys y:x), so the centre is y,x. Only teleport statues are shown as landmarks: every other
@@ -23,13 +21,6 @@ export function embedUrl(thgl, place, zoom = 3) {
 }
 // The full map on TH.GL's site, linked under the embed as TH.GL's embed terms ask.
 export const mapPage = thgl => `https://aion2.th.gl/maps/${encodeURIComponent(thgl)}`;
-
-// The line on a character's row: the map and how long ago, as a button that opens the dialog.
-export function placeButton(c, maps, now) {
-  const p = c.location;
-  if (!p?.map || !c.id) return '';
-  return `<button class="place-line" type="button" data-location="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Where {name} was last seen', { name: c.characterName }))}">${icon('pin')}<span class="place-map-name">${esc(mapName(p.map, maps))}</span><span class="place-age" data-age="${esc(p.at)}">${age(p.at, now)}</span></button>`;
-}
 
 // The places of the dialog's page: on the first, the latest first (it may be newer than the
 // history, which keeps a flight's places a minute apart), then the history.

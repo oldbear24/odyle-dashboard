@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs');
 const memory = () => { const data = {}; return { getItem: key => data[key] ?? null, setItem: (key, value) => { data[key] = String(value); }, removeItem: key => { delete data[key]; } }; };
 const now = Date.parse('2026-10-15T12:00:00Z');
 test('the pairing link is shown again until a minute before it expires, for its own account only', async () => {
-  const { savedPairing, rememberPairing, forgetPairing } = await import('../src/pairing.js');
+  const { savedPairing, rememberPairing } = await import('../src/pairing.js'), { forgetPairing } = await import('../src/readers.js');
   const storage = memory(), pair = { code: 'ABCDEFGH23456789', expiresAt: '2026-10-15 12:05:00.000Z' };
   assert.equal(savedPairing(storage, 'u1', now), null);
   rememberPairing(storage, 'u1', { ...pair, extra: 'dropped' });
@@ -24,7 +24,7 @@ test('the pairing link is shown again until a minute before it expires, for its 
   forgetPairing({ removeItem: () => { throw new Error('blocked'); } });
 });
 test('a link counts as used once a PC paired after it was made, and readers name their PC while online', async () => {
-  const { pairedWith, readerList, onlineReader, countdown } = await import('../src/pairing.js');
+  const { pairedWith, countdown } = await import('../src/pairing.js'), { readerList, onlineReader } = await import('../src/readers.js');
   const pair = { code: 'ABCDEFGH23456789', expiresAt: '2026-10-15 12:05:00.000Z' };
   const old = { id: 'd1', name: 'OLD-PC', pairedAt: '2026-10-15 11:59:59.000Z' }, desk = { id: 'd2', name: 'DESK-PC', pairedAt: '2026-10-15 12:01:00.000Z' };
   assert.equal(pairedWith([old], pair), null); assert.equal(pairedWith(undefined, pair), null);

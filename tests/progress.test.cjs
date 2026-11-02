@@ -24,7 +24,7 @@ const week = {
 };
 
 test('the week sums up its own characters beside the week before', async () => {
-  const { weekSummary, weekText, weekDates } = await import('../src/week.js'), { useLanguage } = await import('../src/i18n.js');
+  const { weekSummary, weekText } = await import('../src/week.js'), { weekDates } = await import('../src/model.js'), { useLanguage } = await import('../src/i18n.js');
   await useLanguage('en');
   const s = weekSummary(week, at('2026-11-02T12:00:00Z'));
   assert.deepEqual([s.total.spent, s.total.cubes, s.total.regen, s.total.items, s.total.capped, s.total.lost], [120, 3, 15, 40, true, 0]);

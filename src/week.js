@@ -1,5 +1,5 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, timestamp, classOf } from './model.js';
+import { escape as esc, timestamp, classOf, weekDates } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { weeklyLedger } from './history.js';
@@ -14,6 +14,8 @@ import { achievementName } from './achievements.js';
 // nowhere unless the player posts them.
 
 const dayMs = 86400000, weekMs = 7 * dayMs;
+// A daily period is named by its middle, so the reset hour never shifts it a day in the reader's zone.
+const halfDay = dayMs / 2;
 const number = n => Math.round(n).toLocaleString(locale());
 
 // The change a reading made, as weeklyLedger counts it: what a spend took, else a drop.
@@ -54,14 +56,6 @@ export function weekSummary(data, now) {
   return { from, until, cost, total, previous: data.week.previousKept ? previous : null, characters, days: days.size, best: best ? { day: best[0], spent: best[1], cubes: Math.floor(best[1] / cost) } : null, achievements: data.achievements || [] };
 }
 
-// The week's dates in the reader's language: "28 Oct – 3 Nov 2026", its first and last daily
-// period named by their middle, so the reset hour never shifts them a day in the reader's zone.
-const halfDay = dayMs / 2;
-export function weekDates(from, until) {
-  const last = new Date(until - halfDay), first = new Date(from + halfDay);
-  const sameYear = first.getFullYear() === last.getFullYear();
-  return `${first.toLocaleDateString(locale(), { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })} – ${last.toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' })}`;
-}
 
 // How a number moved since the week before: "+4 vs the week before", or '' without one.
 function versus(now, before) {

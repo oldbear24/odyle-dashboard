@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const maps = [{ id: 1110, name: 'Altgard', thgl: 'Altgard' }, { id: 600001, name: '', thgl: '' }];
 const now = Date.parse('2026-10-24T18:00:00Z');
 test('a shared place shows its map and age on the row, and TH.GL is centred y,x on it', async () => {
-  const { placeButton, embedUrl, mapName, sourceName } = await import('../src/places.js');
+  const { embedUrl, sourceName } = await import('../src/places.js'), { placeButton, mapName } = await import('../src/placeline.js');
   const c = { id: 'c1', characterName: 'Scout', location: { map: 1110, x: -83475.7, y: -33883.7, z: 19698, heading: 113.4, source: 'load', at: '2026-10-24 17:56:00.000Z' } };
   const row = placeButton(c, maps, now);
   assert.match(row, /data-location="c1"/); assert.match(row, />Altgard</); assert.match(row, /4m ago/);

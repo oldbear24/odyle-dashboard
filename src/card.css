@@ -6,7 +6,7 @@
    the card's angle puts the light. The card has depth: as it turns (card.js sets --tx and --ty,
    where the viewer is seen from the face), what lies under its surface (the backdrop, the
    portrait, the foil, the rings on the back) shifts by its depth, and the panel and emblem stand
-   out of it, their shadows staying put. */
+   out of it, their shadows staying put. These styles load with the card page (src/parts/card.js). */
 .card-page{--stage:rgba(181,242,205,.12);min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:14px clamp(16px,4vw,48px) 20px;background:radial-gradient(ellipse 60% 55% at 50% 42%,var(--stage),transparent 70%),#0c100f;color:#eaf1ed;overflow-x:hidden}
 .card-page.design-elysea{--stage:rgba(214,176,100,.17)}
 .card-page.design-asmodae{--stage:rgba(124,74,190,.22)}
@@ -32,9 +32,9 @@
 .card-layout.has-studio{align-items:start}
 .card-layout.has-studio .card-stage{position:sticky;top:clamp(24px,8vh,90px)}
 .card-hint{margin:0;color:#89958f;font-size:13px;text-align:center}
-.card-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
-.card-actions .button{display:inline-flex;align-items:center;gap:6px}
-.card-actions svg{width:15px;height:15px}
+.card-page .card-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.card-page .card-actions .button{display:inline-flex;align-items:center;gap:6px}
+.card-page .card-actions svg{width:15px;height:15px}
 .card-source{margin:8px 0 0;color:#6f7c75;font-size:12px;text-align:center}
 .card-wait{flex:1;display:grid;place-content:center;gap:12px;max-width:520px;margin:0 auto;text-align:center;color:#a6b3ac}
 .card-owner-note{display:flex;gap:8px;align-items:flex-start;max-width:330px;margin:0;color:#a6b3ac;font-size:13px;line-height:1.45}
@@ -379,11 +379,3 @@
   .card-back{font-size:13px}
 }
 @media (prefers-reduced-motion:reduce){.tcg-body{will-change:auto}}
-
-/* The profile's way to its card (armory.js). */
-.armory-card-link{display:inline-flex;align-items:center;gap:6px}
-.armory-card-link svg{width:14px;height:14px;color:#e3c46a}
-.armory-legion{display:inline-flex;align-items:center;gap:5px}
-.armory-legion svg{width:12px;height:12px;color:#e3c46a}
-/* Pictures in the armory stay put when dragged (a drag would carry them off the page). */
-.armory img{-webkit-user-drag:none;user-select:none}

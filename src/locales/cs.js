@@ -1617,4 +1617,6 @@ export default {
   'Achievements to collect': 'Úspěchy ke sbírání',
   // The notice of reached achievements
   'See': 'Ukázat',
+  // A part of the dashboard that could not load (main.js gone, lazy.js)
+  'This part of Odyle could not load. Check your connection, then reload the page.': 'Tuto část Odyle se nepodařilo načíst. Zkontroluj připojení a pak stránku načti znovu.',
 };

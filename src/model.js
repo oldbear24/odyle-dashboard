@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { t, locale } from './i18n.js';
 export const timestamp = date => Date.parse(String(date).replace(' ', 'T'));
 export function status(member, now = Date.now()) {
   if (!member.sharing) return 'offline';
@@ -18,5 +18,15 @@ export function age(date, now = Date.now()) {
   if (!date) return t('No reading yet');
   const seconds = Math.max(0, Math.floor((now - timestamp(date)) / 1000));
   return seconds < 60 ? t('{n}s ago', { n: seconds }) : seconds < 3600 ? t('{n}m ago', { n: Math.floor(seconds / 60) }) : seconds < 86400 ? t('{n}h ago', { n: Math.floor(seconds / 3600) }) : t('{n}d ago', { n: Math.floor(seconds / 86400) });
+}
+// When a change or place was: the day and time, with the year when it is not this one.
+export const changedAt = (at, now = Date.now()) => { const date = new Date(timestamp(at)); return date.toLocaleString(locale(), { day: 'numeric', month: 'short', ...(date.getFullYear() !== new Date(now).getFullYear() ? { year: 'numeric' } : {}), hour: '2-digit', minute: '2-digit' }); };
+// A reset week's dates in the reader's language: "28 Oct – 3 Nov 2026", its first and last daily
+// period named by their middle, so the reset hour never shifts them a day in the reader's zone
+// (week.js, and Rooms & characters when the week before is ready).
+export function weekDates(from, until) {
+  const halfDay = 43200000, last = new Date(until - halfDay), first = new Date(from + halfDay);
+  const sameYear = first.getFullYear() === last.getFullYear();
+  return `${first.toLocaleDateString(locale(), { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })} – ${last.toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' })}`;
 }
 export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));

@@ -1,11 +1,10 @@
 // What's new (#/changelog, #74): the dashboard's changelog (CHANGELOG.md, bundled with the build,
 // read by changelog.js) and what the newest Windows app release changed (from its release
-// notes, which the backend keeps with the release: `changes`). After an update the dashboard
-// says once that it was updated (main.js, odyle.seenVersion).
+// notes, which the backend keeps with the release: `changes`). It loads with the page
+// (main.js); the note after an update is updatenote.js.
 import { t, locale } from './i18n.js';
 import { escape as esc } from './model.js';
 import { icon } from './icons.js';
-import { link } from './routes.js';
 
 // An entry's text, escaped, with **bold** and `code` as the changelog writes them.
 export const inline = text => esc(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -20,10 +19,4 @@ export function whatsNew(entries, current, windows) {
   const app = windows?.version ? `<section class="changelog-entry"><div class="changelog-head"><h3 class="changelog-version">${esc(t('Windows app {version}', { version: windows.version }))}</h3><span>${esc(day(windows.publishedAt))}</span></div>${windows.changes?.length ? groups(windows.changes) : `<p class="changelog-note">${t('This release lists its changes on GitHub.')}</p>`}<a class="text-button" href="${esc(windows.url)}" target="_blank" rel="noopener">${t('Release notes on GitHub')} ${icon('arrow')}</a></section>` : '';
   return `<main class="dashboard changelog"><div class="heading"><div><h1>${t('What\'s new')}</h1><p>${t('What changed in each release, newest first.')}</p></div></div>
 <h2 class="changelog-part">${t('Dashboard')}</h2>${dashboard || `<p class="changelog-note">${t('No changes listed yet.')}</p>`}${app ? `<h2 class="changelog-part">${t('Windows app')}</h2>${app}` : ''}</main>`;
-}
-
-// Whether to say the dashboard was updated: a version seen before that is not this one.
-export const updated = (seen, current) => Boolean(seen) && seen !== current;
-export function updatedNote(current) {
-  return `<div class="update-note" role="status">${icon('info')}<p>${esc(t('Updated to {version}.', { version: current }))} <a href="${link('/changelog')}">${t('What\'s new')}</a></p><button class="close-button" data-action="hide-update-note" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button></div>`;
 }
