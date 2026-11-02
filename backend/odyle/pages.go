@@ -15,10 +15,10 @@ import (
 )
 
 // The dashboard's pages as search engines and link previews see them (backend/web): each
-// public page (the start, the armory and its profiles, What's new, privacy, the demo) is
-// named for what it shows; signed-in pages, searches and profiles the armory does not keep
-// yet are kept out of search engines. The texts are English, like the addresses; the
-// dashboard shows the page in the reader's language once it runs. robots.txt and
+// public page (the start, the armory and its profiles, the timers, What's new, privacy, the
+// demo) is named for what it shows; signed-in pages, searches and profiles the armory does
+// not keep yet are kept out of search engines. The texts are English, like the addresses;
+// the dashboard shows the page in the reader's language once it runs. robots.txt and
 // sitemap.xml list the public pages, profiles included, under the public address.
 
 const armorySite = "Odyle Armory"
@@ -50,6 +50,13 @@ func DescribePage(e *core.RequestEvent, route, base string) web.Page {
 		return web.Page{Title: "Privacy · Odyle", Description: "What Odyle keeps about you and your characters, why, for how long, and how to take it all with you or delete it.", Heading: "Privacy"}
 	case route == "/demo":
 		return web.Page{Title: "Demo party room · Odyle", Description: "See an Odyle party room without signing in: every character's Odyle, the next run, the wishlist and who is ready to go."}
+	case route == "/timers":
+		return web.Page{Title: "AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle", Description: "When the AION 2 Global daily and weekly resets come in your time, when the natural Odyle pool gains its next tick and how long it takes to fill, with the weekly maintenance and what a cube of each dungeon costs. No sign-in needed.",
+			Heading: "AION 2 timers", Text: timersText(readSettings(e.App)), Data: []any{crumbs(base, [2]string{"AION 2 timers", "/timers"})}}
+	case route == "/achievements":
+		return web.Page{Title: "Achievements · Odyle", Private: true}
+	case route == "/week":
+		return web.Page{Title: "Your week in Odyle", Private: true}
 	case route == "/tasks", route == "/account", route == "/slots", len(parts) == 2 && parts[0] == "room":
 		return web.Page{Private: true}
 	}
@@ -162,16 +169,16 @@ func grouped(n int64) string {
 	return b.String()
 }
 
-// robotsRoute answers GET /robots.txt: crawlers may read the dashboard and the armory's
-// routes and images (the pages fetch them), not the rest of the API or the superuser
-// dashboard; the sitemap is named under the public address.
+// robotsRoute answers GET /robots.txt: crawlers may read the dashboard, the armory's routes
+// and images and the timers' game rules (the pages fetch them), not the rest of the API or
+// the superuser dashboard; the sitemap is named under the public address.
 func robotsRoute(e *core.RequestEvent) error {
 	base := web.PublicURL(e.App)
 	prefix := ""
 	if u, err := url.Parse(base); err == nil {
 		prefix = u.Path
 	}
-	lines := []string{"User-agent: *", "Allow: " + prefix + "/api/odyle/armory/", "Allow: " + prefix + "/api/odyle/armory-images/", "Disallow: " + prefix + "/api/", "Disallow: " + prefix + "/_/"}
+	lines := []string{"User-agent: *", "Allow: " + prefix + "/api/odyle/armory/", "Allow: " + prefix + "/api/odyle/armory-images/", "Allow: " + prefix + "/api/odyle/game", "Disallow: " + prefix + "/api/", "Disallow: " + prefix + "/_/"}
 	if base != "" {
 		lines = append(lines, "", "Sitemap: "+base+"/sitemap.xml")
 	}
@@ -195,7 +202,7 @@ func sitemapRoute(e *core.RequestEvent) error {
 	if base == "" {
 		return notFound("The sitemap needs the Application URL.")
 	}
-	entries := []sitemapEntry{{Loc: base + "/"}, {Loc: base + "/armory"}, {Loc: base + "/changelog"}, {Loc: base + "/privacy"}, {Loc: base + "/demo"}}
+	entries := []sitemapEntry{{Loc: base + "/"}, {Loc: base + "/armory"}, {Loc: base + "/timers"}, {Loc: base + "/changelog"}, {Loc: base + "/privacy"}, {Loc: base + "/demo"}}
 	var kept []struct {
 		Region      string `db:"region"`
 		ServerId    int    `db:"serverId"`

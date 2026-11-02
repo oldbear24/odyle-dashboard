@@ -229,6 +229,9 @@ func cardChoice(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
+		if design != "" {
+			achieved(app, user.Id, nil, true)
+		}
 		return cardOf(app, region, serverId, characterId, account)
 	})
 }

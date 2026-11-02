@@ -276,6 +276,7 @@ func pushSubscribe(e *core.RequestEvent) error {
 			}
 		}
 		notifyUsers(app, user.Id)
+		achieved(app, user.Id, nil, true)
 		return map[string]any{"push": pushState(app, user.Id)}, nil
 	})
 }

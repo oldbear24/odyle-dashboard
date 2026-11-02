@@ -1,0 +1,103 @@
+/* Pages that bring players in and keep them coming back: the timers (timers.js), the
+   achievements (achievements.js) and the week in Odyle (week.js). */
+.menu-item.phone-only{display:none}
+@media(max-width:900px){.menu-item.phone-only{display:flex}.topbar .account-guest .menu-item.phone-only{display:inline-flex}}
+
+/* Timers: one card per countdown, the natural pool's next ticks, the dungeon catalog */
+.timer-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.timer-card{min-width:0;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
+.timer-card h2{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#a6b6ab}
+.timer-card h2 svg{width:16px;height:16px;color:var(--mint)}
+.timer-value{display:block;margin:8px 0 4px;font-family:'Manrope Variable','Manrope',sans-serif;font-size:30px;font-weight:650;letter-spacing:-.5px;font-variant-numeric:tabular-nums;color:#eaf1ed}
+.timer-card p{font-size:12.5px;color:#c4d2c8}
+.timer-card small{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
+.timer-card.is-live{border-color:#6b5a2e;background:#211e14}.timer-card.is-live .timer-value{color:#f3c94a}
+.timers-panel{padding:14px 16px}
+.timers-lead{font-size:12.5px;color:#c4d2c8}
+.tick-strip{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px;padding:0;list-style:none}
+.tick-strip li{display:flex;flex-direction:column;align-items:center;min-width:64px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:#141b17}
+.tick-strip time{font-weight:650;font-variant-numeric:tabular-nums}
+.tick-strip span{font-size:11px;color:var(--muted)}
+.tick-strip li.is-next{border-color:var(--mint);background:#1d2c23}.tick-strip li.is-next span{color:var(--mint)}
+.fill-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-bottom:12px}
+.fill-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:8px}
+.fill-row strong{min-width:64px;font-family:'Manrope Variable','Manrope',sans-serif;font-size:20px;font-weight:650;color:var(--mint);font-variant-numeric:tabular-nums}
+.fill-row span{display:block;font-size:13px}
+.fill-row small{display:block;margin-top:2px;font-size:11.5px;color:var(--muted)}
+.timers-panel .wish-note{padding:0;border:0;font-size:12px;color:var(--muted)}
+.table-scroll{overflow-x:auto}
+.timers-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.timers-table th,.timers-table td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;font-variant-numeric:tabular-nums}
+.timers-table thead th{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#a6b6ab;white-space:nowrap}
+.timers-table tbody tr:last-child th,.timers-table tbody tr:last-child td{border-bottom:0}
+.timers-table tbody th{font-weight:600}.timers-table small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+.timers-page .party-section{margin-top:24px}
+.timers-table + .wish-note,.table-note{margin:0;padding:9px 12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted)}
+.timers-cta .setup-card{padding:18px}
+.timers-cta .setup-card h2{margin:10px 0 4px}
+.timers-cta .setup-card p{font-size:12.5px;max-width:720px}
+.timers-cta .setup-card small{display:block;margin-top:10px;font-size:11px;color:var(--muted)}
+.timers-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+@media(max-width:900px){.timer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.timer-card{padding:11px 12px}.timer-card h2{font-size:11px;gap:6px}.timer-card h2 svg{width:14px;height:14px}.timer-value{font-size:21px;margin:6px 0 3px}.timer-card p{font-size:12px}
+.timers-table thead th{white-space:normal}.timers-table th,.timers-table td{padding:8px 10px}.tick-strip li{min-width:58px;padding:6px 8px}.timers-actions .button{flex:1 1 100%}}
+
+/* Achievements: how far the account is, then a card per achievement by group */
+.ach-summary .ach-bar{height:4px;background:#22302a}.ach-summary .ach-bar i{display:block;height:100%;background:var(--mint)}
+.ach-summary .metric small a{color:var(--mint)}
+.achievements-page .party-section{margin-top:24px}
+.ach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.ach-card{position:relative;display:flex;gap:12px;min-width:0;padding:13px 14px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.ach-card.is-reached{border-color:#3f6b52;background:linear-gradient(160deg,#1c2b22,var(--panel) 60%)}
+.ach-card.is-secret{border-style:dashed}
+.ach-sign{flex:0 0 38px;width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:#141b17;font-size:20px;filter:grayscale(1);opacity:.6}
+.ach-card.is-reached .ach-sign{filter:none;opacity:1;background:#23392c;box-shadow:0 0 12px #b5f2cd22}
+.ach-body{min-width:0;flex:1}
+.ach-body h3{font-size:13.5px;font-weight:650}
+.ach-body p{margin-top:2px;font-size:12px;color:#aab8ae;line-height:1.45}
+.ach-progress{height:5px;margin-top:8px;border-radius:3px;background:#22302a;overflow:hidden}.ach-progress i{display:block;height:100%;background:var(--mint);border-radius:3px}
+.ach-count{display:block;margin-top:3px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ach-when{display:flex;align-items:center;gap:4px;margin-top:6px;font-size:11px;color:var(--mint)}.ach-when svg{width:13px;height:13px}
+.ach-reward{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:8px}
+.ach-spins{font-size:11px;color:#e8d8a8;border:1px solid #5a4d2a;border-radius:999px;padding:2px 8px}
+.ach-item{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#c4d2c8}
+.ach-item .slot-frame{width:22px;height:22px;font-size:9px}.ach-item .slot-emoji{font-size:16px}.ach-item .slot-swatch{font-size:13px}
+.ach-reward .text-button{margin:0}
+.ach-new{position:absolute;top:-8px;right:10px;padding:1px 7px;border-radius:999px;background:var(--mint);color:#193223;font-size:11px;font-weight:700}
+.heading .button svg{width:16px;height:16px}
+/* Items only achievements give, worn like the slot machine's (slots.js frameClass) */
+.frame-runic{box-shadow:0 0 0 2px #5ee0b0,0 0 0 4px #1f3d33,0 0 10px #5ee0b0aa}
+.frame-laurel{box-shadow:0 0 0 2px #d9c36a,0 0 0 4px #4d6b3a,0 0 10px #d9c36a77}
+.ach-summary .metric small{white-space:normal}
+
+/* Your week: its numbers, its facts, sharing it and the characters; on Rooms & characters the
+   note that the week before is ready */
+.week-page .party-section{margin-top:22px}
+.week-nav .button{min-width:92px}
+.week-facts{display:flex;flex-wrap:wrap;gap:8px 20px;margin:-6px 0 0;padding:0;list-style:none}
+.week-facts li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#c4d2c8}
+.week-facts svg{width:16px;height:16px;color:var(--mint)}
+.week-share .setup-card{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 18px;padding:16px 18px;border-color:#3f6b52;background:linear-gradient(120deg,#1c2b22,var(--panel) 70%)}
+.week-share-text p{max-width:560px;font-size:12.5px}
+.week-share .timers-actions{margin-top:0}
+.week-share .button svg{width:16px;height:16px}
+.timers-table th .main-label{margin-left:4px;vertical-align:1px}
+.timers-table td small{display:block;font-size:11px;color:var(--muted)}
+.week-page .info-panel .timers-actions{margin-top:12px}
+.week-ready{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 18px;padding:12px 16px;border:1px solid #3f6b52;border-radius:12px;background:linear-gradient(120deg,#1c2b22,var(--panel) 70%)}
+.week-ready>svg{width:22px;height:22px;color:var(--mint)}
+.week-ready p{flex:1;min-width:200px;display:grid;gap:2px;font-size:13px}
+.week-ready p span{color:#aab8ae;font-size:12px}
+.week-ready-actions{display:flex;align-items:center;gap:12px}
+.week-ready .text-button{margin:0;font-size:12px}
+@media(max-width:900px){.week-share .timers-actions{width:100%}.week-nav{width:100%}.week-nav .button{flex:1}}
+.timers-cta .timers-actions .button,.week-share .timers-actions .button,.week-page .info-panel .button{width:auto;margin-top:0}
+@media(max-width:900px){.timers-cta .timers-actions .button,.week-share .timers-actions .button{flex:1 1 100%}}
+.week-page .timers-table{min-width:520px}
+/* Achievements reached while the dashboard is open, beside the page's own messages */
+#achievement-toast{position:fixed;top:16px;right:16px;z-index:70;display:flex;align-items:center;gap:10px;max-width:min(440px,calc(100vw - 32px));padding:10px 14px;border:1px solid #6b5a2e;border-radius:12px;background:#211e14;color:#f3e6b8;font-size:13px;box-shadow:0 10px 30px #0009;opacity:0;transform:translateY(-12px);pointer-events:none;transition:opacity .25s,transform .25s}
+#achievement-toast.show{opacity:1;transform:none;pointer-events:auto}
+#achievement-toast p{flex:1;line-height:1.4}
+#achievement-toast a{color:#f3c94a;font-weight:700;text-decoration:underline;text-underline-offset:2px}
+.achievement-toast-sign{font-size:20px}
+@media(max-width:900px){#achievement-toast{top:64px;right:16px;left:16px;max-width:none}}
+@media(prefers-reduced-motion:reduce){#achievement-toast{transition:none}}

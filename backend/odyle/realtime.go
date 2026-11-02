@@ -23,8 +23,9 @@ import (
 //     as the room's readers send heartbeats.
 //   - odyle.user.<account id>, that account only: {"refresh": true} when its own
 //     characters, rooms, tasks, Windows apps or profile changed, {"characters": […]}
-//     when only its characters did, and {"seen": {…}, "contact": {<reader session id>:
-//     <time>}} for its readers' heartbeats. News for everyone comes on each account's topic
+//     when only its characters did, {"seen": {…}, "contact": {<reader session id>:
+//     <time>}} for its readers' heartbeats and {"achievements": [{id, spins, reward}]} for
+//     the achievements it reached (achievements.go). News for everyone comes on each account's topic
 //     too: {"release": {version, publishedAt, url}} when a newer Windows release is out,
 //     {"announcement": {text, level} | null} when the announcement changed,
 //     {"windowsBlocked": [...]} when the held-back Windows versions changed and
@@ -67,6 +68,8 @@ type userNews struct {
 	partyReady []partyNotice
 	// runs planned from the wishlist that invite the account (#45)
 	invites []runInvite
+	// achievements it reached (achievements.go)
+	achievements []achievementNotice
 }
 
 // outbox collects news until its delivery.
@@ -291,6 +294,9 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 	}
 	if len(n.invites) > 0 {
 		message["invites"] = n.invites
+	}
+	if len(n.achievements) > 0 {
+		message["achievements"] = n.achievements
 	}
 	for _, kind := range []struct {
 		key   string

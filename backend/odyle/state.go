@@ -58,6 +58,8 @@ type state struct {
 	updateAskedAt time.Time
 
 	announcementCheckedAt time.Time // the announcement schedule's last run (settings.go)
+
+	achievementDays sync.Map // account id → the daily period its readings last counted (achievements.go)
 }
 
 func stateOf(app core.App) *state {

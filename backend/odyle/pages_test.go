@@ -70,15 +70,20 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 			t.Errorf("%s is a page", route)
 		}
 	}
-	for _, route := range []string{"/tasks", "/account", "/slots", "/room/abc123", "/armory/find/GLOBAL_EU/Lumiel/Kai"} {
+	for _, route := range []string{"/tasks", "/account", "/slots", "/achievements", "/week", "/room/abc123", "/armory/find/GLOBAL_EU/Lumiel/Kai"} {
 		if _, _, private, missing, _ := describe(route); !private || missing {
 			t.Errorf("%s: private %v, missing %v", route, private, missing)
 		}
 	}
-	for _, route := range []string{"/", "/armory", "/changelog", "/privacy", "/demo"} {
+	for _, route := range []string{"/", "/armory", "/timers", "/changelog", "/privacy", "/demo"} {
 		if _, _, private, missing, _ := describe(route); private || missing {
 			t.Errorf("%s: private %v, missing %v", route, private, missing)
 		}
+	}
+	// The timers say what they show, also to readers that run no JavaScript.
+	e, _ := pageEvent(app, "/timers")
+	if p := DescribePage(e, "/timers", "https://odyle.example"); p.Title != "AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle" || !strings.HasPrefix(p.Text, "The daily reset comes at 07:00 UTC") || p.Heading != "AION 2 timers" {
+		t.Fatalf("the timers: %+v", p)
 	}
 }
 
@@ -88,7 +93,7 @@ func TestRobotsAndSitemapListThePublicPages(t *testing.T) {
 	keepProfile(t, app, "SGlkZGVuSGlkZGVuSGlkZGVu", true)
 	// Without a public address there is no sitemap to name.
 	e, w := pageEvent(app, "/robots.txt")
-	if err := robotsRoute(e); err != nil || strings.Contains(w.Body.String(), "Sitemap") || !strings.Contains(w.Body.String(), "Allow: /api/odyle/armory/\n") || !strings.Contains(w.Body.String(), "Disallow: /api/\n") {
+	if err := robotsRoute(e); err != nil || strings.Contains(w.Body.String(), "Sitemap") || !strings.Contains(w.Body.String(), "Allow: /api/odyle/armory/\n") || !strings.Contains(w.Body.String(), "Allow: /api/odyle/game\n") || !strings.Contains(w.Body.String(), "Disallow: /api/\n") {
 		t.Fatalf("robots.txt: %v %q", err, w.Body.String())
 	}
 	if e, _ := pageEvent(app, "/sitemap.xml"); sitemapRoute(e) == nil {
@@ -104,7 +109,7 @@ func TestRobotsAndSitemapListThePublicPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := w.Body.String()
-	for _, want := range []string{`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`, "<url><loc>https://odyle.example/app/armory</loc></url>", "<url><loc>https://odyle.example/app/armory/eu/2304/" + pageId + "</loc><lastmod>2026-10-27</lastmod></url>"} {
+	for _, want := range []string{`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`, "<url><loc>https://odyle.example/app/armory</loc></url>", "<url><loc>https://odyle.example/app/timers</loc></url>", "<url><loc>https://odyle.example/app/armory/eu/2304/" + pageId + "</loc><lastmod>2026-10-27</lastmod></url>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the sitemap lacks %s:\n%s", want, body)
 		}
