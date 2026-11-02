@@ -1084,7 +1084,8 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.equal(await page.locator('.sidebar a.nav-item[data-action="tasks"]').getAttribute('href'), './tasks');
     assert.equal(await page.locator('.sidebar a.nav-item[data-action="overview"]').getAttribute('href'), './room/' + roomId);
-    assert.deepEqual(await page.locator('.sidebar nav a').allInnerTexts(), ['Party', 'Rooms & characters', 'Tasks', 'Armory']);
+    assert.deepEqual(await page.locator('.sidebar nav .nav-label').allInnerTexts(), ['Party', 'Rooms & characters', 'Tasks', 'My week', 'Achievements', 'Timers', 'Armory']);
+    assert.equal(await page.locator('.sidebar a.nav-item[data-action="timers"]').getAttribute('href'), './timers');
     assert.equal(await page.locator('.sidebar .brand').getAttribute('href'), './');
     await navigate(page, 'help');
     assert.equal(await page.locator('#modal').getAttribute('aria-labelledby'), 'modal-title');
@@ -1103,9 +1104,10 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
       await page.waitForURL(url + '/' + hash); await page.locator(ready).waitFor();
       assert.equal(await bar.locator('a.active').count() <= 1, true);
     }
-    // Invitations and Reader & privacy are in the account menu at the top; it closes on Escape.
+    // Invitations, Reader & privacy and the pages the bar has no room for are in the account menu at the top; it closes on Escape.
     await page.locator('.topbar .account-menu summary').click();
     assert.ok(await page.locator('.topbar .account-menu [data-action="invite"]').isVisible() && await page.locator('.topbar .account-menu [data-action="help"]').isVisible());
+    assert.deepEqual(await page.locator('.topbar .account-menu .phone-only span:not(.nav-badge):not(.sr-only)').allInnerTexts(), ['My week', 'Achievements', 'Timers']);
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.topbar .account-menu[open]').count(), 0);
     assert.deepEqual(errors, []);
@@ -1116,7 +1118,7 @@ test('the main pages pass the axe accessibility check, signed out and in', async
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
   const profileAt = '#/armory/eu/2304/' + armorer[0];
-  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/card'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account']];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/card'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account'], [null, '#/timers'], [null, '#/achievements'], [lead, '#/timers'], [lead, '#/achievements'], [lead, '#/week']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);
@@ -1127,6 +1129,72 @@ test('the main pages pass the axe accessibility check, signed out and in', async
     } finally { await close(); }
   }
   assert.deepEqual(found, []);
+});
+
+test('timers, achievements and your week: open game rules, milestones with their items and a week to share', async () => {
+  // Signed out: the timers count down by the second, and the achievements show what there is to reach.
+  const visitor = await open(null, '#/timers');
+  try {
+    const { page, errors } = visitor;
+    await page.locator('.timer-card').first().waitFor();
+    assert.ok(await page.locator('.timer-card').count() >= 3);
+    const before = await page.locator('.timer-value').first().innerText();
+    await delay(1300);
+    assert.notEqual(await page.locator('.timer-value').first().innerText(), before);
+    assert.equal(await page.locator('.tick-strip li').count(), 8);
+    assert.ok(await page.locator('.timers-cta [data-action="discord"]').isVisible());
+    await shot(page, 'timers');
+    await page.locator('.timers-cta a[href$="achievements"]').click();
+    await page.locator('.ach-card').first().waitFor();
+    assert.ok(await page.locator('.ach-card.is-secret').count() >= 2);
+    assert.equal(await page.locator('[data-wear-item]').count(), 0);
+    await shot(page, 'achievements-signed-out');
+    assert.deepEqual(errors, []);
+  } finally { await visitor.close(); }
+  const czech = await open(null, '#/timers', 'cs');
+  try { await czech.page.getByRole('heading', { name: 'Časovače.' }).waitFor(); assert.deepEqual(czech.errors, []); } finally { await czech.close(); }
+  // Signed in: a room and a first reading reach achievements before the page is open; a spend of
+  // 1,000 while it is open tells the player at once, apart from the page's own messages.
+  const player = await account('Progress player');
+  await request('/api/odyle/create', { name: 'Progress room' }, player);
+  const session = (await request('/api/odyle/session', {}, player)).data;
+  const reading = { sessionId: session.sessionId, characterName: 'Climber', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
+  const c = (await request('/api/odyle/report', { ...reading, sequence: 1, value: 1500, base: 500, bonus: 1000, kind: 'snapshot' }, player)).data.character;
+  const { page, errors, close } = await open(player, '#/');
+  try {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
+    await page.locator('.personal-characters').waitFor();
+    // The week before is offered once; Not now puts it away.
+    await page.locator('.week-ready').waitFor();
+    await page.locator('.week-ready [data-action="week-later"]').click();
+    assert.equal(await page.locator('.week-ready').count(), 0);
+    assert.equal((await request('/api/odyle/report', { ...reading, sequence: 2, characterId: c.id, value: 500, base: 500, bonus: 0, kind: 'spend', delta: -1000 }, player)).status, 200);
+    await page.locator('#achievement-toast.show', { hasText: 'Cube hunter' }).waitFor({ timeout: 5000 });
+    assert.match(await page.locator('#achievement-toast').innerText(), /First cube, Cube hunter · \+3 spins · \+1 item for your name/);
+    await navigate(page, 'achievements');
+    await page.locator('.ach-card.is-reached').first().waitFor();
+    assert.ok(await page.locator('.ach-card.is-reached').count() >= 4);
+    assert.ok(await page.locator('.ach-new').count() >= 4);
+    // The crate is worn next to the name, like a slot machine item.
+    await page.locator('[data-wear-item="badge-crate"]').click();
+    await toast(page).filter({ hasText: 'Worn next to your name in your rooms.' }).waitFor();
+    assert.equal(await page.locator('[data-wear-item=""][data-kind="badge"]').innerText(), 'Take off');
+    assert.equal(await page.locator('a[data-action="achievements"] .nav-badge').count(), 0);
+    await shot(page, 'achievements');
+    // Your week: its numbers, a picture and a text to share.
+    await navigate(page, 'week');
+    await page.locator('.week-page .metric-panel').waitFor();
+    assert.match(await page.locator('.week-page .metric.is-main strong').innerText(), /≈25/);
+    const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="week-image"]').click()]);
+    assert.match(download.suggestedFilename(), /^odyle-week-\d{4}-\d{2}-\d{2}\.png$/);
+    const picture = await readFile(await download.path());
+    assert.deepEqual([...picture.subarray(1, 4)], [80, 78, 71]);
+    await page.locator('[data-action="week-copy"]').click();
+    await toast(page).filter({ hasText: 'Copied. Paste it in Discord.' }).waitFor();
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^\*\*My week in Odyle\*\*[\s\S]*25 cubes opened · 1,000 Odyle spent[\s\S]*Odyle for your whole party: http/);
+    await shot(page, 'week');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
 
 test('a changed announcement shows on an open page at once, without asking the server', async () => {

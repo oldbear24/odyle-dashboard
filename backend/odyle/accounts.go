@@ -386,6 +386,7 @@ func create(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
+		achieved(app, user.Id, nil, true)
 		return map[string]any{"room": roomJSON(room, cost), "membership": member, "invites": invites}, nil
 	})
 }
@@ -443,6 +444,11 @@ func join(e *core.RequestEvent) error {
 			return nil, err
 		}
 		*affected = append(*affected, room.Id)
+		// Achievements: the link's maker brought a player in, and this account is in a room.
+		if maker := invitation.CreatedBy(); maker != user.Id {
+			achieved(app, maker, adding(map[string]int64{"invited": 1}), false)
+		}
+		achieved(app, user.Id, nil, true)
 		return map[string]any{"room": roomJSON(room, cost), "membership": member}, nil
 	})
 }
@@ -527,7 +533,8 @@ func rooms(e *core.RequestEvent) error {
 			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(users), len(party.Players), party.Cubes, next[room.Id]
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth), "maps": rules.Maps, "classIcons": classIcons(e.App), "kept": map[string]any{"historyDays": rules.HistoryDays, "locationDays": rules.LocationDays}})
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth), "maps": rules.Maps, "classIcons": classIcons(e.App), "kept": map[string]any{"historyDays": rules.HistoryDays, "locationDays": rules.LocationDays},
+			"achievements": map[string]any{"new": progressOf(e.Auth).unseen()}})
 	})
 }
 
@@ -933,6 +940,7 @@ func checklistTask(e *core.RequestEvent) error {
 			if err := addTask(app, user.Id, character, title, cadence); err != nil {
 				return nil, err
 			}
+			achieved(app, user.Id, nil, true)
 		}
 		return checklist(app, user.Id)
 	})
@@ -1223,6 +1231,12 @@ func report(e *core.RequestEvent) error {
 		if err := grantDailySpin(app, character, time.Now()); err != nil {
 			return nil, err
 		}
+		// Achievements (achievements.go): the day the reader read, a spend or an item, a first reading.
+		if changed {
+			countReading(app, character.User(), data.kind, data.delta, before.Value(), data.value, !before.Confirmed(), time.Now())
+		} else {
+			countReading(app, character.User(), "", 0, 0, 0, false, time.Now())
+		}
 		// Rooms and the owner hear of the character from its record hooks (realtime.go).
 		return map[string]any{"character": character, "serverNow": now()}, nil
 	})
@@ -1271,6 +1285,9 @@ func sharing(e *core.RequestEvent) error {
 			return nil, err
 		}
 		*affected = append(*affected, m.Room())
+		if enabled {
+			achieved(app, user.Id, nil, true)
+		}
 		return map[string]any{"sharedCharacters": next}, nil
 	})
 }
@@ -1664,6 +1681,7 @@ func pair(e *core.RequestEvent) error {
 			if err != nil {
 				return err
 			}
+			achieved(app, user.Id, nil, true)
 			result = map[string]any{"token": token, "record": user, "deviceKey": key}
 			return nil
 		}); err != nil {
@@ -2143,6 +2161,7 @@ func plan(e *core.RequestEvent) error {
 				if err := app.Save(again); err != nil {
 					return nil, err
 				}
+				achieved(app, user.Id, adding(map[string]int64{"planned": 1}), false)
 			case b.isTrue("remove"):
 				if r.PlannedBy() != m.Id && !isOwner && !(started && attending) {
 					return nil, forbidden("Only its planner, an officer or the room owner can cancel this run.")
@@ -2367,6 +2386,7 @@ func plan(e *core.RequestEvent) error {
 			if err := inviteToRun(app, r, invited, user, called); err != nil {
 				return nil, err
 			}
+			achieved(app, user.Id, adding(map[string]int64{"planned": 1}), false)
 		}
 		*affected = append(*affected, roomId)
 		runs, err := runsOf(app, roomId, nil)
@@ -2542,6 +2562,9 @@ func discordWebhook(e *core.RequestEvent) error {
 			}
 		}
 		notify(e.App, []string{room.Id})
+		if room.DiscordWebhook() != "" {
+			_ = e.App.RunInTransaction(func(tx core.App) error { achieved(tx, e.Auth.Id, nil, true); return nil })
+		}
 		return e.JSON(200, map[string]any{"room": roomJSON(room, odylePerCube(e.App))})
 	})
 }
@@ -2891,6 +2914,7 @@ func exportData(e *core.RequestEvent) error {
 			"pushSubscriptions": pushExport(e.App, user.Id),
 			"account":           map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt(), "signIns": signIns},
 			"slotMachine":       map[string]any{"spins": user.GetInt("spins"), "collection": wardrobeOf(user.Record)},
+			"achievements":      progressOf(user.Record),
 			"calendarFeed":      calendarState(user.Record),
 			"characters":        exportedCharacters,
 			"rooms":             joined,

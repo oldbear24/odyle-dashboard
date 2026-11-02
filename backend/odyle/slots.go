@@ -205,7 +205,7 @@ func grantDailySpin(app core.App, c *Character, at time.Time) error {
 // of `dailySpins`) and the earned ones.
 func slotAnswer(app core.App, user *core.Record, w wardrobe, extra map[string]any) map[string]any {
 	rules := readSettings(app).Slots
-	out := map[string]any{"spins": int64(user.GetInt("spins")) + w.Daily, "daily": w.Daily, "dailySpins": rules.DailySpins, "perCharacter": rules.PerCharacter, "shards": w.Shards, "shardsForSpin": shardsForSpin, "winChance": slotWinChance, "owned": w.Owned, "equipped": w.Equipped, "catalog": cosmetics}
+	out := map[string]any{"spins": int64(user.GetInt("spins")) + w.Daily, "daily": w.Daily, "dailySpins": rules.DailySpins, "perCharacter": rules.PerCharacter, "shards": w.Shards, "shardsForSpin": shardsForSpin, "winChance": slotWinChance, "owned": w.Owned, "equipped": w.Equipped, "catalog": cosmetics, "fromAchievements": achievementItemIds()}
 	for k, v := range extra {
 		out[k] = v
 	}
@@ -238,6 +238,14 @@ func slots(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
+		// Finding the machine is an achievement of its own (achievements.go); what it gives comes
+		// with the answer.
+		if len(achieved(app, user.Id, func(p *progress) { p.Counts["slots"] = 1 }, false)) > 0 {
+			if user, err = fresh(app, user); err != nil {
+				return nil, err
+			}
+			w = wardrobeOf(user)
+		}
 		return slotAnswer(app, user, w, nil), nil
 	})
 }
@@ -248,6 +256,17 @@ func roll(limit int64) int64 {
 		return 0
 	}
 	return n.Int64()
+}
+
+// slotPool is what a spin of the rarity can win: its items, but never one only achievements give.
+func slotPool(rarity string) []cosmetic {
+	pool := []cosmetic{}
+	for _, c := range cosmetics {
+		if c.Rarity == rarity && !achievementItem(c.Id) {
+			pool = append(pool, c)
+		}
+	}
+	return pool
 }
 
 // POST /api/odyle/slot-spin: one spin, rolled here: a rarity by slotOdds, then one of its items.
@@ -286,12 +305,7 @@ func slotSpin(e *core.RequestEvent) error {
 			}
 			pick -= o.weight
 		}
-		pool := []cosmetic{}
-		for _, c := range cosmetics {
-			if c.Rarity == rarity {
-				pool = append(pool, c)
-			}
-		}
+		pool := slotPool(rarity)
 		won := pool[roll(int64(len(pool)))]
 		duplicate := contains(w.Owned, won.Id)
 		if duplicate {
@@ -307,6 +321,13 @@ func slotSpin(e *core.RequestEvent) error {
 		user.Set("cosmetics", w)
 		if err := app.Save(user); err != nil {
 			return nil, err
+		}
+		// A legendary item is an achievement (achievements.go); what it gives comes with the answer.
+		if won.Rarity == "legendary" && !duplicate && len(achieved(app, user.Id, func(p *progress) { p.Counts["legendary"]++ }, false)) > 0 {
+			if user, err = fresh(app, user); err != nil {
+				return nil, err
+			}
+			w = wardrobeOf(user)
 		}
 		return slotAnswer(app, user, w, map[string]any{"won": won, "duplicate": duplicate, "lost": false}), nil
 	})

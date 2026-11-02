@@ -31,6 +31,7 @@ var accountActions = []action{
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
 	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed}, {"room-features", roomFeaturesSetting},
 	{"location", location}, {"location-sharing", locationSharing}, {"card", cardChoice}, {"game-group", group},
+	{"achievements", achievementsRoute},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
@@ -126,6 +127,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/locations/{id}", timed("locations", locations)).Bind(signedIn)
 	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
+	se.Router.GET("/api/odyle/week", timed("week", weekRoute)).Bind(signedIn)
 	// The private calendar feed (#35): its token is in the address, so a request that succeeds is
 	// not written to the activity log.
 	se.Router.GET("/api/odyle/calendar/{file}", timed("calendar", calendarFile)).Bind(apis.SkipSuccessActivityLog())
@@ -140,6 +142,12 @@ func routes(se *core.ServeEvent) {
 	// Its images (armoryimages.go) are outside /api/odyle/armory/, under the general rate limit:
 	// a profile shows some hundred of them, which browsers then keep.
 	se.Router.GET("/api/odyle/armory-images/{file}", timed("armory-image", armoryImageRoute))
+	// Public: the game rules the timers page shows (timers.go): resets, the Odyle clock, the
+	// weekly maintenance and the dungeon catalog, nothing of any account.
+	se.Router.GET("/api/odyle/game", timed("game", gameRoute))
+	// Public: the achievements there are and the items they give (achievements.go); an account
+	// fetches its own with POST.
+	se.Router.GET("/api/odyle/achievements", timed("achievements", achievementsCatalog))
 	// Public: what crawlers may read and the pages they may list (pages.go).
 	se.Router.GET("/robots.txt", robotsRoute)
 	se.Router.GET("/sitemap.xml", sitemapRoute)

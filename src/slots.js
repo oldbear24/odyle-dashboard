@@ -5,6 +5,7 @@
 // in its rooms (lookName, frameClass).
 import { t, tn } from './i18n.js';
 import { escape as esc } from './model.js';
+import { link } from './routes.js';
 
 export const rarities = ['common', 'rare', 'epic', 'legendary'];
 // A win shows three alike, its rarity's face; a spin that wins nothing shows three different
@@ -27,7 +28,7 @@ export function lookOf(state) {
   for (const [kind] of kinds) { const item = state?.catalog?.find(c => c.id === state.equipped?.[kind]); if (item && state.owned.includes(item.id)) look[kind] = item.value; }
   return look;
 }
-const swatch = item => item.kind === 'color' ? `<span class="slot-swatch" style="${colorStyle(item.value)}">Aa</span>` : item.kind === 'frame' ? `<span class="portrait slot-frame${frameClass({ frame: item.value })}">Od</span>` : `<span class="slot-emoji">${esc(item.value)}</span>`;
+export const swatch = item => item.kind === 'color' ? `<span class="slot-swatch" style="${colorStyle(item.value)}">Aa</span>` : item.kind === 'frame' ? `<span class="portrait slot-frame${frameClass({ frame: item.value })}">Od</span>` : `<span class="slot-emoji">${esc(item.value)}</span>`;
 
 // Three different faces for a spin that won nothing, picked from the spin's seed.
 export function missFaces(seed = 0) {
@@ -53,12 +54,14 @@ export function slotsView({ state, spinning = false, last = null, name = '', sou
     const tiles = items.map(item => {
       const owned = state.owned.includes(item.id), worn = state.equipped?.[kind] === item.id;
       const action = !owned ? '' : worn ? `<button class="text-button" data-slot-equip="" data-kind="${kind}">${t('Take off')}</button>` : `<button class="text-button" data-slot-equip="${esc(item.id)}" data-kind="${kind}">${t('Wear')}</button>`;
-      return `<div class="slot-item rarity-${esc(item.rarity)} ${owned ? '' : 'locked'} ${worn ? 'worn' : ''}">${owned ? swatch(item) : '<span class="slot-locked" aria-hidden="true">?</span>'}<strong>${owned ? esc(t(item.name)) : t('Not found yet')}</strong><small>${esc(rarityLabel(item.rarity))}${worn ? ' · ' + t('worn') : ''}</small>${action}</div>`;
+      // Items only achievements give (achievements.js) say so until the account has them.
+      const earned = state.fromAchievements?.includes(item.id);
+      return `<div class="slot-item rarity-${esc(item.rarity)} ${owned ? '' : 'locked'} ${worn ? 'worn' : ''}">${owned ? swatch(item) : '<span class="slot-locked" aria-hidden="true">?</span>'}<strong>${owned ? esc(t(item.name)) : earned ? t('From an achievement') : t('Not found yet')}</strong><small>${esc(rarityLabel(item.rarity))}${worn ? ' · ' + t('worn') : ''}</small>${action}</div>`;
     }).join('');
     const count = items.filter(i => state.owned.includes(i.id)).length;
     return `<section class="party-section slot-group"><div class="section-heading"><h2>${t(title)} <span>${count}/${items.length}</span></h2></div><div class="slot-items">${tiles}</div></section>`;
   }).join('');
-  return `<main class="dashboard slots-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOU FOUND IT')}</div><h1>${t('Odyle slot machine')}<span class="mint">.</span></h1><p>${esc(spinSources(state))}</p></div></section>`
+  return `<main class="dashboard slots-page"><section class="heading"><div><div class="eyebrow"><span class="tiny-diamond"></span> ${t('YOU FOUND IT')}</div><h1>${t('Odyle slot machine')}<span class="mint">.</span></h1><p>${esc(spinSources(state))} <a class="footer-link" href="${link('/achievements')}">${t('Achievements bring more spins')}</a></p></div></section>`
     + `<section class="slot-machine"><div class="slot-window" aria-hidden="true">${reels}</div>${result}<div class="slot-controls"><button class="button primary slot-spin" data-action="slot-spin" ${spins < 1 || spinning ? 'disabled' : ''}>${t('Spin')}</button><button class="icon-button slot-sound" data-action="slot-sound" aria-pressed="${sound}" title="${esc(sound ? t('Sound on') : t('Sound off'))}" aria-label="${esc(t('Sound'))}">${sound ? '🔊' : '🔇'}</button><span class="slot-spins">${esc(tn(spins, '{n} spin left', '{n} spins left'))}${state.daily > 0 ? ` (${esc(t('{n} free today', { n: state.daily }))})` : ''} · ${esc(t('Shards {n}/{of}', { n: state.shards, of: state.shardsForSpin }))}</span></div>`
     + `<p class="slot-preview">${t('In rooms:')} <span class="portrait slot-frame${frameClass(look)}">${esc(name.slice(0, 2).toUpperCase())}</span> ${lookName(name, look)}</p>`
     + `<small class="slot-odds">${esc(t('A spin wins {chance} % of the time; wins are common 60 %, rare 27 %, epic 10 %, legendary 3 %. A duplicate gives a shard, three shards a spin. Cosmetic only, nothing to buy.', { chance: state.winChance ?? 15 }))}</small></section>${groups}</main>`;

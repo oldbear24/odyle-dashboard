@@ -56,6 +56,8 @@ type state struct {
 
 	updateAsked   map[string]any // the last Update all apps now (releases.go), told again for updateReplay
 	updateAskedAt time.Time
+
+	achievementDays sync.Map // account id → the daily period its readings last counted (achievements.go)
 }
 
 func stateOf(app core.App) *state {

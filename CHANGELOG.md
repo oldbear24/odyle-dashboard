@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.56.0 · 2026-11-02
+
+### New
+- **Timers**: a new page anyone can open, signed in or not. It counts down to the daily and weekly reset, the next Odyle regeneration tick and the weekly maintenance, every second and in your own time. It lists the ticks of the next 24 hours, when an empty natural pool would be full (560 without the membership, 840 with it) and what a day of regeneration is worth. With the server's dungeon catalog it also shows what a cube of each dungeon costs and how many cubes a day of regeneration and a full pool pay for. Find it in the sidebar, on the welcome page and on Daily & weekly.
+- **Achievements**: 25 milestones of your own, reached by playing with Odyle: pairing the reader, your first reading, a room, the Odyle your characters spend on cubes (up to 20,000), Odyle from items, the days you play with the reader (and days in a row), friends who join your rooms with your invite links, the runs you plan, a reset week without a tick lost at the cap, and two secrets. Each one brings slot machine spins, and ten bring an item for your name that the slot machine never gives: a crate, a runic or laurel frame, a legend's gold name and more. You wear them next to your name in your rooms. Nobody else sees your achievements, and nothing ranks them.
+- Achievements count by themselves. One reached while the dashboard is open pops up at the top of the page, and the sidebar shows how many are new. What you did before this update counts too, as far back as the server still keeps it (the last 30 days of Odyle history, open invite links and planned runs).
+- **Your week in Odyle**: a page that sums up a reset week of your characters. It shows the cubes you opened, the Odyle you spent, what regenerated and what items added, and what your natural pools lost at the cap. It also shows the days you played with the reader, your biggest day and the achievements you reached, each next to the week before. **Earlier** and **Later** go back as far as the server keeps the history (three weeks by default).
+- **Share your week**: **Save image** draws your week as a picture, **Copy for Discord** gives a text to paste, and on phones **Share** sends both. Both are made in your browser and go nowhere until you post them. After the weekly reset, Rooms & characters tells you once that your week is ready.
+
+### Changed
+- On phones, My week, Achievements and Timers are in the account menu at the top. Signed out, Timers sits right beside it.
+- The slot machine marks the items that only achievements give, and links to the achievements.
+
 ## 0.55.1 · 2026-10-29
 
 ### Fixed

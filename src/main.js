@@ -6,7 +6,7 @@ import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { status, age, escape as esc, timestamp, classOf, regionLabel } from './model.js';
 import { connectionLink } from './connection.js';
 import { windowsApp } from './release.js';
-import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour, scopes, inScope, left, templatesForm } from './tasks.js';
+import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour, scopes, inScope, left, templatesForm, periodStart } from './tasks.js';
 import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
@@ -32,6 +32,9 @@ import { whatsNew, updated, updatedNote } from './whatsnew.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
 import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses, openStudioTab, studioAbout } from './card.js';
 import { saveCardImage } from './cardimage.js';
+import { timersView, timerText, timerTargets } from './timers.js';
+import { achievementsView, reachedText } from './achievements.js';
+import { weekView, weekSummary, weekImage, weekImageName, weekText, weekDates } from './week.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
 import { armoryRoute, armoryTarget, armorySearch, armoryProfile, armoryTitle, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
@@ -43,6 +46,7 @@ import './accounts.css';
 import './features.css';
 import './layout.css';
 import './card.css';
+import './progress.css';
 
 const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8090' : window.location.origin);
 // Persisted in localStorage: the sign-in is shared by every tab of this browser and survives restarts.
@@ -106,16 +110,21 @@ function portrait(c, index, size = '') {
 const ownCards = () => characters.map((c, i) => [c, i]).sort(([a], [b]) => Boolean(b.main) - Boolean(a.main)).map(([c, i]) => card({ ...c, sharing: true, role: 'reporter', displayName: pb.authStore.record.displayName, user: pb.authStore.record.id }, i)).join('');
 // The pages, as links (they open in a new tab too): in the sidebar on wide screens, in the bar
 // at the bottom on phones (with the short name). Dialogs sit in the account menu.
-const pages = () => [['overview', 'grid', t('Party')], ['library', 'people', t('Rooms & characters'), t('Rooms')], ['tasks', 'check', t('Tasks')], ['armory', 'search', t('Armory')]];
-const navItem = (action, active, name, label) => `<a href="${navHref(action)}" data-action="${action}" class="nav-item ${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span class="nav-label">${label}</span>${action === 'tasks' ? taskBadge() : ''}</a>`;
+const pages = () => [['overview', 'grid', t('Party')], ['library', 'people', t('Rooms & characters'), t('Rooms')], ['tasks', 'check', t('Tasks')], ['week', 'chart', t('My week')], ['achievements', 'trophy', t('Achievements')], ['timers', 'clock', t('Timers')], ['armory', 'search', t('Armory')]];
+// The bar at the bottom of phones has room for these four and the account; the other pages are
+// in the account menu there (phoneItems).
+const phonePages = ['overview', 'library', 'tasks', 'armory'];
+const navItem = (action, active, name, label) => `<a href="${navHref(action)}" data-action="${action}" class="nav-item ${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span class="nav-label">${label}</span>${badgeOf(action)}</a>`;
+// The count beside a page in the navigation: tasks left, achievements reached since the last look.
+const badgeOf = action => action === 'tasks' ? taskBadge() : action === 'achievements' ? achievementBadge() : '';
 // Where a navigation item leads: the open (or last) room, the library, the checklist, the armory, the account.
 function navHref(action) {
   const signedIn = pb.authStore.isValid && !demo;
   if (action === 'overview') return link(demo ? '/demo' : room ? '/room/' + room.id : signedIn && remembered().room ? '/room/' + remembered().room : '/');
-  const path = { library: '/', tasks: signedIn ? '/tasks' : '/', armory: '/armory', account: signedIn ? '/account' : '/' }[action];
+  const path = { library: '/', tasks: signedIn ? '/tasks' : '/', week: signedIn ? '/week' : '/', achievements: '/achievements', timers: '/timers', armory: '/armory', account: signedIn ? '/account' : '/' }[action];
   return path ? link(path) : '';
 }
-const bottomNav = active => `<nav class="bottom-nav" aria-label="${esc(t('Pages'))}">${[...pages().map(([action, name, label, short]) => [action, name, short || label]), ['account', 'user', t('Account')]].map(([action, name, label]) => `<a href="${navHref(action)}" data-action="${action}" class="${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span>${label}</span>${action === 'tasks' ? taskBadge() : ''}</a>`).join('')}</nav>`;
+const bottomNav = active => `<nav class="bottom-nav" aria-label="${esc(t('Pages'))}">${[...pages().filter(([action]) => phonePages.includes(action)).map(([action, name, label, short]) => [action, name, short || label]), ['account', 'user', t('Account')]].map(([action, name, label]) => `<a href="${navHref(action)}" data-action="${action}" class="${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span>${label}</span>${action === 'tasks' ? taskBadge() : ''}</a>`).join('')}</nav>`;
 const connectionLabel = () => `<i></i>${demo ? t('Demo workspace') : online ? t('Connected') : t('Not connected')}`;
 // The room switch: the room on screen (or the last one), the account's other rooms and the
 // way to a new one. The library brings the list; other pages fetch it once (loadRoomList).
@@ -129,15 +138,18 @@ function roomSwitch() {
 }
 function renderRoomSwitch() { document.querySelectorAll('.room-switch').forEach(el => { if (!el.open) el.outerHTML = roomSwitch(); }); }
 let roomsKnown = false;
-async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; roomsKnown = true; renderRoomSwitch(); }
+async function loadRoomList() { const list = await pb.send('/api/odyle/rooms', { requestKey: 'room-list' }); rooms = list.rooms || []; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; roomsKnown = true; renderRoomSwitch(); noteAchievements(list); }
 // The account menu behind the avatar: the account page, pairing, invites, help, what's new and
 // signing out. Signed out (or in the demo) the same place offers help and the way back.
 function accountMenu() {
   const connection = `<span class="connection ${online || demo ? 'connected' : ''}">${connectionLabel()}</span>`, help = `<button class="menu-item" data-action="help">${icon('shield')}<span>${t('Reader & privacy')}</span></button>`;
-  if (demo || !pb.authStore.isValid) return `<div class="account-guest">${help}${connection}${demo ? `<button class="button secondary" data-action="exit-demo">${t('Leave the demo')}</button>` : ''}</div>`;
+  if (demo || !pb.authStore.isValid) return `<div class="account-guest">${phoneItems()}${help}${connection}${demo ? `<button class="button secondary" data-action="exit-demo">${t('Leave the demo')}</button>` : ''}</div>`;
   const name = pb.authStore.record?.displayName || '', item = (action, glyph, label) => `<button class="menu-item" data-action="${action}">${icon(glyph)}<span>${label}</span></button>`;
-  return `<details class="account-menu"><summary title="${esc(t('Account menu'))}"><span class="avatar">${esc(name.slice(0, 1).toUpperCase() || 'O')}</span><span class="account-text"><strong>${esc(name)}</strong>${connection}</span><span class="sr-only">${t('Account menu')}</span>${icon('chevron')}</summary><div class="menu">${readerItem()}<a class="menu-item" href="${link('/account')}" data-action="account">${icon('user')}<span>${t('Account & data')}</span></a>${item('desktop', 'download', t('Pair Windows app'))}${item('invite', 'plus', t('Invitations'))}${help}<a class="menu-item" href="${link('/changelog')}">${icon('info')}<span>${t('What\'s new')}</span></a>${item('logout', 'out', t('Sign out'))}</div></details>`;
+  return `<details class="account-menu"><summary title="${esc(t('Account menu'))}"><span class="avatar">${esc(name.slice(0, 1).toUpperCase() || 'O')}</span><span class="account-text"><strong>${esc(name)}</strong>${connection}</span><span class="sr-only">${t('Account menu')}</span>${icon('chevron')}</summary><div class="menu">${readerItem()}<a class="menu-item" href="${link('/account')}" data-action="account">${icon('user')}<span>${t('Account & data')}</span></a>${phoneItems()}${item('desktop', 'download', t('Pair Windows app'))}${item('invite', 'plus', t('Invitations'))}${help}<a class="menu-item" href="${link('/changelog')}">${icon('info')}<span>${t('What\'s new')}</span></a>${item('logout', 'out', t('Sign out'))}</div></details>`;
 }
+// Phones have no sidebar: the pages the bar at the bottom has no room for are in the account
+// menu (signed out, beside it), hidden on wide screens, where the sidebar lists them.
+const phoneItems = () => pages().filter(([action]) => !phonePages.includes(action)).map(([action, glyph, label]) => `<a class="menu-item phone-only" href="${navHref(action)}" data-action="${action}">${icon(glyph)}<span>${label}</span>${badgeOf(action)}</a>`).join('');
 // Phones have no sidebar: the account menu says which PC reads, or offers to connect one.
 const readerItem = () => { const reader = readerNow(); return `<button class="menu-item menu-reader ${reader ? 'reader-online' : ''}" data-action="reading">${reader ? `<i></i><span>${esc(readerLabel(reader.name))}</span>` : `${icon('plus')}<span>${t('Connect reader')}</span>`}</button>`; };
 // An open menu closes on a click outside it, on a chosen item and on Escape.
@@ -197,7 +209,7 @@ const scopeText = () => t("Odyle is an unofficial fan project, not affiliated wi
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 // The welcome page; an invite link (code) adds its card, filled in from the preview.
 function welcome(code = '') {
-  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')} <a href="${link('/privacy')}">${t('Privacy')}</a></p>${scopeNote()}</main>`);
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('BUILT FOR YOUR NEXT RUN')}</div><h1>${t('Good runs start<br>with a ready party<span class="mint">.</span>')}</h1><p class="intro">${t('Sign in with Discord. Save the Odyle of every character.<br class="desktop-only"> Create a private room and bring your friends together.')}</p>${code ? inviteLanding(previewed(code)) : ''}${embedded() ? `<p class="join-note in-app-note">${icon('alert')}<span>${t('This page is open in a browser built into another app, where Discord sign-in often fails.')}</span><button class="text-button" data-action="open-elsewhere">${t('Open in your browser')} ${icon('arrow')}</button></p>` : ''}<div class="discord-card"><div class="setup-icon">${icon('people')}</div><h2>${t('One account. Every adventure.')}</h2><p>${t('Your rooms and character readings stay with your Discord account, even after you close the app.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')} ${icon('arrow')}</button><small>${t('First sign-in creates your account. No separate password.')}</small><p class="signin-help" hidden>${t('Continue in the Discord window that opened. Nothing happened?')} <button class="text-button" data-action="open-elsewhere">${t('Open in your browser')}</button></p></div><button class="text-button" data-action="demo">${t('Explore the demo workspace')} ${icon('arrow')}</button><button class="text-button" data-action="armory">${t('Look up a character in the armory')} ${icon('arrow')}</button><button class="text-button" data-action="timers">${t('AION 2 timers: resets and Odyle ticks')} ${icon('arrow')}</button><button class="text-button" data-action="achievements">${t('Achievements to collect')} ${icon('arrow')}</button><p class="welcome-note">${t('No game account needed. No public directory. Just your party.')} <a href="${link('/privacy')}">${t('Privacy')}</a></p>${scopeNote()}</main>`);
   if (code && !previewed(code)) previewInvite(code);
 }
 // What the invite link on screen opens (invites.js inviteLanding), asked once per code:
@@ -220,7 +232,7 @@ async function inviteTrouble(code, error, ticket) {
   shell(`<main class="welcome invite-page"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('ROOM INVITE')}</div><h1>${t('This invite did not work')}<span class="mint">.</span></h1>${inviteLanding(answer, true)}${why}<div class="invite-page-actions"><button class="button primary" data-action="library">${t('My rooms & characters')} ${icon('arrow')}</button></div></main>`, 'library');
 }
 function libraryView() {
-  shell(`<main class="dashboard"><section class="heading"><div><h1>${t('Rooms & characters')}<span class="mint">.</span></h1><p>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })} · ${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section>${nextRunsSection(nextRunsList, Date.now() + serverOffset)}<section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div><details class="room-setup"${rooms.length ? '' : ' open'}><summary>${icon('plus')} ${t('Create or join a room')}</summary><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div></details></section><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2>${readerButton(`${icon('plus')} ${t('Connect reader')}`)}</div><div class="member-grid party-list">${characterCards()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section></main>`, 'library');
+  shell(`<main class="dashboard"><section class="heading"><div><h1>${t('Rooms & characters')}<span class="mint">.</span></h1><p>${t('Welcome, {name}', { name: esc(pb.authStore.record.displayName) })} · ${t('All your rooms and characters, connected to your Discord account.')}</p></div><div class="heading-actions">${appLink('button secondary')}<button class="button secondary" data-action="desktop">${t('Pair Windows app')} ${icon('arrow')}</button></div></section>${nextRunsSection(nextRunsList, Date.now() + serverOffset)}${weekReadyNote()}<section class="party-section room-section"><div class="section-heading"><h2>${t('Your rooms')} <span>${rooms.length}</span></h2></div><div class="room-list">${roomItems()}</div><details class="room-setup"${rooms.length ? '' : ' open'}><summary>${icon('plus')} ${t('Create or join a room')}</summary><div class="welcome-grid"><form id="create-form" class="setup-card"><h2>${t('Create a private room')}</h2><p>${t('Keep your party together between sessions.')}</p><label>${t('Room name')}<input name="name" maxlength="60" placeholder="${esc(t('The evening expedition'))}" required></label><button class="button primary" type="submit">${t('Create room')} ${icon('arrow')}</button></form><form id="join-form" class="setup-card"><h2>${t('Join your friends')}</h2><p>${t('Paste the invite code, or just open the invite link your friend sent.')}</p><label>${t('Invite code')}<input name="code" class="code-input" autocomplete="off" placeholder="XXXX XXXX XXXX" maxlength="20" required></label><button class="button secondary" type="submit">${t('Join room')} ${icon('arrow')}</button></form></div></details></section><section class="party-section personal-characters"><div class="section-heading"><h2>${t('Your saved characters')} <span>${characters.length}</span></h2>${readerButton(`${icon('plus')} ${t('Connect reader')}`)}</div><div class="member-grid party-list">${characterCards()}</div></section><section class="party-section room-sharing"><div class="section-heading"><h2>${t('Room sharing')}</h2></div><div class="share-matrix">${sharingMatrix()}</div></section></main>`, 'library');
 }
 const roomItems = () => rooms.map(r => `<button class="room-item" data-room="${esc(r.id)}"><span class="setup-icon">${icon('diamond')}</span><span><strong>${esc(r.name)}</strong><small>${esc(roomGlance(r, Date.now() + serverOffset))}</small></span>${icon('arrow')}</button>`).join('') || `<p class="intro">${t('Create your first room, or join one with an invite.')}</p>`;
 const characterCards = () => (characters.length ? listHead() + ownCards() : '') || `<div class="info-panel"><h3>${t('Every character gets its own reading.')}</h3><p>${t('Connect the Windows reader to read Odyle straight from the game. Values update live while the reader runs and stay saved when you leave a room or sign out.')}</p>${appLink('text-button', t('Download the Windows app'))}</div>`;
@@ -411,7 +423,7 @@ function taskScopes(now) {
 function tasksView() {
   renderedTasks = tasksSignature(); const now = Date.now() + serverOffset;
   const local = new Date(nextReset('daily', now, resets)).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
-  keepingDrafts(() => shell(`<main class="dashboard tasks-page"><section class="heading"><div><h1>${t('Daily & weekly')}<span class="mint">.</span></h1><p>${esc(t('Your own checklist, saved to your account. Tasks uncheck themselves at the daily reset, {hour}:00 UTC ({local} your time), and at the weekly reset on {day}.', { hour: String(resetHour(resets)).padStart(2, '0'), local, day: t(dayName(resets)) }))}</p></div><span class="refresh-label"><i></i>${t('Private to you')}</span></section>${taskScopes(now)}<div class="task-grid">${taskPanel('daily', now)}${taskPanel('weekly', now)}</div></main>`, 'tasks'));
+  keepingDrafts(() => shell(`<main class="dashboard tasks-page"><section class="heading"><div><h1>${t('Daily & weekly')}<span class="mint">.</span></h1><p>${esc(t('Your own checklist, saved to your account. Tasks uncheck themselves at the daily reset, {hour}:00 UTC ({local} your time), and at the weekly reset on {day}.', { hour: String(resetHour(resets)).padStart(2, '0'), local, day: t(dayName(resets)) }))} <a class="footer-link" href="${link('/timers')}">${t('All timers')}</a></p></div><span class="refresh-label"><i></i>${t('Private to you')}</span></section>${taskScopes(now)}<div class="task-grid">${taskPanel('daily', now)}${taskPanel('weekly', now)}</div></main>`, 'tasks'));
 }
 function updateResets() { const now = Date.now() + serverOffset; document.querySelectorAll('[data-reset]').forEach(el => { el.textContent = remaining(nextReset(el.dataset.reset, now, resets) - now); }); }
 function renderTasks() { if (tasksSignature() === renderedTasks) { updateAges(); updateResets(); } else tasksView(); }
@@ -560,6 +572,114 @@ async function changelogPage(ticket) {
   seenVersion(); changelogRender();
   await loadWindowsRelease();
   if (ticket === navigation) changelogRender();
+}
+// The timers (/timers, timers.js): the game's resets, the Odyle clock and the dungeon catalog,
+// open to anyone. While the page is shown its countdowns tick every second, it is drawn again
+// once one of them passes and the rules are fetched again every ten minutes.
+let timersGame = null, timersAt = 0, timersFailed = false, timersTimer = 0, timersDrawn = '';
+const timersNow = () => Date.now() + serverOffset;
+function timersRender() {
+  const now = timersNow();
+  timersDrawn = JSON.stringify(timerTargets(timersGame, now));
+  shell(timersView({ game: timersGame, now, signedIn: pb.authStore.isValid && !demo, failed: timersFailed }), 'timers');
+}
+async function loadTimers() {
+  timersAt = Date.now();
+  try {
+    const game = await pb.send('/api/odyle/game', { requestKey: 'timers' });
+    timersGame = game; timersFailed = false;
+    if (game.serverNow) serverOffset = Date.parse(game.serverNow) - Date.now();
+    if (!online) { online = true; renderConnection(); }
+  } catch (error) { timersFailed = !timersGame; throw error; }
+}
+async function timersPage(ticket) {
+  timersRender();
+  clearInterval(timersTimer); timersTimer = setInterval(timersTick, 1000);
+  try { await loadTimers(); } finally { if (ticket === navigation) timersRender(); }
+}
+function timersTick() {
+  if (shown !== '/timers') { clearInterval(timersTimer); timersTimer = 0; return; }
+  if (document.hidden) return;
+  const stale = Date.now() - timersAt > (timersGame ? 600000 : 15000);
+  if (stale) loadTimers().then(() => { if (shown === '/timers') timersRender(); }).catch(() => { if (shown === '/timers' && !timersGame) timersRender(); });
+  if (!timersGame) return;
+  const now = timersNow();
+  if (JSON.stringify(timerTargets(timersGame, now)) !== timersDrawn) return timersRender();
+  document.querySelectorAll('[data-timer]').forEach(el => { el.textContent = timerText(Number(el.dataset.timer) - now); });
+}
+// Achievements (/achievements, achievements.js): signed in the account's own, brought up to date
+// and marked seen; signed out what there is to reach. The navigation counts those reached since
+// the last look (from the rooms list and the account's news).
+let achievementsData = null, achievementsFailed = false, achievementsNew = 0;
+const achievementBadge = () => achievementsNew > 0 && pb.authStore.isValid && !demo ? `<span class="nav-badge" aria-hidden="true">${achievementsNew}</span><span class="sr-only"> (${esc(t('{n} new', { n: achievementsNew }))})</span>` : '';
+function renderAchievementBadge() { document.querySelectorAll('a[data-action="achievements"]').forEach(el => { el.querySelector('.nav-badge')?.remove(); el.querySelector('.sr-only')?.remove(); el.insertAdjacentHTML('beforeend', achievementBadge()); }); }
+function noteAchievements(list) { if (list?.achievements && shown !== '/achievements') { achievementsNew = list.achievements.new || 0; renderAchievementBadge(); } }
+const achievementsRender = () => shell(achievementsView({ data: achievementsData, signedIn: pb.authStore.isValid && !demo, failed: achievementsFailed }), 'achievements');
+async function loadAchievements() {
+  const signedIn = pb.authStore.isValid && !demo;
+  try {
+    achievementsData = signedIn ? await send('achievements') : await pb.send('/api/odyle/achievements', { requestKey: 'achievements' });
+    achievementsFailed = false;
+    if (signedIn) { achievementsNew = 0; renderAchievementBadge(); }
+  } catch (error) { achievementsFailed = !achievementsData; throw error; }
+}
+async function achievementsPage(ticket) {
+  if (achievementsData && Boolean(achievementsData.counts) !== (pb.authStore.isValid && !demo)) achievementsData = null;
+  achievementsRender();
+  try { await loadAchievements(); } finally { if (ticket === navigation) achievementsRender(); }
+}
+// Achievements reached meanwhile: a message of their own (beside the page's, which it never
+// hides), the count in the navigation and, on the page, the page again.
+let achievementTimer = 0;
+function achievementNotice(text) {
+  let el = document.querySelector('#achievement-toast');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'achievement-toast'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite');
+    el.addEventListener('click', () => el.classList.remove('show')); document.body.append(el);
+  }
+  el.innerHTML = `<span class="achievement-toast-sign" aria-hidden="true">🏆</span><p>${esc(text)}</p><a href="${link('/achievements')}">${t('See')}</a>`;
+  el.classList.add('show'); clearTimeout(achievementTimer); achievementTimer = setTimeout(() => el.classList.remove('show'), 8000);
+}
+async function reachedAchievements(notices) {
+  achievementNotice(reachedText(notices));
+  if (shown === '/achievements') { if (!later()) { await loadAchievements(); achievementsRender(); } return; }
+  achievementsNew += notices.length; renderAchievementBadge();
+}
+// Your week in Odyle (/week, week.js): the account's reset week, this one or one before (weekBack;
+// the server picks the week before while this one is under two days old). Its picture and text
+// to share are made here and go nowhere unless the player posts them.
+let weekData = null, weekFailed = false, weekBack = null;
+const canShareFiles = () => { try { return typeof navigator.canShare === 'function' && navigator.canShare({ files: [new File([''], 'week.png', { type: 'image/png' })] }); } catch { return false; } };
+const weekRender = () => shell(weekView({ data: weekData, now: Date.now() + serverOffset, failed: weekFailed, canShare: canShareFiles() }), 'week');
+async function loadWeek() {
+  try {
+    weekData = await pb.send('/api/odyle/week', { requestKey: 'week', query: weekBack === null ? {} : { week: weekBack } });
+    weekBack = weekData.week.back; weekFailed = false;
+    if (weekData.serverNow) serverOffset = Date.parse(weekData.serverNow) - Date.now();
+    if (weekData.week.back >= 1) seenWeek(weekData.week.from);
+  } catch (error) { weekFailed = !weekData; throw error; }
+}
+async function weekPage(ticket) {
+  await leaveRoomTopic(); clearRoom();
+  if (weekData && weekData.week.back !== weekBack) weekData = null;
+  weekRender();
+  try { await loadWeek(); } finally { if (ticket === navigation) weekRender(); }
+}
+// After the weekly reset, Rooms & characters says the week before is summed up, until it is
+// opened or put away (odyle.weekSeen: the start of the last week seen, as a date).
+const weekSeenKey = 'odyle.weekSeen';
+const lastWeekStart = () => periodStart('weekly', Date.now() + serverOffset, resets) - 7 * 86400000;
+function seenWeek(from) { try { storage.setItem(weekSeenKey, new Date(timestamp(from)).toISOString().slice(0, 10)); } catch { /* storage blocked */ } }
+function weekReadyNote() {
+  const start = lastWeekStart(), key = new Date(start).toISOString().slice(0, 10);
+  if (!characters.some(c => c.lastReadingAt && timestamp(c.lastReadingAt) >= start) || storage.getItem(weekSeenKey) === key) return '';
+  return `<div class="week-ready" role="status">${icon('chart')}<p><strong>${t('Your week in Odyle is ready')}</strong><span>${esc(weekDates(start, start + 7 * 86400000))} · ${t('Cubes, regeneration, what was lost at the cap and a picture to share.')}</span></p><div class="week-ready-actions"><button class="button primary" data-action="week-ready">${t('See your week')} ${icon('arrow')}</button><button class="text-button" data-action="week-later" data-week="${key}">${t('Not now')}</button></div></div>`;
+}
+const saveBlob = (blob, name) => { const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
+async function weekPicture() {
+  const summary = weekSummary(weekData, Date.now() + serverOffset), blob = await weekImage(summary, address('/'));
+  if (!blob) throw new Error('This browser could not draw the picture.');
+  return { summary, blob };
 }
 // The slot machine (#107, slots.js): the logo clicked seven times within three seconds opens it.
 let slotState = null, slotSpinning = false, slotLast = null, logoClicks = [];
@@ -1070,7 +1190,7 @@ async function unwatchOwnTopic() {
 pb.realtime.onDisconnect = active => { if (active.length) { clearTimeout(disconnected); disconnected = setTimeout(() => { live = false; }, 3000); } };
 async function ownNews(data) {
   if (demo || !data) return;
-  const library = !room && shown !== '/tasks' && shown !== '/account';
+  const library = !room && !['/tasks', '/account', '/timers', '/achievements', '/week'].includes(shown);
   try {
     // News for everyone: a changed announcement shows at once, and a new Windows release
     // refreshes the download links and says so.
@@ -1088,6 +1208,7 @@ async function ownNews(data) {
     if (Array.isArray(data.capAlerts)) await showCapAlerts(data.capAlerts);
     if (Array.isArray(data.partyReady)) await showPartyReady(data.partyReady);
     if (Array.isArray(data.invites)) await showInvites(data.invites);
+    if (Array.isArray(data.achievements) && data.achievements.length) await reachedAchievements(data.achievements);
     // Notification settings saved in another tab or app.
     if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
     if (data.contact) {
@@ -1106,10 +1227,13 @@ async function refreshPage() {
   if (room) await refreshRoom();
   else if (shown === '/tasks') await refreshTasks();
   else if (shown === '/account') await refreshAccount();
+  else if (shown === '/timers') await loadTimers();
+  else if (shown === '/achievements') await loadAchievements();
+  else if (shown === '/week') await loadWeek();
   else if (shown?.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
-    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); }
+    if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); noteAchievements(list); }
   }
   online = true;
 }
@@ -1128,6 +1252,9 @@ function rerender() {
   if (demo) return demoSession();
   if (shown?.startsWith('/armory')) return armoryRender();
   if (shown === '/changelog') return changelogRender();
+  if (shown === '/timers') return timersRender();
+  if (shown === '/achievements') return achievementsRender();
+  if (shown === '/week' && pb.authStore.isValid) return weekRender();
   if (shown === '/slots' && pb.authStore.isValid) return slotsRender();
   if (shown === '/privacy') return privacyRender();
   if (room) return dashboard();
@@ -1147,13 +1274,13 @@ function remembered() { try { return JSON.parse(storage.getItem(memoryKey)) || {
 function remember(path) { try { storage.setItem(memoryKey, JSON.stringify({ path, room: path.startsWith('/room/') ? path.slice(6) : remembered().room })); } catch { /* storage full or blocked */ } }
 function forget(id) { try { if (!id) storage.removeItem(memoryKey); else if (remembered().room === id) storage.setItem(memoryKey, JSON.stringify({ path: '/' })); } catch { /* storage blocked */ } }
 // The page a route names, or '' for none.
-function pageOf(route) { if (armoryRoute.test(route)) return route; const match = route.match(/^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots)?)$/); return match ? match[1] : ''; }
+function pageOf(route) { if (armoryRoute.test(route)) return route; const match = route.match(/^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots|timers|achievements|week)?)$/); return match ? match[1] : ''; }
 function currentPath() { return pageOf(current()) || '/'; }
 // The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
 // armory names its profiles once they are fetched (armoryRender).
 function pageTitle(path) {
   if (path.startsWith('/armory')) return armoryTarget(path).profile || armoryTarget(path).card ? document.title : armoryTitle(null);
-  return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle') }[path] || t('Odyle — Party command');
+  return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle'), '/timers': t('AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle'), '/achievements': t('Achievements · Odyle'), '/week': t('Your week in Odyle') }[path] || t('Odyle — Party command');
 }
 async function show(force = false) {
   const path = currentPath();
@@ -1166,6 +1293,8 @@ async function show(force = false) {
   if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
   if (path === '/changelog') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return changelogPage(ticket); }
   if (path === '/privacy') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return privacyRender(); }
+  if (path === '/timers') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return timersPage(ticket); }
+  if (path === '/achievements') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); if (pb.authStore.isValid) watchOwnTopic().catch(() => { /* fetched again with the page */ }); return achievementsPage(ticket); }
   if (path === '/slots' && pb.authStore.isValid) { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return slotsPage(ticket); }
   clearTimeout(armoryTimer);
   const code = joinCode(path);
@@ -1182,7 +1311,7 @@ async function show(force = false) {
   remember(path);
   watchOwnTopic().catch(() => { /* without realtime pages fetch every 15 seconds */ });
   const id = path.startsWith('/room/') ? path.slice(6) : '';
-  try { if (path === '/tasks') await tasksPage(ticket); else if (path === '/account') await accountPage(ticket); else if (id) await openRoom(id, ticket); else await library(ticket); }
+  try { if (path === '/tasks') await tasksPage(ticket); else if (path === '/account') await accountPage(ticket); else if (path === '/week') await weekPage(ticket); else if (id) await openRoom(id, ticket); else await library(ticket); }
   catch (error) {
     if (ticket !== navigation || !id || ![400, 403, 404].includes(error.status)) throw error;
     forget(id); await go('/', true); toast(t('That room is not available to your account.'));
@@ -1305,6 +1434,8 @@ async function discordLogin() {
 async function logout() {
   // Invite codes stay usable for up to a week and pairing codes for five minutes; a shared computer must not keep them.
   await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); stopPairing(); pb.authStore.clear(); forget(); forgetAllInvites(storage); forgetPairing(storage); clearRoom(); rooms = []; roomsKnown = false; characters = []; readers = []; tasks = []; account = null; online = false;
+  // The account's achievements and week stay with it, not with the next one signing in here.
+  achievementsData = null; achievementsNew = 0; weekData = null; weekBack = null;
   await go('/', true);
 }
 function demoSession() {
@@ -1477,6 +1608,12 @@ app.addEventListener('click', async e => {
       return changedRoom(id, () => { wishlist = result.wishlist; });
     }
     if (el.dataset.slotEquip !== undefined && el.dataset.kind) { slotState = await send('slot-equip', { kind: el.dataset.kind, id: el.dataset.slotEquip }); return slotsRender(); }
+    if (el.dataset.weekBack !== undefined && weekData) { weekBack = Math.max(0, Number(el.dataset.weekBack)); el.disabled = true; await loadWeek(); return weekRender(); }
+    if (el.dataset.wearItem !== undefined && el.dataset.kind && achievementsData) {
+      const worn = await send('slot-equip', { kind: el.dataset.kind, id: el.dataset.wearItem });
+      achievementsData = { ...achievementsData, owned: worn.owned, equipped: worn.equipped }; achievementsRender();
+      return toast(el.dataset.wearItem ? t('Worn next to your name in your rooms.') : t('Taken off.'));
+    }
     if (el.dataset.copyCalendar) { await navigator.clipboard.writeText(el.dataset.copyCalendar).then(() => toast(t('Calendar link copied.')), () => toast(t('Copy the link from the field.'))); return; }
     if (el.dataset.planWish) {
       const form = document.querySelector('#run-form'); if (!form) return;
@@ -1576,6 +1713,18 @@ app.addEventListener('click', async e => {
       case 'new-room': { await go('/'); const setup = document.querySelector('.room-setup'); if (setup) { setup.open = true; setup.querySelector('input')?.focus(); } break; }
       case 'tasks': await go('/tasks'); break;
       case 'armory': closeModal(); await go('/armory'); break;
+      case 'timers': closeModal(); await go('/timers'); break;
+      case 'achievements': closeModal(); await go('/achievements'); break;
+      case 'week-ready': weekBack = 1; await go('/week'); break;
+      case 'week-later': { try { storage.setItem(weekSeenKey, el.dataset.week); } catch { /* storage blocked */ } document.querySelector('.week-ready')?.remove(); break; }
+      case 'week-image': { const { summary, blob } = await weekPicture(); saveBlob(blob, weekImageName(summary)); toast(t('The picture of your week is in your downloads.')); break; }
+      case 'week-copy': toast(await copyText(weekText(weekSummary(weekData, Date.now() + serverOffset), address('/'))) ? t('Copied. Paste it in Discord.') : t('Copying is blocked here. Select the text and copy it yourself.')); break;
+      case 'week-share': {
+        const { summary, blob } = await weekPicture();
+        try { await navigator.share({ files: [new File([blob], weekImageName(summary), { type: 'image/png' })], text: weekText(summary, address('/')) }); }
+        catch (error) { if (error?.name !== 'AbortError') throw error; }
+        break;
+      }
       case 'armory-refresh': await armoryPage(shown, navigation, true); break;
       case 'armory-bookmark': toggleBookmark(); break;
       case 'card-flip': cardFlip?.(); break;
