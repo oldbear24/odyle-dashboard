@@ -1898,6 +1898,8 @@ test('superusers search, open and export packets and read the server status', as
     // A route links to its packets, the rejected ones from a reason.
     await reasons.getByRole('link', { name: 'Show packets' }).click();
     await page.locator('.odyle-chip', { hasText: 'report' }).waitFor();
+    // The chip comes from the address at once; the list shows a placeholder row until the packets load.
+    await rows.filter({ hasText: 'report rejected' }).first().waitFor();
     assert.ok(await rows.count() >= 1);
     assert.ok((await rows.allInnerTexts()).every(text => /report rejected/.test(text)));
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
