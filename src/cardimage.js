@@ -5,7 +5,7 @@
 // load images only from the Odyle server (img-src 'self'); the portrait and icons come from
 // there too, so the canvas may be saved.
 import { t } from './i18n.js';
-import { imageUrl } from './armory.js';
+import { imageUrl } from './armorylinks.js';
 import { cardSkills, cardStats, cardLine, raceName, gradeName, cardAccents } from './card.js';
 
 export const width = 1500, height = Math.round(1500 * 88 / 63);

@@ -57,7 +57,7 @@ test('forms pick a listed dungeon when there is a catalog and take any name othe
   assert.match(dropped, /<option value="" disabled>Choose a dungeon<\/option><option value="Old Cave" selected>Old Cave<\/option><optgroup/); assert.equal(dropped.match(/ selected/g).length, 1);
 });
 test('runs show the cost of listed dungeons and their forms pick from the catalog', async () => {
-  const { runsSection, runEditForm } = await import('../src/runs.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const { runsSection } = await import('../src/runs.js'), { runEditForm } = await import('../src/runtools.js'), now = Date.parse('2026-10-14T12:00:00Z');
   const run = { id: 'r1', dungeon: 'Abyssal Forge: Ludra', startsAt: '2026-10-14 19:00:00.000Z', note: '', planner: 'u1', attendees: ['u1'] };
   const facts = name => name === run.dungeon ? '<small class="dungeon-facts">80 Odyle per cube</small>' : '';
   const html = runsSection({ runs: [run], members: [], myId: 'u1', viewer: false, owner: false, live: new Set(), now, suggestions: [], catalog, perCube: 40, facts, demo: false });

@@ -2,10 +2,11 @@
 // Spins come every day (dailySpins free ones, unused ones lapse) and from playing (perCharacter
 // a day for each character the reader reads); each may win a cosmetic item for the account,
 // rolled on the server (backend/odyle/slots.go). Equipped items show next to the account's name
-// in its rooms (lookName, frameClass).
+// in its rooms (lookName, frameClass in looks.js, which rooms use without loading this module).
 import { t, tn } from './i18n.js';
 import { escape as esc } from './model.js';
 import { link } from './routes.js';
+import { colorStyle, frameClass, lookName } from './looks.js';
 
 export const rarities = ['common', 'rare', 'epic', 'legendary'];
 // A win shows three alike, its rarity's face; a spin that wins nothing shows three different
@@ -14,14 +15,6 @@ export const reelFaces = { common: '🍀', rare: '🌙', epic: '🐉', legendary
 const kinds = [['color', 'Name colours'], ['frame', 'Avatar frames'], ['badge', 'Badges']];
 const rarityLabel = rarity => t({ common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' }[rarity] || rarity);
 
-// Only values of the server's catalog shape reach a style attribute.
-const safeColor = value => /^#[0-9a-f]{6}$/i.test(value || '') || /^linear-gradient\(\d+deg(,#[0-9a-f]{6})+\)$/i.test(value || '') ? value : '';
-const colorStyle = value => !safeColor(value) ? '' : value.startsWith('linear-gradient') ? `background:${value};-webkit-background-clip:text;background-clip:text;color:transparent` : `color:${value}`;
-export const frameClass = look => /^[a-z]+$/.test(look?.frame || '') ? ` frame-${look.frame}` : '';
-export function lookName(name, look) {
-  const style = colorStyle(look?.color), badge = look?.badge && look.badge.length <= 8 ? `<span class="look-badge" aria-hidden="true">${esc(look.badge)}</span>` : '';
-  return `${style ? `<span class="look-name" style="${style}">${esc(name)}</span>` : esc(name)}${badge}`;
-}
 // The look an account wears, from its collection (what rooms are sent).
 export function lookOf(state) {
   const look = {};

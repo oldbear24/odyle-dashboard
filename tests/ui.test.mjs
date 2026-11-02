@@ -67,8 +67,8 @@ before(async () => {
 });
 after(async () => { await browser?.close(); discord?.close(); plaync?.close(); if (child && child.exitCode === null) { const closed = new Promise(r => child.once('exit', r)); child.kill(); await closed; } if (directory) await rm(directory, { recursive: true, force: true }); });
 // A browser tab signed in as `auth` (or signed out), in the given language, failing on page errors.
-async function open(auth, path = '#/', language = 'en') {
-  const context = await browser.newContext({ viewport: { width: Number(process.env.ODYLE_UI_WIDTH) || 1280, height: 900 }, acceptDownloads: true, locale: language === 'cs' ? 'cs-CZ' : 'en-GB' });
+async function open(auth, path = '#/', language = 'en', options = {}) {
+  const context = await browser.newContext({ viewport: { width: Number(process.env.ODYLE_UI_WIDTH) || 1280, height: 900 }, acceptDownloads: true, locale: language === 'cs' ? 'cs-CZ' : 'en-GB', ...options });
   // The browser has seen this version, so no page says it was updated (the What's new test sets an older one).
   await context.addInitScript(([session, lang, version]) => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); if (session) localStorage.setItem('odyle.account', session); localStorage.setItem('odyle.language', lang); localStorage.setItem('odyle.seenVersion', version); } }, [auth ? JSON.stringify({ token: auth.token, record: auth.record }) : '', language, dashboardVersion]);
   const page = await context.newPage(), errors = [];
@@ -1662,6 +1662,31 @@ test('the service worker opens the dashboard without a connection', async () => 
     await page.reload(); await page.locator('[data-action="discord"]').waitFor();
     await page.context().setOffline(false);
     assert.deepEqual(errors.filter(e => !/ERR_INTERNET_DISCONNECTED|Failed to fetch/.test(e)), []);
+  } finally { await close(); }
+});
+test('pages load with their first visit, and a tab from before an update loads the new one once when a page it opens is gone', async () => {
+  // Without the service worker, which keeps the files it has fetched.
+  const { page, errors, close } = await open(null, '#/', 'en', { serviceWorkers: 'block' });
+  try {
+    await page.locator('[data-action="discord"]').waitFor();
+    // The first page names only the dashboard's start; the pages load when they are opened.
+    assert.doesNotMatch(await (await fetch(url + '/')).text(), /(armory|card|whatsnew|privacy|account|history|pairing|timers|achievements|week|progress)-[\w-]+\.(js|css)/);
+    // The server runs a newer build: What's new and the privacy notice of the build this tab
+    // started with are gone. Loading the page again brings the new build, whose What's new is there.
+    let updated = false, loads = 0;
+    await page.route('**/assets/whatsnew-*.js', route => updated ? route.continue() : route.fulfill({ status: 404, body: 'gone' }));
+    await page.route('**/assets/privacy-*.js', route => route.fulfill({ status: 404, body: 'gone' }));
+    await page.reload(); await page.locator('[data-action="discord"]').waitFor();
+    page.on('request', request => { if (request.isNavigationRequest()) { updated = true; loads++; } });
+    await page.locator('footer .version-link').click();
+    await page.locator('main.changelog h1').waitFor();
+    assert.equal(loads, 1);
+    assert.match(await page.locator('.changelog-entry.is-current').innerText(), new RegExp(dashboardVersion.replace(/\./g, '\\.')));
+    // A page that stays gone says so, instead of loading the tab again and again.
+    await page.locator('footer .footer-link').click();
+    await toast(page).filter({ hasText: 'This part of Odyle could not load.' }).waitFor();
+    assert.equal(loads, 1);
+    assert.deepEqual(errors, []);
   } finally { await close(); }
 });
 test('room owners connect Discord reminders and a bad webhook says why in the form', async () => {

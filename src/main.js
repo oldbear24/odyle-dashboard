@@ -1,43 +1,31 @@
 import { runReadiness, broughtBy, earliestClaim, callable } from './runready.js';
 import { defaultNotifications, dueReminders, quietAt, capAlertText } from './notify.js';
-import { discordSettings as discordView, chosenTimes } from './discord.js';
 import { defaultClock, clockOf, clockLine, capMismatch, capLevel } from './clock.js';
 import PocketBase, { LocalAuthStore } from 'pocketbase';
-import { status, age, escape as esc, timestamp, classOf, regionLabel } from './model.js';
+import { status, age, escape as esc, timestamp, classOf, regionLabel, weekDates } from './model.js';
 import { connectionLink } from './connection.js';
 import { windowsApp } from './release.js';
 import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour, scopes, inScope, left, templatesForm, periodStart } from './tasks.js';
 import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
-import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, withCodes, inviteList, inviteDialogBody, inviteLanding, joinedMessage } from './invites.js';
-import { historyBody, changesPage, ledgerTable, weeklyLedger, changesTable, bindHistoryChart } from './history.js';
-import { placeButton, locationBody, placeList, placesOf } from './places.js';
+import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, inviteLanding, joinedMessage } from './invites.js';
+import { placeButton } from './placeline.js';
 import { setupTracker } from './setup.js';
-import { slotsView, lookName, frameClass } from './slots.js';
-import { playSpin, playWin, playLose } from './sounds.js';
-import { weekLine, runsSection, startsIn, runEditForm, calendarFile, discordText, calendarOfRuns, nextRunsSection, roomGlance, runParty } from './runs.js';
+import { lookName, frameClass } from './looks.js';
+import { weekLine, runsSection, startsIn, discordText, nextRunsSection, roomGlance, runParty } from './runs.js';
 import { wishProblem, runProblem, moved } from './forms.js';
 import { inAppBrowser, signInLink } from './signin.js';
-import { accountView } from './account.js';
 import { applyRoomCharacters, applyCharacters, applySeen, applyContact, applyShared, applyMembership } from './live.js';
-import { savedPairing, rememberPairing, forgetPairing, pairedWith, readerList, onlineReader, countdown, readerLabel, pairingSlot } from './pairing.js';
+import { forgetPairing, readerList, onlineReader, readerLabel } from './readers.js';
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder, byPlayer, inGame } from './partyview.js';
 import { dungeonKey, entryOf, cubeCost, dungeonFacts, dungeonField } from './catalog.js';
-import changelogText from '../CHANGELOG.md?raw';
-import privacyText from '../docs/privacy.md?raw';
-import { privacyPage } from './privacy.js';
-import { parseChangelog } from './changelog.js';
-import { whatsNew, updated, updatedNote } from './whatsnew.js';
+import { updated, updatedNote } from './updatenote.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
-import { cardPage, cardTitle, animateCard, lookOf, sameLook, formLook, cardFaces, cardClasses, openStudioTab, studioAbout } from './card.js';
-import { saveCardImage } from './cardimage.js';
-import { timersView, timerText, timerTargets } from './timers.js';
-import { achievementsView, reachedText } from './achievements.js';
-import { weekView, weekSummary, weekImage, weekImageName, weekText, weekDates } from './week.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
-import { armoryRoute, armoryTarget, armorySearch, armoryProfile, armoryTitle, lookupStatus, classBadge, profilePath, findPath, officialPath, waiting, bookmarkLimit, readBookmarks, isBookmarked, addBookmark, removeBookmark, refreshBookmark } from './armory.js';
+import { armoryRoute, armoryTarget, armoryTitle, classBadge, profilePath, findPath, officialPath } from './armorylinks.js';
+import { lazily, reloadOnce } from './lazy.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
@@ -45,8 +33,6 @@ import './style.css';
 import './accounts.css';
 import './features.css';
 import './layout.css';
-import './card.css';
-import './progress.css';
 
 const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8090' : window.location.origin);
 // Persisted in localStorage: the sign-in is shared by every tab of this browser and survives restarts.
@@ -56,6 +42,31 @@ pb.autoCancellation(false);
 const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.probe'); return s; } catch { return { getItem: () => null, setItem() {}, removeItem() {} }; } })();
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
+// Pages, dialogs and actions that not every visit uses load the first time they are needed, and
+// the rest while the browser is idle once the first page is drawn (lazy.js, prefetchParts). A
+// part gone with a deploy loads the new build (reloadOnce); meanwhile its caller waits, so no
+// error shows for a page that is going away.
+const tabStorage = (() => { try { return window.sessionStorage; } catch { return null; } })();
+function gone(error) {
+  if (!reloadOnce(tabStorage, Date.now(), navigator.onLine !== false)) throw Object.assign(new Error('This part of Odyle could not load. Check your connection, then reload the page.'), { cause: error });
+  location.reload(); return new Promise(() => { /* the new build takes over */ });
+}
+const lazyPart = load => lazily(load, gone);
+const whatsnewPart = lazyPart(() => import('./parts/whatsnew.js')), privacyPart = lazyPart(() => import('./parts/privacy.js')), helpPart = lazyPart(() => import('./help.js'));
+const armoryPart = lazyPart(() => import('./parts/armory.js')), cardPart = lazyPart(() => import('./parts/card.js')), cardImagePart = lazyPart(() => import('./cardimage.js'));
+const accountPart = lazyPart(() => import('./account.js')), pairingPart = lazyPart(() => import('./pairing.js')), demoPart = lazyPart(() => import('./demo.js')), slotsPart = lazyPart(() => import('./parts/slots.js'));
+const historyPart = lazyPart(() => import('./history.js')), placesPart = lazyPart(() => import('./places.js')), invitesPart = lazyPart(() => import('./invitedialog.js'));
+const discordPart = lazyPart(() => import('./discord.js')), runToolsPart = lazyPart(() => import('./runtools.js'));
+const timersPart = lazyPart(() => import('./parts/timers.js')), achievementsPart = lazyPart(() => import('./parts/achievements.js')), weekPart = lazyPart(() => import('./parts/week.js'));
+// Once the first page is drawn, the parts it did not need load one after another while the
+// browser is idle, unless it asks to save data.
+function prefetchParts() {
+  if (navigator.connection?.saveData || /2g/.test(navigator.connection?.effectiveType || '')) return;
+  const queue = [whatsnewPart, timersPart, achievementsPart, weekPart, armoryPart, cardPart, historyPart, placesPart, accountPart, invitesPart, pairingPart, discordPart, runToolsPart, helpPart, privacyPart, demoPart, slotsPart, cardImagePart];
+  const idle = next => (window.requestIdleCallback ? requestIdleCallback(next, { timeout: 5000 }) : setTimeout(next, 500));
+  const next = () => queue.shift()?.prefetch().then(() => idle(next));
+  idle(next);
+}
 let room = null, members = [], wishlist = [], runs = [], dungeons = [], catalog = [], rooms = [], characters = [], demo = false, online = false;
 let serverOffset = 0, lastPulse = 0, lastCheck = 0, renewedAt = 0, busy = false, roomTopics = [], perCube = 40, clockRules = defaultClock;
 // The newest Windows app release as the backend last reported it; refreshed every ten minutes at most.
@@ -163,7 +174,7 @@ document.addEventListener('keydown', event => {
   const to = { ArrowLeft: tabs.indexOf(tab) - 1, ArrowRight: tabs.indexOf(tab) + 1, Home: 0, End: tabs.length - 1 }[event.key];
   if (!tab || to === undefined || event.altKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault(); const next = tabs[(to + tabs.length) % tabs.length];
-  cardTab = next.dataset.cardTab; openStudioTab(tab.form, cardTab); next.focus();
+  cardTab = next.dataset.cardTab; cardPart.loaded()?.openStudioTab(tab.form, cardTab); next.focus();
 });
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
@@ -253,20 +264,6 @@ async function loadWindowsRelease() {
 function appLink(className, text = t('Windows app')) {
   const app = windowsApp(windowsRelease);
   return `<a class="${className}" href="${esc(app.url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('Latest release of the Odyle Windows app on GitHub'))}">${icon('download')} ${text}${app.version ? ` ${esc(app.version)}` : ''}</a>`;
-}
-function downloadPanel() {
-  const app = windowsApp(windowsRelease), find = kind => app.packages.find(p => p.kind === kind);
-  const installer = find('installer'), small = find('small'), bundled = find('self-contained'), armSmall = find('arm64-small'), armBundled = find('arm64-self-contained');
-  const released = app.publishedAt ? ` · ${t('released {date}', { date: new Date(app.publishedAt).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' }) })}` : '';
-  const link = (cls, href, label, title = '') => `<a class="${cls}" href="${esc(href)}" target="_blank" rel="noopener noreferrer"${title ? ` title="${esc(title)}"` : ''}>${label}</a>`;
-  const runtime = t('Needs the .NET 10 Desktop Runtime; Windows offers it if it is missing.');
-  // The installer is the easiest start; the ZIPs remain for a folder of your choice and for ARM PCs.
-  const primary = installer ? link('button secondary', installer.url, `${icon('download')} ${esc(t('Download the installer · {size}', { size: installer.size }))}`) + `<small>${t('Installs for your Windows account without administrator rights and includes the runtime.')}</small>`
-    : small ? link('button secondary', small.url, `${icon('download')} ${esc(t('Download for Windows x64 · {size}', { size: small.size }))}`) + `<small>${runtime}</small>`
-      : link('button secondary', app.url, `${icon('download')} ${t('Open the latest release')}`);
-  const more = [installer && small ? link('text-button', small.url, esc(t('ZIP for Windows x64 · {size}', { size: small.size })), runtime) : '', bundled ? link('text-button', bundled.url, esc(t('Self-contained package · {size}', { size: bundled.size }))) : '',
-    armSmall ? link('text-button', armSmall.url, esc(t('Windows on ARM · {size}', { size: armSmall.size })), runtime) : '', armBundled ? link('text-button', armBundled.url, esc(t('Windows on ARM, self-contained · {size}', { size: armBundled.size }))) : ''];
-  return `<div class="info-panel app-panel"><h3>${app.version ? esc(t('Odyle {version} for Windows', { version: app.version })) : t('Odyle for Windows')}</h3><p>${app.version ? `${t('The newest release')}${esc(released)}.` : t('The newest release is on GitHub.')} ${t('Once installed, the app updates itself from new releases.')}</p>${primary}<div class="app-links">${more.join('')}${link('text-button', app.url, `${app.version ? t('Release notes') : t('All releases')} ${icon('arrow')}`)}</div></div>`;
 }
 // One row per saved character, one switch per room: the account's whole sharing
 // setup in one place. Viewer rooms cannot see shared characters.
@@ -456,60 +453,64 @@ const armoryKey = 'odyle.armory';
 function armoryChoice() { try { return JSON.parse(storage.getItem(armoryKey)) || {}; } catch { return {}; } }
 // Bookmarked characters (#72), in this browser only: no account needed, nothing sent anywhere.
 const bookmarksKey = 'odyle.armory.bookmarks';
-const bookmarks = () => readBookmarks(storage.getItem(bookmarksKey));
+const bookmarks = () => armoryPart.loaded()?.readBookmarks(storage.getItem(bookmarksKey)) || [];
 function keepBookmarks(list) {
   try { storage.setItem(bookmarksKey, JSON.stringify(list)); return true; }
   catch { toast(t('This browser does not let Odyle keep bookmarks.')); return false; }
 }
 function toggleBookmark() {
-  if (!armoryAnswer?.profile) return;
-  const list = bookmarks(), name = armoryAnswer.profile.name, on = isBookmarked(list, armoryAnswer);
-  if (!on && list.length >= bookmarkLimit) return toast(t('You can keep up to {n} bookmarks. Remove one first.', { n: bookmarkLimit }));
-  if (!keepBookmarks(on ? removeBookmark(list, `${armoryAnswer.region}/${armoryAnswer.serverId}/${armoryAnswer.characterId}`) : addBookmark(list, armoryAnswer, new Date().toISOString()))) return;
+  const armory = armoryPart.loaded(); if (!armory || !armoryAnswer?.profile) return;
+  const list = bookmarks(), name = armoryAnswer.profile.name, on = armory.isBookmarked(list, armoryAnswer);
+  if (!on && list.length >= armory.bookmarkLimit) return toast(t('You can keep up to {n} bookmarks. Remove one first.', { n: armory.bookmarkLimit }));
+  if (!keepBookmarks(on ? armory.removeBookmark(list, `${armoryAnswer.region}/${armoryAnswer.serverId}/${armoryAnswer.characterId}`) : armory.addBookmark(list, armoryAnswer, new Date().toISOString()))) return;
   armoryRender(); toast(on ? t('Removed {name} from your bookmarks.', { name }) : t('Bookmarked {name}. The armory page lists it.', { name }));
 }
 const armoryRefreshable = () => armoryAnswer?.state === 'fresh' && armoryAnswer.fetchedAt && Date.now() + serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
 // The armory's images (the game's icons, portraits) come from the backend (armoryimages.go).
 const armoryImages = () => pb.buildURL('/api/odyle/armory-images/');
 function armoryRender(searching = false) {
+  const armory = armoryPart.loaded(); if (!armory) return;
   const chosen = armoryChosen || armoryChoice();
   const now = Date.now() + serverOffset, marks = bookmarks();
-  shell(armoryAnswer ? armoryProfile(armoryAnswer, now, armoryRefreshable(), isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages() }) : armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
+  shell(armoryAnswer ? armory.armoryProfile(armoryAnswer, now, armoryRefreshable(), armory.isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages() }) : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
   retitle(armoryTitle(armoryAnswer, armoryTab));
 }
 // While a profile waits for PLAYNC, it is asked for again when the backend says to.
 function armoryPoll(path, ticket) {
-  if (armoryAnswer && (waiting(armoryAnswer) || armoryAnswer.state === 'failed')) armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, armoryAnswer.retryAfter || 5) * 1000);
+  if (armoryAnswer && (armoryPart.loaded()?.waiting(armoryAnswer) || armoryAnswer.state === 'failed')) armoryTimer = setTimeout(() => { if (ticket === navigation) armoryPage(path, ticket).catch(failure); }, Math.max(2, armoryAnswer.retryAfter || 5) * 1000);
 }
 // A profile's player card (card.js): a page of its own, without the sidebar. The look shown
 // is the saved one until its player tries another (cardLook), the picker on the tab last
 // opened (cardTab); the card turns until the page is left (animateCard).
 let cardLook = {}, cardTab = 'design', cardFlip = null;
 function cardRender() {
-  app.innerHTML = cardPage(armoryAnswer, { images: armoryImages(), look: cardLook, tab: cardTab, status: armoryAnswer.profile ? '' : lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
-  retitle(cardTitle(armoryAnswer));
+  const cards = cardPart.loaded(), armory = armoryPart.loaded(); if (!cards || !armory) return;
+  app.innerHTML = cards.cardPage(armoryAnswer, { images: armoryImages(), look: cardLook, tab: cardTab, status: armoryAnswer.profile ? '' : armory.lookupStatus(armoryAnswer, Date.now() + serverOffset, false) });
+  retitle(cards.cardTitle(armoryAnswer));
   const card = app.querySelector('.tcg');
-  cardFlip = card ? animateCard(card) : null;
+  cardFlip = card ? cards.animateCard(card) : null;
 }
 // Another look tried on the card on screen, without drawing it again (it keeps turning).
 function cardPreview(form) {
-  cardLook = formLook(form);
-  const look = lookOf(armoryAnswer, cardLook), card = app.querySelector('.tcg'), page = app.querySelector('.card-page');
+  const cards = cardPart.loaded(); if (!cards) return;
+  cardLook = cards.formLook(form);
+  const look = cards.lookOf(armoryAnswer, cardLook), card = app.querySelector('.tcg'), page = app.querySelector('.card-page');
   if (card) {
     const turning = [...card.classList].filter(c => c.startsWith('is-'));
-    card.className = [cardClasses(look), ...turning].join(' ');
-    card.querySelector('.tcg-body').innerHTML = cardFaces(armoryAnswer, armoryImages(), look);
+    card.className = [cards.cardClasses(look), ...turning].join(' ');
+    card.querySelector('.tcg-body').innerHTML = cards.cardFaces(armoryAnswer, armoryImages(), look);
   }
   if (page) page.className = 'card-page design-' + look.design;
-  studioAbout(form);
-  const save = form.querySelector('[type="submit"]'); if (save) save.disabled = sameLook(look, lookOf(armoryAnswer));
+  cards.studioAbout(form);
+  const save = form.querySelector('[type="submit"]'); if (save) save.disabled = cards.sameLook(look, cards.lookOf(armoryAnswer));
 }
 async function cardShow(path, target, ticket) {
   const { region, serverId, characterId } = target;
   const same = armoryAnswer && armoryAnswer.region === region && String(armoryAnswer.serverId) === serverId && armoryAnswer.characterId === characterId;
   if (!same) cardLook = {};
   let answer;
-  try { answer = await pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`); }
+  // The card's page (card.js) loads with it.
+  try { [answer] = await Promise.all([pb.send(`/api/odyle/armory/${region}/${serverId}/${characterId}`), cardPart()]); }
   catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryAnswer = armoryResults = null; armoryRender(); return toast(t(error.message)); }
   if (ticket !== navigation) return;
   // The same card again (a lookup still waiting for PLAYNC): drawn again only once its profile changed.
@@ -520,7 +521,8 @@ async function cardShow(path, target, ticket) {
 }
 async function armoryPage(path, ticket, refresh = false) {
   clearTimeout(armoryTimer);
-  if (!armoryServers) armoryServers = (await pb.send('/api/odyle/armory/servers')).regions;
+  // The armory's pages (armory.js) load with the first of them, beside the servers.
+  const [armory] = await Promise.all([armoryPart(), armoryServers || pb.send('/api/odyle/armory/servers').then(answer => { armoryServers = answer.regions; })]);
   if (ticket !== navigation) return;
   const target = armoryTarget(path);
   if (target.card) return cardShow(path, target.card, ticket);
@@ -539,8 +541,8 @@ async function armoryPage(path, ticket, refresh = false) {
     // card open on hover or focus stays.
     const unchanged = same && !refresh && document.querySelector('.armory-status') && answer.partial === armoryAnswer.partial && JSON.stringify(answer.profile) === JSON.stringify(armoryAnswer.profile);
     online = true; armoryAnswer = answer;
-    if (answer.profile && !answer.partial && isBookmarked(bookmarks(), answer)) keepBookmarks(refreshBookmark(bookmarks(), answer));
-    if (unchanged) document.querySelector('.armory-status').outerHTML = lookupStatus(answer, Date.now() + serverOffset, armoryRefreshable());
+    if (answer.profile && !answer.partial && armory.isBookmarked(bookmarks(), answer)) keepBookmarks(armory.refreshBookmark(bookmarks(), answer));
+    if (unchanged) document.querySelector('.armory-status').outerHTML = armory.lookupStatus(answer, Date.now() + serverOffset, armoryRefreshable());
     else armoryRender();
     return armoryPoll(path, ticket);
   }
@@ -560,15 +562,18 @@ async function armoryPage(path, ticket, refresh = false) {
   if (exact.length === 1) return go(profilePath(exact[0]), true);
   armoryResults = results; armoryRender();
 }
-// The privacy notice (#/privacy, privacy.js), open to anyone.
-const privacyRender = () => shell(privacyPage(privacyText), 'privacy');
-// What's new (#/changelog): the bundled changelog and the newest Windows release's changes.
-const changelog = parseChangelog(changelogText);
+// The privacy notice (#/privacy, privacy.js), open to anyone; its text loads with it.
+const privacyRender = () => { const notice = privacyPart.loaded(); if (notice) shell(notice.privacyNotice(), 'privacy'); };
+async function privacyShow(ticket) { await privacyPart(); if (ticket === navigation) privacyRender(); }
+// What's new (#/changelog): the changelog, which loads with the page, and the newest Windows
+// release's changes.
 function changelogRender() {
+  const news = whatsnewPart.loaded(); if (!news) return;
   const app = windowsApp(windowsRelease);
-  shell(whatsNew(changelog, __APP_VERSION__, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog');
+  shell(news.whatsNew(news.changelog, __APP_VERSION__, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog');
 }
 async function changelogPage(ticket) {
+  await whatsnewPart(); if (ticket !== navigation) return;
   seenVersion(); changelogRender();
   await loadWindowsRelease();
   if (ticket === navigation) changelogRender();
@@ -579,9 +584,10 @@ async function changelogPage(ticket) {
 let timersGame = null, timersAt = 0, timersFailed = false, timersTimer = 0, timersDrawn = '';
 const timersNow = () => Date.now() + serverOffset;
 function timersRender() {
+  const timers = timersPart.loaded(); if (!timers) return;
   const now = timersNow();
-  timersDrawn = JSON.stringify(timerTargets(timersGame, now));
-  shell(timersView({ game: timersGame, now, signedIn: pb.authStore.isValid && !demo, failed: timersFailed }), 'timers');
+  timersDrawn = JSON.stringify(timers.timerTargets(timersGame, now));
+  shell(timers.timersView({ game: timersGame, now, signedIn: pb.authStore.isValid && !demo, failed: timersFailed }), 'timers');
 }
 async function loadTimers() {
   timersAt = Date.now();
@@ -593,19 +599,22 @@ async function loadTimers() {
   } catch (error) { timersFailed = !timersGame; throw error; }
 }
 async function timersPage(ticket) {
+  // The page (timers.js) loads with its first visit.
+  await timersPart(); if (ticket !== navigation) return;
   timersRender();
   clearInterval(timersTimer); timersTimer = setInterval(timersTick, 1000);
   try { await loadTimers(); } finally { if (ticket === navigation) timersRender(); }
 }
 function timersTick() {
   if (shown !== '/timers') { clearInterval(timersTimer); timersTimer = 0; return; }
+  const timers = timersPart.loaded();
   if (document.hidden) return;
   const stale = Date.now() - timersAt > (timersGame ? 600000 : 15000);
   if (stale) loadTimers().then(() => { if (shown === '/timers') timersRender(); }).catch(() => { if (shown === '/timers' && !timersGame) timersRender(); });
-  if (!timersGame) return;
+  if (!timersGame || !timers) return;
   const now = timersNow();
-  if (JSON.stringify(timerTargets(timersGame, now)) !== timersDrawn) return timersRender();
-  document.querySelectorAll('[data-timer]').forEach(el => { el.textContent = timerText(Number(el.dataset.timer) - now); });
+  if (JSON.stringify(timers.timerTargets(timersGame, now)) !== timersDrawn) return timersRender();
+  document.querySelectorAll('[data-timer]').forEach(el => { el.textContent = timers.timerText(Number(el.dataset.timer) - now); });
 }
 // Achievements (/achievements, achievements.js): signed in the account's own, brought up to date
 // and marked seen; signed out what there is to reach. The navigation counts those reached since
@@ -614,7 +623,7 @@ let achievementsData = null, achievementsFailed = false, achievementsNew = 0;
 const achievementBadge = () => achievementsNew > 0 && pb.authStore.isValid && !demo ? `<span class="nav-badge" aria-hidden="true">${achievementsNew}</span><span class="sr-only"> (${esc(t('{n} new', { n: achievementsNew }))})</span>` : '';
 function renderAchievementBadge() { document.querySelectorAll('a[data-action="achievements"]').forEach(el => { el.querySelector('.nav-badge')?.remove(); el.querySelector('.sr-only')?.remove(); el.insertAdjacentHTML('beforeend', achievementBadge()); }); }
 function noteAchievements(list) { if (list?.achievements && shown !== '/achievements') { achievementsNew = list.achievements.new || 0; renderAchievementBadge(); } }
-const achievementsRender = () => shell(achievementsView({ data: achievementsData, signedIn: pb.authStore.isValid && !demo, failed: achievementsFailed }), 'achievements');
+function achievementsRender() { const page = achievementsPart.loaded(); if (page) shell(page.achievementsView({ data: achievementsData, signedIn: pb.authStore.isValid && !demo, failed: achievementsFailed }), 'achievements'); }
 async function loadAchievements() {
   const signedIn = pb.authStore.isValid && !demo;
   try {
@@ -625,6 +634,8 @@ async function loadAchievements() {
 }
 async function achievementsPage(ticket) {
   if (achievementsData && Boolean(achievementsData.counts) !== (pb.authStore.isValid && !demo)) achievementsData = null;
+  // The page (achievements.js) loads with its first visit, or with the first achievement reached.
+  await achievementsPart(); if (ticket !== navigation) return;
   achievementsRender();
   try { await loadAchievements(); } finally { if (ticket === navigation) achievementsRender(); }
 }
@@ -641,7 +652,7 @@ function achievementNotice(text) {
   el.classList.add('show'); clearTimeout(achievementTimer); achievementTimer = setTimeout(() => el.classList.remove('show'), 8000);
 }
 async function reachedAchievements(notices) {
-  achievementNotice(reachedText(notices));
+  achievementNotice((await achievementsPart()).reachedText(notices));
   if (shown === '/achievements') { if (!later()) { await loadAchievements(); achievementsRender(); } return; }
   achievementsNew += notices.length; renderAchievementBadge();
 }
@@ -650,7 +661,7 @@ async function reachedAchievements(notices) {
 // to share are made here and go nowhere unless the player posts them.
 let weekData = null, weekFailed = false, weekBack = null;
 const canShareFiles = () => { try { return typeof navigator.canShare === 'function' && navigator.canShare({ files: [new File([''], 'week.png', { type: 'image/png' })] }); } catch { return false; } };
-const weekRender = () => shell(weekView({ data: weekData, now: Date.now() + serverOffset, failed: weekFailed, canShare: canShareFiles() }), 'week');
+function weekRender() { const week = weekPart.loaded(); if (week) shell(week.weekView({ data: weekData, now: Date.now() + serverOffset, failed: weekFailed, canShare: canShareFiles() }), 'week'); }
 async function loadWeek() {
   try {
     weekData = await pb.send('/api/odyle/week', { requestKey: 'week', query: weekBack === null ? {} : { week: weekBack } });
@@ -662,6 +673,8 @@ async function loadWeek() {
 async function weekPage(ticket) {
   await leaveRoomTopic(); clearRoom();
   if (weekData && weekData.week.back !== weekBack) weekData = null;
+  // The page (week.js) loads with its first visit.
+  await weekPart(); if (ticket !== navigation) return;
   weekRender();
   try { await loadWeek(); } finally { if (ticket === navigation) weekRender(); }
 }
@@ -677,7 +690,7 @@ function weekReadyNote() {
 }
 const saveBlob = (blob, name) => { const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
 async function weekPicture() {
-  const summary = weekSummary(weekData, Date.now() + serverOffset), blob = await weekImage(summary, address('/'));
+  const { weekSummary, weekImage } = weekPart.loaded(), summary = weekSummary(weekData, Date.now() + serverOffset), blob = await weekImage(summary, address('/'));
   if (!blob) throw new Error('This browser could not draw the picture.');
   return { summary, blob };
 }
@@ -685,22 +698,23 @@ async function weekPicture() {
 let slotState = null, slotSpinning = false, slotLast = null, logoClicks = [];
 // The machine's sounds, on unless this browser turned them off (sounds.js).
 const slotSoundKey = 'odyle.slotSound', slotSound = () => { try { return storage.getItem(slotSoundKey) !== 'off'; } catch { return true; } };
-const slotsRender = () => shell(slotsView({ state: slotState, spinning: slotSpinning, last: slotLast, name: pb.authStore.record?.displayName || '', sound: slotSound() }), 'slots');
+function slotsRender() { const machine = slotsPart.loaded(); if (machine) shell(machine.slotsView({ state: slotState, spinning: slotSpinning, last: slotLast, name: pb.authStore.record?.displayName || '', sound: slotSound() }), 'slots'); }
 async function slotsPage(ticket) {
-  slotLast = null; slotsRender();
+  slotLast = null; await slotsPart(); if (ticket !== navigation) return; slotsRender();
   const state = await send('slots');
   if (ticket !== navigation) return;
   slotState = state; slotsRender();
 }
 async function spinSlot() {
-  if (slotSpinning || !slotState || slotState.spins < 1) return;
+  const machine = slotsPart.loaded();
+  if (!machine || slotSpinning || !slotState || slotState.spins < 1) return;
   slotSpinning = true; slotLast = null; slotsRender();
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches, sound = slotSound();
-  if (sound && !still) playSpin(1400);
+  if (sound && !still) machine.playSpin(1400);
   try {
     const [result] = await Promise.all([send('slot-spin'), new Promise(done => setTimeout(done, still ? 0 : 1400))]);
     slotState = result; slotLast = { won: result.won, duplicate: result.duplicate, lost: Boolean(result.lost), seed: Math.floor(Math.random() * 64) };
-    if (sound) { if (result.lost) playLose(); else playWin(result.won?.rarity); }
+    if (sound) { if (result.lost) machine.playLose(); else machine.playWin(result.won?.rarity); }
   } finally { slotSpinning = false; if (shown === '/slots') slotsRender(); }
 }
 document.addEventListener('click', e => {
@@ -715,7 +729,7 @@ async function tasksPage(ticket) {
 // The account page redraws when its apps change or go online, late or offline; ages tick in place.
 const contactState = at => { const quiet = Date.now() + serverOffset - timestamp(at); return quiet < 45000 ? 'online' : quiet < 90000 ? 'late' : 'offline'; };
 const accountSignature = () => canonical([account?.account, account?.characters, account?.apps.map(a => [a.sessionId, a.character, a.device, contactState(a.lastContactAt)]), account?.devices?.map(d => [d.id, d.name])]);
-function accountRender() { renderedAccount = accountSignature(); keepingDrafts(() => shell(accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset, calendarLink }), 'account')); }
+function accountRender() { const page = accountPart.loaded(); if (!page || !account) return; renderedAccount = accountSignature(); keepingDrafts(() => shell(page.accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset, calendarLink }), 'account')); }
 // The calendar feed's address, shown once after it was made (#35).
 let calendarLink = '';
 async function refreshAccount() {
@@ -726,7 +740,7 @@ async function refreshAccount() {
 }
 async function accountPage(ticket) {
   await leaveRoomTopic(); clearRoom();
-  await refreshAccount(); if (ticket !== navigation) return; accountRender();
+  await Promise.all([refreshAccount(), accountPart()]); if (ticket !== navigation) return; accountRender();
 }
 function dashboard() {
   rendered = signature();
@@ -846,15 +860,17 @@ async function inviteDialog(listed) {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to create a persistent room.'));
   if (!pb.authStore.isValid) return signInPrompt(t('Sign in with Discord to create a room and invite your friends.'));
   if (!room || !manager()) return invitePicker();
+  // The dialog (invitedialog.js) loads with its first opening.
+  const dialog = await invitesPart(); if (!room || !manager()) return;
   const id = room.id, now = Date.now() + serverOffset, draw = ++inviteDraws, askedAt = Date.now();
-  modal(t('Invite another Discord account'), inviteDialogBody(listed ? withCodes(storage, id, listed, now) : null, address('/'), now));
+  modal(t('Invite another Discord account'), dialog.inviteDialogBody(listed ? dialog.withCodes(storage, id, listed, now) : null, address('/'), now));
   if (listed) return;
   const answer = (await pb.send('/api/odyle/invites/' + id)).invites;
   if (draw === inviteDraws) drawInvites(id, answer, askedAt);
 }
 function drawInvites(id, listed, since) {
-  const slot = document.querySelector('#modal[open] .invite-list'), now = Date.now() + serverOffset; inviteDraws++;
-  if (slot && room?.id === id) slot.innerHTML = inviteList(withCodes(storage, id, listed, now, since), address('/'), now);
+  const slot = document.querySelector('#modal[open] .invite-list'), now = Date.now() + serverOffset, dialog = invitesPart.loaded(); inviteDraws++;
+  if (slot && dialog && room?.id === id) slot.innerHTML = dialog.inviteList(dialog.withCodes(storage, id, listed, now, since), address('/'), now);
 }
 // Invitations outside a room you lead: the rooms you lead to choose from (the only one
 // opens at once), or who can invite instead of a dead end.
@@ -874,13 +890,15 @@ async function openInvites(id) { closeModal(); await go('/room/' + id); if (room
 // this dialog.
 function roomSettings() {
   if (demo) return signInPrompt(t('This workspace uses sample data. Sign in with Discord to manage your own rooms.'));
+  // The Discord reminders (discord.js) load with the dialog's first opening.
+  if (!discordPart.loaded()) { const id = room?.id; discordPart().then(() => { if (id && room?.id === id) roomSettings(); }, failure); return; }
   // One section per subject; the one that cannot be undone comes last.
   const section = (title, body, cls = '') => `<section class="modal-section ${cls}">${title ? `<h3 class="modal-sub">${title}</h3>` : ''}${body}</section>`;
   // New characters this member saves can reach this room by themselves.
   const newOnes = section(t('Your new characters'), `<p>${t('Characters you save from now on start private. With this on, they are shared in this room by themselves.')}</p><div class="share-rooms">${shareNewChip(room.id, room.name, me()?.shareNew, me()?.role === 'viewer', t('Share them in this room'))}</div>`);
   // Officers keep the Discord reminders too.
-  const discordPart = me()?.role === 'officer' ? section('', discordSettings()) : room.discordReminders ? section(t('Discord reminders'), `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>`) : '';
-  if (!owner()) return modal(esc(room.name), newOnes + discordPart + section(t('Leave this room'), `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p><button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`, 'danger-zone'), true);
+  const discordSection = me()?.role === 'officer' ? section('', discordSettings()) : room.discordReminders ? section(t('Discord reminders'), `<p>${t('The room owner posts planned runs to a Discord channel 15 minutes before they start.')}</p>`) : '';
+  if (!owner()) return modal(esc(room.name), newOnes + discordSection + section(t('Leave this room'), `<p>${esc(t('You are a {role} in this room. Leaving removes your access, your wishlist entries and your place on planned runs; your characters stay on your account.', { role: roleName(me()?.role) }))}</p><button class="button danger" data-action="leave-room">${t('Leave this room')}</button>`, 'danger-zone'), true);
   const myId = pb.authStore.record?.id, listed = [...members].sort((a, b) => (b.user === myId) - (a.user === myId));
   const rows = listed.map(m => m.user === myId ? `<div class="member-row"><div><strong>${esc(m.displayName)}</strong><small>${t('Leader (you)')}</small></div></div>`
     : `<div class="member-row"><div><strong>${esc(m.displayName)}</strong></div><select data-role="${esc(m.id)}" aria-label="${esc(t('Role of {name}', { name: m.displayName }))}"><option value="reporter" ${m.role === 'reporter' ? 'selected' : ''}>${t('Player')}</option><option value="officer" ${m.role === 'officer' ? 'selected' : ''}>${t('Officer')}</option><option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>${t('Viewer')}</option></select><button data-transfer="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Make leader')}</button><button class="remove" data-remove="${esc(m.id)}" data-name="${esc(m.displayName)}">${t('Remove')}</button></div>`).join('');
@@ -898,16 +916,7 @@ async function saveFeatures(features) {
   toast(result.cancelled ? tn(result.cancelled, 'Room features saved. {n} planned run was cancelled.', 'Room features saved. {n} planned runs were cancelled.') : t('Room features saved.'));
 }
 // The owner connects a Discord channel and chooses when runs are posted there (discord.js).
-const discordSettings = () => discordView(room, Date.now() + serverOffset, remindersPaused, !on('runs'));
-// Demo characters get a made-up history so the chart can be tried without signing in. It
-// spans less than a week, so every period shows all of it.
-function demoHistory(id, days = 30) {
-  const c = members.flatMap(m => m.characters || []).find(x => x.id === id), now = Date.now(), readings = [];
-  let value = Math.max(0, (c?.value || 100) - 90);
-  for (let i = 12; i >= 0; i--) { readings.push({ value, at: new Date(now - i * 5 * 3600000 - 600000).toISOString() }); value = i ? Math.max(0, value + [15, 20, -40, 10, 25, 5][i % 6]) : c?.value || value; }
-  readings[readings.length - 1].value = c?.value || value;
-  return { readings, days, keepDays: 30 };
-}
+const discordSettings = () => discordPart.loaded().discordSettings(room, Date.now() + serverOffset, remindersPaused, !on('runs'));
 // The history dialog (history.js): the period the reader picks (30 days at first, up to as long
 // as the server keeps it), its chart, its weeks and its changes a page at a time. An answer of
 // more than 1,000 changes is thinned, so its pages come from the server; otherwise from it.
@@ -921,24 +930,25 @@ async function showHistory(days = 0, used = null, opening = false) {
   const view = historyView, part = opening ? null : document.querySelector('#modal[open] .history-dialog'), ask = view.ask = (view.ask || 0) + 1;
   part?.classList.add('is-loading');
   try {
-    const data = demo ? demoHistory(view.id, days || 30) : await pb.send('/api/odyle/history/' + view.id + (days ? '?days=' + days : ''));
+    // The dialog (history.js) loads with its first opening; the demo's history with the demo.
+    const [data] = await Promise.all([demo ? demoPart().then(sample => sample.demoHistory(members, view.id, days || 30)) : pb.send('/api/odyle/history/' + view.id + (days ? '?days=' + days : '')), historyPart()]);
     const changes = await changesOf(view, data, 1);
     if (historyView !== view || view.ask !== ask) return;
     if (!demo && data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
     Object.assign(view, { data, changes, week: 1 });
     const body = historyHtml();
     if (part) redraw('.history-dialog', `<div class="history-dialog">${body}</div>`, used); else modal(esc(t('{name} · Odyle history', { name: view.name })), `<div class="history-dialog">${body}</div>`, 'wide split');
-    bindHistoryChart(document.querySelector('#modal .history-chart'));
+    historyPart.loaded().bindHistoryChart(document.querySelector('#modal .history-chart'));
     if (used?.dataset?.historyDays) document.querySelector(`#modal [data-history-days="${used.dataset.historyDays}"]`)?.focus();
   } finally { part?.classList.remove('is-loading'); }
 }
 // A page of the changes: from the answer when it lists each one, else from the server.
 async function changesOf(view, data, page) {
-  if (!data.hourlyBefore) return changesPage(data.readings, page, changesPerPage);
+  if (!data.hourlyBefore) return historyPart.loaded().changesPage(data.readings, page, changesPerPage);
   return pb.send(`/api/odyle/history/${view.id}/changes?days=${data.days}&page=${page}&perPage=${changesPerPage}`);
 }
 const historyNow = () => Date.now() + serverOffset;
-const historyHtml = () => historyBody({ data: { days: 30, ...historyView.data }, changes: historyView.changes, week: historyView.week, now: historyNow(), cost: room?.cost || perCube, resets, clock: historyView.data.clock || clockRules });
+const historyHtml = () => historyPart.loaded().historyBody({ data: { days: 30, ...historyView.data }, changes: historyView.changes, week: historyView.week, now: historyNow(), cost: room?.cost || perCube, resets, clock: historyView.data.clock || clockRules });
 async function historyPage(page, used) {
   const view = historyView, part = document.querySelector('#modal .history-changes'), ask = view.ask = (view.ask || 0) + 1;
   part?.classList.add('is-loading');
@@ -946,11 +956,11 @@ async function historyPage(page, used) {
     const changes = await changesOf(view, view.data, page);
     if (historyView !== view || view.ask !== ask) return;
     view.changes = changes;
-    redraw('.history-changes', changesTable(changes, historyNow()), used);
+    redraw('.history-changes', historyPart.loaded().changesTable(changes, historyNow()), used);
   } finally { part?.classList.remove('is-loading'); }
 }
 function historyWeek(page, used) {
-  const view = historyView, now = historyNow(), cost = room?.cost || perCube;
+  const view = historyView, now = historyNow(), cost = room?.cost || perCube, { ledgerTable, weeklyLedger } = historyPart.loaded();
   view.week = page;
   redraw('.history-weeks', ledgerTable(weeklyLedger(view.data.readings, { now, cost, resets, clock: view.data.clock || clockRules, character: view.data.character }), { hourlyBefore: view.data.hourlyBefore, thinnedTo: view.data.thinnedTo, page }), used);
 }
@@ -962,7 +972,8 @@ const placesPerPage = 12;
 let placeView = null;
 const placesAt = (id, page) => pb.send(`/api/odyle/locations/${id}?page=${page}&perPage=${placesPerPage}`);
 async function locationDialog(id, name) {
-  const data = await placesAt(id, 1);
+  // The dialog (places.js) loads with its first opening.
+  const [data] = await Promise.all([placesAt(id, 1), placesPart()]);
   if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
   gameMaps = data.maps || gameMaps;
   const own = characters.some(c => c.id === id);
@@ -970,7 +981,7 @@ async function locationDialog(id, name) {
   modal(esc(t('{name} · Location', { name })), `<div class="place-dialog">${placeBody()}</div>`, 'wide split');
   placeView.shownAt = Date.now();
 }
-const placeBody = () => locationBody({ data: placeView.data, maps: gameMaps, name: placeView.name, own: placeView.own, now: Date.now() + serverOffset, picked: placeView.picked });
+const placeBody = () => placesPart.loaded().locationBody({ data: placeView.data, maps: gameMaps, name: placeView.name, own: placeView.own, now: Date.now() + serverOffset, picked: placeView.picked });
 function renderPlace() {
   const el = document.querySelector('#modal .place-dialog');
   if (!el || !placeView) return;
@@ -984,7 +995,7 @@ async function placePage(page, used) {
     if (placeView !== view || view.ask !== ask) return;
     // The latest place stays the one the dialog heard of last.
     view.data = { ...data, location: view.data.location };
-    redraw('.place-list', `<div class="place-list">${placeList({ data: view.data, maps: gameMaps, now: Date.now() + serverOffset, picked: view.picked })}</div>`, used);
+    redraw('.place-list', `<div class="place-list">${placesPart.loaded().placeList({ data: view.data, maps: gameMaps, now: Date.now() + serverOffset, picked: view.picked })}</div>`, used);
   } finally { part?.classList.remove('is-loading'); }
 }
 // Clicking into the embedded map moves focus out of the page: the pin no longer marks the place.
@@ -1007,14 +1018,15 @@ function followPlace(changed) {
 let pairing = null, pairingTimer = 0;
 async function desktopDialog(another = false) {
   if (!pb.authStore.isValid || demo) return toast(t('Sign in with Discord to connect your reader.'));
-  const [data] = await Promise.all([pairingAccount(), loadWindowsRelease()]), now = Date.now() + serverOffset;
+  // The dialog (pairing.js) loads with its first opening.
+  const [data, , dialog] = await Promise.all([pairingAccount(), loadWindowsRelease(), pairingPart()]), now = Date.now() + serverOffset;
   const p = pairing = { user: pb.authStore.record.id, step: 'loading', account: data, checkedAt: Date.now() };
-  const saved = savedPairing(storage, p.user, now), paired = saved && pairedWith(data?.devices, saved), online = onlineReader(readerList(data), now);
+  const saved = dialog.savedPairing(storage, p.user, now), paired = saved && dialog.pairedWith(data?.devices, saved), online = onlineReader(readerList(data), now);
   // A link used since this browser asked for it: the PC it paired.
   if (paired) { forgetPairing(storage); Object.assign(p, { step: 'paired', device: paired.id }); }
   else if (online && !another) Object.assign(p, { step: 'online', reader: online });
   const view = pairingView(p);
-  modal(t('Connect your packet reader'), `<div class="pairing-slot" data-shown="${esc(pairingShown(view))}">${pairingSlot(view)}</div>${downloadPanel()}<div class="info-panel"><h3>${t('How it works')}</h3><p>${t('Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.')}</p></div>${scopeNote()}`);
+  modal(t('Connect your packet reader'), `<div class="pairing-slot" data-shown="${esc(pairingShown(view))}">${dialog.pairingSlot(view)}</div>${dialog.downloadPanel(windowsApp(windowsRelease))}<div class="info-panel"><h3>${t('How it works')}</h3><p>${t('Start the reader before you log into your character. It detects the character, reads the Odyle snapshot from the game and sends the value again only when it changes. Nothing is injected and no raw traffic leaves your PC.')}</p></div>${scopeNote()}`);
   clearInterval(pairingTimer); pairingTimer = setInterval(pairingTick, 1000);
   if (p.step === 'loading') await openLink(p);
 }
@@ -1025,10 +1037,10 @@ async function pairingAccount() {
 }
 // This browser's link while it is unused, else a new one.
 async function openLink(p) {
-  const saved = savedPairing(storage, p.user, Date.now() + serverOffset);
-  if (saved && !pairedWith(p.account?.devices, saved)) { showLink(p, saved); return renderPairing(); }
+  const dialog = pairingPart.loaded(), saved = dialog.savedPairing(storage, p.user, Date.now() + serverOffset);
+  if (saved && !dialog.pairedWith(p.account?.devices, saved)) { showLink(p, saved); return renderPairing(); }
   forgetPairing(storage); Object.assign(p, { step: 'loading' }); renderPairing();
-  try { const pair = await send('desktop-code'); if (pairing !== p) return; rememberPairing(storage, p.user, pair); showLink(p, pair); }
+  try { const pair = await send('desktop-code'); if (pairing !== p) return; dialog.rememberPairing(storage, p.user, pair); showLink(p, pair); }
   catch (error) { if (error?.status === 401) { stopPairing(); return expired(); } if (pairing !== p) return; Object.assign(p, { step: 'refused', problem: error?.message || 'Request could not be completed.' }); }
   renderPairing();
 }
@@ -1052,7 +1064,7 @@ function renderPairing(changed = false) {
   const el = document.querySelector('#modal[open] .pairing-slot'); if (!el || !pairing) return;
   const view = pairingView(pairing), shown = pairingShown(view);
   if (changed && el.dataset.shown === shown) return;
-  el.dataset.shown = shown; el.innerHTML = pairingSlot(view);
+  el.dataset.shown = shown; el.innerHTML = pairingPart.loaded().pairingSlot(view);
 }
 function stopPairing() { clearInterval(pairingTimer); pairingTimer = 0; pairing = null; }
 // Waiting for the PC to pair, or for its first character.
@@ -1061,7 +1073,7 @@ function pairingTick() {
   if (!pairing || !document.querySelector('#modal[open] .pairing-slot')) return stopPairing();
   if (pairing.step === 'link') {
     const left = timestamp(pairing.pair.expiresAt) - Date.now() - serverOffset, el = document.querySelector('#modal [data-pair-expires]');
-    if (left <= 0) { forgetPairing(storage); pairing.step = 'expired'; renderPairing(); } else if (el) el.textContent = countdown(left);
+    if (left <= 0) { forgetPairing(storage); pairing.step = 'expired'; renderPairing(); } else if (el) el.textContent = pairingPart.loaded().countdown(left);
   }
   if (!live && !document.hidden && pairingWaits(pairing) && Date.now() - pairing.checkedAt >= 10000) checkPairing();
 }
@@ -1076,7 +1088,7 @@ async function checkPairing() {
       p.again = false; p.checkedAt = Date.now();
       const data = await pairingAccount(); if (pairing !== p) return; if (!data) continue;
       p.account = data;
-      const paired = p.step !== 'paired' && p.pair && pairedWith(data.devices, p.pair);
+      const paired = p.step !== 'paired' && p.pair && pairingPart.loaded().pairedWith(data.devices, p.pair);
       if (paired) { forgetPairing(storage); Object.assign(p, { step: 'paired', device: paired.id }); }
       renderPairing(true);
     } while (p.again);
@@ -1289,10 +1301,10 @@ async function show(force = false) {
   // A path that names no page shows as the page it opens.
   if (usesPaths() && current() !== path) visit(path, true);
   retitle(pageTitle(path));
-  if (path === '/demo') { await leaveRoomTopic(); return demoSession(); }
+  if (path === '/demo') { await leaveRoomTopic(); return demoSession(ticket); }
   if (path.startsWith('/armory')) { await leaveRoomTopic(); clearRoom(); return armoryPage(path, ticket); }
   if (path === '/changelog') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return changelogPage(ticket); }
-  if (path === '/privacy') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return privacyRender(); }
+  if (path === '/privacy') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return privacyShow(ticket); }
   if (path === '/timers') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return timersPage(ticket); }
   if (path === '/achievements') { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); if (pb.authStore.isValid) watchOwnTopic().catch(() => { /* fetched again with the page */ }); return achievementsPage(ticket); }
   if (path === '/slots' && pb.authStore.isValid) { clearTimeout(armoryTimer); await leaveRoomTopic(); clearRoom(); return slotsPage(ticket); }
@@ -1438,18 +1450,10 @@ async function logout() {
   achievementsData = null; achievementsNew = 0; weekData = null; weekBack = null;
   await go('/', true);
 }
-function demoSession() {
-  clearRoom(); demo = true; room = { id: 'demo', owner: 'demo', name: t('The evening expedition'), cost: 40 }; const now = Date.now();
-  members = [{ id: 'd1', user: 'dave', displayName: 'DaveCZ', role: 'owner', sharing: true, characters: [
-    { id: 'c1', characterName: 'DaveCZ', className: 'Templar', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 265, confirmed: true, valid: true, gameGroup: { party: 'demo-party', force: 'demo-force' }, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 3000).toISOString() },
-    { id: 'c2', characterName: 'DaveAlt', className: 'Chanter', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 80, confirmed: true, valid: false, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 120000).toISOString() },
-  ] }, { id: 'd2', user: 'lumina', displayName: 'Lumina', role: 'reporter', sharing: true, characters: [{ id: 'c3', characterName: 'Lumina', className: 'Cleric', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 180, confirmed: true, valid: true, gameGroup: { party: 'demo-party', force: 'demo-force' }, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 9000).toISOString() }] },
-  { id: 'd3', user: 'kaelen', displayName: 'Kaelen', role: 'reporter', sharing: true, characters: [{ id: 'c4', characterName: 'Kaelen', className: 'Ranger', server: 'Atreia', region: 'GLOBAL_EU', source: 'packet', value: 35, confirmed: true, valid: true, gameGroup: { party: 'demo-party-2', force: 'demo-force' }, lastSeenAt: new Date(now).toISOString(), lastReadingAt: new Date(now - 12000).toISOString() }] },
-  { id: 'd4', user: 'nyx', displayName: 'Nyx', role: 'reporter', sharing: false, characters: [] }];
-  wishlist = [{ key: 'fire temple', dungeon: 'Fire Temple', users: ['dave', 'lumina', 'kaelen'] }, { key: 'draupnir cave', dungeon: 'Draupnir Cave', users: ['lumina', 'nyx'] }, { key: 'udas temple (hard)', dungeon: 'Udas Temple (Hard)', users: ['kaelen'] }];
-  classRoles = [{ class: 'Templar', role: 'tank' }, { class: 'Cleric', role: 'healer' }, { class: 'Chanter', role: 'support' }, { class: 'Ranger', role: 'damage' }];
-  runs = [{ id: 'r1', dungeon: 'Fire Temple', startsAt: new Date(Math.ceil((now + 3600000) / 1800000) * 1800000).toISOString(), note: t('Bring potions'), planner: 'dave', attendees: ['dave', 'lumina'] }];
-  board = { text: [t('Fire Temple every Wednesday at 20:00: bring potions and food.'), t('New here? Share your main character and add the dungeons you still need to the wishlist.')].join('\n\n'), by: 'dave', at: new Date(now - 2 * 3600000).toISOString() };
+// The demo workspace (demo.js), drawn again with the page's language.
+async function demoSession(ticket = navigation) {
+  const { demoRoom } = await demoPart(); if (ticket !== navigation) return;
+  clearRoom(); demo = true; ({ room, members, wishlist, classRoles, runs, board } = demoRoom(Date.now()));
   dashboard();
 }
 app.addEventListener('submit', async e => {
@@ -1459,7 +1463,7 @@ app.addEventListener('submit', async e => {
     if (form.id === 'create-form') { const result = await send('create', { name: data.name }); rememberInvites(storage, result.room.id, result.invites, Date.now() + serverOffset); await go('/room/' + result.room.id); await inviteDialog(result.invites); }
     else if (form.id === 'armory-form') await go(findPath(data.region, data.server, data.name.trim()));
     else if (form.id === 'card-form' && armoryAnswer) {
-      const look = formLook(form);
+      const look = cardPart.loaded().formLook(form);
       armoryAnswer.card = await send('card', { region: armoryAnswer.region, serverId: Number(armoryAnswer.serverId), characterId: armoryAnswer.characterId, ...look });
       // Save stays off until another look is tried, once this handler has let the button go.
       cardLook = {}; setTimeout(() => cardPreview(form)); toast(t('Card saved. Everyone who opens it sees this look.'));
@@ -1490,7 +1494,7 @@ app.addEventListener('submit', async e => {
       const result = await send('plan', changes); closeModal(); changedRoom(changes.roomId, () => { runs = result.runs; }); toast(t('Run updated.'));
     }
     else if (form.id === 'discord-options-form') {
-      const times = chosenTimes(form);
+      const times = (await discordPart()).chosenTimes(form);
       if (times.error) { formError(form, times.error); return; }
       const id = room.id, result = await send('discord-webhook', { roomId: id, ...times });
       if (changedRoom(id, () => { room = result.room; })) roomSettings();
@@ -1498,7 +1502,7 @@ app.addEventListener('submit', async e => {
     }
     else if (form.id === 'discord-form') {
       // A new connection takes the times chosen above it.
-      const times = chosenTimes(document.getElementById('discord-options-form') || form);
+      const times = (await discordPart()).chosenTimes(document.getElementById('discord-options-form') || form);
       if (times.error) { formError(form, times.error); return; }
       const id = room.id, result = await send('discord-webhook', { roomId: id, webhook: data.webhook, language: language(), ...times }); if (changedRoom(id, () => { room = result.room; })) roomSettings(); toast(t('Discord reminders are on. Check the channel for the test message.')); }
     else if (form.id === 'task-edit-form') { applyTasks(await send('task', { id: form.dataset.id, title: data.title })); editingTask = ''; tasksView(); }
@@ -1549,17 +1553,17 @@ app.addEventListener('click', async e => {
   try {
     if (el.matches('.brand')) { e.preventDefault(); return await go('/'); }
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
-    if (el.dataset.cardTab) { cardTab = el.dataset.cardTab; return openStudioTab(el.form, cardTab); }
+    if (el.dataset.cardTab) { cardTab = el.dataset.cardTab; return cardPart.loaded()?.openStudioTab(el.form, cardTab); }
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.location) return await locationDialog(el.dataset.location, el.dataset.name);
-    if (el.dataset.place && placeView) { placeView.picked = placesOf(placeView.data)[Number(el.dataset.place)] || null; return renderPlace(); }
+    if (el.dataset.place && placeView) { placeView.picked = placesPart.loaded().placesOf(placeView.data)[Number(el.dataset.place)] || null; return renderPlace(); }
     if (el.dataset.placePage && placeView) return await placePage(Number(el.dataset.placePage), el);
     if (el.matches('[data-place-back]') && placeView) return renderPlace();
     if (el.dataset.historyDays && historyView) return await showHistory(Number(el.dataset.historyDays), el);
     if (el.dataset.historyPage && historyView) return await historyPage(Number(el.dataset.historyPage), el);
     if (el.dataset.historyWeek && historyView) return historyWeek(Number(el.dataset.historyWeek), el);
-    if (el.dataset.armoryUnmark) { keepBookmarks(removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
+    if (el.dataset.armoryUnmark) { keepBookmarks(armoryPart.loaded().removeBookmark(bookmarks(), el.dataset.armoryUnmark)); return armoryRender(); }
     if (el.dataset.armoryBoard) { armoryBoard = el.dataset.armoryBoard; armoryRender(); return document.querySelector(`[data-armory-board="${CSS.escape(armoryBoard)}"]`)?.focus(); }
     if (el.dataset.remove) return ask(esc(t('Remove {name}?', { name: el.dataset.name || t('this member') })), t('Their saved characters stay on their account. This removes their access to this room.'), t('Remove member'), { 'confirm-remove': el.dataset.remove });
     if (el.dataset.transfer) return ask(esc(t('Make {name} the leader?', { name: el.dataset.name })), esc(t('{name} becomes the owner of {room}. You stay in the room as a player and can leave it afterwards.', { name: el.dataset.name, room: room.name })), t('Hand over the room'), { 'confirm-transfer': el.dataset.transfer });
@@ -1645,7 +1649,7 @@ app.addEventListener('click', async e => {
       if (el.dataset.character) closeModal();
       return changedRoom(id, () => { runs = result.runs; });
     }
-    if (el.dataset.editRun) { const r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
+    if (el.dataset.editRun) { const { runEditForm } = await runToolsPart(), r = runs.find(x => x.id === el.dataset.editRun); if (r) modal(esc(t('Change {dungeon}', { dungeon: r.dungeon })), runEditForm(r, { suggestions: [...new Set(wishlist.map(w => w.dungeon))], catalog, perCube: room?.cost || perCube }, Date.now() + serverOffset)); return; }
     if (el.dataset.copyRun) {
       const r = runs.find(x => x.id === el.dataset.copyRun); if (!r) return;
       const names = ids => ids.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean), { party, waiting } = runParty(r, catalog);
@@ -1653,7 +1657,7 @@ app.addEventListener('click', async e => {
       return toast(await copyText(text) ? t('Copied for Discord: paste it in any channel.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     }
     if (el.dataset.calendarRun) {
-      const r = runs.find(x => x.id === el.dataset.calendarRun); if (!r) return;
+      const { calendarFile } = await runToolsPart(), r = runs.find(x => x.id === el.dataset.calendarRun); if (!r) return;
       const going = r.attendees.map(u => members.find(m => m.user === u)?.displayName).filter(Boolean);
       return download(calendarFile(r, { room: room.name, going, now: Date.now() + serverOffset }), `odyle-${r.dungeon.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'run'}.ics`, 'text/calendar');
     }
@@ -1709,7 +1713,7 @@ app.addEventListener('click', async e => {
       case 'calendar-off': { const made = await send('calendar', { enabled: false }); calendarLink = ''; account.calendar = made.calendar; accountRender(); toast(t('Calendar feed stopped.')); break; }
       case 'slot-spin': await spinSlot(); break;
       case 'slot-sound': { try { storage.setItem(slotSoundKey, slotSound() ? 'off' : 'on'); } catch { /* storage blocked: stays on */ } slotsRender(); break; }
-      case 'calendar-all': download(calendarOfRuns(nextRunsList, Date.now() + serverOffset), 'odyle-runs.ics', 'text/calendar'); break;
+      case 'calendar-all': { const { calendarOfRuns } = await runToolsPart(); download(calendarOfRuns(nextRunsList, Date.now() + serverOffset), 'odyle-runs.ics', 'text/calendar'); break; }
       case 'new-room': { await go('/'); const setup = document.querySelector('.room-setup'); if (setup) { setup.open = true; setup.querySelector('input')?.focus(); } break; }
       case 'tasks': await go('/tasks'); break;
       case 'armory': closeModal(); await go('/armory'); break;
@@ -1717,10 +1721,11 @@ app.addEventListener('click', async e => {
       case 'achievements': closeModal(); await go('/achievements'); break;
       case 'week-ready': weekBack = 1; await go('/week'); break;
       case 'week-later': { try { storage.setItem(weekSeenKey, el.dataset.week); } catch { /* storage blocked */ } document.querySelector('.week-ready')?.remove(); break; }
-      case 'week-image': { const { summary, blob } = await weekPicture(); saveBlob(blob, weekImageName(summary)); toast(t('The picture of your week is in your downloads.')); break; }
-      case 'week-copy': toast(await copyText(weekText(weekSummary(weekData, Date.now() + serverOffset), address('/'))) ? t('Copied. Paste it in Discord.') : t('Copying is blocked here. Select the text and copy it yourself.')); break;
+      case 'week-image': { const { summary, blob } = await weekPicture(); saveBlob(blob, weekPart.loaded().weekImageName(summary)); toast(t('The picture of your week is in your downloads.')); break; }
+      case 'week-copy': { const { weekText, weekSummary } = weekPart.loaded(); toast(await copyText(weekText(weekSummary(weekData, Date.now() + serverOffset), address('/'))) ? t('Copied. Paste it in Discord.') : t('Copying is blocked here. Select the text and copy it yourself.')); break; }
       case 'week-share': {
         const { summary, blob } = await weekPicture();
+        const { weekImageName, weekText } = weekPart.loaded();
         try { await navigator.share({ files: [new File([blob], weekImageName(summary), { type: 'image/png' })], text: weekText(summary, address('/')) }); }
         catch (error) { if (error?.name !== 'AbortError') throw error; }
         break;
@@ -1728,7 +1733,7 @@ app.addEventListener('click', async e => {
       case 'armory-refresh': await armoryPage(shown, navigation, true); break;
       case 'armory-bookmark': toggleBookmark(); break;
       case 'card-flip': cardFlip?.(); break;
-      case 'card-image': if (armoryAnswer?.profile) { await saveCardImage(armoryAnswer, lookOf(armoryAnswer, cardLook), armoryImages()); toast(t('The card is saved as a picture in your downloads.')); } break;
+      case 'card-image': if (armoryAnswer?.profile) { const [{ saveCardImage }, cards] = await Promise.all([cardImagePart(), cardPart()]); await saveCardImage(armoryAnswer, cards.lookOf(armoryAnswer, cardLook), armoryImages()); toast(t('The card is saved as a picture in your downloads.')); } break;
       case 'account': if (!pb.authStore.isValid || demo) await go('/'); else await go('/account'); break;
       case 'demo': await go('/demo'); break;
       case 'exit-demo': await go('/'); break;
@@ -1747,17 +1752,7 @@ app.addEventListener('click', async e => {
       case 'hide-update-note': seenVersion(); break;
       case 'skip': { const main = document.querySelector('.main main'); if (main) { main.setAttribute('tabindex', '-1'); main.focus(); } break; }
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
-      case 'help': modal(t('Saved characters, fresh readings'), [
-        t('Sign in with Discord to create your account. Rooms and all character readings persist across sign-outs and room changes.'),
-        t('Each character is shared per room: choose them under My rooms & characters → Room sharing, or inside the room: add one from the bar above the party and take it out with Remove from room on its card. Friends only see the characters you linked to that room. A viewer invite grants read-only room access.'),
-        t('Each room keeps a dungeon wishlist and planned runs: add the dungeons you still need, join an entry with Need it too, plan a run with a time and join it with Going. The room owner can clear an entry for everyone.'),
-        t('Daily & weekly is your own checklist: add the tasks you run every day or week and tick them off. They uncheck themselves at the daily and weekly reset of the Global service, so nothing is deleted and nothing needs re-adding.'),
-        t('The Windows app is a free download from its GitHub releases; My rooms & characters links the newest version, and an installed app updates itself from new releases. It pairs once with a one-time link, stays paired until you disconnect it and reads game packets locally. Raw game traffic stays on your PC. Only normalized readings from a validated adapter may be shared.'),
-        esc(tn(keptDays.historyDays, 'The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for {n} day as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.', 'The Windows app sends Odyle when it first reads it and whenever it changes; each change is kept for {n} days as the character’s history. A reading counts as live while the app reports the game connection; 45 seconds without that it turns stale and stays saved. Readings are decoded from the Global game stream by the reference adapter; manual entry is disabled.')),
-        t('Account & data lets you download everything stored for you, sign out everywhere and delete your account.'),
-        scopeText(),
-        `${t('What Odyle keeps and how long:')} <a href="${link('/privacy')}">${t('Privacy notice')}</a> · <a href="https://github.com/oldbear24/odyle-dashboard/issues" target="_blank" rel="noopener">${t('Report a problem or ask')}</a>`,
-      ].map(p => `<p>${p}</p>`).join('')); break;
+      case 'help': modal(t('Saved characters, fresh readings'), (await helpPart()).helpBody({ historyDays: keptDays.historyDays, scope: scopeText() })); break;
       case 'leave-room': ask(esc(t('Leave {room}?', { room: room.name })), t('You lose access to this room, your wishlist entries and your place on planned runs. Your characters stay on your account; you need a new invite to come back.'), t('Leave room'), { action: 'confirm-leave' }); break;
       case 'close-room': ask(esc(t('Close {room}?', { room: room.name })), t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.'), t('Close room for everyone'), { action: 'confirm-close' }); break;
       case 'confirm-leave': case 'confirm-close': { const id = room.id, closing = el.dataset.action === 'confirm-close'; await send(closing ? 'close' : 'leave', { roomId: id }); closeModal(); forget(id); if (closing) forgetInvites(storage, id); await go('/'); toast(closing ? t('Room closed. Your saved characters are retained.') : t('You left the room. Your saved characters are retained.')); break; }
@@ -1882,7 +1877,8 @@ app.addEventListener('change', async e => {
   const el = e.target;
   if (el.closest?.('#card-form')) return cardPreview(el.form);
   if (el.id === 'language-select') {
-    try { await useLanguage(el.value); } catch (error) { return failure(error); }
+    // A dictionary gone with a deploy loads the new build, in the language asked for (gone).
+    try { await useLanguage(el.value); } catch (error) { storage.setItem(languageKey, el.value); return Promise.resolve(error).then(gone).catch(failure); }
     document.documentElement.lang = language(); retitle(pageTitle(currentPath())); storage.setItem(languageKey, language());
     // Push messages are written in the language of the device that asked for them.
     if (pushHere === 'on') (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription().then(s => s && pushSubscribed(s)).catch(() => { /* kept in the old language */ });
@@ -1920,5 +1916,5 @@ useLanguage(detect(storage.getItem(languageKey), navigator.languages || [navigat
   document.documentElement.lang = language(); retitle(pageTitle(currentPath()));
   if (pb.authStore.isValid) return authenticated().catch(failure);
   loadAnnouncement(true).catch(() => { /* an older backend or no connection: no banner */ });
-  show().catch(failure);
-});
+  return show().catch(failure);
+}).then(prefetchParts);

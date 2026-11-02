@@ -70,7 +70,7 @@ test('the card page escapes what PLAYNC lists and offers the look picker only to
 });
 
 test('player card paths belong to the armory, apart from its tabs', async () => {
-  const { armoryRoute, armoryTarget, armoryTabs } = await import('../src/armory.js');
+  const { armoryRoute, armoryTarget, armoryTabs } = await import('../src/armorylinks.js');
   const at = '/armory/eu/2304/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=/card';
   assert.ok(armoryRoute.test(at));
   assert.ok(!armoryRoute.test(at + '/skills'));

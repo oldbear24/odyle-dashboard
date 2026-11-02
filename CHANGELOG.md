@@ -2,6 +2,15 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.57.1 · 2026-11-02
+
+### Changed
+- The dashboard downloads about half as much before your first page shows, so it opens sooner on a first visit and after an update: the armory, player cards, **Timers**, **Achievements**, **Your week in Odyle**, **What's new**, the privacy notice, **Account & data**, the slot machine and the dialogs for a character's history and places, invitations, pairing the Windows app and Discord reminders now load the first time you open them, or quietly in the background once your first page is on screen, instead of all at once before it.
+- A dashboard left open across a server update loads the new version by itself when it opens a page the old one no longer has, instead of failing. If that page still cannot load, it says so instead of reloading again and again.
+
+### Fixed
+- The buttons on character rows line up at the right again (at the left on phones), as they did before player cards came.
+
 ## 0.57.0 · 2026-11-02
 
 ### New

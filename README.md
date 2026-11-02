@@ -139,6 +139,8 @@ The account migration locks the previous MVP's guest collections. New accounts u
 
 The fonts (DM Sans and Manrope, from the `@fontsource-variable` packages) are bundled with the dashboard, and there is no analytics: browsers load nothing from other sites. The privacy notice (`docs/privacy.md`) is also a page of the dashboard (`#/privacy`), linked from the welcome page, the help and the footer.
 
+The first page downloads only what it needs. Pages, dialogs and actions that not every visit uses (the armory and player cards, the timers, achievements and your week, What's new, the privacy notice, Account & data, the slot machine, the demo, and the dialogs for history, places, invitations, pairing, Discord reminders and run calendars) load the first time they are opened, with their styles (`src/parts/`), and the rest while the browser is idle once the first page is drawn, unless it asks to save data (`src/lazy.js`, `main.js` `prefetchParts`). The server keeps only its own build's files, so a tab left open across a deploy that asks for a part the new build replaced loads the page again, at most once a minute; a part that still cannot load says so.
+
 ## License
 
 [MIT](LICENSE.md) · Copyright (c) 2026 oldbear24. Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT; AION 2 and its names belong to NCSOFT.

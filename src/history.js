@@ -1,5 +1,5 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, timestamp } from './model.js';
+import { escape as esc, timestamp, changedAt } from './model.js';
 import { periodStart, defaults as resetDefaults } from './tasks.js';
 import { capsOf, tickOf, ticksAfter } from './clock.js';
 import { pageOf, pager, fillers } from './pager.js';
@@ -32,8 +32,6 @@ export function historyChart(readings, { now, cost, days = 30 }) {
   const data = points.map(p => [p.at, p.value, x(p.at), y(p.value)]);
   return `<figure class="history-chart" data-points="${esc(JSON.stringify(data))}"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(t('Odyle over time'))}">${grid}${cube}<path class="history-area" d="${line}V${y(0)}H${x(first)}Z"/><path class="history-line" d="${line}"/><line class="history-cross" y1="${pad.top}" y2="${height - pad.bottom}" x1="0" x2="0" visibility="hidden"/><circle class="history-dot" cx="${x(end)}" cy="${y(last.value)}" r="4"/><circle class="history-focus" r="4" cx="0" cy="0" visibility="hidden"/>${ticks}<rect class="history-hit" x="${pad.left}" y="0" width="${width - pad.left - pad.right}" height="${height}"/></svg><div class="history-tip" hidden></div></figure>`;
 }
-// When a change or place was: the day and time, with the year when it is not this one.
-export const changedAt = (at, now = Date.now()) => { const date = new Date(timestamp(at)); return date.toLocaleString(locale(), { day: 'numeric', month: 'short', ...(date.getFullYear() !== new Date(now).getFullYear() ? { year: 'numeric' } : {}), hour: '2-digit', minute: '2-digit' }); };
 // The periods the dialog offers: a week, 30 and 90 days and a year, up to and with how long
 // the server keeps the history (the last one, which may be none of those).
 export const periods = keep => [...[7, 30, 90, 365].filter(days => days < keep), keep];

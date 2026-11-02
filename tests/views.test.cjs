@@ -59,7 +59,7 @@ test('planned runs count down in local time and history charts round their axis'
   assert.deepEqual([...kinds.matchAll(/<span class="history-kind">([^<]*)<\/span>/g)].map(m => m[1]), ['item', 'spent', 'regeneration']);
 });
 test('runs go to calendars with a reminder, can be changed and count down in Czech', async () => {
-  const { calendarFile, runEditForm, localInput, runsSection } = await import('../src/runs.js'), { useLanguage } = await import('../src/i18n.js');
+  const { localInput, runsSection } = await import('../src/runs.js'), { calendarFile, runEditForm } = await import('../src/runtools.js'), { useLanguage } = await import('../src/i18n.js');
   const now = Date.parse('2026-10-14T12:00:00Z'), run = { id: 'r1', dungeon: 'Fire Temple', startsAt: '2026-10-14 19:00:00.000Z', note: 'Potions; food, and\nmore', planner: 'u1', attendees: ['u1'] };
   const file = calendarFile(run, { room: 'Raid night', going: ['Lumina', 'Kaelen'], now });
   assert.match(file, /^BEGIN:VCALENDAR\r\n/); assert.match(file, /\r\nEND:VCALENDAR\r\n$/);
@@ -170,7 +170,7 @@ test('the Notifications card has the party-ready switch, on until turned off', a
   assert.match(view(saved), /name="ready" checked/); assert.match(view({ ...saved, kinds: { ...saved.kinds, ready: false } }), /name="ready"\s+>/);
 });
 test('Rooms & characters lists your next runs and each room at a glance', async () => {
-  const { calendarOfRuns, nextRunsSection, roomGlance } = await import('../src/runs.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const { nextRunsSection, roomGlance } = await import('../src/runs.js'), { calendarOfRuns } = await import('../src/runtools.js'), now = Date.parse('2026-10-14T12:00:00Z');
   const runs = [{ id: 'r1', roomId: 'room1', room: 'Raid night', dungeon: 'Fire Temple', startsAt: '2026-10-14 14:00:00.000Z', note: '' }, { id: 'r2', roomId: 'room2', room: 'Alts', dungeon: 'Ice Temple', startsAt: '2026-10-16 18:00:00.000Z', note: 'Bring potions' }];
   const html = nextRunsSection(runs, now);
   assert.match(html, /<h2>Your next runs <span>2<\/span>/); assert.match(html, /data-action="calendar-all"/);
@@ -249,7 +249,7 @@ test('the history adds up each reset week: spent, regeneration and items', async
   assert.deepEqual(weeklyLedger(readings.slice(0, 1), { now, cost: 40 }), []);
 });
 test('the slot machine page shows spins, an honest result and the collection; looks are safe', async () => {
-  const { slotsView, lookName, frameClass, lookOf } = await import('../src/slots.js');
+  const { slotsView, lookOf } = await import('../src/slots.js'), { lookName, frameClass } = await import('../src/looks.js');
   const catalog = [{ id: 'color-gold', kind: 'color', rarity: 'epic', name: 'Gold', value: '#f3c94a' }, { id: 'frame-moss', kind: 'frame', rarity: 'common', name: 'Moss', value: 'moss' }, { id: 'badge-crown', kind: 'badge', rarity: 'legendary', name: 'Crown', value: '👑' }];
   const state = { spins: 2, shards: 1, shardsForSpin: 3, owned: ['color-gold', 'frame-moss'], equipped: { color: 'color-gold' }, catalog };
   const html = slotsView({ state, name: 'Lumina', last: { won: catalog[0], duplicate: false } });
@@ -281,7 +281,7 @@ test('the slot machine mostly wins nothing: three different faces, and a quiet o
   assert.match(lost, /data-action="slot-sound" aria-pressed="true"[^>]*>🔊/); assert.match(slotsView({ state, name: 'L', sound: false }), /aria-pressed="false"[^>]*>🔇/);
 });
 test('runs carry their event link, and the account page makes, shows once and stops a calendar feed', async () => {
-  const { runsSection, discordText, runEditForm } = await import('../src/runs.js'), { calendarCard } = await import('../src/account.js'), now = Date.parse('2026-10-14T12:00:00Z');
+  const { runsSection, discordText } = await import('../src/runs.js'), { runEditForm } = await import('../src/runtools.js'), { calendarCard } = await import('../src/account.js'), now = Date.parse('2026-10-14T12:00:00Z');
   const run = { id: 'r', dungeon: 'Fire Temple', startsAt: '2026-10-14T20:00:00.000Z', attendees: ['a'], planner: 'a', note: '', link: 'https://raid-helper.dev/event/1' };
   const members = [{ user: 'a', displayName: 'A', role: 'owner' }];
   assert.match(runsSection({ runs: [run], members, myId: 'a', viewer: false, owner: true, live: new Set(), now }), /<a class="run-event" href="https:\/\/raid-helper.dev\/event\/1" target="_blank" rel="noopener noreferrer">Event ↗<\/a>/);
@@ -330,7 +330,7 @@ test('the room says what the party spent this week and runs offer Done after a m
   assert.doesNotMatch(section(2, new Date(now + 3600000).toISOString()), /run-spent/, 'not before the start');
 });
 test('the history dialog offers periods up to what the server keeps and pages its weeks', async () => {
-  const { periods, periodName, periodSwitch, historyBody, changesPage, changedAt } = await import('../src/history.js');
+  const { periods, periodName, periodSwitch, historyBody, changesPage } = await import('../src/history.js'), { changedAt } = await import('../src/model.js');
   assert.deepEqual([30, 365, 3650, 14, 1].map(periods), [[7, 30], [7, 30, 90, 365], [7, 30, 90, 365, 3650], [7, 14], [1]]);
   assert.deepEqual([1, 7, 365, 730, 400].map(periodName), ['1 day', '7 days', '1 year', '2 years', '400 days']);
   assert.equal(periodSwitch(1, 1), '');
