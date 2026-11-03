@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	ganigeorgiev.com/pocketbase/dbx v1.13.0
-	ganigeorgiev.com/pocketbase/pocketbase v0.41.0
+	ganigeorgiev.com/pocketbase/pocketbase v0.41.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.47.0
 )
