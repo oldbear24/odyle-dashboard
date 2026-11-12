@@ -14,6 +14,9 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ### Changed
 - The notice about what the Windows reader reads now says it plainly: no damage numbers, HP or skills, and PvP kills, assists and deaths with the players' names only after you turn on PvP stats. The privacy notice says what is kept.
 
+### Fixed
+- The server is built with Go 1.27.4, which fixes a way to crash it with crafted requests (GO-2026-6859).
+
 ## 0.57.1 · 2026-11-02
 
 ### Changed
