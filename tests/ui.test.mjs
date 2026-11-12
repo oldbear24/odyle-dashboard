@@ -1274,6 +1274,10 @@ test('timers, achievements and your week: open game rules, milestones with their
     await shot(page, 'achievements');
     // Your week: its numbers, a picture and a text to share.
     await navigate(page, 'week');
+    // For two days after the weekly reset the page opens on the week before, in which this new
+    // player has no readings: then it is asked for this week (Later).
+    await page.locator('.week-page .week-nav').waitFor();
+    if ((await request('/api/odyle/week', undefined, player, 'GET')).data.week.back === 1) await page.locator('.week-page [data-week-back="0"]').click();
     await page.locator('.week-page .metric-panel').waitFor();
     assert.match(await page.locator('.week-page .metric.is-main strong').innerText(), /≈25/);
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="week-image"]').click()]);
