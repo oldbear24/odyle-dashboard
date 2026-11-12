@@ -10,6 +10,7 @@ import { icon } from './icons.js';
 import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, inviteLanding, joinedMessage } from './invites.js';
 import { placeButton } from './placeline.js';
+import { pvpButton } from './pvpline.js';
 import { setupTracker } from './setup.js';
 import { lookName, frameClass } from './looks.js';
 import { weekLine, runsSection, startsIn, discordText, nextRunsSection, roomGlance, runParty } from './runs.js';
@@ -55,14 +56,14 @@ const lazyPart = load => lazily(load, gone);
 const whatsnewPart = lazyPart(() => import('./parts/whatsnew.js')), privacyPart = lazyPart(() => import('./parts/privacy.js')), helpPart = lazyPart(() => import('./help.js'));
 const armoryPart = lazyPart(() => import('./parts/armory.js')), cardPart = lazyPart(() => import('./parts/card.js')), cardImagePart = lazyPart(() => import('./cardimage.js'));
 const accountPart = lazyPart(() => import('./account.js')), pairingPart = lazyPart(() => import('./pairing.js')), demoPart = lazyPart(() => import('./demo.js')), slotsPart = lazyPart(() => import('./parts/slots.js'));
-const historyPart = lazyPart(() => import('./history.js')), placesPart = lazyPart(() => import('./places.js')), invitesPart = lazyPart(() => import('./invitedialog.js'));
+const historyPart = lazyPart(() => import('./history.js')), placesPart = lazyPart(() => import('./places.js')), pvpPart = lazyPart(() => import('./pvp.js')), invitesPart = lazyPart(() => import('./invitedialog.js'));
 const discordPart = lazyPart(() => import('./discord.js')), runToolsPart = lazyPart(() => import('./runtools.js'));
 const timersPart = lazyPart(() => import('./parts/timers.js')), achievementsPart = lazyPart(() => import('./parts/achievements.js')), weekPart = lazyPart(() => import('./parts/week.js'));
 // Once the first page is drawn, the parts it did not need load one after another while the
 // browser is idle, unless it asks to save data.
 function prefetchParts() {
   if (navigator.connection?.saveData || /2g/.test(navigator.connection?.effectiveType || '')) return;
-  const queue = [whatsnewPart, timersPart, achievementsPart, weekPart, armoryPart, cardPart, historyPart, placesPart, accountPart, invitesPart, pairingPart, discordPart, runToolsPart, helpPart, privacyPart, demoPart, slotsPart, cardImagePart];
+  const queue = [whatsnewPart, timersPart, achievementsPart, weekPart, armoryPart, cardPart, historyPart, placesPart, pvpPart, accountPart, invitesPart, pairingPart, discordPart, runToolsPart, helpPart, privacyPart, demoPart, slotsPart, cardImagePart];
   const idle = next => (window.requestIdleCallback ? requestIdleCallback(next, { timeout: 5000 }) : setTimeout(next, 500));
   const next = () => queue.shift()?.prefetch().then(() => idle(next));
   idle(next);
@@ -94,7 +95,7 @@ let gameMaps = [];
 // The classes' emblems by class name (backend/odyle/classes.go), with the room list and rooms.
 let classIcons = {};
 // How long the server keeps the Odyle history and the places (Game settings), for the help.
-let keptDays = { historyDays: 30, locationDays: 30 };
+let keptDays = { historyDays: 30, locationDays: 30, pvpDays: 90 };
 // The party's week (#42): what the characters shared in the room spent since the weekly reset.
 let roomWeek = null;
 // The room's information board (board.js): its text, who wrote it last and when, or null.
@@ -216,7 +217,7 @@ const standalone = () => navigator.standalone === true || Boolean(window.matchMe
 const embedded = () => inAppBrowser(navigator.userAgent, standalone());
 // What Odyle is and what its reader does, where players decide to use it: the welcome
 // page, the pairing dialog and Reader & privacy.
-const scopeText = () => t("Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic, automates play or collects combat data. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.");
+const scopeText = () => t("Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic or automates play, and it reads no damage numbers, HP or skills. It reads your character's PvP kills, assists and deaths, with the names of the players in them, only after you turn on PvP stats. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.");
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 // The welcome page; an invite link (code) adds its card, filled in from the preview.
 function welcome(code = '') {
@@ -802,7 +803,7 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
   const where = [c.server, regionLabel(c.region)].filter(Boolean).join(' ');
   const meta = [classOf(c), where].filter(Boolean).map(esc).join(' · '), clock = known && clockOf(c, now, clockRules);
   // Where the character was last seen, when its player shares it (places.js).
-  const place = demo ? '' : placeButton(c, gameMaps, now);
+  const place = demo ? '' : placeButton(c, gameMaps, now) + pvpButton(c);
   const counts = counted?.has(c.id) ? `<span class="counts-for" title="${esc(t('Counts for {name}', { name: c.displayName }))}">${icon('diamond')}${t('counts')}</span>` : '';
   const changed = `${source ? `${source} · ` : ''}${known ? `${t('changed')} <span data-age="${esc(c.lastReadingAt)}">${age(c.lastReadingAt, now)}</span>` : t('Not confirmed')}`;
   // Orange two days before the natural pool is full, red once it is or within the hour.
@@ -997,6 +998,46 @@ async function placePage(page, used) {
     view.data = { ...data, location: view.data.location };
     redraw('.place-list', `<div class="place-list">${placesPart.loaded().placeList({ data: view.data, maps: gameMaps, now: Date.now() + serverOffset, picked: view.picked })}</div>`, used);
   } finally { part?.classList.remove('is-loading'); }
+}
+// A character's PvP stats (pvp.js), for its owner and the rooms it is shared in while its player
+// has PvP stats on: the counts of a period, the players it met (sorted and paged here) and its
+// latest events, whose pages come from the server.
+const pvpEventsPerPage = 12;
+let pvpView = null;
+const pvpAt = (id, days, page, only = false) => pb.send(`/api/odyle/pvp/${id}?page=${page}&perPage=${pvpEventsPerPage}${days ? '&days=' + days : ''}${only ? '&only=events' : ''}`);
+async function pvpDialog(id, name) {
+  pvpView = { id, name, own: characters.some(c => c.id === id), sort: 'total', page: 1 };
+  await showPvp(0, null, true);
+}
+const pvpHtml = () => pvpPart.loaded().pvpBody({ data: pvpView.data, name: pvpView.name, own: pvpView.own, now: Date.now() + serverOffset, sort: pvpView.sort, page: pvpView.page });
+async function showPvp(days = 0, used = null, opening = false) {
+  const view = pvpView, part = opening ? null : document.querySelector('#modal[open] .pvp-dialog'), ask = view.ask = (view.ask || 0) + 1;
+  part?.classList.add('is-loading');
+  try {
+    // The dialog (pvp.js) loads with its first opening.
+    const [data] = await Promise.all([pvpAt(view.id, days, 1), pvpPart()]);
+    if (pvpView !== view || view.ask !== ask) return;
+    if (data.serverNow) serverOffset = Date.parse(data.serverNow) - Date.now();
+    Object.assign(view, { data, page: 1 });
+    if (part) redraw('.pvp-dialog', `<div class="pvp-dialog">${pvpHtml()}</div>`, used); else modal(esc(t('{name} · PvP', { name: view.name })), `<div class="pvp-dialog">${pvpHtml()}</div>`, 'wide split');
+    if (used?.dataset?.pvpDays) document.querySelector(`#modal [data-pvp-days="${used.dataset.pvpDays}"]`)?.focus();
+  } finally { part?.classList.remove('is-loading'); }
+}
+async function pvpEventsPage(page, used) {
+  const view = pvpView, part = document.querySelector('#modal .pvp-events'), ask = view.ask = (view.ask || 0) + 1;
+  part?.classList.add('is-loading');
+  try {
+    const events = await pvpAt(view.id, view.data.days, page, true);
+    if (pvpView !== view || view.ask !== ask) return;
+    view.data = { ...view.data, events: events.events, page: events.page, pages: events.pages, total: events.total, perPage: events.perPage };
+    redraw('.pvp-events', `<div class="pvp-events">${pvpPart.loaded().eventsTable({ data: view.data, now: Date.now() + serverOffset })}</div>`, used);
+  } finally { part?.classList.remove('is-loading'); }
+}
+// The players table again: another page of it, or another order from its first page.
+function pvpPlayers(change, used) {
+  Object.assign(pvpView, change);
+  redraw('.pvp-players-slot', `<div class="pvp-players-slot">${pvpPart.loaded().playersTable({ data: pvpView.data, sort: pvpView.sort, page: pvpView.page, now: Date.now() + serverOffset })}</div>`, used);
+  if (used?.dataset?.pvpSort) document.querySelector(`#modal [data-pvp-sort="${used.dataset.pvpSort}"]`)?.focus();
 }
 // Clicking into the embedded map moves focus out of the page: the pin no longer marks the place.
 window.addEventListener('blur', () => setTimeout(() => {
@@ -1529,6 +1570,11 @@ app.addEventListener('submit', async e => {
       account.shareLocation = result.shareLocation; accountRender();
       toast(result.shareLocation ? t('Saved: your rooms see where your characters were last seen.') : t('Saved: location sharing is off, and the saved places are deleted.'));
     }
+    else if (form.id === 'pvp-form') {
+      const result = await send('pvp-stats', { enabled: data.pvpStats === 'on' });
+      account.pvpStats = result.pvpStats; accountRender();
+      toast(result.pvpStats ? t('Saved: your characters\' PvP kills, assists and deaths are counted from now on.') : t('Saved: PvP stats are off, and the saved events are deleted.'));
+    }
     else if (form.id === 'membership-form') {
       const result = await send('membership', { membership: data.membership || '' });
       account.membership = result.membership; accountRender();
@@ -1557,6 +1603,11 @@ app.addEventListener('click', async e => {
     if (el.dataset.copy) return toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.'));
     if (el.dataset.history) return await historyDialog(el.dataset.history, el.dataset.name);
     if (el.dataset.location) return await locationDialog(el.dataset.location, el.dataset.name);
+    if (el.dataset.pvp) return await pvpDialog(el.dataset.pvp, el.dataset.name);
+    if (el.dataset.pvpDays && pvpView) return await showPvp(Number(el.dataset.pvpDays), el);
+    if (el.dataset.pvpPage && pvpView) return await pvpEventsPage(Number(el.dataset.pvpPage), el);
+    if (el.dataset.pvpPlayers && pvpView) return pvpPlayers({ page: Number(el.dataset.pvpPlayers) }, el);
+    if (el.dataset.pvpSort && pvpView) return pvpPlayers({ sort: el.dataset.pvpSort, page: 1 }, el);
     if (el.dataset.place && placeView) { placeView.picked = placesPart.loaded().placesOf(placeView.data)[Number(el.dataset.place)] || null; return renderPlace(); }
     if (el.dataset.placePage && placeView) return await placePage(Number(el.dataset.placePage), el);
     if (el.matches('[data-place-back]') && placeView) return renderPlace();

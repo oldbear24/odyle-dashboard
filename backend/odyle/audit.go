@@ -80,6 +80,7 @@ var auditFields = []struct{ path, label string }{
 	{"inactiveAccountDays", "Delete inactive accounts after (days)"},
 	{"historyDays", "Keep Odyle history (days)"},
 	{"locationDays", "Keep places (days)"},
+	{"pvpDays", "Keep PvP events (days)"},
 	{"catalog", "Dungeon catalog"},
 	{"classRoles", "Class roles"},
 	{"maps", "Maps"},

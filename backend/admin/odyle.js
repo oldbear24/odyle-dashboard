@@ -670,7 +670,7 @@ export function settingsPage() {
     return t.strong(null, !d.inactive ? 'With this period ' + run + ' would delete no account.'
       : 'With this period ' + run + ' would delete ' + number(d.deleted) + (d.deleted === 1 ? ' account' : ' accounts') + (d.inactive > d.deleted ? ', the first ' + number(d.deleted) + ' of ' + number(d.inactive) + ' unused that long; the rest follow on the next nights.' : '.'));
   };
-  const { state, load, save, buttons, changed } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'historyDays', 'locationDays', 'catalog', 'classRoles', 'clock', 'taskTemplates', 'slots', 'maps'], form => countInactive(form.inactiveAccountDays));
+  const { state, load, save, buttons, changed } = settingsForm(['odylePerCube', 'dailyResetHour', 'weeklyResetDay', 'maintenance', 'inactiveAccountDays', 'historyDays', 'locationDays', 'pvpDays', 'catalog', 'classRoles', 'clock', 'taskTemplates', 'slots', 'maps'], form => countInactive(form.inactiveAccountDays));
   const integer = value => { const parsed = parseInt(value, 10); return Number.isNaN(parsed) ? null : parsed; };
   // A kept period's help: what the expiry job keeps, or the allowed range.
   const kept = (days, before, after) => Number.isInteger(days) && days >= 1 && days <= 3650 ? before + number(days) + (days === 1 ? ' day' : ' days') + (days % 365 === 0 ? ' (' + number(days / 365) + (days === 365 ? ' year)' : ' years)') : '') + after + ' The expiry job deletes older ones every five minutes, so a shorter period applies at once.' : 'From 1 day to 3,650 days (ten years). 30 by default.';
@@ -801,11 +801,13 @@ export function settingsPage() {
         'From 1 to 12 hours.'),
       field('odyle-inactive', 'Delete inactive accounts after (days)', t.input({ id: 'odyle-inactive', type: 'number', min: 0, max: 3650, step: 1, required: true, value: () => state.form.inactiveAccountDays ?? '', oninput: e => { state.form.inactiveAccountDays = integer(e.target.value); countInactive(state.form.inactiveAccountDays); } }),
         () => state.form.inactiveAccountDays ? ['Every night, accounts that have not used the dashboard or the Windows app for ' + number(state.form.inactiveAccountDays) + ' days are deleted with their characters; rooms they own pass to another player or close. ', deletion()] : '0 keeps every account. Set 30 days or more to delete accounts that stopped using Odyle.'),
-      // How long the Odyle history and the places of location sharing are kept (1 day to ten years).
+      // How long the Odyle history, the places of location sharing and PvP events are kept (1 day to ten years).
       field('odyle-history-days', 'Keep Odyle history (days)', t.input({ id: 'odyle-history-days', type: 'number', min: 1, max: 3650, step: 1, required: true, value: () => state.form.historyDays ?? '', oninput: e => state.form.historyDays = integer(e.target.value) }),
         () => kept(state.form.historyDays, 'Each change of a character\'s Odyle is kept for ', ', and players can chart and page through all of it. Longer periods take more disk space.')),
       field('odyle-location-days', 'Keep places (days)', t.input({ id: 'odyle-location-days', type: 'number', min: 1, max: 3650, step: 1, required: true, value: () => state.form.locationDays ?? '', oninput: e => state.form.locationDays = integer(e.target.value) }),
         () => kept(state.form.locationDays, 'Each place a player shares with location sharing is kept for ', '. Players see the period on their account page; turning sharing off still deletes their places at once.')),
+      field('odyle-pvp-days', 'Keep PvP events (days)', t.input({ id: 'odyle-pvp-days', type: 'number', min: 1, max: 3650, step: 1, required: true, value: () => state.form.pvpDays ?? '', oninput: e => state.form.pvpDays = integer(e.target.value) }),
+        () => kept(state.form.pvpDays, 'Each kill, assist and death of a player with PvP stats on is kept for ', ', with the name of the other player. Players see the period on their account page; turning PvP stats off still deletes their events at once.')),
       section('Dungeon catalog', 'The dungeons rooms choose from for wishlists and planned runs, with what opening one cube of each costs. Rooms show the cost and how many cubes the party can open.'),
       t.div({ className: 'col-lg-12' },
         t.div({ className: 'rate-limit-table-wrapper' }, t.table({ className: 'rate-limit-table odyle-catalog' },
@@ -931,7 +933,10 @@ export function controlsPage() {
           t.div({ className: 'field-help' }, 'Switched off, the places apps send for players who share their location are refused.')] : null,
         () => (state.data?.groupAdapters || []).length ? [t.div({ className: 'txt-bold m-t-sm m-b-xs' }, 'Group adapters'),
           ...state.data.groupAdapters.map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
-          t.div({ className: 'field-help' }, 'Switched off, the party and force ids apps send are refused, and rooms stop putting their players together.')] : null),
+          t.div({ className: 'field-help' }, 'Switched off, the party and force ids apps send are refused, and rooms stop putting their players together.')] : null,
+        () => (state.data?.pvpAdapters || []).length ? [t.div({ className: 'txt-bold m-t-sm m-b-xs' }, 'PvP adapters'),
+          ...state.data.pvpAdapters.map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
+          t.div({ className: 'field-help' }, 'Switched off, the kills, assists and deaths apps send for players with PvP stats on are refused, and those apps stop reading PvP.')] : null),
       field('odyle-adapters-extra', 'Also accept', t.textarea({ id: 'odyle-adapters-extra', rows: 3, placeholder: 'One adapter name per line', value: () => text.extra, oninput: e => { text.extra = e.target.value; adapters({ extra: lines(e.target.value) }); } }),
         'Letters, digits, dots, dashes and underscores, up to 20 names.', 8),
       t.div({ className: 'col-lg-12' }, () => accepted().length ? t.p(null, 'Readings are stored from: ', t.span({ className: 'txt-code' }, accepted().join(', ')), '.') : t.div({ className: 'alert danger' }, 'Keep at least one adapter accepted, or no reading can be saved.')),

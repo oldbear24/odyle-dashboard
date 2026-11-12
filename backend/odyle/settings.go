@@ -173,10 +173,12 @@ type settings struct {
 	Slots slotRules `json:"slots"`
 	// The game's map ids as superusers name them, each linked to a TH.GL map (location.go).
 	Maps []gameMap `json:"maps"`
-	// How many days each change of a character's Odyle (character_readings) and each place
-	// (character_locations) are kept: the expiry job deletes older ones.
+	// How many days each change of a character's Odyle (character_readings), each place
+	// (character_locations) and each PvP event (character_pvp) are kept: the expiry job deletes
+	// older ones.
 	HistoryDays  int64 `json:"historyDays"`
 	LocationDays int64 `json:"locationDays"`
+	PvpDays      int64 `json:"pvpDays"`
 }
 
 // slotRules are the slot machine's spins: free spins every account has each daily period (unused
@@ -241,7 +243,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, PvpDays: defaultPvpDays, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -345,7 +347,7 @@ func loadSettings(app core.App) settings {
 		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), TaskTemplates: storedTemplates(parseJSON(s.GetString("taskTemplates"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
 		AnnouncementFrom: isoOf(s.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(s.GetDateTime("announcementUntil")),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused"),
-		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays")}
+		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays"), PvpDays: s.GetInt64("pvpDays")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
 	}
@@ -354,6 +356,9 @@ func loadSettings(app core.App) settings {
 		if *days < 1 || *days > maxKeptDays {
 			*days = defaultKeptDays
 		}
+	}
+	if out.PvpDays < 1 || out.PvpDays > maxKeptDays {
+		out.PvpDays = defaultPvpDays
 	}
 	// Saved clock rules that no longer check out (or none yet) are the defaults.
 	if clock, err := clockSettings(parseJSON(s.GetString("clock"), "null")); err == nil {
@@ -557,14 +562,14 @@ func adapterSettings(value any) (adapterLists, error) {
 	}
 	lists := adapterLists{Extra: []string{}, Disabled: []string{}}
 	for _, name := range extraNames {
-		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) && !contains(verifiedGroupAdapters, name) {
+		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) && !contains(verifiedGroupAdapters, name) && !contains(verifiedPvpAdapters, name) {
 			lists.Extra = append(lists.Extra, name)
 		}
 	}
-	// The location and group adapters (location.go, groups.go) are switched off here too, never
-	// accepted as reading ones.
+	// The location, group and PvP adapters (location.go, groups.go, pvp.go) are switched off here
+	// too, never accepted as reading ones.
 	for _, name := range disabledNames {
-		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) || contains(verifiedGroupAdapters, name) {
+		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) || contains(verifiedGroupAdapters, name) || contains(verifiedPvpAdapters, name) {
 			lists.Disabled = append(lists.Disabled, name)
 		}
 	}
@@ -593,6 +598,9 @@ func inactiveDays(value any) (int64, error) {
 // How long the Odyle history and the places are kept: 30 days until a superuser sets 1 day to
 // ten years under Game settings.
 const defaultKeptDays, maxKeptDays = 30, 3650
+
+// PvP events are kept longer unless a superuser says otherwise: their counts are of a period.
+const defaultPvpDays = 90
 
 // keptDays checks a period the history or the places are kept.
 func keptDays(value any, name string) (int64, error) {
@@ -646,6 +654,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 	}
 	if b.has("locationDays") {
 		if next.LocationDays, err = keptDays(b["locationDays"], "Place history days"); err != nil {
+			return settings{}, err
+		}
+	}
+	if b.has("pvpDays") {
+		if next.PvpDays, err = keptDays(b["pvpDays"], "PvP event days"); err != nil {
 			return settings{}, err
 		}
 	}
@@ -746,6 +759,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("inactiveAccountDays", next.InactiveAccountDays)
 	record.Set("historyDays", next.HistoryDays)
 	record.Set("locationDays", next.LocationDays)
+	record.Set("pvpDays", next.PvpDays)
 	record.Set("dungeons", next.Dungeons)
 	record.Set("announcement", next.Announcement)
 	record.Set("announcementLevel", next.AnnouncementLevel)
