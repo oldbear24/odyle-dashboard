@@ -33,3 +33,11 @@ var verifiedLocationAdapters = []string{"global-location-v1"}
 // (02 96), a member leaving it (22 96) and its end (2E 96) on the Global stream; only the ids of
 // the own party and force are read, never the other members.
 var verifiedGroupAdapters = []string{"global-group-v1"}
+
+// The PvP adapters (pvp.go), listed and switched off the same way.
+//
+// global-pvp-v1: other players' records (45 36) for their names, kill credits (04 8D) and the
+// own character's hits (03 38 and the head of 04 38) on the Global stream, read only for an
+// account that turned on PvP stats; only kills, assists and deaths of the own character leave
+// the PC, with the name of the other player. Never damage, HP or skills.
+var verifiedPvpAdapters = []string{"global-pvp-v1"}

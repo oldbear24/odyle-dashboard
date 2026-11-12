@@ -2,6 +2,21 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.58.0 · 2026-11-12
+
+### New
+- **PvP stats**: turn on **Count my PvP kills, assists and deaths** under **Account & data**, and Odyle counts your characters' PvP kills, assists and deaths while the Windows app reads the game. Off by default; it needs Windows app 0.33.0 or newer.
+- Every counted character shows its kills and deaths on its row. Click the line to open **PvP**: the kills, assists, deaths and kills per death of the last week, 30 days or 90 days, and the count since you turned PvP stats on.
+- **Players**: a table of everyone the character met, with how often it killed them, helped kill them and was killed by them. Sort it by any column; a player whose server the game named links to the armory's lookup.
+- **Kills assisted for** lists the allies whose kills the character helped with, and **Latest** every kill, assist and death, newest first. An assist is a hit on a player at most 15 seconds before an ally kills them.
+- The rooms a character is shared in see its PvP stats too. Events are kept for 90 days unless the server's operators set another period, and turning PvP stats off deletes them at once. **Download my data** includes them.
+
+### Changed
+- The notice about what the Windows reader reads now says it plainly: no damage numbers, HP or skills, and PvP kills, assists and deaths with the players' names only after you turn on PvP stats. The privacy notice says what is kept.
+
+### Fixed
+- The server is built with Go 1.27.4, which fixes a way to crash it with crafted requests (GO-2026-6859).
+
 ## 0.57.1 · 2026-11-02
 
 ### Changed

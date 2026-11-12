@@ -31,7 +31,7 @@ var accountActions = []action{
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
 	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed}, {"room-features", roomFeaturesSetting},
 	{"location", location}, {"location-sharing", locationSharing}, {"card", cardChoice}, {"game-group", group},
-	{"achievements", achievementsRoute},
+	{"achievements", achievementsRoute}, {"pvp-stats", pvpSetting},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
@@ -119,6 +119,8 @@ func routes(se *core.ServeEvent) {
 	}
 	// A full information board (2,000 characters with its lines) needs more than 4 KB.
 	se.Router.POST("/api/odyle/board", observed("board", board)).Bind(signedIn, apis.BodyLimit(16384))
+	// Twenty PvP events with their players' names need more too.
+	se.Router.POST("/api/odyle/pvp", observed("pvp", pvp)).Bind(signedIn, apis.BodyLimit(16384))
 	// Reads are timed for the superuser dashboard's Server status page (traffic.go).
 	se.Router.GET("/api/odyle/rooms", timed("rooms", rooms)).Bind(signedIn)
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
@@ -126,6 +128,7 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/history/{id}", timed("history", history)).Bind(signedIn)
 	se.Router.GET("/api/odyle/history/{id}/changes", timed("history-changes", historyChanges)).Bind(signedIn)
 	se.Router.GET("/api/odyle/locations/{id}", timed("locations", locations)).Bind(signedIn)
+	se.Router.GET("/api/odyle/pvp/{id}", timed("pvp", pvpStats)).Bind(signedIn)
 	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
 	se.Router.GET("/api/odyle/week", timed("week", weekRoute)).Bind(signedIn)

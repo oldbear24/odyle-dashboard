@@ -1035,6 +1035,97 @@ test('location sharing is off until turned on, rooms see where a character was, 
   } finally { await close(); }
 });
 
+test('PvP stats are off until turned on, count kills, assists and deaths, and rooms see who a character met', async () => {
+  const me = await account('Fighter'), friend = await account('Ally');
+  const roomId = (await request('/api/odyle/create', { name: 'PvP room' }, me)).data.room.id;
+  assert.equal((await request('/__test__/member', { room: roomId, user: friend.record.id, role: 'reporter' })).status, 200);
+  const session = (await request('/api/odyle/session', {}, me)).data;
+  assert.equal(session.pvpStats, false);
+  const c = (await request('/api/odyle/report', { sessionId: session.sessionId, sequence: 1, characterName: 'Hero', server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true, value: 120 }, me)).data.character;
+  await request('/api/odyle/sharing', { roomId, characterId: c.id, enabled: true }, me);
+  const id = n => String(n).padStart(32, '0');
+  const send = events => request('/api/odyle/pvp', { sessionId: session.sessionId, characterId: c.id, adapter: 'test-pvp-v1', events }, me);
+  const kill = { id: id(1), kind: 'kill', name: 'Vexa', server: '', region: '', ago: 5 };
+  assert.equal((await send([kill])).data.enabled, false, 'nothing is kept before the player turns it on');
+  const { page, errors, close } = await open(me, '#/account');
+  try {
+    const form = page.locator('#pvp-form');
+    assert.equal(await form.locator('input[name="pvpStats"]').isChecked(), false, 'off by default');
+    assert.match(await form.innerText(), /never damage numbers, HP or skills/); assert.match(await form.innerText(), /Events are kept for 90 days/);
+    await form.locator('input[name="pvpStats"]').check();
+    await form.locator('[type="submit"]').click();
+    await toast(page).filter({ hasText: 'PvP kills, assists and deaths are counted from now on.' }).waitFor();
+    await shot(page, 'account-pvp');
+    assert.equal((await request('/api/odyle/heartbeat', { sessionId: session.sessionId }, me)).data.pvpStats, true);
+    // Counted from zero: the row says so before the first event.
+    await navigate(page, 'library');
+    const row = page.locator('.member-card', { hasText: 'Hero' }).locator('.pvp-line');
+    await row.filter({ hasText: '0 kills' }).waitFor();
+    // Fifteen events against fourteen players: one of them met three times.
+    assert.deepEqual((await send([kill, { id: id(2), kind: 'death', name: 'Vexa', server: 'Kaisinel', region: 'GLOBAL_EU', ago: 3 }, { id: id(3), kind: 'death', name: 'Vexa', server: 'Kaisinel', region: 'GLOBAL_EU', ago: 1 },
+      { id: id(4), kind: 'assist', name: 'Nyra', server: '', region: '', by: 'Kael', byServer: 'Lumiel', byRegion: 'GLOBAL_EU', ago: 60 }])).data.stored, 4);
+    assert.equal((await send(Array.from({ length: 11 }, (_, i) => ({ id: id(10 + i), kind: 'kill', name: 'Foe' + String.fromCharCode(65 + i), server: '', region: '', ago: 120 + i })))).data.stored, 11);
+    assert.equal((await send([kill])).data.stored, 0, 'an event sent twice is stored once');
+    // The row follows the counts as they arrive, and opens the dialog.
+    await row.filter({ hasText: '12 kills' }).waitFor(); assert.match(await row.innerText(), /2 deaths/);
+    await shot(page, 'library-pvp');
+    await row.click();
+    const dialog = page.locator('#modal .pvp-dialog');
+    await dialog.locator('.pvp-figures').waitFor();
+    assert.deepEqual(await dialog.locator('.pvp-figure strong').allInnerTexts(), ['12', '1', '2', '6.00']);
+    assert.match(await dialog.locator('.pvp-since').innerText(), /kills 12 · assists 1 · deaths 2/);
+    // The players met, the busiest first: the game said Vexa's server with her kills, so she is one row that links to the armory.
+    const players = dialog.locator('.pvp-players');
+    assert.equal(await players.locator('.modal-count').innerText(), '13');
+    assert.equal(await players.locator('tbody tr:not(.pager-filler)').count(), 10);
+    assert.deepEqual(await players.locator('tbody tr').first().locator('td').allInnerTexts().then(cells => cells.slice(1, 4)), ['1', '0', '2']);
+    assert.match(await players.locator('tbody tr').first().locator('a').getAttribute('href'), /armory\/find\/GLOBAL_EU\/Kaisinel\/Vexa$/);
+    assert.equal(await dialog.locator('.pvp-allies tbody tr').count(), 1); assert.match(await dialog.locator('.pvp-allies').innerText(), /Kael/);
+    // The latest events beside them, twelve a page.
+    const events = dialog.locator('.pvp-events');
+    assert.equal(await events.locator('.modal-count').innerText(), '15'); assert.match(await events.innerText(), /Each event is kept for 90 days/);
+    assert.equal(await events.locator('tbody tr:not(.pager-filler)').count(), 12); assert.match(await events.locator('tbody tr').first().innerText(), /Killed by Vexa/);
+    await shot(page, 'pvp-dialog');
+    await events.locator('.pager-step.older:not(.edge)').click();
+    await events.locator('.pager-at', { hasText: 'Page 2 of 2' }).waitFor();
+    assert.equal(await page.locator('#modal .pvp-events tbody tr:not(.pager-filler)').count(), 3);
+    // The players table sorts by a column and pages on its own.
+    await players.locator('[data-pvp-sort="assists"]').click();
+    await page.locator('#modal .pvp-players [data-pvp-sort="assists"][aria-pressed="true"]').waitFor();
+    assert.match(await page.locator('#modal .pvp-players tbody tr').first().innerText(), /Nyra/);
+    await page.locator('#modal .pvp-players .pager-step.older:not(.edge)').click();
+    await page.locator('#modal .pvp-players .pager-at', { hasText: 'Page 2 of 2' }).waitFor();
+    assert.equal(await page.locator('#modal .pvp-players tbody tr:not(.pager-filler)').count(), 3);
+    // Another period asks the server again.
+    await page.locator('#modal [data-pvp-days="7"]').click();
+    await page.locator('#modal [data-pvp-days="7"][aria-pressed="true"]').waitFor();
+    assert.deepEqual(await page.locator('#modal .pvp-figure strong').allInnerTexts(), ['12', '1', '2', '6.00']);
+    await page.locator('#modal [data-action="close-dialog"]').click();
+    // A room member sees the counts and the dialog too.
+    const other = await open(friend, '#/room/' + roomId);
+    try {
+      const theirs = other.page.locator('.member-card', { hasText: 'Hero' }).locator('.pvp-line');
+      await theirs.filter({ hasText: '12 kills' }).waitFor();
+      assert.equal((await send([{ id: id(40), kind: 'kill', name: 'Late', server: '', region: '', ago: 0 }])).data.stored, 1);
+      await theirs.filter({ hasText: '13 kills' }).waitFor();
+      await theirs.click();
+      await other.page.locator('#modal .pvp-players', { hasText: 'Late' }).waitFor();
+      await shot(other.page, 'room-pvp');
+      assert.deepEqual(other.errors, []);
+    } finally { await other.close(); }
+    // Turned off, the events and the counts go.
+    await navigate(page, 'account');
+    await form.locator('input[name="pvpStats"]').uncheck();
+    await form.locator('[type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: PvP stats are off, and the saved events are deleted.' }).waitFor();
+    const gone = (await request('/api/odyle/pvp/' + c.id, undefined, friend, 'GET')).data;
+    assert.deepEqual([gone.enabled, gone.events, gone.opponents, gone.allTime], [false, [], [], null]);
+    await navigate(page, 'library');
+    await page.locator('.member-card', { hasText: 'Hero' }).waitFor();
+    assert.equal(await page.locator('.member-card', { hasText: 'Hero' }).locator('.pvp-line').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
 test('after an update the dashboard says so once, and What\'s new lists the changes', async () => {
   const { page, errors, close } = await open(null, '#/');
   try {
@@ -1183,6 +1274,10 @@ test('timers, achievements and your week: open game rules, milestones with their
     await shot(page, 'achievements');
     // Your week: its numbers, a picture and a text to share.
     await navigate(page, 'week');
+    // For two days after the weekly reset the page opens on the week before, in which this new
+    // player has no readings: then it is asked for this week (Later).
+    await page.locator('.week-page .week-nav').waitFor();
+    if ((await request('/api/odyle/week', undefined, player, 'GET')).data.week.back === 1) await page.locator('.week-page [data-week-back="0"]').click();
     await page.locator('.week-page .metric-panel').waitFor();
     assert.match(await page.locator('.week-page .metric.is-main strong').innerText(), /≈25/);
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="week-image"]').click()]);
@@ -1771,8 +1866,10 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
   try {
     await page.goto(url + '/_/#/odyle/settings');
     await page.locator('#odyle-inactive').fill('365');
-    // The Odyle history for a year, the places for 90 days.
+    // The Odyle history for a year, the places for 90 days, PvP events for 180.
     await page.locator('#odyle-history-days').fill('365'); await page.locator('#odyle-location-days').fill('90');
+    assert.equal(await page.locator('#odyle-pvp-days').inputValue(), '90'); await page.locator('#odyle-pvp-days').fill('180');
+    await page.getByText('Each kill, assist and death of a player with PvP stats on is kept for 180 days').waitFor();
     await page.getByText('Each change of a character\'s Odyle is kept for 365 days (1 year)').waitFor();
     // Dungeons come in from a list typed line by line, as a superuser would, or pasted.
     await page.getByRole('button', { name: 'Add several from a list' }).click();
@@ -1821,7 +1918,7 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     assert.deepEqual(saved.maps.slice(-2), [{ id: 600101, name: 'Valka’s Nest', thgl: "Herb Cave / Valka's Nest (+3)" }, { id: 600102, name: 'Fire Temple Arena', thgl: 'Fire Temple Arena' }]);
     assert.equal(await page.locator('#odyle-clock-hours').inputValue(), '2, 5, 22');
     assert.deepEqual([saved.catalog, saved.inactiveAccountDays], [[{ name: 'Fire Temple', cost: 60, partySize: 5, category: '', unconfirmed: false }, { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true }], 365]);
-    assert.deepEqual([saved.historyDays, saved.locationDays], [365, 90]);
+    assert.deepEqual([saved.historyDays, saved.locationDays, saved.pvpDays], [365, 90, 180]);
     // On a phone PocketBase's header scrolls sideways; the Odyle link must still be in sight.
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(url + '/_/#/collections'); await page.locator('.page-header').first().waitFor();
@@ -1837,7 +1934,7 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     assert.equal(visit.headers.get('clear-site-data'), '"cache"'); assert.match(visit.headers.get('set-cookie'), /^odyle_entry=1; Path=\/_\/;/);
     assert.equal(again.headers.get('clear-site-data'), null);
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
-  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, historyDays: 30, locationDays: 30, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
+  } finally { await close(); await request('/api/odyle/admin/settings', { dungeons: [], inactiveAccountDays: 0, historyDays: 30, locationDays: 30, pvpDays: 90, clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles }, operator); }
 });
 test('superusers set the announcement with its schedule, the switches and the adapters on the Server controls page', async () => {
   const { operator, page, errors, close } = await superuser();
@@ -1858,6 +1955,7 @@ test('superusers set the announcement with its schedule, the switches and the ad
     await page.locator('label[for="odyle-armoryPaused"]').click();
     // Location adapters are listed beside the built-in ones and switch off the same way.
     await page.locator('label[for="odyle-adapter-test-location-v1"]').click();
+    assert.equal(await page.locator('#odyle-adapter-test-pvp-v1').isChecked(), true, 'the PvP adapter is listed, accepted');
     await page.locator('#odyle-adapters-extra').fill('next-decoder-v3');
     assert.match(await page.getByText('Readings are stored from:').innerText(), /test-fixture-v1, next-decoder-v3/);
     await page.locator('#odyle-windows-blocked').fill('0.18.0');

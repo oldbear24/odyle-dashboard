@@ -1,6 +1,6 @@
 module github.com/oldbear24/odyle-dashboard/backend
 
-go 1.27.3
+go 1.27.4
 
 require (
 	ganigeorgiev.com/pocketbase/dbx v1.13.0

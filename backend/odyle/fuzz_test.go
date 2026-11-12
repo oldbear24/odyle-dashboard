@@ -110,6 +110,29 @@ func FuzzReading(f *testing.F) {
 	})
 }
 
+// A PvP event that passes names players in letters and digits only, with a server and its
+// region or neither, and happened within the last day.
+func FuzzPvpEvent(f *testing.F) {
+	f.Add("0123456789abcdef0123456789abcdef", "kill", "Vexa", "Kaisinel", "GLOBAL_EU", "", "", "", 5.0)
+	f.Add("0123456789abcdef0123456789abcdef", "assist", "Šárka", "", "", "Kael", "Lumiel", "GLOBAL_EU", 0.0)
+	f.Add("x", "duel", "<b>", "Kaisinel", "", "a b", "", "GLOBAL_XX", -1.0)
+	f.Fuzz(func(t *testing.T, id, kind, name, server, region, by, byServer, byRegion string, ago float64) {
+		at := time.Date(2026, 11, 12, 20, 0, 0, 0, time.UTC)
+		events, err := validPvpEvents(body{"events": []any{map[string]any{"id": id, "kind": kind, "name": name, "server": server, "region": region, "by": by, "byServer": byServer, "byRegion": byRegion, "ago": ago}}}, at)
+		if err != nil {
+			return
+		}
+		e := events[0]
+		player := func(name, server, region string) bool {
+			return pvpName.MatchString(name) && length(name) <= 80 && (server == "" && region == "" || pvpServer.MatchString(server) && contains(regions, region))
+		}
+		if len(events) != 1 || !pvpEventId.MatchString(e.id) || !contains(pvpKinds, e.kind) || !player(e.name, e.server, e.region) || e.at.After(at) || at.Sub(e.at) > pvpLate ||
+			e.by != "" && (e.kind != "assist" || !player(e.by, e.byServer, e.byRegion)) || e.by == "" && (e.byServer != "" || e.byRegion != "") {
+			t.Fatalf("accepted %+v", e)
+		}
+	})
+}
+
 // The body helpers keep the clients' JavaScript-era contract for any JSON a client sends.
 func FuzzBody(f *testing.F) {
 	for _, s := range []string{`{"v":"x"}`, `{"v":1.5}`, `{"v":null}`, `{"v":[1,null,"a",[2]]}`, `{"v":{"a":1}}`, `{}`, `{"v":true}`} {

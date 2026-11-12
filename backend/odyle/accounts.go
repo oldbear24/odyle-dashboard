@@ -110,6 +110,10 @@ func newCharacter(app core.App, userId string) (*Character, error) {
 		return nil, err
 	}
 	c.SetUser(userId)
+	// An account with PvP stats on counts for its new characters from zero (pvp.go).
+	if owner, err := app.FindRecordById("users", userId); err == nil && owner.GetBool("pvpStats") {
+		c.Set("pvp", pvpCounts{})
+	}
 	return c, nil
 }
 
@@ -533,7 +537,7 @@ func rooms(e *core.RequestEvent) error {
 			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(users), len(party.Players), party.Cubes, next[room.Id]
 			out = append(out, j)
 		}
-		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth), "maps": rules.Maps, "classIcons": classIcons(e.App), "kept": map[string]any{"historyDays": rules.HistoryDays, "locationDays": rules.LocationDays},
+		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth), "maps": rules.Maps, "classIcons": classIcons(e.App), "kept": map[string]any{"historyDays": rules.HistoryDays, "locationDays": rules.LocationDays, "pvpDays": rules.PvpDays},
 			"achievements": map[string]any{"new": progressOf(e.Auth).unseen()}})
 	})
 }
@@ -1043,7 +1047,7 @@ func session(e *core.RequestEvent) error {
 		if err := app.Save(s); err != nil {
 			return nil, err
 		}
-		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation")}, nil
+		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats")}, nil
 	})
 }
 
@@ -1322,7 +1326,7 @@ func heartbeat(e *core.RequestEvent) error {
 			beat(e.App, session, read, time.Now())
 			noteReader(e.App, session.Id, b, time.Now())
 		}
-		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation")})
+		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation"), "pvpStats": e.Auth.GetBool("pvpStats")})
 	})
 }
 
@@ -1795,8 +1799,9 @@ func forgetDevice(e *core.RequestEvent) error {
 }
 
 // cleanup is the expiry job: invite links three days after they expired (inviteGrace),
-// expired pairing codes and reader sessions, Odyle history and places older than Game
-// settings keep them (30 days by default) and planned runs a day after they started.
+// expired pairing codes and reader sessions, Odyle history, places and PvP events older than
+// Game settings keep them (30 days by default, PvP events 90) and planned runs a day after
+// they started.
 func cleanup(app core.App) (result, error) {
 	at := time.Now()
 	done, err := purge(app, "room_invites", "expiresAt <= {:cutoff}", stamp(at.Add(-inviteGrace)))
@@ -1829,12 +1834,16 @@ func cleanup(app core.App) (result, error) {
 	if err != nil {
 		return result{}, err
 	}
+	fights, err := purge(app, "character_pvp", "at < {:cutoff}", stamp(at.Add(-daysOf(rules.PvpDays))))
+	if err != nil {
+		return result{}, err
+	}
 	// The audit log keeps a year (audit.go).
 	audited, err := purge(app, "odyle_audit", "created < {:cutoff}", stamp(at.Add(-daysOf(auditDays))))
 	if err != nil {
 		return result{}, err
 	}
-	return result{Done: done + history + runs + places + audited}, nil
+	return result{Done: done + history + runs + places + fights + audited}, nil
 }
 
 // Rows purge deletes per statement, and statements per run: a backlog (after a long
@@ -2760,10 +2769,11 @@ func account(e *core.RequestEvent) error {
 			"notifications": notificationsOf(user.Record),
 			"membership":    user.GetString("membership"),
 			"shareLocation": user.GetBool("shareLocation"),
+			"pvpStats":      user.GetBool("pvpStats"),
 			"push":          pushState(e.App, user.Id),
 			"limits":        limits,
 			"usage":         map[string]any{"ownedRooms": owned, "memberships": memberships, "desktopDevices": len(devices), "characters": characters},
-			"retention":     map[string]any{"inactiveAccountDays": rules.InactiveAccountDays, "deleteAfter": deleteAfter, "historyDays": rules.HistoryDays, "locationDays": rules.LocationDays},
+			"retention":     map[string]any{"inactiveAccountDays": rules.InactiveAccountDays, "deleteAfter": deleteAfter, "historyDays": rules.HistoryDays, "locationDays": rules.LocationDays, "pvpDays": rules.PvpDays},
 			"paused":        map[string]any{"pairing": rules.PairingPaused, "reminders": rules.RemindersPaused},
 			"latestVersion": latestVersion(e.App),
 			"calendar":      calendarState(user.Record),
@@ -2837,6 +2847,10 @@ func exportData(e *core.RequestEvent) error {
 			j := c.PublicExport()
 			j["history"] = pluck(points, (*HistoryPoint).JSON)
 			if j["locations"], err = placesOf(app, c.Id, 0, 0); err != nil {
+				return err
+			}
+			// Every kept PvP event, with the other players' names as the game said them.
+			if j["pvpEvents"], err = pvpEventsOf(app, c.Id, "", 0, 0); err != nil {
 				return err
 			}
 			exportedCharacters[i] = j
