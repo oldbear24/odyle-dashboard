@@ -71,7 +71,7 @@ func TestRoomNewsReachMembersWithWhatEachMaySee(t *testing.T) {
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
 	shared := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Shared", "server": "Lumiel", "region": "GLOBAL_EU"})
 	private := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Private", "server": "Lumiel", "region": "GLOBAL_EU"})
-	membership := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter", "sharedCharacters": []string{shared.Id}})
+	membership := sharingMember(t, app, map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"}, shared.Id)
 	deliver(app)
 	topic := roomTopic + room.Id
 	leads, mates, outsiders := listen(t, app, lead, topic), listen(t, app, mate, topic), listen(t, app, outsider, topic)
@@ -189,7 +189,7 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	session := saved(t, app, "publisher_sessions", map[string]any{"user": reader.Id, "expiresAt": expiry(86400)})
 	shared := saved(t, app, "characters", map[string]any{"user": reader.Id, "characterName": "Shared", "server": "Lumiel", "region": "GLOBAL_EU", "valid": true, "confirmed": true, "readingSession": session.Id, "lastSeenAt": ago(time.Minute)})
 	private := saved(t, app, "characters", map[string]any{"user": reader.Id, "characterName": "Private", "server": "Lumiel", "region": "GLOBAL_EU", "valid": true, "confirmed": true, "readingSession": session.Id, "lastSeenAt": ago(time.Minute)})
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": reader.Id, "role": "reporter", "sharedCharacters": []string{shared.Id}})
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": reader.Id, "role": "reporter"}, shared.Id)
 	deliver(app)
 	leads := listen(t, app, lead, presenceTopic+room.Id)
 	own := listen(t, app, reader, userTopic+reader.Id)

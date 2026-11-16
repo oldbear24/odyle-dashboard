@@ -17,7 +17,7 @@ func TestGameGroupsReachTheRoomAndEndWithTheReading(t *testing.T) {
 	theirSession := saved(t, app, "publisher_sessions", map[string]any{"user": other.Id, "expiresAt": expiry(86400)})
 	c := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Scout", "server": "Lumiel", "region": "GLOBAL_EU", "readingSession": session.Id})
 	room := saved(t, app, "party_rooms", map[string]any{"owner": player.Id, "name": "Raid", "cost": 40})
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": player.Id, "role": "owner", "sharedCharacters": []string{c.Id}})
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": player.Id, "role": "owner"}, c.Id)
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
 	token := func(u interface{ NewAuthToken() (string, error) }) map[string]string {
 		raw, err := u.NewAuthToken()

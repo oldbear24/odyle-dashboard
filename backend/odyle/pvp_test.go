@@ -38,7 +38,7 @@ func TestPvpStatsAreOptInAndForgottenWhenTurnedOff(t *testing.T) {
 	c := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Hero", "server": "Lumiel", "region": "GLOBAL_EU"})
 	hidden := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Alt", "server": "Lumiel", "region": "GLOBAL_EU"})
 	room := saved(t, app, "party_rooms", map[string]any{"owner": player.Id, "name": "Raid", "cost": 40})
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": player.Id, "role": "owner", "sharedCharacters": []string{c.Id}})
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": player.Id, "role": "owner"}, c.Id)
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
 	token := func(user interface{ NewAuthToken() (string, error) }) map[string]string {
 		raw, err := user.NewAuthToken()

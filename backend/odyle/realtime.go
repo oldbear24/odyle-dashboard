@@ -218,7 +218,7 @@ func deliverRoom(app core.App, clients map[string]subscriptions.Client, id strin
 	}
 	shares := make(map[string][]string, len(members)) // account → the characters it shares here
 	for _, m := range members {
-		shares[m.User()] = m.Shared()
+		shares[m.User()] = m.Shared(app)
 	}
 	exports := map[string]map[string]any{}
 	for characterId, c := range n.characters {

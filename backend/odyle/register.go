@@ -111,6 +111,7 @@ func Register(app core.App) {
 	watchSettings(app)
 	watchAudit(app)
 	watchServerIds(app)
+	watchShares(app)
 	watchCharacters(app)
 	watchMembership(app)
 	watchRunPosts(app)

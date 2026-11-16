@@ -69,10 +69,7 @@ func TestRunsBeyondThePartySizeWaitForAPlace(t *testing.T) {
 	}
 	for i, m := range members {
 		c := saved(t, app, "characters", map[string]any{"user": users[i].Id, "characterName": "Hero" + users[i].GetString("displayName"), "server": "EU", "region": "GLOBAL_EU", "value": 100, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": fresh, "lastReadingAt": fresh})
-		m.Set("sharedCharacters", []string{c.Id})
-		if err := app.Save(m); err != nil {
-			t.Fatal(err)
-		}
+		share(t, app, m, c.Id)
 		saved(t, app, "room_wishes", map[string]any{"room": room.Id, "member": m.Id, "dungeon": "Fire Temple", "key": "fire temple"})
 	}
 	// Ed answered last: he waits for a place.
@@ -154,10 +151,7 @@ func TestCallingThePartyInvitesWhoCanComeNow(t *testing.T) {
 		m := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": u.Id, "role": role})
 		if value >= 0 {
 			c := saved(t, app, "characters", map[string]any{"user": u.Id, "characterName": "Hero" + name, "server": "EU", "region": "GLOBAL_EU", "value": value, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": seen, "lastReadingAt": seen})
-			m.Set("sharedCharacters", []string{c.Id})
-			if err := app.Save(m); err != nil {
-				t.Fatal(err)
-			}
+			share(t, app, m, c.Id)
 		}
 		return m
 	}

@@ -43,10 +43,10 @@ func inCharacters(ids []string, params dbx.Params) string {
 }
 
 // sharedIn is every character shared in the room by its members, once.
-func sharedIn(members []*Member) []string {
+func sharedIn(app core.App, members []*Member) []string {
 	out := []string{}
 	for _, m := range members {
-		for _, c := range m.Shared() {
+		for _, c := range m.Shared(app) {
 			if !contains(out, c) {
 				out = append(out, c)
 			}
@@ -61,7 +61,7 @@ func sharedIn(members []*Member) []string {
 // before it within the week (as the history's By week, src/history.js weeklyLedger). nil when
 // nothing is shared in the room.
 func roomWeekOf(app core.App, rules settings, members []*Member, cost int64, at time.Time) (map[string]any, error) {
-	shared := sharedIn(members)
+	shared := sharedIn(app, members)
 	if len(shared) == 0 {
 		return nil, nil
 	}
@@ -98,8 +98,8 @@ func spentAtRun(app core.App, r *Run, party []string, byId map[string]*Member, c
 		if m == nil {
 			continue
 		}
-		mine := m.Shared()
-		if pick := picks[id]; pick != "" && m.Shares(pick) {
+		mine := m.Shared(app)
+		if pick := picks[id]; pick != "" && m.Shares(app, pick) {
 			mine = []string{pick}
 		}
 		for _, c := range mine {

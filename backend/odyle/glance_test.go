@@ -17,10 +17,7 @@ func TestRoomsSayTheirPartyAndNextRun(t *testing.T) {
 	member := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
 	fresh := stamp(time.Now())
 	live := saved(t, app, "characters", map[string]any{"user": lead.Id, "characterName": "Lumina", "server": "EU", "region": "GLOBAL_EU", "value": 130, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": fresh, "lastReadingAt": fresh})
-	leader.Set("sharedCharacters", []string{live.Id})
-	if err := app.Save(leader); err != nil {
-		t.Fatal(err)
-	}
+	share(t, app, leader, live.Id)
 	soon := saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(26 * time.Hour)), "plannedBy": member.Id, "attendees": []string{leader.Id}})
 	saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Ice Temple", "startsAt": stamp(time.Now().Add(72 * time.Hour)), "plannedBy": member.Id, "attendees": []string{leader.Id}})
 	auth := tokenOf(t, lead)

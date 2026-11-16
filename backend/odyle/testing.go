@@ -183,7 +183,7 @@ func fixtures(se *core.ServeEvent) {
 	})
 	// Records written directly, so the tests keep their rate-limit budget.
 	fixture(se, "member", func(e *core.RequestEvent, b body) (any, error) {
-		return save(e.App, "room_members", map[string]any{"room": b["room"], "user": b["user"], "role": b["role"], "sharedCharacters": []string{}})
+		return save(e.App, "room_members", map[string]any{"room": b["room"], "user": b["user"], "role": b["role"]})
 	})
 	fixture(se, "characters", func(e *core.RequestEvent, b body) (any, error) {
 		for i := 0; i < count(b["count"]); i++ {

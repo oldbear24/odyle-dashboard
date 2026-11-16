@@ -124,12 +124,11 @@ func shareNew(app core.App, c *Character) error {
 	if err != nil {
 		return err
 	}
+	if err := loadShares(app, memberships); err != nil {
+		return err
+	}
 	for _, m := range memberships {
-		if m.Shares(c.Id) {
-			continue
-		}
-		m.SetShared(append(m.Shared(), c.Id))
-		if err := app.Save(m); err != nil {
+		if err := shareIn(app, m, c.Id); err != nil {
 			return err
 		}
 	}
@@ -326,7 +325,6 @@ func addMember(app core.App, roomId, userId, role string) (*Member, error) {
 	m.Set("room", roomId)
 	m.Set("user", userId)
 	m.SetRole(role)
-	m.SetShared([]string{})
 	return m, app.Save(m)
 }
 
@@ -391,7 +389,7 @@ func create(e *core.RequestEvent) error {
 			return nil, err
 		}
 		achieved(app, user.Id, nil, true)
-		return map[string]any{"room": roomJSON(room, cost), "membership": member, "invites": invites}, nil
+		return map[string]any{"room": roomJSON(room, cost), "membership": member.JSON(app), "invites": invites}, nil
 	})
 }
 
@@ -424,7 +422,7 @@ func join(e *core.RequestEvent) error {
 		// A member opening the link again, even once it expired or was used up, lands in the
 		// room and uses none of its joins.
 		if len(existing) > 0 {
-			return map[string]any{"room": roomJSON(room, cost), "membership": existing[0], "alreadyMember": true}, nil
+			return map[string]any{"room": roomJSON(room, cost), "membership": existing[0].JSON(app), "alreadyMember": true}, nil
 		}
 		if !invitation.Open(time.Now()) {
 			return nil, badRequest("Invite is invalid or expired.")
@@ -453,7 +451,7 @@ func join(e *core.RequestEvent) error {
 			achieved(app, maker, adding(map[string]int64{"invited": 1}), false)
 		}
 		achieved(app, user.Id, nil, true)
-		return map[string]any{"room": roomJSON(room, cost), "membership": member}, nil
+		return map[string]any{"room": roomJSON(room, cost), "membership": member.JSON(app)}, nil
 	})
 }
 
@@ -504,6 +502,9 @@ func rooms(e *core.RequestEvent) error {
 	return run(e, func() error {
 		rules := readSettings(e.App)
 		memberships, err := membershipsWhere(e.App, "user = {:user}", dbx.Params{"user": e.Auth.Id})
+		if err == nil {
+			err = loadShares(e.App, memberships)
+		}
 		if err != nil {
 			return err
 		}
@@ -525,7 +526,7 @@ func rooms(e *core.RequestEvent) error {
 			if room == nil {
 				continue
 			}
-			linked, j := m.Shared(), roomJSON(room, rules.OdylePerCube)
+			linked, j := m.Shared(e.App), roomJSON(room, rules.OdylePerCube)
 			j["role"], j["sharedCharacters"], j["sharing"], j["shareNew"] = m.Role(), linked, len(linked) > 0, m.GetBool("shareNew")
 			// The room at a glance (#51): its members, the players live now and the cubes their
 			// party can open now (the readiness rules, readiness.go), and its next run.
@@ -591,15 +592,15 @@ func snapshot(e *core.RequestEvent) error {
 		for i, m := range members {
 			mine, visible := m.User() == e.Auth.Id, []any{}
 			for _, c := range owned[m.User()] {
-				if mine || m.Shares(c.Id) {
+				if mine || m.Shares(e.App, c.Id) {
 					present(e.App, c)
 					j := c.PublicExport()
-					j["shared"] = m.Shares(c.Id)
+					j["shared"] = m.Shares(e.App, c.Id)
 					visible = append(visible, j)
 				}
 			}
-			j := m.PublicExport()
-			j["sharing"], j["displayName"], j["characters"] = len(m.Shared()) > 0, names[m.User()], visible
+			j := m.JSON(e.App)
+			j["sharing"], j["displayName"], j["characters"] = len(m.Shared(e.App)) > 0, names[m.User()], visible
 			if look := looks[m.User()]; look != nil {
 				j["look"] = look
 			}
@@ -632,8 +633,13 @@ func snapshot(e *core.RequestEvent) error {
 	})
 }
 
+// roomMembers are a room's memberships with the characters each shares there.
 func roomMembers(app core.App, roomId string) ([]*Member, error) {
-	return membershipsWhere(app, "room = {:room}", dbx.Params{"room": roomId})
+	members, err := membershipsWhere(app, "room = {:room}", dbx.Params{"room": roomId})
+	if err == nil {
+		err = loadShares(app, members)
+	}
+	return members, err
 }
 
 // memberUsers maps membership ids to account ids.
@@ -1293,7 +1299,7 @@ func sharing(e *core.RequestEvent) error {
 			targets = ids(saved)
 		}
 		next := []string{}
-		for _, id := range m.Shared() {
+		for _, id := range m.Shared(app) {
 			if !contains(targets, id) {
 				next = append(next, id)
 			}
@@ -1301,8 +1307,7 @@ func sharing(e *core.RequestEvent) error {
 		if enabled {
 			next = append(next, targets...)
 		}
-		m.SetShared(next)
-		if err := app.Save(m); err != nil {
+		if err := setShared(app, m, next); err != nil {
 			return nil, err
 		}
 		*affected = append(*affected, m.Room())
@@ -1933,7 +1938,7 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 		}
 		// A pick counts while the member still goes and still shares that character here.
 		for member, character := range r.Picks() {
-			if m := byId[member]; m != nil && contains(r.Attendees(), member) && m.Shares(character) {
+			if m := byId[member]; m != nil && contains(r.Attendees(), member) && m.Shares(app, character) {
 				picks[users[member]] = character
 			}
 		}
@@ -2256,7 +2261,7 @@ func plan(e *core.RequestEvent) error {
 					if err != nil {
 						return nil, err
 					}
-					if !m.Shares(c.Id) {
+					if !m.Shares(app, c.Id) {
 						return nil, badRequest("Pick a character you share in this room.")
 					}
 					pick = c.Id
@@ -2465,14 +2470,17 @@ func role(e *core.RequestEvent) error {
 			return nil, badRequest("Choose player, officer or viewer.")
 		}
 		target.SetRole(next)
-		if next == "viewer" {
-			target.SetShared([]string{})
-		}
 		if err := app.Save(target); err != nil {
 			return nil, err
 		}
+		// A viewer shares nothing.
+		if next == "viewer" {
+			if err := setShared(app, target, nil); err != nil {
+				return nil, err
+			}
+		}
 		*affected = append(*affected, room.Id)
-		return map[string]any{"membership": target}, nil
+		return map[string]any{"membership": target.JSON(app)}, nil
 	})
 }
 
@@ -2894,7 +2902,7 @@ func exportData(e *core.RequestEvent) error {
 					board = room.GetString("board")
 				}
 			}
-			entry := map[string]any{"room": m.Room(), "name": name, "role": m.Role(), "joined": m.Created(), "sharedCharacters": m.Shared(), "wishlist": pluck(wishes, (*Wish).Dungeon), "runs": planned}
+			entry := map[string]any{"room": m.Room(), "name": name, "role": m.Role(), "joined": m.Created(), "sharedCharacters": m.Shared(app), "wishlist": pluck(wishes, (*Wish).Dungeon), "runs": planned}
 			if board != "" {
 				entry["board"] = board
 			}

@@ -48,7 +48,7 @@ func TestNewCharactersReachTheRoomsThatAskForThem(t *testing.T) {
 			t.Fatalf("%v %d", err, len(members))
 		}
 		names := []string{}
-		for _, id := range members[0].Shared() {
+		for _, id := range members[0].Shared(app) {
 			c, _ := findAs[Character](app, "characters", id)
 			names = append(names, c.Name())
 		}

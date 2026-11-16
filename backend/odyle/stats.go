@@ -17,8 +17,8 @@ import (
 // A character with a game reading (manual values of the first releases do not count).
 const readCharacter = "c.source = 'packet' AND c.confirmed = TRUE"
 
-// The characters a membership shares, one row each.
-const sharedCharacters = "json_each(CASE WHEN json_valid(m.sharedCharacters) THEN m.sharedCharacters ELSE '[]' END) s JOIN characters c ON c.id = s.value"
+// The memberships with the characters each shares, one row a character (room_shares).
+const sharedCharacters = "room_members m JOIN room_shares s ON s.member = m.id JOIN characters c ON c.id = s.character"
 
 // statQueries are a day's totals, in the order the page shows them. The funnel steps
 // count accounts that reached at least that step, so each is part of the one before.
@@ -30,9 +30,9 @@ var statQueries = []struct{ name, query string }{
 	{"pairedAccounts", "SELECT COUNT(*) FROM users u WHERE EXISTS (SELECT 1 FROM desktop_devices d WHERE d.user = u.id) OR EXISTS (SELECT 1 FROM publisher_sessions p WHERE p.user = u.id) OR EXISTS (SELECT 1 FROM characters c WHERE c.user = u.id AND " + readCharacter + ")"},
 	{"readingAccounts", "SELECT COUNT(DISTINCT c.user) FROM characters c WHERE " + readCharacter},
 	// Shares a character with a reading in a room.
-	{"sharingAccounts", "SELECT COUNT(DISTINCT m.user) FROM room_members m, " + sharedCharacters + " WHERE " + readCharacter},
+	{"sharingAccounts", "SELECT COUNT(DISTINCT m.user) FROM " + sharedCharacters + " WHERE " + readCharacter},
 	// Rooms where two or more members' shared characters were read in the last 7 days.
-	{"roomsReading", "SELECT COUNT(*) FROM (SELECT m.room FROM room_members m, " + sharedCharacters + " WHERE " + readCharacter + " AND c.lastSeenAt >= {:week} GROUP BY m.room HAVING COUNT(DISTINCT m.user) >= 2)"},
+	{"roomsReading", "SELECT COUNT(*) FROM (SELECT m.room FROM " + sharedCharacters + " WHERE " + readCharacter + " AND c.lastSeenAt >= {:week} GROUP BY m.room HAVING COUNT(DISTINCT m.user) >= 2)"},
 	// Odyle changes saved in the last 24 hours (history points).
 	{"readings", "SELECT COUNT(*) FROM character_readings WHERE created >= {:day}"},
 	// Rooms with a run from yesterday to 7 days ahead; runs are deleted a day after they start.
