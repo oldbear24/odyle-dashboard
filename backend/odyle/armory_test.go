@@ -193,7 +193,7 @@ func TestArmoryServerIdsBelongToTheirRegion(t *testing.T) {
 		region string
 		id     int
 		name   string
-	}{{"eu", 2304, "Lumiel"}, {"eu", 1301, "Siel"}, {"nae", 1150, "Hebran"}, {"naw", 2201, "Israphel"}, {"as", 1503, "Vaizel"},
+	}{{"eu", 2304, "Lumiel"}, {"eu", 1301, "Siel"}, {"nae", 1109, "Hithanya"}, {"nae", 1150, ""}, {"naw", 2201, "Israphel"}, {"as", 1503, "Vaizel"},
 		{"nae", 2304, ""}, {"eu", 2351, ""}, {"eu", 2300, ""}, {"eu", 3304, ""}, {"xx", 2304, ""}} {
 		if got := armoryServer(c.region, c.id); got != c.name {
 			t.Errorf("%s %d: %q, want %q", c.region, c.id, got, c.name)

@@ -1064,6 +1064,9 @@ func character(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
+		if data, err = currentServer(app, user.Id, data); err != nil {
+			return nil, err
+		}
 		existing, err := sameCharacter(app, user.Id, data)
 		if err != nil {
 			return nil, err
@@ -1181,6 +1184,9 @@ func report(e *core.RequestEvent) error {
 				return nil, err
 			}
 		} else {
+			if data.identity, err = currentServer(app, user.Id, data.identity); err != nil {
+				return nil, err
+			}
 			existing, err := sameCharacter(app, user.Id, data.identity)
 			if err != nil {
 				return nil, err
