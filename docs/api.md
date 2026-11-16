@@ -243,6 +243,8 @@ The **Global list** is kept by superusers under Game settings (`taskTemplates`: 
 
 Own characters can be read with the normal PocketBase `characters` collection API. Others' records and all direct character writes are locked. Shared readings are read via authorized room snapshots; the Windows app reads `GET /api/odyle/snapshot/{id}` for each room to list the party.
 
+An account has a character once per server and name. Each character carries `serverId` (dashboard 0.60.0): its server's id, race × 1000 + region digit × 100 + the server's place (Lumiel in Europe is 2304, Siel 1101 in NA-East and 1201 in NA-West; `GLOBAL_NA` counts as NA-East), which the backend keeps from `region` and `server` on every save, or 0 while it cannot name the server. A reading or `POST /api/odyle/character` finds the account's character by that id and the name, so a server PLAYNC renames keeps its characters, and they take the new name with their next reading; on a server without an id, by region, server name and name, and such a character takes the id once PLAYNC's list names its server (the nightly `odyle-armory` job).
+
 ### Odyle clock
 
 The natural pool (`parts.base`, see the report above) regenerates by a tick at fixed UTC hours up to a cap; items' Odyle (`parts.bonus`) does not. Clients compute the clock from `clock` in `GET /api/odyle/rooms` and the snapshot, and from each character's last reading; nothing they compute is stored:

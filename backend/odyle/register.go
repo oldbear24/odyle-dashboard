@@ -110,6 +110,7 @@ func Register(app core.App) {
 
 	watchSettings(app)
 	watchAudit(app)
+	watchServerIds(app)
 	watchCharacters(app)
 	watchMembership(app)
 	watchRunPosts(app)

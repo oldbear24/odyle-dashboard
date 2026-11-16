@@ -164,10 +164,11 @@ func setOfficial(app core.App, c *Character, hit officialHit) {
 		c.Set("officialServerId", hit.serverId)
 	}
 	// A character saved as NA before the regions were told apart moves to NA-West once the search
-	// finds it there, unless the account also has it under NA-West (odyle-windows#4).
+	// finds it there, unless the account also has it under NA-West (odyle-windows#4): a record
+	// with the search's server id (servers.go). Moved, it takes that id when it is saved.
 	if hit.region == "naw" && c.GetString("region") == "GLOBAL_NA" {
-		if _, err := app.FindFirstRecordByFilter("characters", "user = {:user} && region = 'GLOBAL_NAW' && server = {:server} && characterName = {:name}",
-			dbx.Params{"user": c.GetString("user"), "server": c.GetString("server"), "name": c.GetString("characterName")}); isNoRows(err) {
+		if _, err := app.FindFirstRecordByFilter("characters", "user = {:user} && serverId = {:server} && characterName = {:name}",
+			dbx.Params{"user": c.GetString("user"), "server": hit.serverId, "name": c.GetString("characterName")}); isNoRows(err) {
 			c.Set("region", "GLOBAL_NAW")
 		}
 	}

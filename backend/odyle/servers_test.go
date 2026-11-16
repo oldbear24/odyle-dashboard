@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // The Global servers as PLAYNC lists them: 23 of each race, every name once.
@@ -192,4 +193,100 @@ func TestServersPLAYNCListsAreLearned(t *testing.T) {
 	if err := learnServers(app); err != nil || asked.Load() != before2 {
 		t.Fatalf("paused: %v, %d asked", err, asked.Load()-before2)
 	}
+}
+
+// A character is one per account, server id and name: NA-East and NA-West servers of one name
+// are two servers, a server the backend cannot name keeps its characters apart by name, and they
+// take its id once PLAYNC lists it. A renamed server keeps its characters, and moving a character
+// to NA-West moves its id.
+func TestCharactersAreFoundByServerId(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := writeSettings(app, body{"portraitsPaused": true}); err != nil {
+		t.Fatal(err)
+	}
+	player := newUser(t, app, "Daeva")
+	auth := tokenOf(t, player)
+	save := func(name, server, region string) (string, string, float64) {
+		t.Helper()
+		answer := ask(t, app, http.MethodPost, "/api/odyle/character", auth, `{"characterName":"`+name+`","server":"`+server+`","region":"`+region+`"}`, 200)
+		c, _ := answer["character"].(map[string]any)
+		id, _ := c["id"].(string)
+		saved, _ := c["server"].(string)
+		serverId, _ := c["serverId"].(float64)
+		return id, saved, serverId
+	}
+	lumiel, _, id := save("Kael", "Lumiel", "GLOBAL_EU")
+	if id != 2304 {
+		t.Fatalf("Lumiel in Europe is %v", id)
+	}
+	if again, _, _ := save("Kael", "Lumiel", "GLOBAL_EU"); again != lumiel {
+		t.Fatal("the same character was saved twice")
+	}
+	east, _, eastId := save("Kael", "Siel", "GLOBAL_NA")
+	west, _, westId := save("Kael", "Siel", "GLOBAL_NAW")
+	if east == west || eastId != 1101 || westId != 1201 {
+		t.Fatalf("NA-East %s (%v) and NA-West %s (%v)", east, eastId, west, westId)
+	}
+	far, _, farId := save("Kael", "Farland", "GLOBAL_EU")
+	near, _, _ := save("Kael", "Nearland", "GLOBAL_EU")
+	if again, _, _ := save("Kael", "Farland", "GLOBAL_EU"); farId != 0 || far == near || again != far {
+		t.Fatalf("an unknown server: %s (%v), again %s, another %s", far, farId, again, near)
+	}
+	// One account cannot keep two records of a character on one server.
+	if _, err := save2(app, player.Id, "Kael", "Lumiel", "GLOBAL_EU"); err == nil {
+		t.Fatal("a second Kael on Lumiel was saved")
+	}
+
+	// PLAYNC lists Farland as Europe's 24th Elyos server: its character takes the id.
+	saved(t, app, "game_servers", map[string]any{"serverId": 1324, "name": "Farland", "open": true})
+	stateOf(app).serverBook.Store(nil)
+	if err := fillServerIds(app); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := app.FindRecordById("characters", far); c.GetInt("serverId") != 1324 {
+		t.Fatalf("Farland's character has id %d", c.GetInt("serverId"))
+	}
+	// Renamed, the server keeps its character: a reading under the new name finds it and names it so.
+	if _, err := app.DB().NewQuery("UPDATE game_servers SET name = 'Farreach' WHERE serverId = 1324").Execute(); err != nil {
+		t.Fatal(err)
+	}
+	stateOf(app).serverBook.Store(nil)
+	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
+	answer := ask(t, app, http.MethodPost, "/api/odyle/report", auth, `{"sessionId":"`+session.Id+`","sequence":1,"characterName":"Kael","server":"Farreach","region":"GLOBAL_EU","value":120,"source":"packet","parserVersion":"global-reference-v2","confirmed":true}`, 200)
+	if c, _ := answer["character"].(map[string]any); c["id"] != far || c["server"] != "Farreach" || c["serverId"] != float64(1324) {
+		t.Fatalf("a reading on the renamed server: %v", c)
+	}
+
+	// The daily lookup finds an NA character on NA-West: it moves there with the West's id,
+	// unless the account has it there already.
+	alone, _, _ := save("Wanderer", "Nezekan", "GLOBAL_NA")
+	for _, c := range []struct {
+		id     string
+		region string
+	}{{alone, "GLOBAL_NAW"}, {east, "GLOBAL_NA"}} {
+		record, err := findAs[Character](app, "characters", c.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		setOfficial(app, record, officialHit{id: "-", region: "naw", serverId: 1000 + 200 + index(elyos, record.Server()) + 1})
+		if err := app.Save(record); err != nil {
+			t.Fatal(err)
+		}
+		if moved, _ := app.FindRecordById("characters", c.id); moved.GetString("region") != c.region || moved.GetInt("serverId") != serversOf(app).id(c.region, record.Server()) {
+			t.Fatalf("%s: %s, id %d", record.Name(), moved.GetString("region"), moved.GetInt("serverId"))
+		}
+	}
+}
+
+// save2 saves a character of the account straight into the collection.
+func save2(app core.App, user, name, server, region string) (*core.Record, error) {
+	c, err := newRecord(app, "characters")
+	if err != nil {
+		return nil, err
+	}
+	c.Set("user", user)
+	c.Set("characterName", name)
+	c.Set("server", server)
+	c.Set("region", region)
+	return c, app.Save(c)
 }

@@ -1148,8 +1148,19 @@ func mainCharacter(e *core.RequestEvent) error {
 	})
 }
 
+// sameCharacter finds the account's character of an identity. On a server the book names
+// (servers.go) it is the character with that server id and name, whatever name the server had
+// when it was saved, so a renamed server keeps its characters; the next save names it as the
+// identity does. Otherwise it is the character saved under that region, server name and name
+// while the server had no id, which takes the id at its next save once the book names it.
 func sameCharacter(app core.App, userId string, data identity) ([]*Character, error) {
-	return charactersWhere(app, "user = {:user} && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
+	if id := serversOf(app).id(data.region, data.server); id > 0 {
+		found, err := charactersWhere(app, "user = {:user} && serverId = {:server} && characterName = {:name}", dbx.Params{"user": userId, "server": id, "name": data.characterName})
+		if err != nil || len(found) > 0 {
+			return found, err
+		}
+	}
+	return charactersWhere(app, "user = {:user} && serverId = 0 && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }
 
 // Adapters of the Windows releases from before the reader pause. Those apps take any
