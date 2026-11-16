@@ -71,7 +71,7 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	if len(parts) == 5 {
 		tab = parts[4]
 	}
-	server := armoryServer(region, serverId)
+	server := armoryServer(app, region, serverId)
 	if _, known := tabTitles[tab]; server == "" || !armoryIds.MatchString(characterId) || tab != "" && tab != "card" && !known {
 		return web.Page{Missing: true}
 	}
@@ -214,7 +214,7 @@ func sitemapRoute(e *core.RequestEvent) error {
 		return err
 	}
 	for _, k := range kept {
-		if armoryServer(k.Region, k.ServerId) == "" || !armoryIds.MatchString(k.CharacterId) {
+		if armoryServer(e.App, k.Region, k.ServerId) == "" || !armoryIds.MatchString(k.CharacterId) {
 			continue
 		}
 		entry := sitemapEntry{Loc: fmt.Sprintf("%s/armory/%s/%d/%s", base, k.Region, k.ServerId, k.CharacterId)}

@@ -44,10 +44,10 @@ func TestNAWestKeepsCharactersOfTheSameServerNameApart(t *testing.T) {
 		t.Fatal("a character the account also has under NA-West stays")
 	}
 	// The searches: NA-West asks only the West; NA asks the East first, then the West.
-	if got := searches("Siel", "GLOBAL_NAW"); len(got) != 1 || got[0] != (search{serverId: 1201, region: "naw"}) {
+	if got := staticServers().searches("Siel", "GLOBAL_NAW"); len(got) != 1 || got[0] != (search{serverId: 1201, region: "naw"}) {
 		t.Fatalf("NA-West searches %v", got)
 	}
-	if got := searches("Lumiel", "GLOBAL_NA"); len(got) != 2 || got[0] != (search{serverId: 2104, region: "nae"}) || got[1] != (search{serverId: 2204, region: "naw"}) {
+	if got := staticServers().searches("Lumiel", "GLOBAL_NA"); len(got) != 2 || got[0] != (search{serverId: 2104, region: "nae"}) || got[1] != (search{serverId: 2204, region: "naw"}) {
 		t.Fatalf("NA searches %v", got)
 	}
 	// The app saves the same name on Siel East and Siel West as two characters.

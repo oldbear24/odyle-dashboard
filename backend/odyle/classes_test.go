@@ -186,14 +186,14 @@ func TestClassIconsComeFromPLAYNC(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	if stand.classLists.Load() != 2 || stand.classIcons.Load()-before != 1 {
-		t.Fatalf("%d lists, %d emblems", stand.classLists.Load(), stand.classIcons.Load()-before)
+	if stand.classLists.Load() != 2 || stand.classIcons.Load()-before != 1 || stand.serverLists.Load() != 5 {
+		t.Fatalf("%d lists, %d emblems, %d server lists", stand.classLists.Load(), stand.classIcons.Load()-before, stand.serverLists.Load())
 	}
 	if _, err := writeSettings(app, body{"armoryPaused": true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := armoryNight(app); err != nil || stand.classLists.Load() != 2 {
-		t.Fatalf("paused: %v, %d lists", err, stand.classLists.Load())
+	if _, err := armoryNight(app); err != nil || stand.classLists.Load() != 2 || stand.serverLists.Load() != 5 {
+		t.Fatalf("paused: %v, %d lists, %d server lists", err, stand.classLists.Load(), stand.serverLists.Load())
 	}
 }
 

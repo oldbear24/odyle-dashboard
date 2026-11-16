@@ -100,7 +100,8 @@ func pvpPlayer(entry map[string]any, nameKey, serverKey, regionKey string) (name
 	if !pvpServer.MatchString(server) || !contains(regions, region) {
 		return "", "", "", errors.New("A player's server comes with its Global region, or both are left out.")
 	}
-	return name, server, region, nil
+	// Windows 0.33.0 names seven servers otherwise (servers.go).
+	return name, globalServer(server), region, nil
 }
 
 // validPvpEvents reads the events of a request: 1 to 20, each with the app's id, its kind, the

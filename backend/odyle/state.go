@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -38,6 +39,8 @@ type state struct {
 
 	armory       *armoryWork     // has its own lock
 	armorySearch *armorySearches // has its own lock
+
+	serverBook atomic.Pointer[serverBook] // the Global servers (servers.go), nil until read
 
 	webhooks webhookWaits // has its own lock
 

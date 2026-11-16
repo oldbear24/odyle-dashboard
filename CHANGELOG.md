@@ -2,6 +2,16 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.59.0 · 2026-11-16
+
+### New
+- Odyle reads PLAYNC's official server list every night. When AION 2 opens a new server, the armory lists it and the Windows app (0.34.0 or newer) can save your characters there, without waiting for an Odyle update.
+- The armory's search form lists only the servers your chosen region has open: 9 of each race in North America East, 5 in North America West, 23 in Europe, 6 in South America and 10 in Asia.
+
+### Fixed
+- The armory's server list now has the European servers **Gauss**, **Lamuatan** and **Tassin**, and every server under the name PLAYNC gives it.
+- Characters on seven servers show their real server: they were saved as Poeta instead of Gauss, Verteron instead of Lamuatan, Agnita instead of Tassin, Ishalgen instead of Agnita, Altgard instead of Atiel, Tahabata instead of Tahavatha and Kasika instead of Kasaka. They keep their history, room sharing and PvP stats under the right name, and so do the players met in PvP. A Windows app that has not updated yet still finds them; Windows 0.34.0 saves new ones under the right name.
+
 ## 0.58.0 · 2026-11-12
 
 ### New
