@@ -463,7 +463,7 @@ func join(e *core.RequestEvent) error {
 // carry it, so the dashboard names the PC that reads instead of asking to connect one.
 // One query, and one more for the PC names when a session has a PC.
 func readersOf(app core.App, userId string) ([]any, error) {
-	found, err := app.FindRecordsByFilter("publisher_sessions", "user = {:user} && expiresAt > {:now}", "-updated", 10, 0, dbx.Params{"user": userId, "now": stamp(time.Now())})
+	found, err := app.FindRecordsByFilter("publisher_sessions", "user = {:user} && expiresAt > {:now}", "-lastContactAt", 10, 0, dbx.Params{"user": userId, "now": stamp(time.Now())})
 	if err != nil {
 		return nil, err
 	}
@@ -1039,7 +1039,7 @@ func session(e *core.RequestEvent) error {
 			return nil, err
 		}
 		s.Set("user", user.Id)
-		s.Extend()
+		s.Contacted()
 		if device != nil {
 			s.Set("device", device.Id)
 		}
@@ -1233,7 +1233,7 @@ func report(e *core.RequestEvent) error {
 			}
 		}
 		session.Set("sequence", data.sequence)
-		session.Extend()
+		session.Contacted()
 		if err := app.Save(session); err != nil {
 			return nil, err
 		}
@@ -2721,7 +2721,7 @@ func account(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		found, err := e.App.FindRecordsByFilter("publisher_sessions", "user = {:user} && expiresAt > {:now}", "-updated", 20, 0, dbx.Params{"user": user.Id, "now": stamp(time.Now())})
+		found, err := e.App.FindRecordsByFilter("publisher_sessions", "user = {:user} && expiresAt > {:now}", "-lastContactAt", 20, 0, dbx.Params{"user": user.Id, "now": stamp(time.Now())})
 		if err != nil {
 			return err
 		}

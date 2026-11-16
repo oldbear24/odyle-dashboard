@@ -94,16 +94,16 @@ func present(app core.App, c *Character) {
 }
 
 // contactAt is the reader session's last contact: its latest heartbeat, or the stored
-// updated time when that is newer.
+// lastContactAt when that is newer.
 func contactAt(app core.App, session *ReaderSession) string {
 	p := presenceOf(app)
 	p.mu.Lock()
 	c, ok := p.sessions[session.Id]
 	p.mu.Unlock()
-	if ok && c.at.After(timeOf(session.Updated())) {
+	if ok && c.at.After(timeOf(session.LastContactAt())) {
 		return stamp(c.at)
 	}
-	return session.Updated()
+	return session.LastContactAt()
 }
 
 // write stores the heartbeats not written yet. A character keeps a later lastSeenAt
@@ -137,7 +137,7 @@ func (p *presence) write(app core.App) error {
 				}
 			}
 			for _, r := range sessions {
-				if _, err := tx.DB().NewQuery("UPDATE {{publisher_sessions}} SET [[updated]] = {:at}, [[expiresAt]] = {:expires} WHERE [[id]] = {:id} AND [[updated]] < {:at}").
+				if _, err := tx.DB().NewQuery("UPDATE {{publisher_sessions}} SET [[lastContactAt]] = {:at}, [[expiresAt]] = {:expires} WHERE [[id]] = {:id} AND [[lastContactAt]] < {:at}").
 					Bind(dbx.Params{"at": stamp(r.at), "expires": stamp(r.at.Add(24 * time.Hour)), "id": r.id}).Execute(); err != nil {
 					return err
 				}

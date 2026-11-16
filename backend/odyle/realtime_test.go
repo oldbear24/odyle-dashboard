@@ -229,8 +229,8 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	written, _ := app.FindRecordById("characters", shared.Id)
 	kept, _ := app.FindRecordById("characters", private.Id)
 	contacted, _ := app.FindRecordById("publisher_sessions", session.Id)
-	if written.GetString("lastSeenAt") != stamp(at) || kept.GetDateTime("lastSeenAt").Time().After(time.Now().Add(-59*time.Minute)) || contacted.GetString("updated") != stamp(at) {
-		t.Fatalf("written %s, kept %s, session contact %s", written.GetString("lastSeenAt"), kept.GetString("lastSeenAt"), contacted.GetString("updated"))
+	if written.GetString("lastSeenAt") != stamp(at) || kept.GetDateTime("lastSeenAt").Time().After(time.Now().Add(-59*time.Minute)) || contacted.GetString("lastContactAt") != stamp(at) {
+		t.Fatalf("written %s, kept %s, session contact %s", written.GetString("lastSeenAt"), kept.GetString("lastSeenAt"), contacted.GetString("lastContactAt"))
 	}
 	if got := contactAt(app, viewOf[ReaderSession](contacted)); got != stamp(at) {
 		t.Fatalf("contact %s", got)

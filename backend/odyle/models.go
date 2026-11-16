@@ -345,10 +345,21 @@ func (s *ReaderSession) Sequence() int64      { return s.GetInt64("sequence") }
 func (s *ReaderSession) AppVersion() string   { return s.GetString("appVersion") }
 func (s *ReaderSession) ExpiresAt() time.Time { return s.GetDateTime("expiresAt").Time() }
 func (s *ReaderSession) Created() string      { return s.GetString("created") }
-func (s *ReaderSession) Updated() string      { return s.GetString("updated") } // the last stored contact
 
-// Extend keeps the session for a day after its last contact.
-func (s *ReaderSession) Extend() { s.Set("expiresAt", expiry(86400)) }
+// LastContactAt is the session's last stored contact (presence.go writes the heartbeats
+// every ten seconds); a session saved without one counts from when it opened.
+func (s *ReaderSession) LastContactAt() string {
+	if at := s.GetString("lastContactAt"); at != "" {
+		return at
+	}
+	return s.Created()
+}
+
+// Contacted notes a contact now and keeps the session for a day after it.
+func (s *ReaderSession) Contacted() {
+	s.Set("lastContactAt", now())
+	s.Set("expiresAt", expiry(86400))
+}
 
 // Run is a planned run of a room (room_runs); planner and attendees are memberships.
 type Run struct{ core.BaseRecordProxy }
