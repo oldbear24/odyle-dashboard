@@ -123,7 +123,6 @@ func (c *Character) ReadingSession() string { return c.GetString("readingSession
 func (c *Character) LastSeenAt() string     { return c.GetString("lastSeenAt") }
 func (c *Character) LastReadingAt() string  { return c.GetString("lastReadingAt") }
 func (c *Character) Portrait() string       { return c.GetString("portrait") }
-func (c *Character) PortraitHash() string   { return c.GetString("portraitHash") }
 func (c *Character) Created() string        { return c.GetString("created") }
 
 func (c *Character) SetUser(id string) { c.Set("user", id) }
@@ -134,27 +133,9 @@ func (c *Character) SetIdentity(i identity) {
 }
 func (c *Character) SetValid(valid bool) { c.Set("valid", valid) }
 
-// SetPortrait stores the game's portrait (a file to upload) with its image's digest.
-func (c *Character) SetPortrait(file any, hash string) {
-	c.Set("portrait", file)
-	c.Set("portraitHash", hash)
-}
-
-// PortraitChecked notes a portrait lookup now, whatever it found.
-func (c *Character) PortraitChecked() { c.Set("portraitCheckedAt", now()) }
-
-// PortraitMisses counts the lookups in a row the official search did not list the character.
-func (c *Character) PortraitMisses() int { return c.GetInt("portraitMisses") }
-
-// PortraitListed notes whether the official search listed the character: the portrait
-// job tries again later each time it did not.
-func (c *Character) PortraitListed(listed bool) {
-	if listed {
-		c.Set("portraitMisses", 0)
-	} else {
-		c.Set("portraitMisses", c.PortraitMisses()+1)
-	}
-}
+// SetPortrait stores the game's portrait (a file to upload); the portrait job keeps its
+// image's digest (character_jobs).
+func (c *Character) SetPortrait(file any) { c.Set("portrait", file) }
 
 // SetLastSeenAt shows a later heartbeat in an answer (present); it is written separately.
 func (c *Character) SetLastSeenAt(at time.Time) {

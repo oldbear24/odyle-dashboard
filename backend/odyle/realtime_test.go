@@ -100,9 +100,9 @@ func TestRoomNewsReachMembersWithWhatEachMaySee(t *testing.T) {
 	}
 	outsiders.quiet()
 
-	// A change nobody sees (the portrait job's check) is no news.
+	// A change nobody sees (when the Odyle clock last learned the natural pool's size) is no news.
 	checked, _ := app.FindRecordById("characters", shared.Id)
-	checked.Set("portraitCheckedAt", now())
+	checked.Set("naturalMaxAt", now())
 	if err := app.Save(checked); err != nil {
 		t.Fatal(err)
 	}

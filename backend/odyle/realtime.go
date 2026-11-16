@@ -371,15 +371,7 @@ func characterChanged(app core.App, c *Character) {
 // (the portrait job's portraitCheckedAt, say) is not news.
 var characterFields = []string{"characterName", "server", "region", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait", "parts", "regenTick", "naturalMax", "answeredCap", "level", "className", "officialId", "officialRegion", "officialServerId", "odyleLocked", "main", "location", "gameGroup", "pvp"}
 
-func visiblyChanged(c *core.Record) bool {
-	before := c.Original()
-	for _, f := range characterFields {
-		if fmt.Sprint(before.Get(f)) != fmt.Sprint(c.Get(f)) {
-			return true
-		}
-	}
-	return false
-}
+func visiblyChanged(c *core.Record) bool { return changed(c, characterFields...) }
 
 // watchChanges turns record changes into news, whatever made them: the Odyle routes,
 // the jobs or a superuser in the PocketBase dashboard.

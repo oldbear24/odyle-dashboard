@@ -12,8 +12,8 @@ import (
 // kinds.cap) with the Odyle clock, and tells the owner once when it will be full within their
 // number of ticks (capTicks, one by default: "spend before the next tick") and once when it is
 // full and losing each tick, if it got there without the first. A pool that dropped again
-// starts over. The state is kept per character (capAlert, hidden from every answer), so a
-// restart does not repeat an alert. Alerts go to the owner only, on the account's topic (its
+// starts over. The state is kept per character (capAlert in its bookkeeping, character_jobs),
+// so a restart does not repeat an alert. Alerts go to the owner only, on the account's topic (its
 // Windows apps and open dashboards, by their channels) and by Web Push; never to a room or a
 // Discord channel. In quiet hours none is sent; one still due comes after them. Characters
 // not read for 30 days are left alone.
@@ -67,14 +67,14 @@ func capAlerts(app core.App) (result, error) {
 	if rules.Paused {
 		return result{Skipped: "clock"}, nil
 	}
-	ids := []struct {
+	accounts := []struct {
 		Id string `db:"id"`
 	}{}
-	if err := app.DB().NewQuery("SELECT id FROM users WHERE json_extract(notifications, '$.kinds.cap') = 1").All(&ids); err != nil {
+	if err := app.DB().NewQuery("SELECT id FROM users WHERE json_extract(notifications, '$.kinds.cap') = 1").All(&accounts); err != nil {
 		return result{}, err
 	}
 	at, out := time.Now(), result{}
-	for _, row := range ids {
+	for _, row := range accounts {
 		user, err := app.FindRecordById("users", row.Id)
 		if err != nil {
 			continue
@@ -88,9 +88,14 @@ func capAlerts(app core.App) (result, error) {
 			out.fail(err.Error())
 			continue
 		}
+		told, err := jobsOfMany(app, ids(found))
+		if err != nil {
+			out.fail(err.Error())
+			continue
+		}
 		for _, c := range views[Character](found) {
 			state, alert := capState(c, rules, *n.CapTicks, at)
-			before := c.GetString("capAlert")
+			before := told[c.Id].CapAlert
 			if state == before {
 				continue
 			}
@@ -100,8 +105,8 @@ func capAlerts(app core.App) (result, error) {
 				pushCapAlert(app, user, n, alert)
 				out.Done++
 			}
-			// Only this field: a reading saved meanwhile keeps its own.
-			if _, err := app.DB().NewQuery("UPDATE characters SET capAlert = {:state} WHERE id = {:id}").Bind(dbx.Params{"state": state, "id": c.Id}).Execute(); err != nil {
+			// Only the bookkeeping: a reading saved meanwhile keeps the character as it is.
+			if err := writeJobs(app, c.Id, map[string]any{"capAlert": state}); err != nil {
 				out.fail(err.Error())
 			}
 		}

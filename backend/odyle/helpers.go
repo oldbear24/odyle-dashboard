@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -108,6 +109,17 @@ func anys(values []string) []any {
 func contains(values []string, value string) bool {
 	for _, v := range values {
 		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
+// changed reports whether any of the record's fields differs from the record as it was loaded.
+func changed(r *core.Record, fields ...string) bool {
+	before := r.Original()
+	for _, f := range fields {
+		if fmt.Sprint(before.Get(f)) != fmt.Sprint(r.Get(f)) {
 			return true
 		}
 	}

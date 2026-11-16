@@ -255,8 +255,7 @@ func fixtures(se *core.ServeEvent) {
 		if err != nil {
 			return nil, err
 		}
-		c.Set("portraitCheckedAt", time.Now().Add(-48*time.Hour).UTC().Format(isoLayout))
-		return map[string]any{}, e.App.Save(c)
+		return map[string]any{}, writeJobs(e.App, c.Id, map[string]any{"portraitCheckedAt": ago(48 * time.Hour)})
 	})
 	fixture(se, "expire-invite", func(e *core.RequestEvent, b body) (any, error) {
 		code, _ := b.text("code")

@@ -179,11 +179,11 @@ func characterOn(t *testing.T, app core.App, name, server, region string) string
 
 func portraitMisses(t *testing.T, app core.App, id string) int {
 	t.Helper()
-	c, err := findAs[Character](app, "characters", id)
+	jobs, err := jobsOf(app, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return c.PortraitMisses()
+	return jobs.PortraitMisses
 }
 
 func TestPortraitSearchReadsFurtherPagesForShortNames(t *testing.T) {
@@ -251,7 +251,7 @@ func TestNorthAmericaWestIsSearchedWhenEastFails(t *testing.T) {
 	if err == nil || err.Error() != "The official character search is unavailable (503)." || portraitMisses(t, app, east) != 0 {
 		t.Fatalf("East's failure: %v, %d misses", err, portraitMisses(t, app, east))
 	}
-	if c, _ := findAs[Character](app, "characters", east); c.GetString("portraitCheckedAt") == "" {
+	if jobs, _ := jobsOf(app, east); jobs.PortraitCheckedAt == "" {
 		t.Fatal("the failed lookup was not noted")
 	}
 }
@@ -268,8 +268,11 @@ func TestMissingPortraitsBackOffAndDormantCharactersWait(t *testing.T) {
 	// set ages the character: its last lookup, misses, picture, last sighting and save.
 	set := func(checked time.Duration, misses int, portrait string, seen, saved time.Duration) {
 		t.Helper()
-		_, err := app.DB().NewQuery("UPDATE characters SET portraitCheckedAt = {:checked}, portraitMisses = {:misses}, portrait = {:portrait}, lastSeenAt = {:seen}, created = {:created} WHERE id = {:id}").
-			Bind(dbx.Params{"checked": at(checked), "misses": misses, "portrait": portrait, "seen": at(seen), "created": ago(saved), "id": id}).Execute()
+		_, err := app.DB().NewQuery("UPDATE characters SET portrait = {:portrait}, lastSeenAt = {:seen}, created = {:created} WHERE id = {:id}").
+			Bind(dbx.Params{"portrait": portrait, "seen": at(seen), "created": ago(saved), "id": id}).Execute()
+		if err == nil {
+			err = writeJobs(app, id, map[string]any{"portraitCheckedAt": at(checked), "portraitMisses": misses})
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,7 +283,7 @@ func TestMissingPortraitsBackOffAndDormantCharactersWait(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return slices.ContainsFunc(found, func(r *core.Record) bool { return r.Id == id })
+		return slices.Contains(found, id)
 	}
 	hour, day := time.Hour, 24*time.Hour
 	for _, c := range []struct {
