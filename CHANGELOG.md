@@ -2,6 +2,21 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.60.0 · 2026-11-16
+
+### New
+- Server operators can keep the characters' portraits and the armory's icons in S3-compatible storage instead of on the server's disk. The pictures already on the disk move there by themselves, and your browser still loads them from the Odyle server and keeps them as before.
+
+### Changed
+- Your characters are kept by their server's id, the number the game gives each server, not only by its name: if AION 2 renames a server, your characters keep their history, room sharing and PvP stats, and show the new name with their next reading.
+- The nightly backups no longer copy the armory's icons and portraits, which are PLAYNC's and come back by themselves, so backups are smaller.
+- Calendar feeds, **Download my data** and deleting an account find what they need without reading every account, room or invite link on the server.
+- The server keeps room sharing, its background jobs' notes on each character and when each Windows app was last in contact in places of their own, which keeps those lookups cheap. Rooms, the sharing switches and the Apps page show the same as before.
+
+### Fixed
+- An armory profile whose pictures the server no longer has, after a restore or a move of its files, fetches them again when you open it, instead of showing empty frames.
+- A character's portrait that went missing from the server's files comes back with its next daily lookup instead of staying blank.
+
 ## 0.59.0 · 2026-11-16
 
 ### New
