@@ -84,11 +84,19 @@ func Register(app core.App) {
 		return configureDiscord(e.App)
 	})
 
-	// A new backup, scheduled or made by hand, shows on the Server status page at once.
+	// A new backup, scheduled or made by hand, shows on the Server status page at once. The
+	// armory's images are a copy of PLAYNC's (armoryimages.go): backups leave them out, and a
+	// restore keeps the ones the server has, so a restored profile that names an image the
+	// server lacks fetches it again when opened.
 	app.OnBackupCreate().BindFunc(func(e *core.BackupEvent) error {
+		e.Exclude = append(e.Exclude, armoryImagesDir)
 		err := e.Next()
 		stateOf(e.App).backups.drop()
 		return err
+	})
+	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
+		e.Exclude = append(e.Exclude, armoryImagesDir)
+		return e.Next()
 	})
 
 	// Every account deletion (by its owner, in the superuser dashboard or for inactivity)

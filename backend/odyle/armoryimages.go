@@ -68,7 +68,11 @@ func iconOf(m map[string]any, key string) string {
 	return name
 }
 
-func imageDir(app core.App) string { return filepath.Join(app.DataDir(), "armory_images") }
+// armoryImagesDir is the folder of pb_data the images are kept in. They are a copy of
+// PLAYNC's, so backups leave it out, and a restore keeps the one the server has (register.go).
+const armoryImagesDir = "armory_images"
+
+func imageDir(app core.App) string { return filepath.Join(app.DataDir(), armoryImagesDir) }
 
 // eachIcon calls visit with every icon name the profile holds.
 func (p *armoryProfile) eachIcon(visit func(name *string)) {
