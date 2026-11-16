@@ -31,7 +31,7 @@ func TestOffHostBackupsComeFromTheEnvironment(t *testing.T) {
 		t.Fatalf("without variables: %q", problem)
 	}
 	set := func(values map[string]string) {
-		for _, name := range append(backupStorage, "FORCE_PATH_STYLE") {
+		for _, name := range append(s3Variables, "FORCE_PATH_STYLE") {
 			t.Setenv("ODYLE_BACKUP_S3_"+name, values[name])
 		}
 	}

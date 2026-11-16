@@ -1007,13 +1007,16 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("partial", false).set("classIcon", "").set("fetchedAt", "").set("error", "")
 	var fetched time.Time
-	outdated := false
+	outdated, missing := false, false
 	if record != nil {
 		fetched = record.GetDateTime("fetchedAt").Time()
 		profile := parseJSON(record.GetString("profile"), "null")
 		if kept, ok := profile.(map[string]any); ok {
 			outdated = number(kept["v"]) < armoryVersion
 		}
+		// A profile that names an image the server no longer keeps (a restore, a change of the
+		// file storage) is fetched again, which keeps its images, as a Refresh would.
+		missing = imagesMissing(e.App, record.GetString("profile"))
 		out.set("profile", profile).set("fetchedAt", isoTime(fetched)).set("error", record.GetString("error"))
 		// Opened: kept for another 30 days (written at most daily).
 		if record.GetDateTime("viewedAt").Time().Before(time.Now().Add(-24 * time.Hour)) {
@@ -1024,7 +1027,7 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	age := time.Since(fetched)
 	state := armoryState{State: "fresh"}
-	if record == nil || age > armoryRefresh || outdated || e.Request.URL.Query().Get("refresh") == "1" && age > armoryReaderRefresh {
+	if record == nil || age > armoryRefresh || outdated || (missing || e.Request.URL.Query().Get("refresh") == "1") && age > armoryReaderRefresh {
 		if readSettings(e.App).ArmoryPaused {
 			state = armoryState{State: "paused"}
 		} else {
@@ -1263,6 +1266,8 @@ func armoryStatus(app core.App) map[string]any {
 	_ = app.DB().NewQuery("SELECT COUNT(*) FROM armory_profiles").Row(&kept)
 	_ = app.DB().NewQuery("SELECT COUNT(*) FROM armory_profiles WHERE hidden = TRUE").Row(&hidden)
 	out["profiles"], out["hidden"], out["paused"] = kept, hidden, readSettings(app).ArmoryPaused
-	out["images"], out["imageBytes"] = armoryImages(app)
+	// The images the index counts (imagestore.go): in the S3 storage (imagesOffHost) or on the
+	// data volume, and why the storage could not be listed.
+	out["images"], out["imageBytes"], out["imagesOffHost"], out["imagesError"] = imagesOf(app).stats(app)
 	return out
 }

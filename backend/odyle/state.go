@@ -48,6 +48,12 @@ type state struct {
 	backupSetup string     // why ODYLE_BACKUP_S3_* did not apply (backups.go)
 	proxySetup  string     // why ODYLE_TRUSTED_PROXY_* did not apply (proxy.go)
 
+	images       imageStore   // the armory's images and their index (imagestore.go); has its own lock
+	storageSetup string       // why ODYLE_STORAGE_S3_* did not apply (storage.go)
+	storageMove  *storageMove // the last move of the files on disk into the S3 storage
+	moving       atomic.Bool  // a move runs now
+	serving      atomic.Bool  // the server serves (moves start only then)
+
 	releaseAt        time.Time // the last lookup
 	release          map[string]any
 	releaseETag      string // of release, for asking GitHub whether it changed

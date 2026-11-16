@@ -54,6 +54,9 @@ func Register(app core.App) {
 		}
 		// The newest Windows release, so the first visitors need not wait for GitHub.
 		go latestRelease(se.App)
+		// The files on disk move into the S3 storage when it is on (storage.go).
+		stateOf(se.App).serving.Store(true)
+		startMove(se.App)
 		return se.Next()
 	})
 
@@ -71,15 +74,15 @@ func Register(app core.App) {
 		s := stateOf(e.App)
 		// Off-host backups and the trusted proxy come from the environment (backups.go,
 		// proxy.go); a wrong value is logged and shown on the Server status page.
-		backupSetup, proxySetup := configureBackups(e.App), configureProxy(e.App)
-		for _, problem := range []string{backupSetup, proxySetup} {
+		backupSetup, storageSetup, proxySetup := configureBackups(e.App), configureStorage(e.App), configureProxy(e.App)
+		for _, problem := range []string{backupSetup, storageSetup, proxySetup} {
 			if problem != "" {
 				warn(e.App, "Odyle could not apply a setting from the environment", "error", problem)
 			}
 		}
 		s.mu.Lock()
 		s.startedAt = now()
-		s.backupSetup, s.proxySetup = backupSetup, proxySetup
+		s.backupSetup, s.storageSetup, s.proxySetup = backupSetup, storageSetup, proxySetup
 		s.mu.Unlock()
 		return configureDiscord(e.App)
 	})
@@ -97,6 +100,15 @@ func Register(app core.App) {
 	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
 		e.Exclude = append(e.Exclude, armoryImagesDir)
 		return e.Next()
+	})
+
+	// A superuser turning the S3 file storage on moves the files on disk into it (storage.go).
+	app.OnSettingsReload().BindFunc(func(e *core.SettingsReloadEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		startMove(e.App)
+		return nil
 	})
 
 	// Every account deletion (by its owner, in the superuser dashboard or for inactivity)

@@ -295,6 +295,9 @@ func gamePortrait(app core.App, id string) error {
 	if err != nil {
 		return err
 	}
+	// A portrait the file storage does not hold (lost in a change of storage) is kept again,
+	// whatever its digest.
+	lost := before.Portrait() != "" && !portraitStored(app, before)
 	found, hit, failure := fetchPortrait(serversOf(app), before.Name(), before.Server(), before.Region())
 	// Read and written in one transaction after PLAYNC answered: a reading saved meanwhile
 	// is kept. The lookup is noted in the character's bookkeeping (character_jobs); the
@@ -310,7 +313,7 @@ func gamePortrait(app core.App, id string) error {
 			return err
 		}
 		noted := map[string]any{"portraitCheckedAt": stamp(time.Now())}
-		if found != nil && (found.hash != jobs.PortraitHash || c.Portrait() == "") {
+		if found != nil && (found.hash != jobs.PortraitHash || c.Portrait() == "" || lost && c.Portrait() == before.Portrait()) {
 			c.SetPortrait(found.file)
 			noted["portraitHash"] = found.hash
 		}
@@ -336,6 +339,18 @@ func gamePortrait(app core.App, id string) error {
 		return err
 	}
 	return failure
+}
+
+// portraitStored reports whether the file storage holds the character's portrait; true when it
+// cannot tell.
+func portraitStored(app core.App, c *Character) bool {
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return true
+	}
+	defer fsys.Close()
+	there, err := fsys.Exists(c.BaseFilesPath() + "/" + c.Portrait())
+	return err != nil || there
 }
 
 // portraitsDue are the characters the job looks up: never looked up yet (saved while

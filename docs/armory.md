@@ -108,12 +108,12 @@ Left out: rankings (the Global pages show none) and the official pages' own text
 
 ## Images
 
-The dashboard's content security policy allows images only from the Odyle server, so browsers never load PLAYNC's images (`backend/odyle/armoryimages.go`). The queue downloads the portrait and the icons a profile names while it looks the character up, six at a time, and keeps them as files in `pb_data/armory_images`:
+The dashboard's content security policy allows images only from the Odyle server, so browsers never load PLAYNC's images (`backend/odyle/armoryimages.go`). The queue downloads the portrait and the icons a profile names while it looks the character up, six at a time, and keeps them in `pb_data/armory_images`, or under `armory_images/` in S3 storage when the operator sets it up ([deployment](deployment.md#files-in-s3-storage)):
 - an icon under PLAYNC's file name, shrunk from 256 or 512 pixels to at most 112 (twice the largest the page shows), some 20 KB each; an icon the server keeps already is not downloaded again;
 - the portrait under the SHA-256 of its bytes (`portrait-<32 hex>.jpg`), downloaded at every lookup since it can change;
 - each class's emblem under PLAYNC's file name (`class_icon_chanter.png`), shrunk like the icons, named in `game_classes.icon`; rooms and profiles show it beside the class.
 
-`GET /api/odyle/armory-images/<name>` serves them, kept for a year by browsers. An image that could not be downloaded is left out of the profile, and the page shows the initials or an empty frame. Two characters at the level cap need some 130 images, 3 MB; the nightly `odyle-armory` job deletes the images no kept profile names, so the folder follows the kept profiles. It is part of `pb_data`, so backups include it.
+`GET /api/odyle/armory-images/<name>` serves them, kept for a year by browsers; a browser asking whether one changed is told it did not without the storage being asked. The server keeps an index of the images stored (`backend/odyle/imagestore.go`), read from the storage once after a start and again by the nightly clean-up, so a lookup knows which images it has without asking the bucket for each, and a name it does not keep answers 404 without asking either. An image that could not be downloaded is left out of the profile, and the page shows the initials or an empty frame. Two characters at the level cap need some 130 images, 3 MB; the nightly `odyle-armory` job deletes the images no kept profile names, so the store follows the kept profiles. Backups leave the images out (dashboard 0.60.0), as copies of PLAYNC's, and a restore keeps the ones the server has: a kept profile that names an image the server does not keep (after a restore, or a change of the file storage) is fetched again when it is opened and at least 15 minutes old, which keeps its images again.
 
 ## How often PLAYNC is asked
 
