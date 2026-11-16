@@ -6,7 +6,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// Global server names (backend/odyle/servers.go): Windows apps before 0.33.1 named seven Global
+// Global server names (backend/odyle/servers.go): Windows apps before 0.34.0 named seven Global
 // servers after a third-party table, so their characters and the players of their PvP events
 // were saved under another server's name, for example Gauss (1321) as Poeta. Each name moves to
 // the server its id belongs to. Agnita, an older app's name for Tassin, moves first, since

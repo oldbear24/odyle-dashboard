@@ -195,7 +195,7 @@ func TestArmoryServerIdsBelongToTheirRegion(t *testing.T) {
 		name   string
 	}{{"eu", 2304, "Lumiel"}, {"eu", 1301, "Siel"}, {"nae", 1109, "Hithanya"}, {"nae", 1150, ""}, {"naw", 2201, "Israphel"}, {"as", 1503, "Vaizel"},
 		{"nae", 2304, ""}, {"eu", 2351, ""}, {"eu", 2300, ""}, {"eu", 3304, ""}, {"xx", 2304, ""}} {
-		if got := armoryServer(c.region, c.id); got != c.name {
+		if got := staticServers().inRegion(c.region, c.id); got != c.name {
 			t.Errorf("%s %d: %q, want %q", c.region, c.id, got, c.name)
 		}
 	}
@@ -205,14 +205,14 @@ func TestArmoryServerIdsBelongToTheirRegion(t *testing.T) {
 // whose id starts with "missing" are not listed, "refused" ones get 429; gate, when set, holds
 // each answer, and held the item and board pages'. lookups counts the info pages asked for
 // (one a lookup), details the item and board pages, images the icons and portraits, and
-// together the most images downloaded at once; classLists the class lists and classIcons the
-// class emblems (the Ranger's is missing).
+// together the most images downloaded at once; classLists the class lists, classIcons the
+// class emblems (the Ranger's is missing) and serverLists the server lists.
 type armoryStand struct {
-	lookups, details, images, searches atomic.Int32
-	downloading, together              atomic.Int32
-	classLists, classIcons             atomic.Int32
-	gate, held                         chan struct{}
-	url                                string
+	lookups, details, images, searches  atomic.Int32
+	downloading, together               atomic.Int32
+	classLists, classIcons, serverLists atomic.Int32
+	gate, held                          chan struct{}
+	url                                 string
 }
 
 // download counts an image being downloaded, for a moment, alongside the others.
@@ -256,6 +256,19 @@ func (s *armoryStand) serve(t *testing.T) {
 			s.download()
 			w.Header().Set("Content-Type", "image/png")
 			w.Write(pngOf(t, 80))
+			return
+		}
+		if r.URL.Path == "/en-us/api/gameinfo/servers" {
+			// Each region lists its first two servers of each race.
+			s.serverLists.Add(1)
+			digit := map[string]int{"nae": 1, "naw": 2, "eu": 3, "la": 4, "as": 5}[q.Get("region")]
+			list := []any{}
+			for _, race := range []int{1, 2} {
+				for at, name := range map[int][]string{1: elyos, 2: asmodian}[race][:2] {
+					list = append(list, map[string]any{"raceId": race, "serverId": race*1000 + digit*100 + at + 1, "serverName": name})
+				}
+			}
+			json.NewEncoder(w).Encode(map[string]any{"serverList": list})
 			return
 		}
 		if r.URL.Path == "/en-us/api/gameinfo/pcdata" {

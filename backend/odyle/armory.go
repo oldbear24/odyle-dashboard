@@ -67,21 +67,9 @@ func armoryURL() string {
 var armoryIds = regexp.MustCompile(`^[A-Za-z0-9_-]{8,90}={0,2}$`)
 
 // armoryServer is the name of a PLAYNC server id in a search region (searchRegions), or ""
-// when the id does not belong to it: race * 1000 + region digit * 100 + list index + 1.
-func armoryServer(region string, serverId int) string {
-	for _, regions := range searchRegions {
-		for _, r := range regions {
-			if r.code != region || serverId/100%10 != r.digit {
-				continue
-			}
-			at := serverId % 100
-			names := map[int][]string{1: elyos, 2: asmodian}[serverId/1000]
-			if at >= 1 && at <= len(names) && serverId < 3000 {
-				return names[at-1]
-			}
-		}
-	}
-	return ""
+// when the id does not belong to it or no server of that id is known (servers.go).
+func armoryServer(app core.App, region string, serverId int) string {
+	return serversOf(app).inRegion(region, serverId)
 }
 
 // armoryVersion is the shape of the kept profiles: one kept in an older shape (without item
@@ -1006,7 +994,7 @@ func isoTime(t time.Time) string {
 func armoryRoute(e *core.RequestEvent) error {
 	region, characterId := e.Request.PathValue("region"), e.Request.PathValue("characterId")
 	serverId, _ := strconv.Atoi(e.Request.PathValue("serverId"))
-	server := armoryServer(region, serverId)
+	server := armoryServer(e.App, region, serverId)
 	if server == "" || !armoryIds.MatchString(characterId) {
 		return notFound("This character is not in the armory.")
 	}
@@ -1113,7 +1101,7 @@ func (s *armorySearches) slot() error {
 
 // find lists the characters the official search finds by a name on a server (searches),
 // those named exactly so first, at most 20.
-func (s *armorySearches) find(name, server, region string) ([]armoryHit, error) {
+func (s *armorySearches) find(book serverBook, name, server, region string) ([]armoryHit, error) {
 	key := region + "|" + server + "|" + strings.ToLower(name)
 	s.mu.Lock()
 	if kept, ok := s.kept[key]; ok && time.Since(kept.at) < armorySearchKeep {
@@ -1122,7 +1110,7 @@ func (s *armorySearches) find(name, server, region string) ([]armoryHit, error) 
 	}
 	s.mu.Unlock()
 	hits := []armoryHit{}
-	for _, at := range searches(server, region) {
+	for _, at := range book.searches(server, region) {
 		if err := s.slot(); err != nil {
 			return nil, err
 		}
@@ -1195,13 +1183,14 @@ func armorySearchRoute(e *core.RequestEvent) error {
 	if !armoryName(name) {
 		return badRequest("Search a character name of 2 to 16 letters or digits.")
 	}
-	if len(searches(server, region)) == 0 {
+	book := serversOf(e.App)
+	if len(book.searches(server, region)) == 0 {
 		return badRequest("Choose the region and server of the character.")
 	}
 	if readSettings(e.App).ArmoryPaused {
 		return unavailable("The armory is paused for now. Try again later.")
 	}
-	hits, err := stateOf(e.App).armorySearch.find(name, server, region)
+	hits, err := stateOf(e.App).armorySearch.find(book, name, server, region)
 	if errors.Is(err, errArmoryBusy) {
 		return unavailable("Many lookups at the moment. Try again in a minute.")
 	}
@@ -1219,14 +1208,19 @@ func armorySearchRoute(e *core.RequestEvent) error {
 }
 
 // armoryServersRoute answers GET /api/odyle/armory/servers: the servers of each region by
-// race, for the armory's search form.
+// race, for the armory's search form, and with their ids, for the Windows app (servers.go): the
+// ones PLAYNC last listed in the region, or every server known while it has listed none.
 func armoryServersRoute(e *core.RequestEvent) error {
-	regions := []string{"GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_EU", "GLOBAL_SA", "GLOBAL_ASIA"}
-	out := []map[string]any{}
-	for _, r := range regions {
-		out = append(out, map[string]any{"region": r, "elyos": elyos, "asmodian": asmodian})
+	book, out := serversOf(e.App), []map[string]any{}
+	for _, r := range []string{"GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_EU", "GLOBAL_SA", "GLOBAL_ASIA"} {
+		servers := book.regionServers(searchRegions[r][0].digit)
+		races := map[int][]string{1: {}, 2: {}}
+		for _, s := range servers {
+			races[s.Id/1000] = append(races[s.Id/1000], s.Name)
+		}
+		out = append(out, map[string]any{"region": r, "elyos": races[1], "asmodian": races[2], "servers": servers})
 	}
-	e.Response.Header().Set("Cache-Control", "public, max-age=86400")
+	e.Response.Header().Set("Cache-Control", "public, max-age=3600")
 	return e.JSON(200, map[string]any{"regions": out})
 }
 
@@ -1245,13 +1239,14 @@ func cleanArmory(app core.App) (result, error) {
 }
 
 // armoryNight is the nightly odyle-armory job: it forgets the profiles and images nobody
-// needs any more (cleanArmory) and reads PLAYNC's classes again (classes.go).
+// needs any more (cleanArmory) and reads PLAYNC's classes (classes.go) and servers (servers.go)
+// again.
 func armoryNight(app core.App) (result, error) {
 	out, err := cleanArmory(app)
 	if err != nil {
 		return out, err
 	}
-	return out, learnClasses(app)
+	return out, errors.Join(learnClasses(app), learnServers(app))
 }
 
 // armoryStatus is the armory's part of the Server status page.

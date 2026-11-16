@@ -68,25 +68,6 @@ func index(names []string, name string) int {
 	return -1
 }
 
-func searches(server, region string) []search {
-	elyosIndex, asmodianIndex := index(elyos, server), index(asmodian, server)
-	race := 0
-	if elyosIndex >= 0 {
-		race = 1
-	} else if asmodianIndex >= 0 {
-		race = 2
-	}
-	if race == 0 {
-		return nil
-	}
-	at := max(elyosIndex, asmodianIndex) + 1
-	out := []search{}
-	for _, r := range searchRegions[region] {
-		out = append(out, search{serverId: race*1000 + r.digit*100 + at, region: r.code})
-	}
-	return out
-}
-
 var tags = regexp.MustCompile(`<[^>]*>`)
 
 func plainName(name any) string {
@@ -124,9 +105,9 @@ type officialHit struct {
 
 // findOfficial is the character as the search lists it. A failed search returns its error only
 // when no other search region listed the character.
-func findOfficial(name, server, region string) (officialHit, error) {
+func findOfficial(book serverBook, name, server, region string) (officialHit, error) {
 	var failure error
-	for _, s := range searches(server, region) {
+	for _, s := range book.searches(server, region) {
 		hit, err := searchServer(name, s)
 		if hit.id != "" {
 			return hit, nil
@@ -185,8 +166,8 @@ type portrait struct {
 // fetchPortrait loads the character's official portrait, or nil when the search does
 // not list it (new, renamed or deleted characters, unknown servers), with what the search
 // lists for it.
-func fetchPortrait(name, server, region string) (*portrait, officialHit, error) {
-	hit, err := findOfficial(name, server, region)
+func fetchPortrait(book serverBook, name, server, region string) (*portrait, officialHit, error) {
+	hit, err := findOfficial(book, name, server, region)
 	if err != nil || hit.link == "" {
 		return nil, hit, err
 	}
@@ -314,7 +295,7 @@ func gamePortrait(app core.App, id string) error {
 	if err != nil {
 		return err
 	}
-	found, hit, failure := fetchPortrait(before.Name(), before.Server(), before.Region())
+	found, hit, failure := fetchPortrait(serversOf(app), before.Name(), before.Server(), before.Region())
 	// Saved from a fresh copy in one transaction: a reading saved while PLAYNC answered,
 	// or saved meanwhile by another request, is kept. Rooms hear of a new picture from
 	// the character's record hooks (realtime.go).

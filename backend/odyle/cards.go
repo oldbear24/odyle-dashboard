@@ -194,7 +194,7 @@ func cardChoice(e *core.RequestEvent) error {
 		serverId, _ := strconv.Atoi(b.str("serverId"))
 		design, _ := b.text("design")
 		finish, _ := b.text("finish")
-		if armoryServer(region, serverId) == "" || !armoryIds.MatchString(characterId) {
+		if armoryServer(app, region, serverId) == "" || !armoryIds.MatchString(characterId) {
 			return nil, notFound("This character is not in the armory.")
 		}
 		if !slices.Contains(cardDesigns, design) || !slices.Contains(cardFinishes, finish) {
