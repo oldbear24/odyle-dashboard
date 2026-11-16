@@ -34,8 +34,8 @@ func TestSharesKeepTheirAnswers(t *testing.T) {
 	if got := shareOf(first.Id, "true"); len(got) != 2 || got[0] != second.Id || got[1] != first.Id {
 		t.Fatalf("shared in order %v", got)
 	}
-	if got := shareOf(second.Id, "true"); len(got) != 2 {
-		t.Fatalf("shared twice: %v", got)
+	if got := shareOf(second.Id, "true"); len(got) != 2 || got[0] != second.Id || got[1] != first.Id {
+		t.Fatalf("shared twice, the order changed: %v", got)
 	}
 	rooms := ask(t, app, http.MethodGet, "/api/odyle/rooms", auth, "", 200)
 	if listed := rooms["rooms"].([]any)[0].(map[string]any); asJSON(t, listed["sharedCharacters"]) != `["`+second.Id+`","`+first.Id+`"]` || listed["sharing"] != true {
@@ -111,5 +111,23 @@ func TestSeenByFollowsTheShares(t *testing.T) {
 	}
 	if err := seenBy(app, character, owner.Id); err != nil {
 		t.Fatalf("not seen by its owner: %v", err)
+	}
+	// Handed to another account (a superuser's edit), it is no longer shared by its old owner.
+	c.Set("user", stranger.Id)
+	if err := app.Save(c); err != nil {
+		t.Fatal(err)
+	}
+	moved := viewOf[Character](c)
+	if err := seenBy(app, moved, mate.Id); err == nil {
+		t.Fatal("seen through its old owner's share")
+	}
+	members, err := roomMembers(app, room.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range members {
+		if len(m.Shared(app)) != 0 {
+			t.Fatalf("%s still shares %v", m.User(), m.Shared(app))
+		}
 	}
 }

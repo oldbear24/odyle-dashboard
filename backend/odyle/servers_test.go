@@ -246,11 +246,20 @@ func TestCharactersAreFoundByServerId(t *testing.T) {
 	if c, _ := app.FindRecordById("characters", far); c.GetInt("serverId") != 1324 {
 		t.Fatalf("Farland's character has id %d", c.GetInt("serverId"))
 	}
-	// Renamed, the server keeps its character: a reading under the new name finds it and names it so.
+	// Renamed, the server keeps its character, also when something saves it before its next reading
+	// (its reader session ending, say): a reading under the new name finds it and names it so.
 	if _, err := app.DB().NewQuery("UPDATE game_servers SET name = 'Farreach' WHERE serverId = 1324").Execute(); err != nil {
 		t.Fatal(err)
 	}
 	stateOf(app).serverBook.Store(nil)
+	between, _ := app.FindRecordById("characters", far)
+	between.Set("valid", false)
+	if err := app.Save(between); err != nil {
+		t.Fatal(err)
+	}
+	if kept, _ := app.FindRecordById("characters", far); kept.GetInt("serverId") != 1324 {
+		t.Fatalf("saved after the rename, the character has id %d", kept.GetInt("serverId"))
+	}
 	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
 	answer := ask(t, app, http.MethodPost, "/api/odyle/report", auth, `{"sessionId":"`+session.Id+`","sequence":1,"characterName":"Kael","server":"Farreach","region":"GLOBAL_EU","value":120,"source":"packet","parserVersion":"global-reference-v2","confirmed":true}`, 200)
 	if c, _ := answer["character"].(map[string]any); c["id"] != far || c["server"] != "Farreach" || c["serverId"] != float64(1324) {

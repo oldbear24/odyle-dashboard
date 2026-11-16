@@ -294,7 +294,7 @@ func armoryImageRoute(e *core.RequestEvent) error {
 	file, at, err := store.open(e.App, name)
 	if err != nil {
 		if errors.Is(err, blob.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
-			store.forget(name)
+			store.forget(e.App, name)
 		} else {
 			warn(e.App, "Odyle could not read an armory image", "image", name, "error", message(err))
 		}
@@ -349,8 +349,12 @@ func cleanArmoryImages(app core.App) (int, error) {
 }
 
 // imagesMissing reports whether a kept profile (its JSON) names an image the server does not
-// keep: after a restore, or a change of the file storage. Not when the storage cannot be listed.
+// keep: after a restore, or a change of the file storage. Not while the index cannot tell, nor
+// while the files on disk move into the S3 storage (storage.go), which holds the rest soon.
 func imagesMissing(app core.App, profile string) bool {
+	if stateOf(app).moving.Load() {
+		return false
+	}
 	store := imagesOf(app)
 	for _, m := range imageMentions.FindAllStringSubmatch(profile, -1) {
 		if _, known, err := store.entry(app, m[1]); err == nil && !known {

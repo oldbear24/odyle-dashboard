@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/filesystem"
@@ -78,26 +79,31 @@ func startMove(app core.App) {
 	}()
 }
 
-// moveToBucket moves the files kept on disk into the S3 storage, once it is on: PocketBase's own
-// (pb_data/storage, the characters' portraits) and the armory's images (pb_data/armory_images).
-// Each is uploaded unless the bucket holds it already, then deleted from the disk; one that
-// fails stays there for the next move, and the folders left empty go.
-func moveToBucket(app core.App) *storageMove {
+// moveToBucket moves the files kept on disk into the S3 storage that is on when it starts:
+// PocketBase's own (pb_data/storage, the characters' portraits) and the armory's images
+// (pb_data/armory_images). Each is uploaded, then deleted from the disk; one that fails stays
+// there for the next move, and the folders left empty go. It stops once the file storage
+// changes (switched off, or another bucket), leaving the rest on disk where it belongs then.
+func moveToBucket(app core.App) *storageMove { return moveInto(app, app.Settings().S3) }
+
+// moveInto moves the files on disk into the given S3 storage, while it is the app's.
+func moveInto(app core.App, config core.S3Config) *storageMove {
 	move := &storageMove{}
 	defer func() { move.At = now() }()
-	if !app.Settings().S3.Enabled {
+	if !config.Enabled {
 		return move
 	}
 	failed := func(err error) {
 		move.Failed++
 		move.Error = message(err)
 	}
-	bucket, err := app.NewFilesystem()
-	if err != nil {
-		failed(err)
-		return move
+	changed := func() bool {
+		if app.Settings().S3 == config {
+			return false
+		}
+		move.Error = "The file storage changed during the move; the rest stays on disk."
+		return true
 	}
-	defer bucket.Close()
 	if dir := filepath.Join(app.DataDir(), core.LocalStorageDirName); exists(dir) {
 		local, err := filesystem.NewLocal(dir)
 		if err != nil {
@@ -110,7 +116,10 @@ func moveToBucket(app core.App) *storageMove {
 			failed(err)
 		}
 		for _, f := range files {
-			if err := moveFile(local, bucket, f.Key); err != nil {
+			if changed() {
+				return move
+			}
+			if err := moveFile(local, config, f.Key); err != nil {
 				failed(err)
 				continue
 			}
@@ -120,15 +129,16 @@ func moveToBucket(app core.App) *storageMove {
 		removeEmptyDirs(dir)
 	}
 	if dir := imageDir(app); exists(dir) {
-		store := imagesOf(app)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			failed(err)
 		}
 		for _, entry := range entries {
+			if changed() {
+				return move
+			}
 			path, name := filepath.Join(dir, entry.Name()), entry.Name()
-			stat, err := entry.Info()
-			if err != nil || entry.IsDir() {
+			if entry.IsDir() {
 				continue
 			}
 			// A download the server stopped in.
@@ -136,48 +146,45 @@ func moveToBucket(app core.App) *storageMove {
 				_ = os.Remove(path)
 				continue
 			}
-			if !store.has(app, name) {
-				image, err := os.ReadFile(path)
-				if err == nil {
-					err = store.put(app, name, imageTypesByExtension[filepath.Ext(name)], image)
-				}
-				if err != nil {
-					failed(err)
-					continue
-				}
+			image, err := os.ReadFile(path)
+			if err == nil {
+				err = putImage(app, config, name, imageTypesByExtension[filepath.Ext(name)], image)
 			}
-			if err := os.Remove(path); err != nil {
+			if err == nil {
+				err = os.Remove(path)
+			}
+			if err != nil {
 				failed(err)
 				continue
 			}
+			imagesOf(app).noted(config, name, &imageEntry{size: int64(len(image)), at: time.Now()})
 			move.Files++
-			move.Bytes += stat.Size()
+			move.Bytes += int64(len(image))
 		}
 		_ = os.Remove(dir) // once empty
 	}
 	return move
 }
 
-// moveFile copies a file of the local storage into the bucket, unless it holds it already, and
-// deletes it from the disk.
-func moveFile(local, bucket *filesystem.System, key string) error {
-	there, err := bucket.Exists(key)
+// moveFile copies a file of the local storage into the bucket and deletes it from the disk. A
+// file a move before already copied is copied again: its content is the same.
+func moveFile(local *filesystem.System, config core.S3Config, key string) error {
+	r, err := local.GetReader(key)
 	if err != nil {
 		return err
 	}
-	if !there {
-		r, err := local.GetReader(key)
-		if err != nil {
-			return err
-		}
-		content, err := io.ReadAll(r)
-		r.Close()
-		if err != nil {
-			return err
-		}
-		if err := bucket.Upload(content, key); err != nil {
-			return err
-		}
+	content, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		return err
+	}
+	bucket, done, err := openBucket(config, bucketTimeouts.write)
+	if err != nil {
+		return err
+	}
+	defer done()
+	if err := bucket.Upload(content, key); err != nil {
+		return err
 	}
 	return local.Delete(key)
 }

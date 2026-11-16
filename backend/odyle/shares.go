@@ -14,7 +14,8 @@ import (
 // account hear of each share that comes or goes (watchShares).
 
 // loadShares reads the characters the memberships share that are not read yet, in one query,
-// in the order they were shared.
+// in the order they were shared. Only the member's own characters count: a share of a character
+// that changed hands (a superuser's edit) shares nothing.
 func loadShares(app core.App, members []*Member) error {
 	byId, ids := map[string]*Member{}, []any{}
 	for _, m := range members {
@@ -30,7 +31,9 @@ func loadShares(app core.App, members []*Member) error {
 		Member    string `db:"member"`
 		Character string `db:"character"`
 	}{}
-	if err := app.DB().Select("member", "character").From("room_shares").Where(dbx.In("member", ids...)).OrderBy("rowid").All(&rows); err != nil {
+	if err := app.DB().Select("s.member", "s.character").From("room_shares s").
+		InnerJoin("room_members m", dbx.NewExp("m.id = s.member")).InnerJoin("characters c", dbx.NewExp("c.id = s.character AND c.user = m.user")).
+		Where(dbx.In("s.member", ids...)).OrderBy("s.rowid").All(&rows); err != nil {
 		return err
 	}
 	read := map[string][]string{}

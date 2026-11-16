@@ -3,6 +3,7 @@ package odyle
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,11 +26,12 @@ import (
 // objects are put, read (ranges and conditions as net/http serves them), listed and deleted.
 // reads counts the objects read or asked about.
 type fakeS3 struct {
-	mu      sync.Mutex
-	bucket  string
-	objects map[string]fakeObject
-	reads   atomic.Int32
-	url     string
+	mu         sync.Mutex
+	bucket     string
+	objects    map[string]fakeObject
+	reads      atomic.Int32
+	url        string
+	beforeList func() // runs after a listing read the objects and before it answers
 }
 
 type fakeObject struct {
@@ -77,6 +79,11 @@ func newFakeS3(t *testing.T) *fakeS3 {
 				out.Contents = append(out.Contents, content{Key: k, LastModified: o.at.UTC().Format(time.RFC3339), ETag: `"etag"`, Size: int64(len(o.body))})
 			}
 			out.KeyCount = len(keys)
+			if wait := f.beforeList; wait != nil {
+				f.mu.Unlock()
+				wait()
+				f.mu.Lock()
+			}
 			w.Header().Set("Content-Type", "application/xml")
 			xml.NewEncoder(w).Encode(out)
 		case r.Method == http.MethodPut:
@@ -369,5 +376,80 @@ func TestLostPortraitsAreKeptAgain(t *testing.T) {
 	again, _ := findAs[Character](app, "characters", id)
 	if again.Portrait() == "" || again.Portrait() == first || !portraitStored(app, again) {
 		t.Fatalf("the portrait %q was not kept again", again.Portrait())
+	}
+}
+
+// A move sticks to the storage that was on when it started: once the file storage is another
+// (switched off, or another bucket), it stops and leaves the rest on disk.
+func TestAMoveStopsWhenTheStorageChanges(t *testing.T) {
+	app := newTestApp(t)
+	dir := imageDir(app)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Icon_A.png", "Icon_B.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), tinyPNG(t), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := newFakeS3(t)
+	f.useStorage(t, app)
+	other := app.Settings().S3
+	other.Bucket = "another-bucket"
+	move := moveInto(app, other)
+	if move.Files != 0 || !strings.Contains(move.Error, "changed") || len(f.keys("")) != 0 {
+		t.Fatalf("a move to a storage no longer on: %+v, the bucket holds %v", move, f.keys(""))
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 2 {
+		t.Fatalf("%d images left on disk", len(left))
+	}
+	if move := moveToBucket(app); move.Files != 2 || move.Error != "" {
+		t.Fatalf("the move %+v", move)
+	}
+}
+
+// Nothing waits for a listing of the bucket but the call that runs it: meanwhile the index says it
+// cannot tell, an image kept during the listing is in the index after it, and a listing that
+// does not end in time fails instead of holding the index.
+func TestTheImageIndexNeverWaitsForAListing(t *testing.T) {
+	app := newTestApp(t)
+	f := newFakeS3(t)
+	f.useStorage(t, app)
+	gate, listed := make(chan struct{}), make(chan struct{}, 1)
+	f.beforeList = func() { listed <- struct{}{}; <-gate }
+	store := imagesOf(app)
+	first := make(chan error, 1)
+	go func() {
+		_, _, err := store.entry(app, "Icon_Late.png")
+		first <- err
+	}()
+	<-listed
+	if _, known, err := store.entry(app, "Icon_Late.png"); known || !errors.Is(err, errImagesListing) {
+		t.Fatalf("during the listing: %v %v", known, err)
+	}
+	if _, _, _, failure := store.stats(app); failure == "" {
+		t.Fatal("the status does not say the images are being listed")
+	}
+	if err := store.put(app, "Icon_Late.png", "image/png", tinyPNG(t)); err != nil {
+		t.Fatal(err)
+	}
+	close(gate)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if !store.has(app, "Icon_Late.png") {
+		t.Fatal("an image kept during the listing is not in the index")
+	}
+
+	// A bucket that does not answer: the listing gives up, and the index says why.
+	timeouts := bucketTimeouts
+	bucketTimeouts.list = 100 * time.Millisecond
+	t.Cleanup(func() { bucketTimeouts = timeouts })
+	stuck := make(chan struct{})
+	t.Cleanup(func() { close(stuck) })
+	f.beforeList = func() { <-stuck }
+	start := time.Now()
+	if _, err := store.relist(app); err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("a listing that never ends: %v after %v", err, time.Since(start))
 	}
 }

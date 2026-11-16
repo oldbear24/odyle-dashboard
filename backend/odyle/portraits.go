@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -296,8 +297,8 @@ func gamePortrait(app core.App, id string) error {
 		return err
 	}
 	// A portrait the file storage does not hold (lost in a change of storage) is kept again,
-	// whatever its digest.
-	lost := before.Portrait() != "" && !portraitStored(app, before)
+	// whatever its digest; not while the files on disk move into the S3 storage (storage.go).
+	lost := before.Portrait() != "" && !stateOf(app).moving.Load() && !portraitStored(app, before)
 	found, hit, failure := fetchPortrait(serversOf(app), before.Name(), before.Server(), before.Region())
 	// Read and written in one transaction after PLAYNC answered: a reading saved meanwhile
 	// is kept. The lookup is noted in the character's bookkeeping (character_jobs); the
@@ -342,13 +343,16 @@ func gamePortrait(app core.App, id string) error {
 }
 
 // portraitStored reports whether the file storage holds the character's portrait; true when it
-// cannot tell.
+// cannot tell in time.
 func portraitStored(app core.App, c *Character) bool {
 	fsys, err := app.NewFilesystem()
 	if err != nil {
 		return true
 	}
 	defer fsys.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), bucketTimeouts.read)
+	defer cancel()
+	fsys.SetContext(ctx)
 	there, err := fsys.Exists(c.BaseFilesPath() + "/" + c.Portrait())
 	return err != nil || there
 }

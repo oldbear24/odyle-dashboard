@@ -127,10 +127,18 @@ func (b serverBook) id(region, server string) int {
 // saved: a reading, the character route, the daily lookup moving it to NA-West or a superuser in
 // the PocketBase dashboard. A character is one per account, server id and name (sameCharacter),
 // so the server's name is only what clients show; on a server the book does not name, serverId
-// is 0 and the name keeps it apart.
+// is 0 and the name keeps it apart. A character whose server the book no longer names (PLAYNC
+// renamed it) keeps its id while its region and server stay as they are, so its next reading,
+// under the new name, still finds it.
 func watchServerIds(app core.App) {
 	set := func(e *core.RecordEvent) error {
-		e.Record.Set("serverId", serversOf(e.App).id(e.Record.GetString("region"), e.Record.GetString("server")))
+		r := e.Record
+		region, server := r.GetString("region"), r.GetString("server")
+		id := serversOf(e.App).id(region, server)
+		if before := r.Original(); id == 0 && !r.IsNew() && before.GetString("region") == region && before.GetString("server") == server {
+			return e.Next()
+		}
+		r.Set("serverId", id)
 		return e.Next()
 	}
 	app.OnRecordCreate("characters").BindFunc(set)

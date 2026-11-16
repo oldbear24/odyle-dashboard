@@ -1310,6 +1310,8 @@ func sharing(e *core.RequestEvent) error {
 		if err := setShared(app, m, next); err != nil {
 			return nil, err
 		}
+		// In the order kept: one shared already stays where it was.
+		next = m.Shared(app)
 		*affected = append(*affected, m.Room())
 		if enabled {
 			achieved(app, user.Id, nil, true)

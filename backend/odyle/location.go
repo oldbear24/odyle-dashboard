@@ -249,8 +249,8 @@ func seenBy(app core.App, c *Character, userId string) error {
 		return nil
 	}
 	var rooms int
-	if err := app.DB().NewQuery("SELECT COUNT(*) FROM room_shares s JOIN room_members v ON v.room = s.room WHERE s.character = {:id} AND v.user = {:user}").
-		Bind(dbx.Params{"id": c.Id, "user": userId}).Row(&rooms); err != nil {
+	if err := app.DB().NewQuery("SELECT COUNT(*) FROM room_shares s JOIN room_members o ON o.id = s.member AND o.user = {:owner} JOIN room_members v ON v.room = s.room " +
+		"WHERE s.character = {:id} AND v.user = {:user}").Bind(dbx.Params{"id": c.Id, "owner": c.User(), "user": userId}).Row(&rooms); err != nil {
 		return err
 	}
 	if rooms > 0 {
