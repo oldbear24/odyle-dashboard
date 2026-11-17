@@ -107,6 +107,22 @@ func saved(t testing.TB, app core.App, collection string, values map[string]any)
 	return record
 }
 
+// share shares the characters in the membership's room (room_shares).
+func share(t testing.TB, app core.App, member *core.Record, characters ...string) {
+	t.Helper()
+	if err := shareIn(app, viewOf[Member](member), characters...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// sharingMember saves a room membership with the given values that shares the characters.
+func sharingMember(t testing.TB, app core.App, values map[string]any, characters ...string) *core.Record {
+	t.Helper()
+	member := saved(t, app, "room_members", values)
+	share(t, app, member, characters...)
+	return member
+}
+
 // countOf is how many records of the collection there are.
 func countOf(t testing.TB, app core.App, collection string) int64 {
 	t.Helper()

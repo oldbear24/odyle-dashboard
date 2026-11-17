@@ -205,7 +205,7 @@ func timed(name string, handle func(*core.RequestEvent) error) func(*core.Reques
 // fixed order (account, then connection time): ordering by last contact made every
 // heartbeat move its row.
 func apps(app core.App) ([]map[string]any, error) {
-	found, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now}", "-updated", 200, 0, dbx.Params{"now": stamp(time.Now())})
+	found, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now}", "-lastContactAt", 200, 0, dbx.Params{"now": stamp(time.Now())})
 	if err != nil || len(found) == 0 {
 		return []map[string]any{}, err
 	}
@@ -300,7 +300,7 @@ func counts(app core.App) (*object, error) {
 		set("characters", newObject().set("total", count("characters")).set("live", count("characters", dbx.HashExp{"valid": true}, after("lastSeenAt", 45*time.Second)))).
 		set("rooms", newObject().set("total", count("party_rooms")).set("discordReminders", count("party_rooms", dbx.NewExp("discordWebhook != ''")))).
 		set("pairedPcs", newObject().set("total", count("desktop_devices"))).
-		set("readerSessions", newObject().set("open", count("publisher_sessions", open)).set("connected", count("publisher_sessions", open, after("updated", 90*time.Second)))).
+		set("readerSessions", newObject().set("open", count("publisher_sessions", open)).set("connected", count("publisher_sessions", open, after("lastContactAt", 90*time.Second)))).
 		set("plannedRuns", newObject().set("total", count("room_runs")).set("upcoming", count("room_runs", after("startsAt", 0)))).
 		set("historyPoints", newObject().set("total", count("character_readings"))).
 		set("tasks", newObject().set("total", count("user_tasks")))
@@ -322,7 +322,7 @@ func size(app core.App, names ...string) int64 {
 // by the version their session reported ("" when the app did not send one).
 func versions(app core.App) ([]*object, error) {
 	at := time.Now()
-	sessions, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now} && updated >= {:since}", "", 1000, 0, dbx.Params{"now": stamp(at), "since": stamp(at.Add(-90 * time.Second))})
+	sessions, err := app.FindRecordsByFilter("publisher_sessions", "expiresAt > {:now} && lastContactAt >= {:since}", "", 1000, 0, dbx.Params{"now": stamp(at), "since": stamp(at.Add(-90 * time.Second))})
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +360,7 @@ func status(e *core.RequestEvent) error {
 		return err
 	}
 	readers, _ := readerHealth(e.App, time.Now())
-	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("proxy", proxyStatus(e.App)).set("readers", readers).set("armory", armoryStatus(e.App)))
+	return e.JSON(200, out.set("activation", reached).set("backups", backupStatus(e.App)).set("storage", storageStatus(e.App)).set("proxy", proxyStatus(e.App)).set("readers", readers).set("armory", armoryStatus(e.App)))
 }
 
 // retentionRoute answers how many accounts the inactive-account clean-up would delete on

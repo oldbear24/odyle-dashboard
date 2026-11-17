@@ -183,19 +183,17 @@ func spinDay(at time.Time, resetHour int64) string {
 
 // grantDailySpin gives the character's account its spins (slotRules.PerCharacter) for the first
 // accepted reading of the character in a daily period. Single-field updates: the day is claimed
-// first, so a character earns them once a day however many readings come.
+// first in the character's bookkeeping (character_jobs), so a character earns them once a day
+// however many readings come.
 func grantDailySpin(app core.App, c *Character, at time.Time) error {
 	rules := readSettings(app)
+	if rules.Slots.PerCharacter < 1 {
+		return nil
+	}
 	day := spinDay(at, rules.DailyResetHour)
-	if rules.Slots.PerCharacter < 1 || c.GetString("spinDay") == day {
-		return nil
-	}
-	claimed, err := app.DB().NewQuery("UPDATE characters SET spinDay = {:day} WHERE id = {:id} AND spinDay != {:day}").Bind(dbx.Params{"day": day, "id": c.Id}).Execute()
-	if err != nil {
+	claimed, err := upsertJobs(app, c.Id, map[string]any{"spinDay": day}, "{{character_jobs}}.[[spinDay]] != excluded.[[spinDay]]")
+	if err != nil || !claimed {
 		return err
-	}
-	if rows, _ := claimed.RowsAffected(); rows == 0 {
-		return nil
 	}
 	_, err = app.DB().NewQuery("UPDATE users SET spins = spins + {:spins} WHERE id = {:user}").Bind(dbx.Params{"spins": rules.Slots.PerCharacter, "user": c.User()}).Execute()
 	return err

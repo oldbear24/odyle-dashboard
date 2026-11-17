@@ -19,35 +19,47 @@ import (
 // storage at every start, so its secret stays out of the repository and the image. The
 // Server status page shows the newest backup, the schedule and where backups are kept.
 
-var backupStorage = []string{"BUCKET", "REGION", "ENDPOINT", "ACCESS_KEY", "SECRET"}
+// s3Variables are the S3 storage settings a prefix of variables sets (ODYLE_BACKUP_S3_BUCKET, …).
+var s3Variables = []string{"BUCKET", "REGION", "ENDPOINT", "ACCESS_KEY", "SECRET"}
 
-// configureBackups applies ODYLE_BACKUP_S3_* to the backup settings, saving them only
-// when they change, and answers what kept it from doing so (empty when nothing did). A
-// wrong setting never stops the server: backups then stay where they were.
-func configureBackups(app core.App) string {
-	values, missing, given := map[string]string{}, []string{}, false
-	for _, name := range backupStorage {
-		values[name] = strings.TrimSpace(os.Getenv("ODYLE_BACKUP_S3_" + name))
+// s3FromEnvironment reads an S3 storage from the variables with the prefix, with
+// <prefix>FORCE_PATH_STYLE=true for hosts that need it. given is false when none is set;
+// problem says what is missing or wrong, starting with need (what the missing variables are
+// for) and ending with stays (what happens instead).
+func s3FromEnvironment(prefix, need, stays string) (config core.S3Config, given bool, problem string) {
+	values, missing := map[string]string{}, []string{}
+	for _, name := range s3Variables {
+		values[name] = strings.TrimSpace(os.Getenv(prefix + name))
 		if values[name] == "" {
-			missing = append(missing, "ODYLE_BACKUP_S3_"+name)
+			missing = append(missing, prefix+name)
 		} else {
 			given = true
 		}
 	}
 	if !given {
-		return ""
+		return core.S3Config{}, false, ""
 	}
 	if len(missing) > 0 {
-		return "Off-host backups also need " + strings.Join(missing, ", ") + "; backups stay where they were."
+		return core.S3Config{}, true, need + " " + strings.Join(missing, ", ") + "; " + stays + "."
 	}
 	pathStyle := false
-	if raw := strings.TrimSpace(os.Getenv("ODYLE_BACKUP_S3_FORCE_PATH_STYLE")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv(prefix + "FORCE_PATH_STYLE")); raw != "" {
 		var err error
 		if pathStyle, err = strconv.ParseBool(raw); err != nil {
-			return "ODYLE_BACKUP_S3_FORCE_PATH_STYLE must be true or false; backups stay where they were."
+			return core.S3Config{}, true, prefix + "FORCE_PATH_STYLE must be true or false; " + stays + "."
 		}
 	}
-	next := core.S3Config{Enabled: true, Bucket: values["BUCKET"], Region: values["REGION"], Endpoint: values["ENDPOINT"], AccessKey: values["ACCESS_KEY"], Secret: values["SECRET"], ForcePathStyle: pathStyle}
+	return core.S3Config{Enabled: true, Bucket: values["BUCKET"], Region: values["REGION"], Endpoint: values["ENDPOINT"], AccessKey: values["ACCESS_KEY"], Secret: values["SECRET"], ForcePathStyle: pathStyle}, true, ""
+}
+
+// configureBackups applies ODYLE_BACKUP_S3_* to the backup settings, saving them only
+// when they change, and answers what kept it from doing so (empty when nothing did). A
+// wrong setting never stops the server: backups then stay where they were.
+func configureBackups(app core.App) string {
+	next, given, problem := s3FromEnvironment("ODYLE_BACKUP_S3_", "Off-host backups also need", "backups stay where they were")
+	if !given || problem != "" {
+		return problem
+	}
 	if app.Settings().Backups.S3 == next {
 		return ""
 	}

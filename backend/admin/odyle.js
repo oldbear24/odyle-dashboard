@@ -306,7 +306,7 @@ function schedule(cron) {
 export function statusPage() {
   app.store.title = 'Server status';
   const empty = { serverNow: '', startedAt: '', build: {}, runtime: {}, database: {}, counts: {}, release: {}, versions: [], traffic: { minutes: [], total: { count: 0, rejected: 0 }, routes: [], errors: [], private: 0 },
-    activation: { now: {}, days: [] }, backups: {}, proxy: { headers: [] } };
+    activation: { now: {}, days: [] }, backups: {}, storage: {}, proxy: { headers: [] } };
   // hover is the minute (its time) the chart's tooltip shows.
   const state = store({ loading: true, failed: '', data: empty, offset: 0, now: Date.now(), hover: '', profiling: '', vacuuming: '' });
   const now = () => state.now + state.offset;
@@ -326,7 +326,7 @@ export function statusPage() {
   const counts = name => state.data.counts[name] || {};
   const latest = () => state.data.release.version || '';
   const reached = () => state.data.activation?.now || {}, days = () => state.data.activation?.days || [];
-  const backups = () => state.data.backups || {}, proxy = () => state.data.proxy || { headers: [] };
+  const backups = () => state.data.backups || {}, storage = () => state.data.storage || {}, proxy = () => state.data.proxy || { headers: [] };
   const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
   const clock = () => readers().clock || { checked: 0, matched: 0, checkedToday: 0, missedToday: 0 };
   const armory = () => state.data.armory || { profiles: 0, hidden: 0, waiting: 0, fetching: false, done: 0, failed: 0, lastAt: '', lastError: '', lastErrorAt: '', blockedUntil: '', paused: false, images: 0, imageBytes: 0 };
@@ -448,7 +448,7 @@ export function statusPage() {
       () => readers().stuck ? t.div({ className: 'alert warning m-b-sm' }, number(readers().stuck) + ' of ' + number(readers().connected) + (readers().connected === 1 ? ' app' : ' apps') + ' connected to the game have read no Odyle for 10 minutes' + (readers().games.length ? ' (' + readers().games.map(g => g.game).join(', ') + ')' : '') + '. After a game patch, pause the readers or switch the adapter off under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ', then follow the patch-day runbook in the Windows app\'s docs/packet-reader.md.') : null,
       () => clock().checkedToday >= 5 && clock().missedToday * 2 > clock().checkedToday ? t.div({ className: 'alert warning m-b-sm' }, number(clock().missedToday) + ' of ' + number(clock().checkedToday) + ' login readings in the last 24 hours did not match the Odyle clock. A game patch may have changed the regeneration: check its rules under ', t.a({ href: '#/odyle/settings' }, 'Game settings'), ', or hide the Odyle clock there until they are right.') : null,
       () => readers().refusedAdapters.length ? t.div({ className: 'alert warning m-b-sm' }, 'Readings arrive under ' + readers().refusedAdapters.join(', ') + ', which this backend refuses, so they are not saved. Accept it under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ' or deploy the backend that lists it.') : null,
-      () => [backups().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
+      () => [backups().setup, storage().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
       t.div({ className: 'odyle-stats m-b-base' },
         stat('Server running', () => state.data.startedAt ? duration(now() - timestamp(state.data.startedAt)) : '—', () => state.data.startedAt ? 'since ' + when(state.data.startedAt) : ''),
         stat('Requests last hour', () => number(traffic().total.count), () => perMinute().toLocaleString([], { maximumFractionDigits: 1 }) + ' a minute · busiest ' + number(busiest())),
@@ -503,6 +503,15 @@ export function statusPage() {
       () => backups().error ? t.div({ className: 'alert warning m-b-sm odyle-error' }, 'The backups could not be listed: ' + backups().error) : null,
       t.p({ className: 'txt-hint txt-sm m-b-base' }, () => backups().offHost ? 'Backups go to S3 storage, set by ODYLE_BACKUP_S3_* or under Settings → Backups. Restore one there, or by hand as docs/deployment.md describes.'
         : 'Backups stay on the same disk as the data and would be lost with it. Set ODYLE_BACKUP_S3_* to keep them off the host (docs/deployment.md). Restore one under Settings → Backups.'),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Files'), t.a({ className: 'txt-sm', href: '#/settings/storage' }, 'Settings → Files storage')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Kept in', () => storage().offHost ? 'S3 storage' : 'the data volume', () => storage().offHost ? 'bucket ' + storage().bucket : 'pb_data/storage and pb_data/armory_images'),
+        stat('Moved into S3', () => storage().moving ? 'moving…' : storage().moved ? number(storage().moved.files) : '—',
+          () => storage().moved ? (storage().moved.files ? size(storage().moved.bytes) : 'nothing was left on disk') + ' · ' + ago(storage().moved.at, now()) + (storage().moved.failed ? ' · ' + number(storage().moved.failed) + ' failed' : '')
+            : storage().offHost ? 'the files on disk move when the server starts' : 'the files on disk move once S3 storage is on')),
+      () => storage().moved?.error ? t.div({ className: 'alert warning m-b-sm odyle-error' }, 'Some files could not be moved into S3 storage and stay on disk until the next start: ' + storage().moved.error) : null,
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, () => storage().offHost ? 'Character portraits and the armory\'s images are kept in S3 storage, set by ODYLE_STORAGE_S3_* or under Settings → Files storage. Browsers still load them from this server and keep them. They are copies of PLAYNC\'s images, so backups leave them out.'
+        : 'Character portraits and the armory\'s images are kept on the data volume. Set ODYLE_STORAGE_S3_* to keep them in S3 storage instead (docs/deployment.md); the files on disk then move there.'),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Database'), t.span({ className: 'txt-hint txt-sm' }, 'SQLite files on the data volume, with their write-ahead logs')),
       t.div({ className: 'odyle-stats m-b-sm' },
         stat('Data', () => size(database().dataBytes), () => reclaimable('data') + ' · ' + lastVacuum('data')),
@@ -533,7 +542,8 @@ export function statusPage() {
         stat('Queue', () => armory().paused ? 'paused' : number(armory().waiting + (armory().fetching ? 1 : 0)), () => armory().paused ? 'Server controls' : armory().fetching ? 'one lookup running' : 'waiting for PLAYNC'),
         stat('Lookups', () => number(armory().done), () => (armory().failed ? number(armory().failed) + ' failed · ' : '') + (armory().lastAt ? 'last ' + new Date(armory().lastAt).toLocaleString() : 'none yet')),
         stat('Last error', () => armory().lastError ? new Date(armory().lastErrorAt).toLocaleString() : 'none', () => armory().lastError || 'PLAYNC answered every lookup'),
-        stat('Images', () => number(armory().images || 0), () => app.utils.formattedFileSize(armory().imageBytes || 0) + ' of icons and portraits in pb_data/armory_images')),
+        stat('Images', () => number(armory().images || 0), () => app.utils.formattedFileSize(armory().imageBytes || 0) + ' of icons and portraits ' + (armory().imagesOffHost ? 'in S3 storage' : 'in pb_data/armory_images'))),
+      () => armory().imagesError ? t.div({ className: 'alert warning m-b-sm odyle-error' }, 'The armory\'s images could not be listed: ' + armory().imagesError) : null,
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },

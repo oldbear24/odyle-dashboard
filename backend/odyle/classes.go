@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -77,10 +76,6 @@ func learnClasses(app core.App) error {
 	if len(list) == 0 {
 		return errors.New("PLAYNC listed no classes.")
 	}
-	dir := imageDir(app)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	kept := map[string]bool{}
 	for _, c := range list[:min(len(list), 200)] {
 		id, code, name := whole(c["id"]), jsonText(c, "className", 30), jsonText(c, "classText", 40)
@@ -92,7 +87,7 @@ func learnClasses(app core.App) error {
 		}
 		icon := "class_icon_" + strings.ToLower(code) + ".png"
 		if _, done := kept[icon]; !done {
-			kept[icon] = keepClassIcon(app, dir, icon)
+			kept[icon] = keepClassIcon(app, icon)
 		}
 		if kept[icon] {
 			if _, err := app.DB().NewQuery("UPDATE game_classes SET icon = {:icon} WHERE pcId = {:id} AND icon != {:icon}").Bind(dbx.Params{"icon": icon, "id": id}).Execute(); err != nil {
@@ -104,8 +99,9 @@ func learnClasses(app core.App) error {
 }
 
 // keepClassIcon makes sure the server keeps a class's emblem, shrunk like the game's icons.
-func keepClassIcon(app core.App, dir, icon string) bool {
-	if _, err := os.Stat(filepath.Join(dir, icon)); err == nil {
+func keepClassIcon(app core.App, icon string) bool {
+	store := imagesOf(app)
+	if store.has(app, icon) {
 		return true
 	}
 	res, err := send(call{method: "GET", url: classIconsURL() + icon, headers: map[string]string{"user-agent": userAgent}, timeout: 15 * time.Second, limit: iconLimit})
@@ -114,7 +110,7 @@ func keepClassIcon(app core.App, dir, icon string) bool {
 	}
 	shrunk, err := shrinkIcon(res.body)
 	if err == nil {
-		err = writeImage(dir, icon, shrunk)
+		err = store.put(app, icon, "image/png", shrunk)
 	}
 	if err != nil {
 		warn(app, "Odyle could not keep a class icon", "icon", icon, "error", message(err))
@@ -164,10 +160,11 @@ func setOfficial(app core.App, c *Character, hit officialHit) {
 		c.Set("officialServerId", hit.serverId)
 	}
 	// A character saved as NA before the regions were told apart moves to NA-West once the search
-	// finds it there, unless the account also has it under NA-West (odyle-windows#4).
+	// finds it there, unless the account also has it under NA-West (odyle-windows#4): a record
+	// with the search's server id (servers.go). Moved, it takes that id when it is saved.
 	if hit.region == "naw" && c.GetString("region") == "GLOBAL_NA" {
-		if _, err := app.FindFirstRecordByFilter("characters", "user = {:user} && region = 'GLOBAL_NAW' && server = {:server} && characterName = {:name}",
-			dbx.Params{"user": c.GetString("user"), "server": c.GetString("server"), "name": c.GetString("characterName")}); isNoRows(err) {
+		if _, err := app.FindFirstRecordByFilter("characters", "user = {:user} && serverId = {:server} && characterName = {:name}",
+			dbx.Params{"user": c.GetString("user"), "server": hit.serverId, "name": c.GetString("characterName")}); isNoRows(err) {
 			c.Set("region", "GLOBAL_NAW")
 		}
 	}

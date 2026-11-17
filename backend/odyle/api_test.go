@@ -22,7 +22,7 @@ func TestRoutesOverHTTP(t *testing.T) {
 	session := saved(t, app, "publisher_sessions", map[string]any{"user": mate.Id, "expiresAt": expiry(86400)})
 	shared := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Shared", "server": "Lumiel", "region": "GLOBAL_EU", "readingSession": session.Id})
 	saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Hidden", "server": "Lumiel", "region": "GLOBAL_EU"})
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter", "sharedCharacters": []string{shared.Id}})
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"}, shared.Id)
 	token := func(user *core.Record) map[string]string {
 		raw, err := user.NewAuthToken()
 		if err != nil {

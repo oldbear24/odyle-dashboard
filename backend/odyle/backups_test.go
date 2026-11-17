@@ -1,8 +1,11 @@
 package odyle
 
 import (
+	"archive/zip"
 	"context"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,7 +31,7 @@ func TestOffHostBackupsComeFromTheEnvironment(t *testing.T) {
 		t.Fatalf("without variables: %q", problem)
 	}
 	set := func(values map[string]string) {
-		for _, name := range append(backupStorage, "FORCE_PATH_STYLE") {
+		for _, name := range append(s3Variables, "FORCE_PATH_STYLE") {
 			t.Setenv("ODYLE_BACKUP_S3_"+name, values[name])
 		}
 	}
@@ -108,5 +111,43 @@ func TestABackupRestoresOnACopy(t *testing.T) {
 	}
 	if b := restored.Settings().Backups; b.Cron != "0 3 * * *" {
 		t.Fatalf("backups on the copy: %+v", b)
+	}
+}
+
+// The armory's images are a copy of PLAYNC's: backups leave their folder out, and a restore
+// keeps the folder the server has instead of taking an older backup's.
+func TestBackupsLeaveTheArmoryImagesOut(t *testing.T) {
+	app := newTestApp(t)
+	if err := os.MkdirAll(imageDir(app), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(imageDir(app), "Icon_Test.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.CreateBackup(context.Background(), "no-images.zip"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := zip.OpenReader(filepath.Join(app.DataDir(), core.LocalBackupsDirName, "no-images.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	names := []string{}
+	for _, f := range r.File {
+		names = append(names, f.Name)
+		if strings.HasPrefix(f.Name, armoryImagesDir) {
+			t.Fatalf("the backup holds %s", f.Name)
+		}
+	}
+	if !slices.Contains(names, "data.db") {
+		t.Fatalf("the backup holds %v, without the database", names)
+	}
+	restore := &core.BackupEvent{Name: "no-images.zip", Exclude: []string{core.LocalBackupsDirName}}
+	restore.App = app
+	if err := app.OnBackupRestore().Trigger(restore, func(e *core.BackupEvent) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(restore.Exclude, armoryImagesDir) || !slices.Contains(restore.Exclude, core.LocalBackupsDirName) {
+		t.Fatalf("a restore moves all but %v", restore.Exclude)
 	}
 }

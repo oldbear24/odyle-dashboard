@@ -20,10 +20,7 @@ func TestDiscordPostsCountWhoCanClaimACube(t *testing.T) {
 	mine := saved(t, app, "characters", map[string]any{"user": lead.Id, "characterName": "Lumina", "server": "EU", "region": "GLOBAL_EU", "value": 100, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": fresh, "lastReadingAt": fresh})
 	short := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Kaelen", "server": "EU", "region": "GLOBAL_EU", "value": 30, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": old, "lastReadingAt": old})
 	for m, c := range map[*core.Record]*core.Record{leader: mine, member: short} {
-		m.Set("sharedCharacters", []string{c.Id})
-		if err := app.Save(m); err != nil {
-			t.Fatal(err)
-		}
+		share(t, app, m, c.Id)
 	}
 	auth := tokenOf(t, lead)
 	if answer := ask(t, app, "POST", "/api/odyle/discord-webhook", auth, `{"roomId":"`+room.Id+`","readiness":true}`, 200); answer["room"].(map[string]any)["discordReadiness"] != true {

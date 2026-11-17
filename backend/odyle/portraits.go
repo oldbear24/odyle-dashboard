@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -295,48 +296,86 @@ func gamePortrait(app core.App, id string) error {
 	if err != nil {
 		return err
 	}
+	// A portrait the file storage does not hold (lost in a change of storage) is kept again,
+	// whatever its digest; not while the files on disk move into the S3 storage (storage.go).
+	lost := before.Portrait() != "" && !stateOf(app).moving.Load() && !portraitStored(app, before)
 	found, hit, failure := fetchPortrait(serversOf(app), before.Name(), before.Server(), before.Region())
-	// Saved from a fresh copy in one transaction: a reading saved while PLAYNC answered,
-	// or saved meanwhile by another request, is kept. Rooms hear of a new picture from
-	// the character's record hooks (realtime.go).
+	// Read and written in one transaction after PLAYNC answered: a reading saved meanwhile
+	// is kept. The lookup is noted in the character's bookkeeping (character_jobs); the
+	// character itself is saved only when the lookup changed it (a new picture, its official
+	// id, level or class), and its rooms hear of that from its record hooks (realtime.go).
 	if err := app.RunInTransaction(func(tx core.App) error {
 		c, err := findAs[Character](tx, "characters", id)
 		if err != nil {
 			return err
 		}
-		if found != nil && (found.hash != c.PortraitHash() || c.Portrait() == "") {
-			c.SetPortrait(found.file, found.hash)
+		jobs, err := jobsOf(tx, id)
+		if err != nil {
+			return err
 		}
-		// A failed lookup says nothing about the listing, so it is retried as before.
+		noted := map[string]any{"portraitCheckedAt": stamp(time.Now())}
+		if found != nil && (found.hash != jobs.PortraitHash || c.Portrait() == "" || lost && c.Portrait() == before.Portrait()) {
+			c.SetPortrait(found.file)
+			noted["portraitHash"] = found.hash
+		}
+		// A failed lookup says nothing about the listing, so it is retried as before; each
+		// lookup in a row that the search did not list the character waits longer.
 		if failure == nil {
-			c.PortraitListed(found != nil)
+			noted["portraitMisses"] = 0
+			if found == nil {
+				noted["portraitMisses"] = jobs.PortraitMisses + 1
+			}
 		}
 		// What the search lists besides the picture: the official id, level and class (#25).
 		if hit.id != "" {
 			setOfficial(tx, c, hit)
 		}
-		c.PortraitChecked()
-		return tx.Save(c)
+		if changed(c.Record, "portrait", "officialId", "officialRegion", "officialServerId", "region", "level", "classId", "className") {
+			if err := tx.Save(c); err != nil {
+				return err
+			}
+		}
+		return writeJobs(tx, id, noted)
 	}); err != nil {
 		return err
 	}
 	return failure
 }
 
+// portraitStored reports whether the file storage holds the character's portrait; true when it
+// cannot tell in time.
+func portraitStored(app core.App, c *Character) bool {
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return true
+	}
+	defer fsys.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), bucketTimeouts.read)
+	defer cancel()
+	fsys.SetContext(ctx)
+	there, err := fsys.Exists(c.BaseFilesPath() + "/" + c.Portrait())
+	return err != nil || there
+}
+
 // portraitsDue are the characters the job looks up: never looked up yet (saved while
 // portraits were paused, or more than ten at once); with a portrait, daily; without
 // one, an hour, six hours and a day after the first misses of the search, then weekly
 // (a failed lookup keeps the pace of the misses so far). Characters no reader has seen
-// for 60 days, or saved that long ago and never read, wait until a reader sees them.
-const portraitsDue = "(lastSeenAt >= {:dormant} || (lastSeenAt = '' && created >= {:dormant})) && (portraitCheckedAt = '' || (portrait != '' && portraitCheckedAt < {:day}) || " +
-	"(portrait = '' && ((portraitMisses <= 1 && portraitCheckedAt < {:hour}) || (portraitMisses = 2 && portraitCheckedAt < {:hours}) || (portraitMisses = 3 && portraitCheckedAt < {:day}) || portraitCheckedAt < {:week})))"
+// for 60 days, or saved that long ago and never read, wait until a reader sees them. A
+// character no job wrote yet has no bookkeeping row: it was never checked and missed none.
+const portraitsDue = "SELECT c.id FROM {{characters}} c LEFT JOIN {{character_jobs}} j ON j.character = c.id " +
+	"WHERE (c.lastSeenAt >= {:dormant} OR (c.lastSeenAt = '' AND c.created >= {:dormant})) AND (IFNULL(j.portraitCheckedAt, '') = '' OR (c.portrait != '' AND j.portraitCheckedAt < {:day}) OR " +
+	"(c.portrait = '' AND ((j.portraitMisses <= 1 AND j.portraitCheckedAt < {:hour}) OR (j.portraitMisses = 2 AND j.portraitCheckedAt < {:hours}) OR (j.portraitMisses = 3 AND j.portraitCheckedAt < {:day}) OR j.portraitCheckedAt < {:week}))) " +
+	"ORDER BY IFNULL(j.portraitCheckedAt, ''), c.created LIMIT {:limit}"
 
 const dormantCharacters = 60 * 24 * time.Hour
 
-// duePortraits are up to limit characters due, the longest unchecked first.
-func duePortraits(app core.App, limit int) ([]*core.Record, error) {
-	return app.FindRecordsByFilter("characters", portraitsDue, "portraitCheckedAt", limit, 0, dbx.Params{"dormant": ago(dormantCharacters),
-		"hour": ago(time.Hour), "hours": ago(6 * time.Hour), "day": ago(24 * time.Hour), "week": ago(7 * 24 * time.Hour)})
+// duePortraits are the ids of up to limit characters due, the longest unchecked first.
+func duePortraits(app core.App, limit int) ([]string, error) {
+	ids := []string{}
+	err := app.DB().NewQuery(portraitsDue).Bind(dbx.Params{"dormant": ago(dormantCharacters), "hour": ago(time.Hour), "hours": ago(6 * time.Hour),
+		"day": ago(24 * time.Hour), "week": ago(7 * 24 * time.Hour), "limit": limit}).Column(&ids)
+	return ids, err
 }
 
 // refreshPortraits is a job: the characters due (portraitsDue) get their portrait, five
@@ -354,17 +393,17 @@ func refreshPortraits(app core.App) (result, error) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	out := result{}
-	for _, c := range due {
-		if !work.claim(c.Id) {
+	for _, id := range due {
+		if !work.claim(id) {
 			continue
 		}
 		wg.Go(func() {
-			err := work.lookUp(app, c.Id)
+			err := work.lookUp(app, id)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				out.fail("Character " + c.Id + ": " + message(err))
-				warn(app, "Odyle portrait refresh failed", "character", c.Id, "error", message(err))
+				out.fail("Character " + id + ": " + message(err))
+				warn(app, "Odyle portrait refresh failed", "character", id, "error", message(err))
 				return
 			}
 			out.Done++

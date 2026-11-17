@@ -109,6 +109,69 @@ func (b serverBook) place(name string) (race, place int) {
 	return 0, 0
 }
 
+// regionDigits are the Odyle regions' digits in a server id. NA counts as NA-East: NA characters
+// were all saved under it before NA-West was told apart, and the daily lookup moves those it
+// finds on NA-West (classes.go setOfficial).
+var regionDigits = map[string]int{"GLOBAL_NA": 1, "GLOBAL_NAW": 2, "GLOBAL_EU": 3, "GLOBAL_SA": 4, "GLOBAL_ASIA": 5}
+
+// id is the id of a server named in an Odyle region, or 0 for a name the book does not know.
+func (b serverBook) id(region, server string) int {
+	race, place := b.place(server)
+	if race == 0 || regionDigits[region] == 0 {
+		return 0
+	}
+	return race*1000 + regionDigits[region]*100 + place
+}
+
+// watchServerIds keeps a character's serverId the id of its region and server, however it is
+// saved: a reading, the character route, the daily lookup moving it to NA-West or a superuser in
+// the PocketBase dashboard. A character is one per account, server id and name (sameCharacter),
+// so the server's name is only what clients show; on a server the book does not name, serverId
+// is 0 and the name keeps it apart. A character whose server the book no longer names (PLAYNC
+// renamed it) keeps its id while its region and server stay as they are, so its next reading,
+// under the new name, still finds it.
+func watchServerIds(app core.App) {
+	set := func(e *core.RecordEvent) error {
+		r := e.Record
+		region, server := r.GetString("region"), r.GetString("server")
+		id := serversOf(e.App).id(region, server)
+		if before := r.Original(); id == 0 && !r.IsNew() && before.GetString("region") == region && before.GetString("server") == server {
+			return e.Next()
+		}
+		r.Set("serverId", id)
+		return e.Next()
+	}
+	app.OnRecordCreate("characters").BindFunc(set)
+	app.OnRecordUpdate("characters").BindFunc(set)
+}
+
+// fillServerIds gives the characters saved on a server the book did not name then the id it
+// names now. One that would be a second record of a character its account keeps under that id
+// keeps 0.
+func fillServerIds(app core.App) error {
+	book := serversOf(app)
+	saved := []struct {
+		Id     string `db:"id"`
+		Region string `db:"region"`
+		Server string `db:"server"`
+	}{}
+	if err := app.DB().NewQuery("SELECT id, region, server FROM characters WHERE serverId = 0").All(&saved); err != nil {
+		return err
+	}
+	for _, c := range saved {
+		id := book.id(c.Region, c.Server)
+		if id == 0 {
+			continue
+		}
+		if _, err := app.DB().NewQuery("UPDATE characters SET serverId = {:server} WHERE id = {:id} AND serverId = 0 AND NOT EXISTS " +
+			"(SELECT 1 FROM characters o WHERE o.user = characters.user AND o.serverId = {:server} AND o.characterName = characters.characterName)").
+			Bind(dbx.Params{"server": id, "id": c.Id}).Execute(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // searches are the server ids and search regions a server of an Odyle region has.
 func (b serverBook) searches(server, region string) []search {
 	race, at := b.place(server)
@@ -254,6 +317,10 @@ func learnServers(app core.App) error {
 			return err
 		}
 		stateOf(app).serverBook.Store(nil)
+		// Characters saved on a server PLAYNC named only now take its id.
+		if err := fillServerIds(app); err != nil {
+			failures = append(failures, err)
+		}
 	}
 	return errors.Join(failures...)
 }

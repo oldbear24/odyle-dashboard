@@ -183,7 +183,7 @@ func fixtures(se *core.ServeEvent) {
 	})
 	// Records written directly, so the tests keep their rate-limit budget.
 	fixture(se, "member", func(e *core.RequestEvent, b body) (any, error) {
-		return save(e.App, "room_members", map[string]any{"room": b["room"], "user": b["user"], "role": b["role"], "sharedCharacters": []string{}})
+		return save(e.App, "room_members", map[string]any{"room": b["room"], "user": b["user"], "role": b["role"]})
 	})
 	fixture(se, "characters", func(e *core.RequestEvent, b body) (any, error) {
 		for i := 0; i < count(b["count"]); i++ {
@@ -255,8 +255,7 @@ func fixtures(se *core.ServeEvent) {
 		if err != nil {
 			return nil, err
 		}
-		c.Set("portraitCheckedAt", time.Now().Add(-48*time.Hour).UTC().Format(isoLayout))
-		return map[string]any{}, e.App.Save(c)
+		return map[string]any{}, writeJobs(e.App, c.Id, map[string]any{"portraitCheckedAt": ago(48 * time.Hour)})
 	})
 	fixture(se, "expire-invite", func(e *core.RequestEvent, b body) (any, error) {
 		code, _ := b.text("code")

@@ -86,9 +86,9 @@ func TestCapAlertsTellTheOwnerOncePerFill(t *testing.T) {
 	run := func(want int, state string) {
 		t.Helper()
 		out, err := capAlerts(app)
-		fresh, _ := findAs[Character](app, "characters", id)
-		if err != nil || out.Done != want || fresh.GetString("capAlert") != state {
-			t.Fatalf("%v %+v, state %q", err, out, fresh.GetString("capAlert"))
+		told, jobsErr := jobsOf(app, id)
+		if err != nil || jobsErr != nil || out.Done != want || told.CapAlert != state {
+			t.Fatalf("%v %v %+v, state %q", err, jobsErr, out, told.CapAlert)
 		}
 	}
 	pool(550)

@@ -21,8 +21,8 @@ func TestAttendeesPickTheCharacterTheyBring(t *testing.T) {
 	alt := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Alt", "server": "EU", "region": "GLOBAL_EU", "value": 90, "confirmed": true})
 	hidden := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Hidden", "server": "EU", "region": "GLOBAL_EU", "value": 50, "confirmed": true})
 	other := saved(t, app, "characters", map[string]any{"user": lead.Id, "characterName": "Lead", "server": "EU", "region": "GLOBAL_EU", "value": 50, "confirmed": true})
-	leadMember := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner", "sharedCharacters": []string{other.Id}})
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter", "sharedCharacters": []string{main.Id, alt.Id}})
+	leadMember := sharingMember(t, app, map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"}, other.Id)
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"}, main.Id, alt.Id)
 	run := saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(2 * time.Hour)), "plannedBy": leadMember.Id, "attendees": []string{leadMember.Id}})
 	token := func(u interface{ NewAuthToken() (string, error) }) map[string]string {
 		raw, err := u.NewAuthToken()

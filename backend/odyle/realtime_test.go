@@ -71,7 +71,7 @@ func TestRoomNewsReachMembersWithWhatEachMaySee(t *testing.T) {
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
 	shared := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Shared", "server": "Lumiel", "region": "GLOBAL_EU"})
 	private := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Private", "server": "Lumiel", "region": "GLOBAL_EU"})
-	membership := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter", "sharedCharacters": []string{shared.Id}})
+	membership := sharingMember(t, app, map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"}, shared.Id)
 	deliver(app)
 	topic := roomTopic + room.Id
 	leads, mates, outsiders := listen(t, app, lead, topic), listen(t, app, mate, topic), listen(t, app, outsider, topic)
@@ -100,9 +100,9 @@ func TestRoomNewsReachMembersWithWhatEachMaySee(t *testing.T) {
 	}
 	outsiders.quiet()
 
-	// A change nobody sees (the portrait job's check) is no news.
+	// A change nobody sees (when the Odyle clock last learned the natural pool's size) is no news.
 	checked, _ := app.FindRecordById("characters", shared.Id)
-	checked.Set("portraitCheckedAt", now())
+	checked.Set("naturalMaxAt", now())
 	if err := app.Save(checked); err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	session := saved(t, app, "publisher_sessions", map[string]any{"user": reader.Id, "expiresAt": expiry(86400)})
 	shared := saved(t, app, "characters", map[string]any{"user": reader.Id, "characterName": "Shared", "server": "Lumiel", "region": "GLOBAL_EU", "valid": true, "confirmed": true, "readingSession": session.Id, "lastSeenAt": ago(time.Minute)})
 	private := saved(t, app, "characters", map[string]any{"user": reader.Id, "characterName": "Private", "server": "Lumiel", "region": "GLOBAL_EU", "valid": true, "confirmed": true, "readingSession": session.Id, "lastSeenAt": ago(time.Minute)})
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": reader.Id, "role": "reporter", "sharedCharacters": []string{shared.Id}})
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": reader.Id, "role": "reporter"}, shared.Id)
 	deliver(app)
 	leads := listen(t, app, lead, presenceTopic+room.Id)
 	own := listen(t, app, reader, userTopic+reader.Id)
@@ -229,8 +229,8 @@ func TestHeartbeatsReachRoomsAndAreWrittenLater(t *testing.T) {
 	written, _ := app.FindRecordById("characters", shared.Id)
 	kept, _ := app.FindRecordById("characters", private.Id)
 	contacted, _ := app.FindRecordById("publisher_sessions", session.Id)
-	if written.GetString("lastSeenAt") != stamp(at) || kept.GetDateTime("lastSeenAt").Time().After(time.Now().Add(-59*time.Minute)) || contacted.GetString("updated") != stamp(at) {
-		t.Fatalf("written %s, kept %s, session contact %s", written.GetString("lastSeenAt"), kept.GetString("lastSeenAt"), contacted.GetString("updated"))
+	if written.GetString("lastSeenAt") != stamp(at) || kept.GetDateTime("lastSeenAt").Time().After(time.Now().Add(-59*time.Minute)) || contacted.GetString("lastContactAt") != stamp(at) {
+		t.Fatalf("written %s, kept %s, session contact %s", written.GetString("lastSeenAt"), kept.GetString("lastSeenAt"), contacted.GetString("lastContactAt"))
 	}
 	if got := contactAt(app, viewOf[ReaderSession](contacted)); got != stamp(at) {
 		t.Fatalf("contact %s", got)

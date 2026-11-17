@@ -300,8 +300,11 @@ func stateCounts(app core.App, user *core.Record) (map[string]int64, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := loadShares(app, memberships); err != nil {
+		return nil, err
+	}
 	for _, m := range memberships {
-		if len(m.Shared()) > 0 {
+		if len(m.Shared(app)) > 0 {
 			out["shared"]++
 		}
 	}

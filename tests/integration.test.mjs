@@ -18,8 +18,10 @@ let discordServer, discordUrl, discordPosts = [], discordAnswer = 204;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 let portraitVersion = 1;
 // The first start leaves these migrations out, so the legacy data the upgrade tests
-// check is written to an older database; every later start applies them.
-const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js', '1791763230_catalog_entries.go', '1791763231_invite_links.go'];
+// check is written to an older database; every later start applies them, in order. A later
+// migration that builds on one of them is left out with it, as a real upgrade runs it after:
+// the owners' indexes need the invite links' maker, and room_shares the sharing lists.
+const upgrades = ['1791763203_packet_only.js', '1791763204_character_sharing.js', '1791763230_catalog_entries.go', '1791763231_invite_links.go', '1791763273_lookup_indexes.go', '1791763277_room_shares.go'];
 let upgraded = false;
 async function request(path, body, auth, method = 'POST') {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });

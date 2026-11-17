@@ -123,7 +123,6 @@ func (c *Character) ReadingSession() string { return c.GetString("readingSession
 func (c *Character) LastSeenAt() string     { return c.GetString("lastSeenAt") }
 func (c *Character) LastReadingAt() string  { return c.GetString("lastReadingAt") }
 func (c *Character) Portrait() string       { return c.GetString("portrait") }
-func (c *Character) PortraitHash() string   { return c.GetString("portraitHash") }
 func (c *Character) Created() string        { return c.GetString("created") }
 
 func (c *Character) SetUser(id string) { c.Set("user", id) }
@@ -134,27 +133,9 @@ func (c *Character) SetIdentity(i identity) {
 }
 func (c *Character) SetValid(valid bool) { c.Set("valid", valid) }
 
-// SetPortrait stores the game's portrait (a file to upload) with its image's digest.
-func (c *Character) SetPortrait(file any, hash string) {
-	c.Set("portrait", file)
-	c.Set("portraitHash", hash)
-}
-
-// PortraitChecked notes a portrait lookup now, whatever it found.
-func (c *Character) PortraitChecked() { c.Set("portraitCheckedAt", now()) }
-
-// PortraitMisses counts the lookups in a row the official search did not list the character.
-func (c *Character) PortraitMisses() int { return c.GetInt("portraitMisses") }
-
-// PortraitListed notes whether the official search listed the character: the portrait
-// job tries again later each time it did not.
-func (c *Character) PortraitListed(listed bool) {
-	if listed {
-		c.Set("portraitMisses", 0)
-	} else {
-		c.Set("portraitMisses", c.PortraitMisses()+1)
-	}
-}
+// SetPortrait stores the game's portrait (a file to upload); the portrait job keeps its
+// image's digest (character_jobs).
+func (c *Character) SetPortrait(file any) { c.Set("portrait", file) }
 
 // SetLastSeenAt shows a later heartbeat in an answer (present); it is written separately.
 func (c *Character) SetLastSeenAt(at time.Time) {
@@ -232,19 +213,45 @@ func historyJSON(value int64, at, adapter, kind string, delta int64, parts strin
 	return map[string]any{"value": value, "at": at, "adapter": adapter, "kind": kind, "delta": change, "parts": parseJSON(parts, "null")}
 }
 
-// Member is an account's membership of a room (room_members): its role and the
-// characters it shares there.
-type Member struct{ core.BaseRecordProxy }
+// Member is an account's membership of a room (room_members): its role, and the characters
+// it shares there (room_shares, shares.go).
+type Member struct {
+	core.BaseRecordProxy
+	shared *[]string // the characters it shares, once read
+}
 
-func (m *Member) User() string                 { return m.GetString("user") }
-func (m *Member) Room() string                 { return m.GetString("room") }
-func (m *Member) Role() string                 { return m.GetString("role") }
-func (m *Member) Shared() []string             { return stringSlice(m.Record, "sharedCharacters") }
-func (m *Member) Shares(character string) bool { return contains(m.Shared(), character) }
-func (m *Member) Created() string              { return m.GetString("created") }
+func (m *Member) User() string    { return m.GetString("user") }
+func (m *Member) Room() string    { return m.GetString("room") }
+func (m *Member) Role() string    { return m.GetString("role") }
+func (m *Member) Created() string { return m.GetString("created") }
 
-func (m *Member) SetRole(role string)           { m.Set("role", role) }
-func (m *Member) SetShared(characters []string) { m.Set("sharedCharacters", characters) }
+func (m *Member) SetRole(role string) { m.Set("role", role) }
+
+// Shared are the characters the membership shares in its room, in the order shared. They are
+// read once: roomMembers and loadShares read those of many memberships in one query, and a
+// membership read on its own reads them here. A failed read shares nothing, and is logged.
+func (m *Member) Shared(app core.App) []string {
+	if m.shared == nil {
+		if err := loadShares(app, []*Member{m}); err != nil {
+			warn(app, "Odyle could not read the characters a member shares", "member", m.Id, "error", err.Error())
+			return []string{}
+		}
+	}
+	return *m.shared
+}
+
+// JSON is the membership as the routes answer it: its record with the characters it shares
+// (sharedCharacters, a field of the record before they moved to room_shares).
+func (m *Member) JSON(app core.App) map[string]any {
+	j := m.PublicExport()
+	j["sharedCharacters"] = m.Shared(app)
+	return j
+}
+
+// Shares reports whether the membership shares the character in its room.
+func (m *Member) Shares(app core.App, character string) bool {
+	return contains(m.Shared(app), character)
+}
 
 // Room is a party room (party_rooms).
 type Room struct{ core.BaseRecordProxy }
@@ -345,10 +352,21 @@ func (s *ReaderSession) Sequence() int64      { return s.GetInt64("sequence") }
 func (s *ReaderSession) AppVersion() string   { return s.GetString("appVersion") }
 func (s *ReaderSession) ExpiresAt() time.Time { return s.GetDateTime("expiresAt").Time() }
 func (s *ReaderSession) Created() string      { return s.GetString("created") }
-func (s *ReaderSession) Updated() string      { return s.GetString("updated") } // the last stored contact
 
-// Extend keeps the session for a day after its last contact.
-func (s *ReaderSession) Extend() { s.Set("expiresAt", expiry(86400)) }
+// LastContactAt is the session's last stored contact (presence.go writes the heartbeats
+// every ten seconds); a session saved without one counts from when it opened.
+func (s *ReaderSession) LastContactAt() string {
+	if at := s.GetString("lastContactAt"); at != "" {
+		return at
+	}
+	return s.Created()
+}
+
+// Contacted notes a contact now and keeps the session for a day after it.
+func (s *ReaderSession) Contacted() {
+	s.Set("lastContactAt", now())
+	s.Set("expiresAt", expiry(86400))
+}
 
 // Run is a planned run of a room (room_runs); planner and attendees are memberships.
 type Run struct{ core.BaseRecordProxy }

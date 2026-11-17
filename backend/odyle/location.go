@@ -248,18 +248,13 @@ func seenBy(app core.App, c *Character, userId string) error {
 	if c.User() == userId {
 		return nil
 	}
-	sharedIn, err := membershipsWhere(app, "user = {:owner} && sharedCharacters ~ {:id}", dbx.Params{"owner": c.User(), "id": c.Id})
-	if err != nil {
+	var rooms int
+	if err := app.DB().NewQuery("SELECT COUNT(*) FROM room_shares s JOIN room_members o ON o.id = s.member AND o.user = {:owner} JOIN room_members v ON v.room = s.room " +
+		"WHERE s.character = {:id} AND v.user = {:user}").Bind(dbx.Params{"id": c.Id, "owner": c.User(), "user": userId}).Row(&rooms); err != nil {
 		return err
 	}
-	for _, room := range pluck(sharedIn, (*Member).Room) {
-		member, err := list(app, "room_members", "room = {:room} && user = {:user}", dbx.Params{"room": room, "user": userId})
-		if err != nil {
-			return err
-		}
-		if len(member) > 0 {
-			return nil
-		}
+	if rooms > 0 {
+		return nil
 	}
 	return forbidden("This character is not shared with you.")
 }

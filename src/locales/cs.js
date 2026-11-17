@@ -648,6 +648,7 @@ export default {
   'Skins': 'Skiny',
   'No skin is worn over the gear.': 'Přes výbavu není nasazený žádný skin.',
   'This image is not kept.': 'Tento obrázek se neuchovává.',
+  "The armory's images are being listed.": 'Seznam obrázků zbrojnice se právě načítá.',
   'Membership': 'Členství',
   'Does your game account have the membership? The Odyle clock then knows the natural pool\'s cap: 840 with it, 560 without. Rooms see only that cap on the characters you share, never this answer.': 'Má tvůj herní účet členství? Hodiny Odyle pak znají strop přirozené zásoby: 840 s ním, 560 bez něj. Místnosti vidí jen tento strop u postav, které sdílíš, nikdy tuto odpověď.',
   'Yes, I have the membership': 'Ano, mám členství',

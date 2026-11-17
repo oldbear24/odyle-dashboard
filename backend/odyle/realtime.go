@@ -218,7 +218,7 @@ func deliverRoom(app core.App, clients map[string]subscriptions.Client, id strin
 	}
 	shares := make(map[string][]string, len(members)) // account → the characters it shares here
 	for _, m := range members {
-		shares[m.User()] = m.Shared()
+		shares[m.User()] = m.Shared(app)
 	}
 	exports := map[string]map[string]any{}
 	for characterId, c := range n.characters {
@@ -369,17 +369,9 @@ func characterChanged(app core.App, c *Character) {
 
 // characterFields are the fields of a character clients show; a change to any other
 // (the portrait job's portraitCheckedAt, say) is not news.
-var characterFields = []string{"characterName", "server", "region", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait", "parts", "regenTick", "naturalMax", "answeredCap", "level", "className", "officialId", "officialRegion", "officialServerId", "odyleLocked", "main", "location", "gameGroup", "pvp"}
+var characterFields = []string{"characterName", "server", "region", "serverId", "value", "confirmed", "valid", "source", "parserVersion", "lastReadingAt", "lastSeenAt", "portrait", "parts", "regenTick", "naturalMax", "answeredCap", "level", "className", "officialId", "officialRegion", "officialServerId", "odyleLocked", "main", "location", "gameGroup", "pvp"}
 
-func visiblyChanged(c *core.Record) bool {
-	before := c.Original()
-	for _, f := range characterFields {
-		if fmt.Sprint(before.Get(f)) != fmt.Sprint(c.Get(f)) {
-			return true
-		}
-	}
-	return false
-}
+func visiblyChanged(c *core.Record) bool { return changed(c, characterFields...) }
 
 // watchChanges turns record changes into news, whatever made them: the Odyle routes,
 // the jobs or a superuser in the PocketBase dashboard.

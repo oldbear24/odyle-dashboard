@@ -59,10 +59,7 @@ func TestRunNowPushesAfterTheCommit(t *testing.T) {
 	m := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": u.Id, "role": "reporter"})
 	fresh := stamp(time.Now())
 	c := saved(t, app, "characters", map[string]any{"user": u.Id, "characterName": "HeroLive", "server": "EU", "region": "GLOBAL_EU", "value": 10, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": fresh, "lastReadingAt": fresh})
-	m.Set("sharedCharacters", []string{c.Id})
-	if err := app.Save(m); err != nil {
-		t.Fatal(err)
-	}
+	share(t, app, m, c.Id)
 	other := newUser(t, app, "Other")
 	// The push waits until released (or 5 s): the answer comes before.
 	safety := time.AfterFunc(5*time.Second, open)

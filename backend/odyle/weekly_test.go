@@ -52,8 +52,8 @@ func TestTheRoomSeesItsWeekAndRunsSeeTheirSpends(t *testing.T) {
 	}
 	leads, mates, unshared, elsewhere := character(lead, "Leads"), character(mate, "Mates"), character(mate, "Unshared"), character(other, "Elsewhere")
 	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Week", "cost": 40})
-	leadMember := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner", "sharedCharacters": []string{leads}})
-	mateMember := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter", "sharedCharacters": []string{mates}})
+	leadMember := sharingMember(t, app, map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"}, leads)
+	mateMember := sharingMember(t, app, map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"}, mates)
 	members, err := roomMembers(app, room.Id)
 	if err != nil {
 		t.Fatal(err)

@@ -13,7 +13,7 @@ func TestTheMembershipAnswerSettlesEachCharactersCap(t *testing.T) {
 	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Raid", "cost": 40})
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
 	main, alt := newGameCharacter(t, app, player.Id, "Main"), newGameCharacter(t, app, player.Id, "Alt")
-	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": player.Id, "role": "reporter", "sharedCharacters": []string{main}})
+	sharingMember(t, app, map[string]any{"room": room.Id, "user": player.Id, "role": "reporter"}, main)
 	capOf := func(id string) int64 {
 		t.Helper()
 		c, err := app.FindRecordById("characters", id)

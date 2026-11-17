@@ -242,7 +242,7 @@ func roomEntries(app core.App, roomId string) (entries []readyEntry, users map[s
 	for _, m := range members {
 		added := false
 		for _, c := range owned[m.User()] {
-			if !m.Shares(c.Id) {
+			if !m.Shares(app, c.Id) {
 				continue
 			}
 			present(app, c)

@@ -25,10 +25,7 @@ func TestEveryoneGoingIsToldOnceThePartyIsReady(t *testing.T) {
 	mine := saved(t, app, "characters", map[string]any{"user": lead.Id, "characterName": "Lumina", "server": "EU", "region": "GLOBAL_EU", "value": 100, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": fresh, "lastReadingAt": fresh})
 	theirs := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Kaelen", "server": "EU", "region": "GLOBAL_EU", "value": 80, "confirmed": true, "valid": true, "source": "packet", "lastSeenAt": old, "lastReadingAt": old})
 	for m, c := range map[*core.Record]*core.Record{leader: mine, member: theirs} {
-		m.Set("sharedCharacters", []string{c.Id})
-		if err := app.Save(m); err != nil {
-			t.Fatal(err)
-		}
+		share(t, app, m, c.Id)
 	}
 	run := saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(30 * time.Minute)), "plannedBy": leader.Id, "attendees": []string{leader.Id, member.Id}})
 	saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Far Away", "startsAt": stamp(time.Now().Add(3 * time.Hour)), "plannedBy": leader.Id, "attendees": []string{leader.Id, member.Id}})
