@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/filesystem/blob"
 	"golang.org/x/image/draw"
@@ -25,10 +27,10 @@ import (
 // skills, skins, wings, pet and Daevanion boards) and each character's official portrait.
 // The armory queue downloads them from PLAYNC while it looks a profile up, and the dashboard
 // loads them from the Odyle server only, so browsers never contact NCSOFT and the content
-// security policy keeps allowing images from Odyle alone. They are kept in pb_data/armory_images,
-// or in the S3 file storage while it is on (imagestore.go): an icon under PLAYNC's file name
-// (Icon_WP_MA_0078_T05.png), shrunk from PLAYNC's 256 or 512 pixels to iconSize, the most the
-// page shows on a sharp screen; a portrait under the SHA-256 of its bytes
+// security policy keeps allowing images from Odyle alone. They are records of armory_images
+// (imagestore.go), with their files in PocketBase's file storage: an icon under PLAYNC's file
+// name (Icon_WP_MA_0078_T05.png), shrunk from PLAYNC's 256 or 512 pixels to iconSize, the most
+// the page shows on a sharp screen; a portrait under the SHA-256 of its bytes
 // (portrait-<32 hex>.png), so a name always shows the same image. The nightly armory clean-up
 // deletes the images no kept profile names.
 
@@ -70,8 +72,9 @@ func iconOf(m map[string]any, key string) string {
 	return name
 }
 
-// armoryImagesDir is the folder of pb_data the images are kept in. They are a copy of
-// PLAYNC's, so backups leave it out, and a restore keeps the one the server has (register.go).
+// armoryImagesDir is the folder of pb_data the images were kept in before 0.61.0, and their
+// prefix in the S3 storage; importLegacyImages turns what is left there into records
+// (imagestore.go). Backups leave it out, and a restore keeps the one the server has.
 const armoryImagesDir = "armory_images"
 
 func imageDir(app core.App) string { return filepath.Join(app.DataDir(), armoryImagesDir) }
@@ -121,7 +124,11 @@ func (p *armoryProfile) icons() []string {
 // that cannot be downloaded (PLAYNC lacks a few) is left out of the profile: the page shows
 // the character's initials or an empty frame, and the next lookup tries again.
 func keepArmoryImages(app core.App, p *armoryProfile, track *armoryTrack, portrait bool) {
-	kept, store := map[string]bool{}, imagesOf(app)
+	kept, err := keptImages(app, p.icons())
+	if err != nil {
+		warn(app, "Odyle could not read which armory images it keeps", "error", message(err))
+		kept = map[string]bool{}
+	}
 	defer p.eachIcon(func(name *string) {
 		if !kept[*name] {
 			*name = ""
@@ -129,9 +136,7 @@ func keepArmoryImages(app core.App, p *armoryProfile, track *armoryTrack, portra
 	})
 	missing := []string{}
 	for _, name := range p.icons() {
-		if store.has(app, name) {
-			kept[name] = true
-		} else if len(missing) < iconsPerLookup {
+		if !kept[name] && len(missing) < iconsPerLookup {
 			missing = append(missing, name)
 		}
 	}
@@ -174,7 +179,7 @@ func keepIcon(app core.App, name string) bool {
 	}
 	icon, err := shrinkIcon(res.body)
 	if err == nil {
-		err = imagesOf(app).put(app, name, "image/png", icon)
+		err = saveImage(app, name, icon)
 	}
 	if err != nil {
 		warn(app, "Odyle could not keep an armory image", "error", message(err))
@@ -230,90 +235,95 @@ func keepPortrait(app core.App, link string) string {
 		return ""
 	}
 	name := "portrait-" + portraitHash(res.body)[:32] + "." + ext
-	store := imagesOf(app)
-	if store.has(app, name) {
+	if imageKept(app, name) {
 		return name
 	}
-	if err := store.put(app, name, imageTypesByExtension["."+ext], res.body); err != nil {
+	if err := saveImage(app, name, res.body); err != nil {
 		warn(app, "Odyle could not keep an armory image", "error", message(err))
 		return ""
 	}
 	return name
 }
 
-// writeImage keeps an image under its name, written whole or not at all.
-func writeImage(dir, name string, image []byte) error {
-	file, err := os.CreateTemp(dir, ".download-*")
-	if err != nil {
-		return err
-	}
-	_, err = file.Write(image)
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err == nil {
-		err = os.Rename(file.Name(), filepath.Join(dir, name))
-	}
-	if err != nil {
-		_ = os.Remove(file.Name())
-	}
-	return err
-}
-
 var imageTypesByExtension = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp"}
 
-// armoryImageRoute answers GET /api/odyle/armory-images/{file}: an image the armory keeps, from
-// the folder or the S3 storage (imagestore.go). A name always shows the same image, so browsers
-// keep it for a year, and one asking whether it changed is told it did not without the storage
-// being asked. A name the server does not keep is not looked for there either. Public, under
-// the general rate limit of /api/odyle/ (a profile names some hundred images).
+// armoryImageRoute answers GET /api/odyle/armory-images/{file}: an image the armory keeps, the
+// file of its armory_images record (imagestore.go). A name always shows the same image, so
+// browsers keep it for a year, and one asking whether it changed is told it did not without the
+// file storage being asked; a name the server does not keep answers 404 without asking it either,
+// and without caching. A record whose file the storage no longer holds (after a restore, or a
+// change of the file storage) goes, so the profile that names it fetches it again when opened.
+// Public, under the general rate limit of /api/odyle/ (a profile names some hundred images).
 func armoryImageRoute(e *core.RequestEvent) error {
 	name := e.Request.PathValue("file")
 	if !imageNames.MatchString(name) {
 		return notFound("This image is not kept.")
 	}
-	store := imagesOf(e.App)
-	kept, known, listed := store.entry(e.App, name)
-	if listed == nil && !known {
+	record, err := e.App.FindFirstRecordByData(armoryImagesCollection, "name", name)
+	if err != nil && !isNoRows(err) {
+		return err
+	}
+	if record == nil {
+		// Kept before 0.61.0 and not imported yet: served from where it was.
+		if stateOf(e.App).importing.Load() {
+			if file, at, err := legacyImage(e.App, name); err == nil {
+				defer file.Close()
+				serveImage(e, name, at, file)
+				return nil
+			}
+		}
 		return notFound("This image is not kept.")
 	}
-	headers := e.Response.Header()
-	tag := `"` + name + `"`
-	headers.Set("Content-Type", imageTypesByExtension[filepath.Ext(name)])
-	headers.Set("Cache-Control", imageCacheControl)
-	headers.Set("ETag", tag)
-	headers.Set("X-Content-Type-Options", "nosniff")
-	if known {
-		match := e.Request.Header.Get("If-None-Match")
-		since, err := http.ParseTime(e.Request.Header.Get("If-Modified-Since"))
-		if match == "*" || strings.Contains(match, tag) || match == "" && err == nil && !kept.at.Truncate(time.Second).After(since) {
-			e.Response.WriteHeader(http.StatusNotModified)
-			return nil
-		}
+	at := record.GetDateTime("created").Time()
+	if notModified(e.Request, `"`+name+`"`, at) {
+		imageHeaders(e, name)
+		e.Response.WriteHeader(http.StatusNotModified)
+		return nil
 	}
-	file, at, err := store.open(e.App, name)
+	file, err := imageFile(e.App, record)
 	if err != nil {
-		if errors.Is(err, blob.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
-			store.forget(e.App, name)
+		if s := stateOf(e.App); (errors.Is(err, blob.ErrNotFound) || errors.Is(err, fs.ErrNotExist)) && !s.moving.Load() && !s.importing.Load() {
+			if err := e.App.Delete(record); err != nil {
+				warn(e.App, "Odyle could not forget an armory image its storage lost", "image", name, "error", message(err))
+			}
 		} else {
 			warn(e.App, "Odyle could not read an armory image", "image", name, "error", message(err))
 		}
 		return notFound("This image is not kept.")
 	}
 	defer file.Close()
-	http.ServeContent(e.Response, e.Request, name, at, file)
+	serveImage(e, name, at, file)
 	return nil
 }
 
+// imageHeaders are an image's headers: its type by its extension, a year of caching and the name
+// as its ETag.
+func imageHeaders(e *core.RequestEvent, name string) {
+	headers := e.Response.Header()
+	headers.Set("Content-Type", imageTypesByExtension[filepath.Ext(name)])
+	headers.Set("Cache-Control", imageCacheControl)
+	headers.Set("ETag", `"`+name+`"`)
+	headers.Set("X-Content-Type-Options", "nosniff")
+}
+
+// serveImage answers with an image (ranges and conditions as net/http serves them).
+func serveImage(e *core.RequestEvent, name string, at time.Time, file io.ReadSeeker) {
+	imageHeaders(e, name)
+	http.ServeContent(e.Response, e.Request, name, at, file)
+}
+
+// notModified reports whether a request asks whether an image stored at that time changed: by its
+// ETag, or by a time not before it. An image never changes under its name.
+func notModified(r *http.Request, tag string, at time.Time) bool {
+	match := r.Header.Get("If-None-Match")
+	since, err := http.ParseTime(r.Header.Get("If-Modified-Since"))
+	return match == "*" || strings.Contains(match, tag) || match == "" && err == nil && !at.Truncate(time.Second).After(since)
+}
+
 // cleanArmoryImages deletes the kept images that no kept profile names, once they are an hour
-// old: a lookup downloads its images before it keeps the profile that names them. It lists the
-// storage again, which also brings the index up to date with it.
+// old: a lookup keeps its images before it keeps the profile that names them. Deleting a record
+// deletes its file.
 func cleanArmoryImages(app core.App) (int, error) {
-	store := imagesOf(app)
-	stored, err := store.relist(app)
-	if err != nil {
-		return 0, err
-	}
 	named := map[string]bool{}
 	rows, err := app.DB().NewQuery("SELECT COALESCE(CAST(profile AS TEXT), '') FROM armory_profiles").Rows()
 	if err != nil {
@@ -336,12 +346,23 @@ func cleanArmoryImages(app core.App) (int, error) {
 	for _, c := range gameClasses(app) {
 		named[c.Icon] = true
 	}
+	stored := []struct {
+		Id   string `db:"id"`
+		Name string `db:"name"`
+	}{}
+	if err := app.DB().Select("id", "name").From(armoryImagesCollection).Where(dbx.NewExp("created < {:grace}", dbx.Params{"grace": ago(imageGrace)})).All(&stored); err != nil {
+		return 0, err
+	}
 	deleted := 0
-	for name, e := range stored {
-		if named[name] || time.Since(e.at) < imageGrace {
+	for _, s := range stored {
+		if named[s.Name] {
 			continue
 		}
-		if err := store.remove(app, name); err == nil {
+		record, err := app.FindRecordById(armoryImagesCollection, s.Id)
+		if err != nil {
+			continue
+		}
+		if err := app.Delete(record); err == nil {
 			deleted++
 		}
 	}
@@ -349,15 +370,22 @@ func cleanArmoryImages(app core.App) (int, error) {
 }
 
 // imagesMissing reports whether a kept profile (its JSON) names an image the server does not
-// keep: after a restore, or a change of the file storage. Not while the index cannot tell, nor
-// while the files on disk move into the S3 storage (storage.go), which holds the rest soon.
+// keep: after a restore, or a change of the file storage. Not while the images kept before 0.61.0
+// are being imported (imagestore.go), nor when it cannot tell.
 func imagesMissing(app core.App, profile string) bool {
-	if stateOf(app).moving.Load() {
+	if stateOf(app).importing.Load() {
 		return false
 	}
-	store := imagesOf(app)
+	names := []string{}
 	for _, m := range imageMentions.FindAllStringSubmatch(profile, -1) {
-		if _, known, err := store.entry(app, m[1]); err == nil && !known {
+		names = append(names, m[1])
+	}
+	kept, err := keptImages(app, names)
+	if err != nil {
+		return false
+	}
+	for _, name := range names {
+		if !kept[name] {
 			return true
 		}
 	}

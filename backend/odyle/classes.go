@@ -100,8 +100,7 @@ func learnClasses(app core.App) error {
 
 // keepClassIcon makes sure the server keeps a class's emblem, shrunk like the game's icons.
 func keepClassIcon(app core.App, icon string) bool {
-	store := imagesOf(app)
-	if store.has(app, icon) {
+	if imageKept(app, icon) {
 		return true
 	}
 	res, err := send(call{method: "GET", url: classIconsURL() + icon, headers: map[string]string{"user-agent": userAgent}, timeout: 15 * time.Second, limit: iconLimit})
@@ -110,7 +109,7 @@ func keepClassIcon(app core.App, icon string) bool {
 	}
 	shrunk, err := shrinkIcon(res.body)
 	if err == nil {
-		err = store.put(app, icon, "image/png", shrunk)
+		err = saveImage(app, icon, shrunk)
 	}
 	if err != nil {
 		warn(app, "Odyle could not keep a class icon", "icon", icon, "error", message(err))

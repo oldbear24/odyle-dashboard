@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.61.0 · 2026-11-17
+
+### New
+- Server operators can browse, search and delete the armory's icons and portraits in the superuser dashboard, under **Collections → armory_images**. A profile whose image was deleted fetches it again when it is opened.
+
+### Changed
+- The armory keeps its icons and portraits in PocketBase's file storage, like the characters' portraits: on the server's disk, or in S3 storage when the operator sets it up. The ones kept before move over by themselves after the update, and armory pages keep showing them meanwhile.
+
+### Fixed
+- An armory image the server could not find no longer stays missing in your browser for a year: once the server has it again, the page shows it.
+
 ## 0.60.0 · 2026-11-17
 
 ### New

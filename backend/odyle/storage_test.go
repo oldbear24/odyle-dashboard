@@ -3,7 +3,6 @@ package odyle
 import (
 	"bytes"
 	"encoding/xml"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,12 +25,11 @@ import (
 // objects are put, read (ranges and conditions as net/http serves them), listed and deleted.
 // reads counts the objects read or asked about.
 type fakeS3 struct {
-	mu         sync.Mutex
-	bucket     string
-	objects    map[string]fakeObject
-	reads      atomic.Int32
-	url        string
-	beforeList func() // runs after a listing read the objects and before it answers
+	mu      sync.Mutex
+	bucket  string
+	objects map[string]fakeObject
+	reads   atomic.Int32
+	url     string
 }
 
 type fakeObject struct {
@@ -79,11 +77,6 @@ func newFakeS3(t *testing.T) *fakeS3 {
 				out.Contents = append(out.Contents, content{Key: k, LastModified: o.at.UTC().Format(time.RFC3339), ETag: `"etag"`, Size: int64(len(o.body))})
 			}
 			out.KeyCount = len(keys)
-			if wait := f.beforeList; wait != nil {
-				f.mu.Unlock()
-				wait()
-				f.mu.Lock()
-			}
 			w.Header().Set("Content-Type", "application/xml")
 			xml.NewEncoder(w).Encode(out)
 		case r.Method == http.MethodPut:
@@ -171,25 +164,38 @@ func TestS3FileStorageComesFromTheEnvironment(t *testing.T) {
 	}
 }
 
-// Once the S3 storage is on, the files kept on disk move into it: the characters' portraits and
-// the armory's images, each uploaded and then deleted from the disk. The image route then serves
-// them from the bucket with the same caching, a browser asking whether one changed is told it did
-// not without the bucket being asked, and a name the server does not keep is not looked for.
+// keptImage keeps an image as a record of armory_images, in the app's file storage.
+func keptImage(t *testing.T, app core.App, name string, image []byte) *core.Record {
+	t.Helper()
+	if err := saveImage(app, name, image); err != nil {
+		t.Fatal(err)
+	}
+	record, err := app.FindFirstRecordByData(armoryImagesCollection, "name", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+// fileKey is the key of a record's file in PocketBase's file storage.
+func fileKey(r *core.Record, field string) string {
+	return r.BaseFilesPath() + "/" + r.GetString(field)
+}
+
+func tinyPNG(t *testing.T) []byte { return pngOf(t, 16) }
+
+// Once the S3 storage is on, PocketBase's files kept on disk move into it, the characters'
+// portraits and the armory's images alike, each uploaded and then deleted from the disk. The
+// image route then serves them from the bucket with the same caching; a browser asking whether
+// one changed is told it did not, and a name the server does not keep answers 404, without the
+// bucket being asked either time.
 func TestFilesOnDiskMoveIntoTheS3Storage(t *testing.T) {
 	app := newTestApp(t)
 	if _, err := writeSettings(app, body{"portraitsPaused": true}); err != nil {
 		t.Fatal(err)
 	}
-	dir := imageDir(app)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	icon, photo := pngOf(t, 64), pngOf(t, 80)
-	for name, content := range map[string][]byte{"Icon_Moved.png": icon, "portrait-moved.png": photo, ".download-123": []byte("cut off")} {
-		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	image := keptImage(t, app, "Icon_Moved.png", icon)
 	owner := newUser(t, app, "Pictured")
 	c, err := newRecord(app, "characters")
 	if err != nil {
@@ -207,37 +213,31 @@ func TestFilesOnDiskMoveIntoTheS3Storage(t *testing.T) {
 	if err := app.Save(c); err != nil {
 		t.Fatal(err)
 	}
-	portraitKey := c.BaseFilesPath() + "/" + c.GetString("portrait")
-	if _, err := os.Stat(filepath.Join(app.DataDir(), core.LocalStorageDirName, portraitKey)); err != nil {
-		t.Fatalf("the portrait is not on disk: %v", err)
+	local := func(key string) string { return filepath.Join(app.DataDir(), core.LocalStorageDirName, key) }
+	for _, key := range []string{fileKey(image, "file"), fileKey(c, "portrait")} {
+		if !exists(local(key)) {
+			t.Fatalf("%s is not on disk", key)
+		}
 	}
 
 	f := newFakeS3(t)
 	f.useStorage(t, app)
 	move := moveToBucket(app)
-	if move.Files != 3 || move.Failed != 0 || move.Error != "" {
+	if move.Files != 2 || move.Failed != 0 || move.Error != "" {
 		t.Fatalf("move %+v", move)
 	}
-	if got := f.keys(armoryImagesDir + "/"); strings.Join(got, ",") != "armory_images/Icon_Moved.png,armory_images/portrait-moved.png" {
-		t.Fatalf("the bucket holds %v", got)
-	}
-	if o, ok := f.object("armory_images/Icon_Moved.png"); !ok || !bytes.Equal(o.body, icon) || o.contentType != "image/png" || o.cacheControl != imageCacheControl {
-		t.Fatalf("the moved icon: %v %q %q", ok, o.contentType, o.cacheControl)
-	}
-	if o, ok := f.object(portraitKey); !ok || !bytes.Equal(o.body, photo) {
-		t.Fatalf("the portrait %s is not in the bucket", portraitKey)
-	}
-	if exists(dir) {
-		t.Fatal("pb_data/armory_images is still there")
-	}
-	if _, err := os.Stat(filepath.Join(app.DataDir(), core.LocalStorageDirName, portraitKey)); err == nil {
-		t.Fatal("the portrait is still on disk")
+	for key, want := range map[string][]byte{fileKey(image, "file"): icon, fileKey(c, "portrait"): photo} {
+		if o, ok := f.object(key); !ok || !bytes.Equal(o.body, want) {
+			t.Fatalf("%s is not in the bucket", key)
+		}
+		if exists(local(key)) {
+			t.Fatalf("%s is still on disk", key)
+		}
 	}
 	if again := moveToBucket(app); again.Files != 0 || again.Failed != 0 {
 		t.Fatalf("a second move %+v", again)
 	}
 
-	// Served from the bucket, kept a year; a browser asking again hears it did not change.
 	body, headers := fetch(t, app, "/api/odyle/armory-images/Icon_Moved.png", 200)
 	if !bytes.Equal(body, icon) || headers.Get("Cache-Control") != imageCacheControl || headers.Get("Content-Type") != "image/png" || headers.Get("ETag") != `"Icon_Moved.png"` {
 		t.Fatalf("served %d bytes, %v", len(body), headers)
@@ -247,21 +247,23 @@ func TestFilesOnDiskMoveIntoTheS3Storage(t *testing.T) {
 		(&tests.ApiScenario{Name: "conditional GET", Method: http.MethodGet, URL: "/api/odyle/armory-images/Icon_Moved.png", Headers: condition, ExpectedStatus: http.StatusNotModified,
 			ExpectedContent: []string{""}, TestAppFactory: func(testing.TB) *tests.TestApp { return app }, DisableTestAppCleanup: true}).Test(t)
 	}
-	fetch(t, app, "/api/odyle/armory-images/Icon_Unknown.png", 404)
+	if _, headers := fetch(t, app, "/api/odyle/armory-images/Icon_Unknown.png", 404); headers.Get("Cache-Control") == imageCacheControl {
+		t.Fatal("a 404 is kept for a year")
+	}
 	if f.reads.Load() != reads {
 		t.Fatalf("the bucket was asked %d times", f.reads.Load()-reads)
 	}
-	// PocketBase serves the portrait from the bucket too.
-	if body, _ := fetch(t, app, "/api/files/"+portraitKey, 200); !bytes.Equal(body, photo) {
+	if body, _ := fetch(t, app, "/api/files/"+fileKey(c, "portrait"), 200); !bytes.Equal(body, photo) {
 		t.Fatal("the portrait was not served from the bucket")
 	}
-	if status := armoryStatus(app); status["images"] != 2 || status["imagesOffHost"] != true || status["imagesError"] != "" {
+	if status := armoryStatus(app); status["images"] != 1 || status["imageBytes"] != int64(len(icon)) || status["imagesOffHost"] != true {
 		t.Fatalf("status %v", status)
 	}
 }
 
-// In the S3 storage, a lookup keeps the images it downloads in the bucket, knows the ones there
-// without asking for each, and the nightly clean-up deletes those no profile names.
+// In the S3 storage, a lookup keeps the images it downloads as records with their files in the
+// bucket, knows the ones it keeps without asking the bucket, and the nightly clean-up deletes the
+// records no profile names, with their files.
 func TestArmoryKeepsItsImagesInTheS3Storage(t *testing.T) {
 	fastArmory(t)
 	stand := &armoryStand{}
@@ -269,45 +271,55 @@ func TestArmoryKeepsItsImagesInTheS3Storage(t *testing.T) {
 	app := newTestApp(t)
 	f := newFakeS3(t)
 	f.useStorage(t, app)
+	images, err := app.FindCollectionByNameOrId(armoryImagesCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
 	const id = "kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="
 	ask(t, app, "GET", armoryPath(id), nil, "", 200)
 	stateOf(app).armory.wait()
-	kept := f.keys(armoryImagesDir + "/")
 	// Six images of the profile and the emblems of the Chanter and the Spiritmaster.
-	if len(kept) != 8 || exists(imageDir(app)) {
+	if kept := f.keys(images.Id + "/"); len(kept) != 8 || countOf(t, app, armoryImagesCollection) != 8 || exists(imageDir(app)) {
 		t.Fatalf("the bucket holds %v", kept)
 	}
 	body, _ := fetch(t, app, "/api/odyle/armory-images/ICON_CL_SKILL_001.png", 200)
-	if o, _ := f.object("armory_images/ICON_CL_SKILL_001.png"); !bytes.Equal(body, o.body) {
+	record, _ := app.FindFirstRecordByData(armoryImagesCollection, "name", "ICON_CL_SKILL_001.png")
+	if o, _ := f.object(fileKey(record, "file")); !bytes.Equal(body, o.body) {
 		t.Fatal("the icon served is not the one in the bucket")
 	}
-	// The next lookup asks the bucket for nothing it knows it holds.
-	images, reads := stand.images.Load(), f.reads.Load()
+	// The next lookup asks the bucket for nothing.
+	downloads, reads := stand.images.Load(), f.reads.Load()
 	if _, err := app.DB().NewQuery("UPDATE armory_profiles SET fetchedAt = {:at}").Bind(dbx.Params{"at": ago(7 * time.Hour)}).Execute(); err != nil {
 		t.Fatal(err)
 	}
 	ask(t, app, "GET", armoryPath(id), nil, "", 200)
 	stateOf(app).armory.wait()
-	if got := stand.images.Load() - images; got != 2 || f.reads.Load() != reads {
+	if got := stand.images.Load() - downloads; got != 2 || f.reads.Load() != reads {
 		t.Fatalf("%d images downloaded again, the bucket asked %d times", got, f.reads.Load()-reads)
 	}
-	// An image no profile names goes once it is an hour old.
-	f.mu.Lock()
-	f.objects["armory_images/Old.png"] = fakeObject{body: tinyPNG(t), contentType: "image/png", at: time.Now().Add(-2 * time.Hour)}
-	f.objects["armory_images/New.png"] = fakeObject{body: tinyPNG(t), contentType: "image/png", at: time.Now()}
-	f.mu.Unlock()
+	// An image no profile names goes once it is an hour old, with its file.
+	old, fresh := keptImage(t, app, "Old.png", tinyPNG(t)), keptImage(t, app, "New.png", tinyPNG(t))
+	if _, err := app.DB().NewQuery("UPDATE armory_images SET created = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": ago(2 * time.Hour), "id": old.Id}).Execute(); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := cleanArmory(app); err != nil {
 		t.Fatal(err)
 	}
-	if _, old := f.object("armory_images/Old.png"); old {
-		t.Fatal("an old image no profile names was kept")
+	if imageKept(app, "Old.png") || !imageKept(app, "New.png") || countOf(t, app, armoryImagesCollection) != 9 {
+		t.Fatal("the clean-up kept the wrong images")
 	}
-	if _, fresh := f.object("armory_images/New.png"); !fresh || len(f.keys(armoryImagesDir+"/")) != 9 {
-		t.Fatalf("the bucket holds %v", f.keys(armoryImagesDir+"/"))
+	// PocketBase deletes a record's files in the background, after the record.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, there := f.object(fileKey(old, "file")); !there {
+			break
+		} else if time.Now().After(deadline) {
+			t.Fatal("the old image's file is still in the bucket")
+		}
+	}
+	if _, there := f.object(fileKey(fresh, "file")); !there {
+		t.Fatal("the new image's file is gone")
 	}
 }
-
-func tinyPNG(t *testing.T) []byte { return pngOf(t, 16) }
 
 // A kept profile that names an image the server no longer keeps (after a restore, or a change of
 // the file storage) is fetched again once it is 15 minutes old, which keeps its images again.
@@ -329,7 +341,11 @@ func TestProfilesNamingLostImagesAreFetchedAgain(t *testing.T) {
 	if got := ask(t, app, "GET", armoryPath(id), nil, "", 200); got["state"] != "fresh" {
 		t.Fatalf("a profile with its images: %v", got["state"])
 	}
-	if err := imagesOf(app).remove(app, "ICON_CL_SKILL_001.png"); err != nil {
+	lost, err := app.FindFirstRecordByData(armoryImagesCollection, "name", "ICON_CL_SKILL_001.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Delete(lost); err != nil {
 		t.Fatal(err)
 	}
 	age(5 * time.Minute)
@@ -341,8 +357,116 @@ func TestProfilesNamingLostImagesAreFetchedAgain(t *testing.T) {
 		t.Fatal("a profile missing an image was not fetched again")
 	}
 	stateOf(app).armory.wait()
-	if !imagesOf(app).has(app, "ICON_CL_SKILL_001.png") {
+	if !imageKept(app, "ICON_CL_SKILL_001.png") {
 		t.Fatal("the lost image was not kept again")
+	}
+}
+
+// A record whose file the storage lost goes when the image is asked for, unless the files are
+// moving into the S3 storage; the 404 is not kept by browsers.
+func TestTheImageRouteForgetsImagesItsStorageLost(t *testing.T) {
+	app := newTestApp(t)
+	lost := keptImage(t, app, "Icon_Lost.png", tinyPNG(t))
+	if err := os.Remove(filepath.Join(app.DataDir(), core.LocalStorageDirName, fileKey(lost, "file"))); err != nil {
+		t.Fatal(err)
+	}
+	stateOf(app).moving.Store(true)
+	fetch(t, app, "/api/odyle/armory-images/Icon_Lost.png", 404)
+	if !imageKept(app, "Icon_Lost.png") {
+		t.Fatal("forgotten while files move")
+	}
+	stateOf(app).moving.Store(false)
+	if _, headers := fetch(t, app, "/api/odyle/armory-images/Icon_Lost.png", 404); headers.Get("Cache-Control") == imageCacheControl {
+		t.Fatal("a 404 is kept for a year")
+	}
+	if imageKept(app, "Icon_Lost.png") {
+		t.Fatal("a record whose file is gone was kept")
+	}
+}
+
+// The images kept before 0.61.0 become records: those in pb_data/armory_images, and those under
+// armory_images/ in the S3 storage, each deleted where it was. Until then the image route serves
+// them from there, and profiles are not fetched again for them.
+func TestImagesKeptBeforeBecomeRecords(t *testing.T) {
+	app := newTestApp(t)
+	dir := imageDir(app)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	icon, photo := pngOf(t, 64), pngOf(t, 80)
+	for name, content := range map[string][]byte{"Icon_Disk.png": icon, "portrait-disk.png": photo, ".download-1": []byte("cut off")} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Not imported yet: served from the folder while the import runs, and no profile waits for it.
+	stateOf(app).importing.Store(true)
+	if body, _ := fetch(t, app, "/api/odyle/armory-images/Icon_Disk.png", 200); !bytes.Equal(body, icon) {
+		t.Fatal("an image kept before was not served from the folder")
+	}
+	if imagesMissing(app, `{"gear":[{"icon":"Icon_Disk.png"}]}`) {
+		t.Fatal("a profile is fetched again for an image being imported")
+	}
+	stateOf(app).importing.Store(false)
+	fetch(t, app, "/api/odyle/armory-images/Icon_Disk.png", 404)
+
+	imported, failed, failure := importLegacyImages(app)
+	if imported != 2 || failed != 0 || failure != "" || exists(dir) {
+		t.Fatalf("imported %d, failed %d (%s); folder left: %v", imported, failed, failure, exists(dir))
+	}
+	if body, _ := fetch(t, app, "/api/odyle/armory-images/Icon_Disk.png", 200); !bytes.Equal(body, icon) {
+		t.Fatal("the imported icon is not served")
+	}
+	if record, err := app.FindFirstRecordByData(armoryImagesCollection, "name", "portrait-disk.png"); err != nil || record.GetInt("size") != len(photo) {
+		t.Fatalf("the imported portrait: %v", err)
+	}
+
+	// In the S3 storage: one image only there, and one a record holds already.
+	f := newFakeS3(t)
+	f.useStorage(t, app)
+	keptImage(t, app, "Icon_Kept.png", icon)
+	f.mu.Lock()
+	f.objects[legacyKey("Icon_Bucket.png")] = fakeObject{body: icon, contentType: "image/png", at: time.Now()}
+	f.objects[legacyKey("Icon_Kept.png")] = fakeObject{body: icon, contentType: "image/png", at: time.Now()}
+	f.mu.Unlock()
+	stateOf(app).importing.Store(true)
+	if body, _ := fetch(t, app, "/api/odyle/armory-images/Icon_Bucket.png", 200); !bytes.Equal(body, icon) {
+		t.Fatal("an image kept before was not served from the bucket")
+	}
+	stateOf(app).importing.Store(false)
+	imported, failed, failure = importLegacyImages(app)
+	if imported != 1 || failed != 0 || failure != "" || len(f.keys(armoryImagesDir+"/")) != 0 {
+		t.Fatalf("imported %d, failed %d (%s); left %v", imported, failed, failure, f.keys(armoryImagesDir+"/"))
+	}
+	record, err := app.FindFirstRecordByData(armoryImagesCollection, "name", "Icon_Bucket.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := f.object(fileKey(record, "file")); !ok || !bytes.Equal(o.body, icon) {
+		t.Fatal("the imported image's file is not in the bucket")
+	}
+}
+
+// A move sticks to the storage that was on when it started: once the file storage is another
+// (switched off, or another bucket), it stops and leaves the rest on disk.
+func TestAMoveStopsWhenTheStorageChanges(t *testing.T) {
+	app := newTestApp(t)
+	a, b := keptImage(t, app, "Icon_A.png", tinyPNG(t)), keptImage(t, app, "Icon_B.png", tinyPNG(t))
+	f := newFakeS3(t)
+	f.useStorage(t, app)
+	other := app.Settings().S3
+	other.Bucket = "another-bucket"
+	move := moveInto(app, other)
+	if move.Files != 0 || !strings.Contains(move.Error, "changed") || len(f.keys("")) != 0 {
+		t.Fatalf("a move to a storage no longer on: %+v, the bucket holds %v", move, f.keys(""))
+	}
+	for _, r := range []*core.Record{a, b} {
+		if !exists(filepath.Join(app.DataDir(), core.LocalStorageDirName, fileKey(r, "file"))) {
+			t.Fatalf("%s left the disk", r.GetString("name"))
+		}
+	}
+	if move := moveToBucket(app); move.Files != 2 || move.Error != "" {
+		t.Fatalf("the move %+v", move)
 	}
 }
 
@@ -376,80 +500,5 @@ func TestLostPortraitsAreKeptAgain(t *testing.T) {
 	again, _ := findAs[Character](app, "characters", id)
 	if again.Portrait() == "" || again.Portrait() == first || !portraitStored(app, again) {
 		t.Fatalf("the portrait %q was not kept again", again.Portrait())
-	}
-}
-
-// A move sticks to the storage that was on when it started: once the file storage is another
-// (switched off, or another bucket), it stops and leaves the rest on disk.
-func TestAMoveStopsWhenTheStorageChanges(t *testing.T) {
-	app := newTestApp(t)
-	dir := imageDir(app)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"Icon_A.png", "Icon_B.png"} {
-		if err := os.WriteFile(filepath.Join(dir, name), tinyPNG(t), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f := newFakeS3(t)
-	f.useStorage(t, app)
-	other := app.Settings().S3
-	other.Bucket = "another-bucket"
-	move := moveInto(app, other)
-	if move.Files != 0 || !strings.Contains(move.Error, "changed") || len(f.keys("")) != 0 {
-		t.Fatalf("a move to a storage no longer on: %+v, the bucket holds %v", move, f.keys(""))
-	}
-	if left, _ := os.ReadDir(dir); len(left) != 2 {
-		t.Fatalf("%d images left on disk", len(left))
-	}
-	if move := moveToBucket(app); move.Files != 2 || move.Error != "" {
-		t.Fatalf("the move %+v", move)
-	}
-}
-
-// Nothing waits for a listing of the bucket but the call that runs it: meanwhile the index says it
-// cannot tell, an image kept during the listing is in the index after it, and a listing that
-// does not end in time fails instead of holding the index.
-func TestTheImageIndexNeverWaitsForAListing(t *testing.T) {
-	app := newTestApp(t)
-	f := newFakeS3(t)
-	f.useStorage(t, app)
-	gate, listed := make(chan struct{}), make(chan struct{}, 1)
-	f.beforeList = func() { listed <- struct{}{}; <-gate }
-	store := imagesOf(app)
-	first := make(chan error, 1)
-	go func() {
-		_, _, err := store.entry(app, "Icon_Late.png")
-		first <- err
-	}()
-	<-listed
-	if _, known, err := store.entry(app, "Icon_Late.png"); known || !errors.Is(err, errImagesListing) {
-		t.Fatalf("during the listing: %v %v", known, err)
-	}
-	if _, _, _, failure := store.stats(app); failure == "" {
-		t.Fatal("the status does not say the images are being listed")
-	}
-	if err := store.put(app, "Icon_Late.png", "image/png", tinyPNG(t)); err != nil {
-		t.Fatal(err)
-	}
-	close(gate)
-	if err := <-first; err != nil {
-		t.Fatal(err)
-	}
-	if !store.has(app, "Icon_Late.png") {
-		t.Fatal("an image kept during the listing is not in the index")
-	}
-
-	// A bucket that does not answer: the listing gives up, and the index says why.
-	timeouts := bucketTimeouts
-	bucketTimeouts.list = 100 * time.Millisecond
-	t.Cleanup(func() { bucketTimeouts = timeouts })
-	stuck := make(chan struct{})
-	t.Cleanup(func() { close(stuck) })
-	f.beforeList = func() { <-stuck }
-	start := time.Now()
-	if _, err := store.relist(app); err == nil || time.Since(start) > 5*time.Second {
-		t.Fatalf("a listing that never ends: %v after %v", err, time.Since(start))
 	}
 }

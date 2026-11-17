@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -706,17 +705,16 @@ func TestArmoryFetchesProfilesOfAnOlderShapeAgain(t *testing.T) {
 // The clean-up deletes the images no kept profile names, once they are an hour old.
 func TestArmoryForgetsImagesNoProfileNames(t *testing.T) {
 	app := newTestApp(t)
-	dir := imageDir(app)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	for _, name := range []string{"Named.png", "portrait-named.jpg", "Old.png", "New.png"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
+		image := pngOf(t, 16)
+		if strings.HasSuffix(name, ".jpg") {
+			image = jpegOf(t)
 		}
+		record := keptImage(t, app, name, image)
 		if name != "New.png" {
-			past := time.Now().Add(-2 * time.Hour)
-			os.Chtimes(filepath.Join(dir, name), past, past)
+			if _, err := app.DB().NewQuery("UPDATE armory_images SET created = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": ago(2 * time.Hour), "id": record.Id}).Execute(); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	saved(t, app, "armory_profiles", map[string]any{"region": "eu", "serverId": 2304, "characterId": "AAAAAAAAAAAAAAAAAAAAAAA1", "viewedAt": ago(time.Hour),
@@ -725,14 +723,23 @@ func TestArmoryForgetsImagesNoProfileNames(t *testing.T) {
 	if _, err := cleanArmory(app); err != nil {
 		t.Fatal(err)
 	}
-	left, _ := os.ReadDir(dir)
 	names := []string{}
-	for _, entry := range left {
-		names = append(names, entry.Name())
+	if err := app.DB().NewQuery("SELECT name FROM armory_images ORDER BY name").Column(&names); err != nil {
+		t.Fatal(err)
 	}
 	if strings.Join(names, ",") != "Named.png,New.png,portrait-named.jpg" {
 		t.Fatalf("left %v", names)
 	}
+}
+
+// jpegOf is a small JPEG image.
+func jpegOf(t testing.TB) []byte {
+	t.Helper()
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
 }
 
 func TestArmoryShrinksIcons(t *testing.T) {
