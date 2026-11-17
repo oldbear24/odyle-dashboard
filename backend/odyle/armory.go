@@ -1266,8 +1266,11 @@ func armoryStatus(app core.App) map[string]any {
 	_ = app.DB().NewQuery("SELECT COUNT(*) FROM armory_profiles").Row(&kept)
 	_ = app.DB().NewQuery("SELECT COUNT(*) FROM armory_profiles WHERE hidden = TRUE").Row(&hidden)
 	out["profiles"], out["hidden"], out["paused"] = kept, hidden, readSettings(app).ArmoryPaused
-	// The images the index counts (imagestore.go): in the S3 storage (imagesOffHost) or on the
-	// data volume, and why the storage could not be listed.
-	out["images"], out["imageBytes"], out["imagesOffHost"], out["imagesError"] = imagesOf(app).stats(app)
+	// The kept images (imagestore.go), with their files in S3 storage (imagesOffHost) or on the
+	// data volume.
+	var images int
+	var imageBytes int64
+	_ = app.DB().NewQuery("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM "+armoryImagesCollection).Row(&images, &imageBytes)
+	out["images"], out["imageBytes"], out["imagesOffHost"] = images, imageBytes, app.Settings().S3.Enabled
 	return out
 }

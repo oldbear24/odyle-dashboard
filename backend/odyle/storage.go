@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/filesystem"
@@ -14,10 +13,11 @@ import (
 // S3 file storage: ODYLE_STORAGE_S3_BUCKET, _REGION, _ENDPOINT, _ACCESS_KEY and _SECRET (with
 // _FORCE_PATH_STYLE=true for hosts that need it) set PocketBase's file storage (Settings → Files
 // storage) at every start, as ODYLE_BACKUP_S3_* set the backups' (backups.go), so the secret
-// stays out of the repository and the image. While it is on, PocketBase keeps the characters'
-// portraits in the bucket and the armory its images under armory_images/ (imagestore.go), and
-// nothing of them stays on the data volume: the files kept on disk before are moved into the
-// bucket when the server starts or a superuser turns the storage on (moveToBucket). Browsers
+// stays out of the repository and the image. While it is on, PocketBase keeps its files in the
+// bucket, the characters' portraits and the armory's images (records of armory_images,
+// imagestore.go), and nothing of them stays on the data volume: the files kept on disk before
+// are moved into the bucket when the server starts or a superuser turns the storage on
+// (moveToBucket). Browsers
 // load them from the Odyle server as before, which keeps them a year (the armory's images) or
 // a month (portraits). Every file is a copy of one of PLAYNC's, so the bucket needs no backup;
 // backups hold the database only.
@@ -61,7 +61,7 @@ func startMove(app core.App) {
 	if s.root != nil {
 		app = s.root
 	}
-	if !app.Settings().S3.Enabled || !s.serving.Load() || !s.moving.CompareAndSwap(false, true) {
+	if s.byHand.Load() || !app.Settings().S3.Enabled || !s.serving.Load() || !s.moving.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
@@ -79,11 +79,11 @@ func startMove(app core.App) {
 	}()
 }
 
-// moveToBucket moves the files kept on disk into the S3 storage that is on when it starts:
-// PocketBase's own (pb_data/storage, the characters' portraits) and the armory's images
-// (pb_data/armory_images). Each is uploaded, then deleted from the disk; one that fails stays
-// there for the next move, and the folders left empty go. It stops once the file storage
-// changes (switched off, or another bucket), leaving the rest on disk where it belongs then.
+// moveToBucket moves the files PocketBase keeps on disk (pb_data/storage: the characters'
+// portraits and the armory's images) into the S3 storage that is on when it starts. Each is
+// uploaded, then deleted from the disk; one that fails stays there for the next move, and the
+// folders left empty go. It stops once the file storage changes (switched off, or another
+// bucket), leaving the rest on disk where it belongs then.
 func moveToBucket(app core.App) *storageMove { return moveInto(app, app.Settings().S3) }
 
 // moveInto moves the files on disk into the given S3 storage, while it is the app's.
@@ -127,41 +127,6 @@ func moveInto(app core.App, config core.S3Config) *storageMove {
 			move.Bytes += f.Size
 		}
 		removeEmptyDirs(dir)
-	}
-	if dir := imageDir(app); exists(dir) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			failed(err)
-		}
-		for _, entry := range entries {
-			if changed() {
-				return move
-			}
-			path, name := filepath.Join(dir, entry.Name()), entry.Name()
-			if entry.IsDir() {
-				continue
-			}
-			// A download the server stopped in.
-			if !imageNames.MatchString(name) {
-				_ = os.Remove(path)
-				continue
-			}
-			image, err := os.ReadFile(path)
-			if err == nil {
-				err = putImage(app, config, name, imageTypesByExtension[filepath.Ext(name)], image)
-			}
-			if err == nil {
-				err = os.Remove(path)
-			}
-			if err != nil {
-				failed(err)
-				continue
-			}
-			imagesOf(app).noted(config, name, &imageEntry{size: int64(len(image)), at: time.Now()})
-			move.Files++
-			move.Bytes += int64(len(image))
-		}
-		_ = os.Remove(dir) // once empty
 	}
 	return move
 }

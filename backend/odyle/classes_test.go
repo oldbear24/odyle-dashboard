@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -173,17 +171,16 @@ func TestClassIconsComeFromPLAYNC(t *testing.T) {
 	}
 	// Nightly: the emblems outlive the clean-up, and the list is read again (the Ranger's
 	// emblem tried again); paused, PLAYNC is not asked.
-	for _, name := range []string{"class_icon_chanter.png", "class_icon_elementalist.png"} {
-		past := time.Now().Add(-2 * time.Hour)
-		os.Chtimes(filepath.Join(imageDir(app), name), past, past)
+	if _, err := app.DB().NewQuery("UPDATE armory_images SET created = {:at}").Bind(dbx.Params{"at": ago(2 * time.Hour)}).Execute(); err != nil {
+		t.Fatal(err)
 	}
 	before := stand.classIcons.Load()
 	if _, err := armoryNight(app); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"class_icon_chanter.png", "class_icon_elementalist.png"} {
-		if _, err := os.Stat(filepath.Join(imageDir(app), name)); err != nil {
-			t.Fatalf("%s: %v", name, err)
+		if !imageKept(app, name) {
+			t.Fatalf("%s was not kept", name)
 		}
 	}
 	if stand.classLists.Load() != 2 || stand.classIcons.Load()-before != 1 || stand.serverLists.Load() != 5 {

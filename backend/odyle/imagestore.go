@@ -2,72 +2,118 @@ package odyle
 
 import (
 	"context"
-	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/filesystem"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/filesystem/blob"
 )
 
-// The armory's images (armoryimages.go) are kept in one of two places: the folder
-// pb_data/armory_images on the data volume, or the S3 file storage under armory_images/ while
-// it is on (Settings → Files storage, or ODYLE_STORAGE_S3_*, storage.go). The server keeps an
-// index of the images stored there, their names, sizes and times, read once from the storage
-// and again whenever the storage changes or the nightly clean-up lists it. A lookup so knows
-// which images it has without asking the bucket for each, the image route answers a name it
-// does not keep, or a browser asking whether an image changed, without asking it either, and
-// the Server status page counts them without listing it.
+// The armory's images (armoryimages.go) are records of armory_images: an image's name (PLAYNC's
+// file name of an icon, portrait-<hash> of a portrait, class_icon_<class> of a class's emblem),
+// its file and its size. PocketBase keeps the file in its file storage like the characters'
+// portraits, on the data volume or in S3 storage while it is on (storage.go): superusers browse,
+// search and delete them under Collections → armory_images, deleting a record deletes its file,
+// and whether the server keeps an image is one indexed query. The dashboard loads them from
+// /api/odyle/armory-images/<name> (armoryImageRoute).
 //
-// Listing the bucket can take a while, or hang on a storage that stopped answering, so nothing
-// waits for a listing but the call that runs it: meanwhile the index answers what it held
-// before, or that it cannot tell yet (the image route then asks the storage itself), and the
-// images kept or deleted during the listing are added to what it found. Every call to the bucket
-// gives up after a while (bucketTimeouts).
+// Before 0.61.0 they were files of their own, in pb_data/armory_images or under armory_images/ in
+// the S3 storage. importLegacyImages turns those into records once the server serves; until it
+// is done, the image route serves one not imported yet from where it was.
 
-// imageListRetry is how long the index waits before it lists a storage again that failed.
-const imageListRetry = time.Minute
+const armoryImagesCollection = "armory_images"
 
 // imageCacheControl lets browsers, and any cache between them and the server, keep an image for
 // a year: a name always shows the same image.
 const imageCacheControl = "public, max-age=31536000, immutable"
 
-// bucketTimeouts are how long a call to the S3 storage may take: listing it, reading, writing
-// and deleting an image (the test build shortens them).
+// bucketTimeouts are how long a call to the file storage may take: listing it, reading, writing
+// and deleting a file (the test build shortens them).
 var bucketTimeouts = struct{ list, read, write, remove time.Duration }{list: 2 * time.Minute, read: time.Minute, write: time.Minute, remove: 30 * time.Second}
 
-// errImagesListing says that the storage is being listed, so the index cannot tell yet.
-var errImagesListing = errors.New("The armory's images are being listed.")
-
-type imageEntry struct {
-	size int64
-	at   time.Time
+// keptImages are the names among the given ones that the server keeps.
+func keptImages(app core.App, names []string) (map[string]bool, error) {
+	kept := map[string]bool{}
+	if len(names) == 0 {
+		return kept, nil
+	}
+	found := []string{}
+	err := app.DB().Select("name").From(armoryImagesCollection).Where(dbx.In("name", anys(unique(names))...)).Column(&found)
+	for _, name := range found {
+		kept[name] = true
+	}
+	return kept, err
 }
 
-type imageStore struct {
-	mu         sync.Mutex
-	config     core.S3Config         // the storage the index describes; Enabled false is the folder
-	opened     bool                  // config holds the storage last used
-	generation int                   // counts the storages the index followed
-	names      map[string]imageEntry // nil until listed
-	listing    bool                  // a listing runs now
-	changes    map[string]*imageEntry
-	failedAt   time.Time // the last listing failed then
-	failure    error
+// imageKept reports whether the server keeps the image; false when it cannot tell.
+func imageKept(app core.App, name string) bool {
+	kept, err := keptImages(app, []string{name})
+	return err == nil && kept[name]
 }
 
-func imagesOf(app core.App) *imageStore { return &stateOf(app).images }
+// saveImage keeps an image under its name, its file written to the file storage within
+// bucketTimeouts.write. One kept under the name meanwhile (another lookup, the import) stays.
+func saveImage(app core.App, name string, image []byte) error {
+	collection, err := app.FindCachedCollectionByNameOrId(armoryImagesCollection)
+	if err != nil {
+		return err
+	}
+	file, err := filesystem.NewFileFromBytes(image, name)
+	if err != nil {
+		return err
+	}
+	record := core.NewRecord(collection)
+	record.Set("name", name)
+	record.Set("file", file)
+	record.Set("size", len(image))
+	ctx, cancel := context.WithTimeout(context.Background(), bucketTimeouts.write)
+	defer cancel()
+	if err := app.SaveWithContext(ctx, record); err != nil {
+		if imageKept(app, name) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
 
-// bucketKey is an image's key in the S3 storage.
-func bucketKey(name string) string { return armoryImagesDir + "/" + name }
+// storedReader is a file read from a storage, which it releases once closed.
+type storedReader struct {
+	*blob.Reader
+	done func()
+}
 
-// openBucket opens the S3 storage for one call, which gives up after the timeout; done releases it.
+func (r storedReader) Close() error {
+	err := r.Reader.Close()
+	r.done()
+	return err
+}
+
+// imageFile reads a kept image's file from the file storage; the read gives up after
+// bucketTimeouts.read.
+func imageFile(app core.App, record *core.Record) (io.ReadSeekCloser, error) {
+	fsys, err := app.NewFilesystem()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), bucketTimeouts.read)
+	fsys.SetContext(ctx)
+	done := func() { cancel(); _ = fsys.Close() }
+	r, err := fsys.GetReader(record.BaseFilesPath() + "/" + record.GetString("file"))
+	if err != nil {
+		done()
+		return nil, err
+	}
+	return storedReader{r, done}, nil
+}
+
+// openBucket opens an S3 storage for one call, which gives up after the timeout; done releases it.
 func openBucket(config core.S3Config, timeout time.Duration) (bucket *filesystem.System, done func(), err error) {
 	bucket, err = filesystem.NewS3(config.Bucket, config.Region, config.Endpoint, config.AccessKey, config.Secret, config.ForcePathStyle)
 	if err != nil {
@@ -78,282 +124,159 @@ func openBucket(config core.S3Config, timeout time.Duration) (bucket *filesystem
 	return bucket, func() { cancel(); _ = bucket.Close() }, nil
 }
 
-// follow makes the index describe the app's file storage, starting over when it changed, and
-// answers it. Held s.mu.
-func (s *imageStore) follow(app core.App) core.S3Config {
-	if config := app.Settings().S3; !s.opened || config != s.config {
-		s.config, s.opened, s.names, s.listing, s.changes, s.failedAt, s.failure = config, true, nil, false, nil, time.Time{}, nil
-		s.generation++
-	}
-	return s.config
-}
+// legacyKey is where an image kept before 0.61.0 is in the S3 storage.
+func legacyKey(name string) string { return armoryImagesDir + "/" + name }
 
-// ready answers the storage the index describes, listing it first when the index holds nothing
-// yet; err says why the index cannot tell which images the storage holds.
-func (s *imageStore) ready(app core.App) (core.S3Config, error) {
-	s.mu.Lock()
-	config := s.follow(app)
-	switch {
-	case s.names != nil:
-		s.mu.Unlock()
-		return config, nil
-	case s.listing:
-		s.mu.Unlock()
-		return config, errImagesListing
-	case time.Since(s.failedAt) < imageListRetry:
-		err := s.failure
-		s.mu.Unlock()
-		return config, err
-	}
-	s.mu.Unlock()
-	return config, s.list(app, config)
-}
-
-// list reads every image the storage holds into the index, without holding the lock meanwhile;
-// what is kept or deleted while it runs is added to what it found.
-func (s *imageStore) list(app core.App, config core.S3Config) error {
-	s.mu.Lock()
-	if s.config != config || s.listing {
-		s.mu.Unlock()
-		return errImagesListing
-	}
-	s.listing, s.changes = true, map[string]*imageEntry{}
-	generation := s.generation
-	s.mu.Unlock()
-	names, err := listImages(app, config)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.generation != generation {
-		return errImagesListing // another storage meanwhile; its own listing follows
-	}
-	changes := s.changes
-	s.listing, s.changes = false, nil
-	if err != nil {
-		s.failedAt, s.failure = time.Now(), err
-		return err
-	}
-	for name, e := range changes {
-		if e == nil {
-			delete(names, name)
-		} else {
-			names[name] = *e
-		}
-	}
-	s.names, s.failure = names, nil
-	return nil
-}
-
-// listImages reads every image a storage holds.
-func listImages(app core.App, config core.S3Config) (map[string]imageEntry, error) {
-	names := map[string]imageEntry{}
-	if config.Enabled {
-		bucket, done, err := openBucket(config, bucketTimeouts.list)
+// legacyImage reads an image kept before 0.61.0 from where it was: pb_data/armory_images, or
+// armory_images/ in the S3 storage while it is on.
+func legacyImage(app core.App, name string) (io.ReadSeekCloser, time.Time, error) {
+	if file, err := os.Open(filepath.Join(imageDir(app), name)); err == nil {
+		info, err := file.Stat()
 		if err != nil {
-			return nil, err
+			file.Close()
+			return nil, time.Time{}, err
 		}
-		defer done()
-		objects, err := bucket.List(armoryImagesDir + "/")
-		if err != nil {
-			return nil, err
-		}
-		for _, o := range objects {
-			if name, ok := strings.CutPrefix(o.Key, armoryImagesDir+"/"); ok && name != "" && !strings.Contains(name, "/") {
-				names[name] = imageEntry{size: o.Size, at: o.ModTime}
-			}
-		}
-		return names, nil
+		return file, info.ModTime(), nil
 	}
-	entries, err := os.ReadDir(imageDir(app))
-	if errors.Is(err, fs.ErrNotExist) {
-		return names, nil
+	config := app.Settings().S3
+	if !config.Enabled {
+		return nil, time.Time{}, fs.ErrNotExist
 	}
+	bucket, done, err := openBucket(config, bucketTimeouts.read)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	for _, entry := range entries {
-		if info, err := entry.Info(); err == nil && !entry.IsDir() {
-			names[entry.Name()] = imageEntry{size: info.Size(), at: info.ModTime()}
-		}
+	r, err := bucket.GetReader(legacyKey(name))
+	if err != nil {
+		done()
+		return nil, time.Time{}, err
 	}
-	return names, nil
+	return storedReader{r, done}, r.ModTime(), nil
 }
 
-// noted keeps a change of the storage in the index (nil: the image is gone), when the index
-// still describes that storage.
-func (s *imageStore) noted(config core.S3Config, name string, e *imageEntry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.opened || s.config != config {
+// startImport imports the images kept before 0.61.0 in the background (importLegacyImages), when
+// the server serves and there may be some: the old folder is there, or the S3 storage is on.
+func startImport(app core.App) {
+	s := stateOf(app)
+	if s.root != nil {
+		app = s.root
+	}
+	if s.byHand.Load() || !exists(imageDir(app)) && !app.Settings().S3.Enabled || !s.importing.CompareAndSwap(false, true) {
 		return
 	}
-	if s.names != nil {
-		if e == nil {
-			delete(s.names, name)
-		} else {
-			s.names[name] = *e
+	go func() {
+		defer s.importing.Store(false)
+		imported, failed, failure := importLegacyImages(app)
+		switch {
+		case failed > 0:
+			warn(app, "Odyle could not import every armory image kept before 0.61.0; the rest stays where it was until the next start", "imported", imported, "failed", failed, "error", failure)
+		case imported > 0:
+			info(app, "Odyle imported the armory images kept before 0.61.0", "images", imported)
 		}
-	}
-	if s.listing {
-		s.changes[name] = e
-	}
+	}()
 }
 
-// entry is the stored image of a name; known is false when the storage does not hold it, and
-// err says why the index cannot tell (being listed, or the storage could not be listed).
-func (s *imageStore) entry(app core.App, name string) (e imageEntry, known bool, err error) {
-	if _, err := s.ready(app); err != nil {
-		return imageEntry{}, false, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	e, known = s.names[name]
-	return e, known, nil
-}
-
-// has reports whether the storage holds the image (false while the index cannot tell).
-func (s *imageStore) has(app core.App, name string) bool {
-	_, known, _ := s.entry(app, name)
-	return known
-}
-
-// put keeps an image under its name in the app's file storage, written whole or not at all.
-func (s *imageStore) put(app core.App, name, contentType string, image []byte) error {
-	s.mu.Lock()
-	config := s.follow(app)
-	s.mu.Unlock()
-	if err := putImage(app, config, name, contentType, image); err != nil {
-		return err
-	}
-	s.noted(config, name, &imageEntry{size: int64(len(image)), at: time.Now()})
-	return nil
-}
-
-// putImage writes an image to a storage.
-func putImage(app core.App, config core.S3Config, name, contentType string, image []byte) error {
-	if !config.Enabled {
-		dir := imageDir(app)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		return writeImage(dir, name, image)
-	}
-	bucket, done, err := openBucket(config, bucketTimeouts.write)
-	if err != nil {
-		return err
-	}
-	defer done()
-	w, err := bucket.NewWriter(bucketKey(name), &blob.WriterOptions{ContentType: contentType, CacheControl: imageCacheControl})
-	if err != nil {
-		return err
-	}
-	if _, err := w.Write(image); err != nil {
-		return errors.Join(err, w.Close())
-	}
-	return w.Close()
-}
-
-// bucketReader is an image read from the bucket, which releases the bucket once closed.
-type bucketReader struct {
-	*blob.Reader
-	done func()
-}
-
-func (r bucketReader) Close() error {
-	err := r.Reader.Close()
-	r.done()
-	return err
-}
-
-// open reads a stored image, with the time it was stored.
-func (s *imageStore) open(app core.App, name string) (io.ReadSeekCloser, time.Time, error) {
-	s.mu.Lock()
-	config := s.follow(app)
-	s.mu.Unlock()
-	if config.Enabled {
-		bucket, done, err := openBucket(config, bucketTimeouts.read)
-		if err != nil {
-			return nil, time.Time{}, err
-		}
-		r, err := bucket.GetReader(bucketKey(name))
-		if err != nil {
-			done()
-			return nil, time.Time{}, err
-		}
-		return bucketReader{r, done}, r.ModTime(), nil
-	}
-	file, err := os.Open(filepath.Join(imageDir(app), name))
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, time.Time{}, err
-	}
-	return file, info.ModTime(), nil
-}
-
-// remove deletes a stored image.
-func (s *imageStore) remove(app core.App, name string) error {
-	s.mu.Lock()
-	config := s.follow(app)
-	s.mu.Unlock()
-	var err error
-	if config.Enabled {
-		bucket, done, openErr := openBucket(config, bucketTimeouts.remove)
-		if openErr != nil {
-			return openErr
-		}
-		err = bucket.Delete(bucketKey(name))
-		done()
-	} else {
-		err = os.Remove(filepath.Join(imageDir(app), name))
-	}
-	if err != nil && !errors.Is(err, blob.ErrNotFound) && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	s.noted(config, name, nil)
-	return nil
-}
-
-// forget drops a name from the index, for one the storage turned out not to hold.
-func (s *imageStore) forget(app core.App, name string) {
-	s.mu.Lock()
-	config := s.follow(app)
-	s.mu.Unlock()
-	s.noted(config, name, nil)
-}
-
-// relist lists the storage again and answers every image it holds, for the nightly clean-up.
-// The index keeps answering from what it held meanwhile.
-func (s *imageStore) relist(app core.App) (map[string]imageEntry, error) {
-	s.mu.Lock()
-	config := s.follow(app)
-	s.mu.Unlock()
-	if err := s.list(app, config); err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make(map[string]imageEntry, len(s.names))
-	for name, e := range s.names {
-		out[name] = e
-	}
-	return out, nil
-}
-
-// stats counts the stored images and their bytes, and says whether they are in the S3 storage
-// and why the index could not count them ("" when it could).
-func (s *imageStore) stats(app core.App) (count int, size int64, offHost bool, failure string) {
-	config, err := s.ready(app)
-	if err != nil {
+// importLegacyImages turns the images kept before 0.61.0 into records of armory_images: those in
+// pb_data/armory_images, then, while the S3 storage is on, those under armory_images/ in it. Each
+// is deleted where it was once a record holds it (its own, or one kept meanwhile); one that fails
+// stays there for the next start. The folder goes once empty.
+func importLegacyImages(app core.App) (imported, failed int, failure string) {
+	note := func(err error) {
+		failed++
 		failure = message(err)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, e := range s.names {
-		count++
-		size += e.size
+	if dir := imageDir(app); exists(dir) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			note(err)
+		}
+		for _, entry := range entries {
+			path, name := filepath.Join(dir, entry.Name()), entry.Name()
+			if entry.IsDir() {
+				continue
+			}
+			// A download the server stopped in.
+			if !imageNames.MatchString(name) {
+				_ = os.Remove(path)
+				continue
+			}
+			if !imageKept(app, name) {
+				image, err := os.ReadFile(path)
+				if err == nil {
+					err = saveImage(app, name, image)
+				}
+				if err != nil {
+					note(err)
+					continue
+				}
+				imported++
+			}
+			if err := os.Remove(path); err != nil {
+				note(err)
+			}
+		}
+		_ = os.Remove(dir) // once empty
 	}
-	return count, size, config.Enabled, failure
+	config := app.Settings().S3
+	if !config.Enabled {
+		return imported, failed, failure
+	}
+	bucket, done, err := openBucket(config, bucketTimeouts.list)
+	if err != nil {
+		note(err)
+		return imported, failed, failure
+	}
+	objects, err := bucket.List(armoryImagesDir + "/")
+	done()
+	if err != nil {
+		note(err)
+		return imported, failed, failure
+	}
+	for _, o := range objects {
+		name, ok := strings.CutPrefix(o.Key, armoryImagesDir+"/")
+		if !ok || !imageNames.MatchString(name) {
+			continue
+		}
+		saved, err := importBucketImage(app, config, name)
+		if err != nil {
+			note(err)
+			continue
+		}
+		if saved {
+			imported++
+		}
+	}
+	return imported, failed, failure
+}
+
+// importBucketImage keeps an image kept before 0.61.0 under armory_images/ in the S3 storage as a
+// record, unless one holds it already, then deletes it there; saved says whether it made the record.
+func importBucketImage(app core.App, config core.S3Config, name string) (saved bool, err error) {
+	if !imageKept(app, name) {
+		bucket, done, err := openBucket(config, bucketTimeouts.read)
+		if err != nil {
+			return false, err
+		}
+		r, err := bucket.GetReader(legacyKey(name))
+		if err != nil {
+			done()
+			return false, err
+		}
+		image, err := io.ReadAll(r)
+		r.Close()
+		done()
+		if err == nil {
+			err = saveImage(app, name, image)
+		}
+		if err != nil {
+			return false, err
+		}
+		saved = true
+	}
+	bucket, done, err := openBucket(config, bucketTimeouts.remove)
+	if err != nil {
+		return saved, err
+	}
+	defer done()
+	return saved, bucket.Delete(legacyKey(name))
 }
