@@ -2,7 +2,7 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
-## 0.60.0 · 2026-11-16
+## 0.60.0 · 2026-11-17
 
 ### New
 - Server operators can keep the characters' portraits and the armory's icons in S3-compatible storage instead of on the server's disk. The pictures already on the disk move there by themselves, and your browser still loads them from the Odyle server and keeps them as before.
