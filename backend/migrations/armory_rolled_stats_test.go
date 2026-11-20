@@ -8,7 +8,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// The builds kept before 0.63.0 take their items' rolled stats from the profiles they were taken
+// The builds kept before 0.64.0 take their items' rolled stats from the profiles they were taken
 // from: the same slot and name, from a profile read with the build or later, never over rolled
 // stats they have. A build without a kept profile, or with an older one, stays as it was.
 func TestArmoryBuildsTakeRolledStatsFromTheirProfiles(t *testing.T) {

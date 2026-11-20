@@ -25,6 +25,8 @@ var verifiedGroupAdapters = []string{"test-group-v1"}
 
 var verifiedPvpAdapters = []string{"test-pvp-v1"}
 
+var verifiedTeammateAdapters = []string{"test-teammates-v1"}
+
 // The armory asks the PLAYNC stand-in of the tests without its pauses between lookups.
 func init() {
 	testFixtures = fixtures

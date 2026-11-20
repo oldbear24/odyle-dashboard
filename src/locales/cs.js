@@ -1732,5 +1732,7 @@ export default {
   "A PvP event's id is 32 hexadecimal digits, each once.": 'Id PvP události je 32 šestnáctkových číslic a každé jen jednou.',
   'A PvP event is a kill, an assist or a death.': 'PvP událost je kill, assist nebo death.',
   'This PvP adapter is not accepted.': 'Tento PvP adaptér server nepřijímá.',
+  'This teammate adapter is not accepted.': 'Tento adaptér spoluhráčů server nepřijímá.',
+  "Teammates are 1 to 48 players' names.": 'Spoluhráči jsou 1 až 48 jmen hráčů.',
   'PvP stats must be true or false.': 'PvP statistiky musí být true nebo false.',
 };

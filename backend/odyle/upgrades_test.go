@@ -41,7 +41,7 @@ func TestUpgradesCompareTheStrongestOfAClass(t *testing.T) {
 	}, Boards: []armoryBoard{{Name: "Nezekan", Open: 30, Total: 40}}, Skills: []armorySkill{{Name: "Bolt", Category: "Active", Level: 11, Equipped: true}}}
 	third := armoryProfile{Gear: []armoryGear{{Slot: "MainHand", Name: "Rod B", Grade: "Legend", Enchant: 10}}}
 	// Rolled stats: the first two rods roll Combat Speed (one twice, summed) and the first Critical
-	// Hit too; the third rod's are unknown (a build kept before 0.63.0).
+	// Hit too; the third rod's are unknown (a build kept before 0.64.0).
 	strongest.Gear[0].Detail.Sub = []armoryLine{{Name: "Combat Speed", Value: "13%"}, {Name: "Critical Hit", Value: "1,200"}, {Name: "Odd", Value: "?"}}
 	second.Gear[0].Detail.Sub = []armoryLine{{Name: "Combat Speed", Value: "4%"}, {Name: "Combat Speed", Value: "5.5%"}, {Name: "Critical Hit", Value: "+12%"}}
 	players := []upgradePlayer{{Name: "A", CombatPower: 300, ItemLevel: 1700}, {Name: "B", CombatPower: 200, ItemLevel: 1600}, {Name: "C", CombatPower: 100, ItemLevel: 1200}}

@@ -2,10 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
-## 0.63.0 · 2026-11-20
+## 0.64.0 · 2026-11-20
 
 ### New
 - The armory's **Upgrade** tab compares rolled stats too (soul binding): for each slot it shows which stats the strongest of your class roll on their items and how high, and tells you where your item lacks one of them or rolls it lower ("Rolled Combat Speed 8% → 13%"), which counts towards the best upgrades. Characters looked up before keep theirs from their saved profile; the others join as the scout reads their gear again, so the comparison fills in over the next two weeks.
+
+## 0.63.0 · 2026-11-20
+
+### New
+- **Top players by class** fill up faster with the players who matter: the armory's scout now also checks the characters Odyle's players play, looks up the players they met in PvP, and, from Odyle for Windows 0.35.0, the players in their party or force. Only what PLAYNC's public pages show is kept, never who played with whom.
+- Server operators see under **Server status → Armory scout** what the scout still reads for the top players: whose gear, the strongest first, with how often it reads one and about how long all of them take, which characters wait for their combat power, how many of Odyle's characters it checks next and which party and force members it looks up. **Server controls** can switch off the party and force names (the teammate adapter).
+
+### Fixed
+- A character whose armory profile the operators hid no longer shows up among the top players when the scout finds it.
 
 ## 0.62.0 · 2026-11-20
 

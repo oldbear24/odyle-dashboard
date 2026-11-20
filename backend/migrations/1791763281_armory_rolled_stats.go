@@ -10,7 +10,7 @@ import (
 )
 
 // The builds in armory_ranks keep each item's rolled stats (soul binding, PLAYNC's subStats) from
-// 0.63.0, and the Upgrade tab compares them (backend/odyle/ranks.go, upgrades.go). A build kept
+// 0.64.0, and the Upgrade tab compares them (backend/odyle/ranks.go, upgrades.go). A build kept
 // before left them out. Where the armory keeps the profile the build was taken from (a reader
 // looked the character up), its items take their rolled stats from it: the same slot and name,
 // in a profile read no earlier than a minute before the build. The scout's builds take theirs

@@ -106,7 +106,7 @@ type upgradeGear struct {
 	StoneSlots int64         `json:"stoneSlots"`
 	Popular    []upgradeItem `json:"popular"`
 	StoneNames []upgradeName `json:"stoneNames"`
-	// The items whose rolled stats are known: those of builds kept before 0.63.0 are not.
+	// The items whose rolled stats are known: those of builds kept before 0.64.0 are not.
 	RolledItems int             `json:"rolledItems"`
 	Rolled      []upgradeRolled `json:"rolled"`
 }
@@ -291,7 +291,7 @@ func (s *slotTally) add(player int, g armoryGear) {
 }
 
 // addRolled counts an item's rolled stats, a stat rolled twice on it once with both summed. An item
-// without any counts as unknown: builds kept before 0.63.0 left them out.
+// without any counts as unknown: builds kept before 0.64.0 left them out.
 func (s *slotTally) addRolled(lines []armoryLine) {
 	sums, order := map[string]float64{}, []string{}
 	for _, line := range lines {

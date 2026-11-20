@@ -79,6 +79,10 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 		record, err = core.NewRecord(collection), nil
 		record.Set("serverId", serverId)
 		record.Set("characterId", characterId)
+		// A character whose profile is hidden stays out of the top players too.
+		if hidden, _ := app.CountRecords("armory_profiles", dbx.HashExp{"serverId": serverId, "characterId": characterId, "hidden": true}); hidden > 0 {
+			record.Set("hidden", true)
+		}
 	}
 	if err != nil {
 		return err
