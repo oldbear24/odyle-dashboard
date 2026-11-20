@@ -11,6 +11,7 @@ import (
 
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/hook"
 
 	"github.com/oldbear24/odyle-dashboard/backend/admin"
 )
@@ -38,6 +39,23 @@ var accountActions = []action{
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its
 // device key, and whoever opens an invite link learns which room it opens.
 var publicActions = []action{{"pair", pair}, {"desktop-sign-in", desktopSignIn}, {"unpair", unpair}, {"invite-preview", invitePreview}}
+
+// staleTokenIgnored lets the public actions (pairing, a Windows app's sign-in with its device key,
+// unpairing, an invite's preview) answer a request whose Authorization header names a token that
+// signs nobody in, as they did before PocketBase 0.42.0, which refuses such a request with 401 on
+// every route. Windows apps send their expired token with the very request that renews it
+// (desktop-sign-in), and take a 401 there for a pairing that ended. A token that does sign someone
+// in stays; the header is dropped only just before PocketBase's check.
+var staleTokenIgnored = &hook.Handler[*core.RequestEvent]{
+	Id:       "odyleStaleTokenIgnored",
+	Priority: apis.DefaultRejectUnknownTokenMiddlewarePriority - 1,
+	Func: func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			e.Request.Header.Del("Authorization")
+		}
+		return e.Next()
+	},
+}
 
 // testFixtures adds the routes of the disposable test backend (build tag odyletest).
 var testFixtures func(se *core.ServeEvent)
@@ -145,7 +163,7 @@ func routes(se *core.ServeEvent) {
 		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(signedIn, small)
 	}
 	for _, a := range publicActions {
-		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(small)
+		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(small, staleTokenIgnored)
 	}
 	// A full information board (2,000 characters with its lines) needs more than 4 KB.
 	se.Router.POST("/api/odyle/board", observed("board", board)).Bind(signedIn, apis.BodyLimit(16384))

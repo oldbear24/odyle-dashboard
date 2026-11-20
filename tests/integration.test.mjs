@@ -813,6 +813,14 @@ test('accounts list their paired PCs and remove one without signing out elsewher
   const desk = (await action('desktop-device', { name: 'DESK-PC' }, me)).data.deviceKey, laptop = (await action('desktop-device', {}, me)).data.deviceKey;
   assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 'LAPTOP' })).status, 200);
   assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 42 })).status, 200);
+  // A Windows app sends its expired token with the sign-in that renews it: the sign-in answers as
+  // before PocketBase 0.42.0, while a route that needs no account refuses the token it cannot read.
+  const stale = { token: me.token.slice(0, -4) + 'xxxx' };
+  const renewed = await action('desktop-sign-in', { deviceKey: laptop }, stale);
+  assert.equal(renewed.status, 200, JSON.stringify(renewed.data)); assert.ok(renewed.data.token);
+  assert.equal((await action('invite-preview', { code: 'nope-nope' }, stale)).status !== 401, true);
+  assert.equal((await request('/api/odyle/armory/servers', undefined, stale, 'GET')).status, 401);
+  assert.equal((await request('/api/odyle/armory/servers', undefined, null, 'GET')).status, 200);
   let page = await account(); assert.deepEqual(page.devices.map(d => d.name).sort(), ['DESK-PC', 'LAPTOP']);
   for (const d of page.devices) assert.deepEqual(Object.keys(d).sort(), ['id', 'lastSignInAt', 'name', 'pairedAt']);
   // A reader session opened with the key belongs to that PC; an unknown key is a pairing that ended.

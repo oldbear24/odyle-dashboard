@@ -1,6 +1,6 @@
 # Odyle API v2 · Discord accounts
 
-PocketBase 0.42.3. JSON requests; authenticated requests use a PocketBase **users** token (`Authorization: Bearer <token>`). Since PocketBase 0.42.0 (dashboard 0.62.0) a request with an unknown or expired token answers 401 on every route, public ones included, instead of being treated as signed out: a client then refreshes its token or signs in again. HTTPS for hosted connections. No superuser credentials belong in either client.
+PocketBase 0.42.3. JSON requests; authenticated requests use a PocketBase **users** token (`Authorization: Bearer <token>`). Since PocketBase 0.42.0 (dashboard 0.62.0) a request with an unknown or expired token answers 401 on every route, public ones included, instead of being treated as signed out: a client then refreshes its token or signs in again. The public actions (`pair`, `desktop-sign-in`, `unpair`, `invite-preview`) still ignore such a token, as before: Windows apps send their expired token with the very sign-in that renews it, and take a 401 there for a pairing that ended. HTTPS for hosted connections. No superuser credentials belong in either client.
 
 ## Authentication
 

@@ -11,7 +11,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 
 ### Changed
 - The armory looks up to three characters up at once instead of one after another, so a busy armory shows your profile sooner. The scout's background lookups run on a lane of their own and wait while players wait.
-- The server runs on PocketBase 0.42.3 and the dashboard on its JavaScript SDK 0.29.0. A sign-in that expired is now refused on every page, so the dashboard renews it or asks you to sign in again instead of quietly showing you signed out.
+- The server runs on PocketBase 0.42.3 and the dashboard on its JavaScript SDK 0.29.0. A sign-in that expired is now refused on every page, so the dashboard renews it or asks you to sign in again instead of quietly showing you signed out. Windows apps renew theirs with their device key as before and stay paired.
 
 ## 0.61.0 · 2026-11-17
 
