@@ -233,6 +233,11 @@ func (s *armoryStand) serve(t *testing.T) {
 		q := r.URL.Query()
 		if r.URL.Path == "/search" {
 			s.searches.Add(1)
+			if strings.HasPrefix(q.Get("keyword"), "Refused") {
+				w.Header().Set("Retry-After", "1")
+				w.WriteHeader(429)
+				return
+			}
 			id := url.QueryEscape("kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=")
 			serverId, _ := json.Marshal(q.Get("serverId"))
 			json.NewEncoder(w).Encode(map[string]any{"list": []any{

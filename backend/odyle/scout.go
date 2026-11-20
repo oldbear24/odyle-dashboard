@@ -27,18 +27,30 @@ import (
 //     reading its info and equipment pages and each item's page as a lookup does, and keeps it as
 //     its build in armory_ranks (ranks.go), with the icons but no portrait and no profile;
 //   - a character the last search page listed: its info page, for its combat power;
+//   - else a character an Odyle account plays, whose PLAYNC id the portrait lookup learned
+//     (portraits.go): its info page, without a search;
+//   - else a player Odyle met by name: a party or force member a Windows app sent
+//     (teammates.go), else one of the players of the PvP events kept (pvp.go); a search for the
+//     name on their server, as the portrait lookup searches, and the character it lists is
+//     checked next;
 //   - else a page of PLAYNC's character search: a random open server, class, letter and page,
 //     the characters of the highest level listed that were not checked for rankKeep.
 //
-// That is some 7,000 pages a day, and a character's gear every few minutes at most. The armory's
-// pause stops it, and PLAYNC refusing the server stops it with the armory's queue.
+// Only characters of the highest level its searches met are checked: before its first search it
+// checks nobody else. That is some 7,000 pages a day, and a character's gear every few minutes at
+// most. The armory's pause stops it, and PLAYNC refusing the server stops it with the armory's
+// queue.
 
 const (
 	scoutSteps    = 5
 	scoutBuildGap = 3 * time.Minute
 	scoutRebuild  = 14 * 24 * time.Hour
 	scoutPageSize = 40
-	scoutHits     = 200 // characters from search pages waiting to be checked, at most
+	scoutHits     = 200   // characters from search pages waiting to be checked, at most
+	scoutNames    = 500   // party and force members waiting to be searched for, at most
+	scoutTried    = 50000 // names and characters remembered as tried, at most
+	scoutPicks    = 50    // Odyle's characters or PvP players a step picks from
+	scoutOwnRetry = 24 * time.Hour
 )
 
 // scoutStep is the time between two of the scout's pages, and scoutPick how it picks a server,
@@ -55,18 +67,78 @@ type scoutHit struct {
 	serverId            int
 }
 
+// scoutName is a player the scout looks for by name, on their server (its name) and in their
+// Odyle region (GLOBAL_EU), as characters are saved.
+type scoutName struct {
+	name, server, region string
+}
+
+func (n scoutName) key() string {
+	return "name|" + strings.ToLower(n.name) + "|" + n.server + "|" + n.region
+}
+
 // armoryScout is what the scout remembers between its pages, in server memory: the characters
-// the last search pages listed, how many pages each search has, the highest level met (lower
-// characters are passed over) and when it last read a character's gear.
+// the last search pages listed, the party and force members waiting to be searched for, the
+// names and characters it tried lately (until when it passes them over), how many pages each
+// search has, the highest level met (lower characters are passed over) and when it last read a
+// character's gear.
 type armoryScout struct {
 	mu      sync.Mutex
 	hits    []scoutHit
+	names   []scoutName
+	tried   map[string]time.Time
 	pages   map[string]int
 	level   int64
 	builtAt time.Time
 }
 
-func newArmoryScout() *armoryScout { return &armoryScout{pages: map[string]int{}} }
+func newArmoryScout() *armoryScout {
+	return &armoryScout{pages: map[string]int{}, tried: map[string]time.Time{}}
+}
+
+// try says whether key was not tried lately, and remembers it as tried for ttl (s.mu held). Past
+// scoutTried keys, the ones whose time is over are forgotten, then the oldest.
+func (s *armoryScout) try(key string, ttl time.Duration) bool {
+	at := time.Now()
+	if until, ok := s.tried[key]; ok && until.After(at) {
+		return false
+	}
+	if len(s.tried) >= scoutTried {
+		for k, until := range s.tried {
+			if !until.After(at) {
+				delete(s.tried, k)
+			}
+		}
+		for k := range s.tried {
+			if len(s.tried) < scoutTried {
+				break
+			}
+			delete(s.tried, k)
+		}
+	}
+	s.tried[key] = at.Add(ttl)
+	return true
+}
+
+// enqueue adds the party and force members a Windows app sent to the names the scout searches
+// for, and says how many it took: none it tried lately, waits for already or met at all when
+// scoutNames wait.
+func (s *armoryScout) enqueue(names []scoutName) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, taken := time.Now(), 0
+	for _, n := range names {
+		if len(s.names) >= scoutNames {
+			break
+		}
+		if until, ok := s.tried[n.key()]; ok && until.After(at) || slices.ContainsFunc(s.names, func(w scoutName) bool { return w.key() == n.key() }) {
+			continue
+		}
+		s.names = append(s.names, n)
+		taken++
+	}
+	return taken
+}
 
 // scoutArmory is the odyle-armory-scout job: the profiles kept before 0.62.0 join the top players
 // (no request to PLAYNC), then, unless the armory is paused or PLAYNC refused the server, up to
@@ -143,7 +215,149 @@ func (s *armoryScout) step(app core.App) (bool, error) {
 	if hit, ok := s.next(); ok {
 		return true, checkRank(app, hit)
 	}
+	if hit, ok, err := s.nextOwn(app); err != nil {
+		return false, err
+	} else if ok {
+		return true, checkRank(app, hit)
+	}
+	// Readers' searches first: the scout searches only in a slot of their spacing.
+	if err := stateOf(app).armorySearch.slot(); err != nil {
+		return false, nil
+	}
+	if n, ok, err := s.nextName(app); err != nil {
+		return false, err
+	} else if ok {
+		return s.find(app, n)
+	}
 	return s.search(app)
+}
+
+// nextOwn is a character an Odyle account plays, of the highest level the searches met, whose
+// combat power the armory has not checked for rankKeep: the portrait lookup learned its PLAYNC id
+// (portraits.go), so its info page is read without a search. One the scout checked is passed over
+// for scoutOwnRetry, so one PLAYNC no longer lists, or that failed, waits a day.
+func (s *armoryScout) nextOwn(app core.App) (scoutHit, bool, error) {
+	s.mu.Lock()
+	level := s.level
+	s.mu.Unlock()
+	if level == 0 {
+		return scoutHit{}, false, nil
+	}
+	rows := []struct {
+		Region   string `db:"officialRegion"`
+		ServerId int    `db:"officialServerId"`
+		Id       string `db:"officialId"`
+	}{}
+	if err := app.DB().NewQuery("SELECT officialRegion, officialServerId, officialId FROM characters c WHERE officialId != '' AND officialId != '-' AND officialRegion != '' AND level >= {:level}" +
+		" AND NOT EXISTS (SELECT 1 FROM armory_ranks r WHERE r.serverId = c.officialServerId AND r.characterId = c.officialId AND (r.checkedAt >= {:recent} OR r.hidden = TRUE))" +
+		" AND NOT EXISTS (SELECT 1 FROM armory_profiles p WHERE p.serverId = c.officialServerId AND p.characterId = c.officialId AND p.hidden = TRUE) ORDER BY RANDOM() LIMIT {:picks}").
+		Bind(dbx.Params{"level": level, "recent": ago(rankKeep), "picks": scoutPicks}).All(&rows); err != nil {
+		return scoutHit{}, false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range rows {
+		if armoryIds.MatchString(r.Id) && s.try("own|"+strconv.Itoa(r.ServerId)+"|"+r.Id, scoutOwnRetry) {
+			return scoutHit{region: r.Region, serverId: r.ServerId, characterId: r.Id}, true, nil
+		}
+	}
+	return scoutHit{}, false, nil
+}
+
+// pendingOwn counts the characters Odyle's accounts play that nextOwn would check, tried or not.
+func pendingOwn(app core.App, level int64) int {
+	if level == 0 {
+		return 0
+	}
+	var n int
+	_ = app.DB().NewQuery("SELECT COUNT(*) FROM characters c WHERE officialId != '' AND officialId != '-' AND officialRegion != '' AND level >= {:level}" +
+		" AND NOT EXISTS (SELECT 1 FROM armory_ranks r WHERE r.serverId = c.officialServerId AND r.characterId = c.officialId AND (r.checkedAt >= {:recent} OR r.hidden = TRUE))" +
+		" AND NOT EXISTS (SELECT 1 FROM armory_profiles p WHERE p.serverId = c.officialServerId AND p.characterId = c.officialId AND p.hidden = TRUE)").
+		Bind(dbx.Params{"level": level, "recent": ago(rankKeep)}).Row(&n)
+	return n
+}
+
+// nextName is the next player to search for by name: a party or force member a Windows app sent,
+// else a player of the PvP events of the last rankKeep (whom a character killed, helped kill or
+// was killed by, or whose kill it helped), picked at random among those with a server. A name the
+// armory checked lately on that server, or one the scout searched for lately, is passed over; a
+// name is searched for once in rankKeep.
+func (s *armoryScout) nextName(app core.App) (scoutName, bool, error) {
+	s.mu.Lock()
+	for len(s.names) > 0 {
+		n := s.names[0]
+		s.names = s.names[1:]
+		if s.try(n.key(), rankKeep) {
+			s.mu.Unlock()
+			return n, true, nil
+		}
+	}
+	level := s.level
+	s.mu.Unlock()
+	if level == 0 {
+		return scoutName{}, false, nil
+	}
+	met := []struct {
+		Name   string `db:"name"`
+		Server string `db:"server"`
+		Region string `db:"region"`
+	}{}
+	if err := app.DB().NewQuery("SELECT name, server, region FROM (SELECT name, server, region FROM character_pvp WHERE at >= {:since} AND server != '' AND region != ''" +
+		" UNION SELECT killer, killerServer, killerRegion FROM character_pvp WHERE at >= {:since} AND killer != '' AND killerServer != '' AND killerRegion != '') ORDER BY RANDOM() LIMIT {:picks}").
+		Bind(dbx.Params{"since": ago(rankKeep), "picks": scoutPicks}).All(&met); err != nil || len(met) == 0 {
+		return scoutName{}, false, err
+	}
+	// The names the armory checked lately, on which servers.
+	lower := make([]any, len(met))
+	for i, m := range met {
+		lower[i] = strings.ToLower(m.Name)
+	}
+	type knownName struct {
+		Name     string `db:"name"`
+		ServerId int    `db:"serverId"`
+	}
+	known := []knownName{}
+	if err := app.DB().Select("LOWER(name) AS name", "serverId").From("armory_ranks").Where(dbx.In("LOWER(name)", lower...)).
+		AndWhere(dbx.NewExp("checkedAt >= {:recent} OR hidden = TRUE", dbx.Params{"recent": ago(rankKeep)})).All(&known); err != nil {
+		return scoutName{}, false, err
+	}
+	book := serversOf(app)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range met {
+		n := scoutName{name: m.Name, server: m.Server, region: m.Region}
+		if slices.ContainsFunc(known, func(k knownName) bool { return k.Name == strings.ToLower(m.Name) && book.name(k.ServerId) == m.Server }) {
+			continue
+		}
+		if s.try(n.key(), rankKeep) {
+			return n, true, nil
+		}
+	}
+	return scoutName{}, false, nil
+}
+
+// find searches for a player by name on their server, as the portrait lookup does (findOfficial),
+// and has the character it lists checked next when it is of the highest level the searches met.
+// It says whether it asked PLAYNC.
+func (s *armoryScout) find(app core.App, n scoutName) (bool, error) {
+	book := serversOf(app)
+	if len(book.searches(n.server, n.region)) == 0 {
+		return false, nil
+	}
+	hit, err := findOfficial(book, n.name, n.server, n.region)
+	if err != nil {
+		return true, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !armoryIds.MatchString(hit.id) || hit.level < s.level {
+		return true, nil
+	}
+	s.hits = append([]scoutHit{{region: hit.region, serverId: hit.serverId, characterId: hit.id}}, s.hits...)
+	if len(s.hits) > scoutHits {
+		s.hits = s.hits[:scoutHits]
+	}
+	return true, nil
 }
 
 // next takes the next character the search pages listed.
@@ -158,15 +372,89 @@ func (s *armoryScout) next() (scoutHit, bool) {
 	return hit, true
 }
 
+// pendingBuilds is the SQL of the characters whose gear the scout reads next: those in their
+// class's top rankLimit whose gear is unknown or scoutRebuild old (bind limit and old), the
+// strongest first with "ORDER BY combatPower DESC, id".
+const pendingBuilds = "FROM armory_ranks WHERE id IN (" + inTop + ") AND (builtAt = '' OR builtAt < {:old})"
+
 // nextBuild is the strongest character in its class's top whose gear is unknown or old.
 func nextBuild(app core.App) (scoutHit, bool, error) {
 	var hit scoutHit
-	err := app.DB().NewQuery("SELECT region, serverId, characterId FROM armory_ranks WHERE id IN ("+inTop+") AND (builtAt = '' OR builtAt < {:old}) ORDER BY combatPower DESC, id LIMIT 1").
+	err := app.DB().NewQuery("SELECT region, serverId, characterId "+pendingBuilds+" ORDER BY combatPower DESC, id LIMIT 1").
 		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild)}).Row(&hit.region, &hit.serverId, &hit.characterId)
 	if isNoRows(err) {
 		return hit, false, nil
 	}
 	return hit, err == nil, err
+}
+
+// scoutShown is how many characters of each of the scout's lists the Server status page names.
+const scoutShown = 20
+
+// scoutPending is a character the scout still reads, on the Server status page.
+type scoutPending struct {
+	Region      string `db:"region" json:"region"`
+	ServerId    int    `db:"serverId" json:"serverId"`
+	Server      string `db:"-" json:"server"`
+	CharacterId string `db:"characterId" json:"characterId"`
+	Name        string `db:"name" json:"name"`
+	Class       string `db:"class" json:"class"`
+	CombatPower int64  `db:"combatPower" json:"combatPower"`
+	BuiltAt     string `db:"builtAt" json:"builtAt"`
+	Total       int    `db:"total" json:"-"`
+	Never       int    `db:"never" json:"-"`
+}
+
+// scoutStatus is the scout's part of the Server status page: what it still reads of PLAYNC.
+// builds counts the top players whose gear it reads (neverBuilt of them never read, the others
+// scoutRebuild old) and buildQueue names the first scoutShown in the order it reads them; checks
+// counts the characters its search pages and name searches found whose combat power it reads next
+// (in server memory, so a restart forgets them) and checkQueue names the first scoutShown, as far
+// as the armory knows them. own counts the characters Odyle's accounts play it checks next, names
+// the party and force members Windows apps sent that it searches for (in server memory too), and
+// nameQueue names the first scoutShown. level is the highest level its searches met (it keeps only characters of
+// it), buildEvery how often it may queue a character's gear (in seconds, 0 with no scout lanes;
+// only while no reader's lookup waits) and lastBuildAt when it last did.
+func scoutStatus(app core.App) map[string]any {
+	s := stateOf(app).scout
+	s.mu.Lock()
+	hits := slices.Clone(s.hits[:min(len(s.hits), scoutShown)])
+	waiting := slices.Clone(s.names[:min(len(s.names), scoutShown)])
+	checks, names, level, builtAt := len(s.hits), len(s.names), s.level, s.builtAt
+	s.mu.Unlock()
+	book := serversOf(app)
+	builds := []scoutPending{}
+	_ = app.DB().NewQuery("SELECT region, serverId, characterId, name, class, combatPower, builtAt, COUNT(*) OVER () AS total, SUM(builtAt = '') OVER () AS never " + pendingBuilds + " ORDER BY combatPower DESC, id LIMIT {:shown}").
+		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild), "shown": scoutShown}).All(&builds)
+	total, never := 0, 0
+	if len(builds) > 0 {
+		total, never = builds[0].Total, builds[0].Never
+	}
+	for i := range builds {
+		b := &builds[i]
+		b.Server = book.inRegion(b.Region, b.ServerId)
+		if at, err := time.Parse(stampLayout, b.BuiltAt); err == nil {
+			b.BuiltAt = isoTime(at)
+		}
+	}
+	queue := make([]scoutPending, len(hits))
+	for i, h := range hits {
+		q := &queue[i]
+		q.Region, q.ServerId, q.Server, q.CharacterId = h.region, h.serverId, book.inRegion(h.region, h.serverId), h.characterId
+		// A character checked more than rankKeep ago may still be kept, with its name.
+		_ = app.DB().NewQuery("SELECT name, class, combatPower FROM armory_ranks WHERE serverId = {:server} AND characterId = {:id}").
+			Bind(dbx.Params{"server": h.serverId, "id": h.characterId}).Row(&q.Name, &q.Class, &q.CombatPower)
+	}
+	every := 0
+	if lanes := readSettings(app).ScoutLanes; lanes > 0 {
+		every = int((scoutBuildGap / time.Duration(lanes)).Seconds())
+	}
+	nameQueue := make([]map[string]any, len(waiting))
+	for i, n := range waiting {
+		nameQueue[i] = map[string]any{"name": n.name, "server": n.server, "region": n.region}
+	}
+	return map[string]any{"builds": total, "neverBuilt": never, "buildQueue": builds, "checks": checks, "checkQueue": queue,
+		"own": pendingOwn(app, level), "names": names, "nameQueue": nameQueue, "level": level, "buildEvery": every, "lastBuildAt": isoTime(builtAt)}
 }
 
 func (h scoutHit) job() armoryJob {
@@ -263,9 +551,6 @@ func (s *armoryScout) search(app core.App) (bool, error) {
 	s.mu.Lock()
 	page := 1 + scoutPick(max(1, s.pages[key]))
 	s.mu.Unlock()
-	if err := stateOf(app).armorySearch.slot(); err != nil {
-		return false, nil // readers' searches first
-	}
 	region := serverRegionCodes[digit]
 	query := "keyword=" + letter + "&pcId=" + url.QueryEscape(strings.Join(classes[class], ",")) + "&serverId=" + strconv.Itoa(server.Id) + "&region=" + region +
 		"&localeInfo=en-US&page=" + strconv.Itoa(page) + "&size=" + strconv.Itoa(scoutPageSize) + "&sort=level"

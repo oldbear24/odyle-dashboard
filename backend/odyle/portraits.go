@@ -128,7 +128,11 @@ func searchServer(name string, s search) (officialHit, error) {
 		if err != nil {
 			return officialHit{}, err
 		}
-		if res.status != 200 {
+		switch {
+		case res.status == 403 || res.status == 429:
+			// The armory's queue and its scout wait for as long as PLAYNC asks (armory.go).
+			return officialHit{}, armoryRefused{wait: retryAfter(res)}
+		case res.status != 200:
 			return officialHit{}, errors.New("The official character search is unavailable (" + strconv.Itoa(res.status) + ").")
 		}
 		found, _ := res.json().(map[string]any)

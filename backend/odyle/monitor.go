@@ -36,6 +36,7 @@ var shown = map[string][]string{
 	"location":        {"sessionId", "characterId", "map", "source", "adapter"},
 	"game-group":      {"sessionId", "characterId", "adapter"},
 	"pvp":             {"sessionId", "characterId", "adapter"},
+	"teammates":       {"sessionId", "characterId", "adapter"},
 	"invalidate":      {"sessionId", "characterId"},
 	"character":       {"characterName", "server", "region"},
 	"pair":            {"name"},
@@ -52,7 +53,7 @@ var shown = map[string][]string{
 
 // Requests of the Windows app (source "app"); everything else comes from the dashboard
 // ("web"). Character saves come from both, and count as the app's.
-var appKinds = map[string]bool{"session": true, "report": true, "heartbeat": true, "location": true, "game-group": true, "pvp": true, "invalidate": true, "character": true, "pair": true, "desktop-sign-in": true, "desktop-device": true, "unpair": true}
+var appKinds = map[string]bool{"session": true, "report": true, "heartbeat": true, "location": true, "game-group": true, "pvp": true, "teammates": true, "invalidate": true, "character": true, "pair": true, "desktop-sign-in": true, "desktop-device": true, "unpair": true}
 
 func details(packet *object, kind string, b body) {
 	for _, f := range shown[kind] {
@@ -440,7 +441,7 @@ func seenAdapters(app core.App) []any {
 }
 
 func settingsJSON(app core.App, current settings) map[string]any {
-	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app), "locationAdapters": verifiedLocationAdapters, "groupAdapters": verifiedGroupAdapters, "pvpAdapters": verifiedPvpAdapters, "unnamedMaps": unnamedMaps(app, current.Maps), "thglMaps": thglCatalog(),
+	return map[string]any{"settings": current, "defaults": defaultSettings(), "builtInAdapters": verifiedAdapters, "acceptedAdapters": acceptedAdapters(app), "seenAdapters": seenAdapters(app), "classes": learnedClasses(app), "locationAdapters": verifiedLocationAdapters, "groupAdapters": verifiedGroupAdapters, "pvpAdapters": verifiedPvpAdapters, "teammateAdapters": verifiedTeammateAdapters, "unnamedMaps": unnamedMaps(app, current.Maps), "thglMaps": thglCatalog(),
 		"lastChange": lastSettingsChange(app), "serverNow": now()}
 }
 

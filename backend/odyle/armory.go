@@ -1460,5 +1460,6 @@ func armoryStatus(app core.App) map[string]any {
 	var ranked, built int
 	_ = app.DB().NewQuery("SELECT COUNT(*), COALESCE(SUM(builtAt != ''), 0) FROM armory_ranks WHERE hidden = FALSE").Row(&ranked, &built)
 	out["ranked"], out["built"] = ranked, built
+	out["scout"] = scoutStatus(app)
 	return out
 }
