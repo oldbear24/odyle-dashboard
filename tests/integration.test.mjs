@@ -485,7 +485,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
   assert.equal((await jobs(null)).status, 401); assert.equal((await jobs(member)).status, 403); assert.equal((await run('odyle-expiry', member)).status, 403);
   const listed = (await jobs(operator)).data;
-  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-old-characters', true, 'active'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active'], ['odyle-party-ready', true, 'active'], ['odyle-armory', true, 'active'], ['odyle-announcement', true, 'active']]);
+  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-old-characters', true, 'active'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active'], ['odyle-party-ready', true, 'active'], ['odyle-armory', true, 'active'], ['odyle-armory-scout', true, 'active'], ['odyle-announcement', true, 'active']]);
   assert.ok(Date.parse(listed.startedAt) <= Date.now());
   // A run by hand is recorded with its result; the account clean-up only runs on its schedule.
   const ran = await run('odyle-expiry'); assert.equal(ran.status, 200, JSON.stringify(ran.data));
@@ -503,7 +503,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     const armory = await request('/api/odyle/armory/eu/2304/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', undefined, null, 'GET');
     assert.deepEqual([armory.status, armory.data.state, armory.data.profile], [200, 'paused', null]);
     assert.equal((await request('/api/odyle/armory/search?name=Armorer&server=Lumiel&region=GLOBAL_EU', undefined, null, 'GET')).status, 503);
-    for (const name of ['odyle-portraits', 'odyle-reminders']) {
+    for (const name of ['odyle-portraits', 'odyle-reminders', 'odyle-armory-scout']) {
       const paused = await run(name); assert.equal(paused.status, 200, JSON.stringify(paused.data));
       assert.equal(paused.data.result.skipped, 'paused'); assert.equal(paused.data.jobs.find(j => j.name === name).state, 'paused');
     }
@@ -559,7 +559,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
   assert.equal(await snapshotNotice(), null);
-  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active']);
+  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active']);
   // A body id never replaces a packet's own number.
   const added = (await action('task', { title: 'Watched task', cadence: 'daily' }, member)).data.tasks.find(x => x.title === 'Watched task');
   assert.equal((await action('task', { id: added.id, done: true }, member)).status, 200);

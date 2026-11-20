@@ -5,7 +5,8 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ## 0.62.0 · 2026-11-20
 
 ### New
-- Every armory profile has an **Upgrade** tab: it compares the character with the strongest characters of its class the armory knows, from every Global region, and shows where you gain the most. The best upgrades come first, slot by slot: what you wear, what the strongest wear there instead, how far they enchant it, where it comes from and which stones they engrave. Below are every slot, the arcana sets they wear, how far they opened each Daevanion board and the skills most of them keep on their skill bar, with your place among them by combat power.
+- Every armory profile has an **Upgrade** tab: it compares the character with the 500 strongest characters of its class that Odyle knows, from every Global region, and shows where you gain the most. The best upgrades come first, slot by slot: what you wear, what the strongest wear there instead, how far they enchant it, where it comes from and which stones they engrave. Below are every slot, the arcana sets they wear, how far they opened each Daevanion board and the skills most of them keep on their skill bar, with your place among them by combat power.
+- **Top players by class** in the armory lists the 500 strongest characters of each class by combat power, a tab for each class, each one a click from its profile. PLAYNC lists no rankings for Global, so Odyle builds them itself: from every character anyone looks up, and from a slow scout that reads PLAYNC's character search in the background. The lists grow more complete day by day.
 
 ## 0.61.0 · 2026-11-17
 

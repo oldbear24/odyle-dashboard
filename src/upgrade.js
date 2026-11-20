@@ -43,13 +43,12 @@ export function compareSlot(item, slot, sample) {
 
 const levelOf = g => g?.detail?.itemLevel || 0;
 
-// The plan: the profile against the strongest of its class (reference, the backend's answer),
-// or null while the armory keeps too few of them. who is the profile's answer (region, server
-// id and character id), to find it among the strongest.
-export function upgradePlan(profile, reference, who = {}) {
-  const players = reference?.players || [];
-  if (players.length < upgradeLeast) return null;
-  const sample = players.length, power = Number(profile.combatPower) || 0;
+// The plan: the profile against the strongest of its class (reference, the backend's answer,
+// which leaves the profile out of them), or null while the armory knows too few of them.
+export function upgradePlan(profile, reference) {
+  const players = reference?.players || [], powers = reference?.combatPowers || players.map(p => p.combatPower);
+  const sample = reference?.sample ?? players.length, power = Number(profile.combatPower) || 0;
+  if (sample < upgradeLeast) return null;
   const gear = (profile.gear || []).filter(g => upgradeSlot(g.slot));
   const rows = [];
   for (const slot of reference.slots || []) {
@@ -59,9 +58,8 @@ export function upgradePlan(profile, reference, who = {}) {
     for (let i = 0; i < places; i++) rows.push(compareSlot(worn[i] || null, slot, sample));
   }
   const picks = rows.filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
-  // Its place: among the strongest when it is one of them, else where its combat power would put it.
-  const own = players.findIndex(p => p.characterId === who.characterId && String(p.serverId) === String(who.serverId) && p.region === who.region);
-  const place = own >= 0 ? own + 1 : players.filter(p => p.combatPower > power).length + 1;
+  // Its place: where its combat power puts it among the strongest.
+  const place = powers.filter(p => p > power).length + 1;
   const sets = new Map();
   for (const g of gear) if (g.detail?.set?.name) sets.set(g.detail.set.name, Math.max(sets.get(g.detail.set.name) || 0, Number(g.detail.set.equipped) || 0));
   const boards = (reference.boards || []).map(b => {
@@ -73,7 +71,7 @@ export function upgradePlan(profile, reference, who = {}) {
     return { ...s, equipped: Boolean(mine?.equipped), acquired: Boolean(mine?.acquired), mine: mine?.level || 0 };
   });
   return {
-    sample, place, own: own >= 0, below: own < 0 && place > sample,
+    sample, place, below: place > sample,
     combatPower: { mine: power, gap: (reference.combatPower?.median || 0) - power, ...reference.combatPower },
     itemLevel: { mine: Number(profile.itemLevel) || 0, gap: (reference.itemLevel?.median || 0) - (Number(profile.itemLevel) || 0), ...reference.itemLevel },
     rows, picks,

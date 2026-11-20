@@ -25,10 +25,12 @@ const images = '/api/odyle/armory-images/';
 const answer = extra => ({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', server: 'Lumiel', profile, fetchedAt: new Date(now - 2 * 3600000).toISOString(), error: '', state: 'fresh', position: 0, wait: 0, retryAfter: 0, lookupError: '', ...extra });
 
 test('armory paths say what they show', async () => {
-  const { armoryRoute, armoryTarget, profilePath, findPath } = await import('../src/armorylinks.js');
+  const { armoryRoute, armoryTarget, profilePath, findPath, topPath } = await import('../src/armorylinks.js');
   const profileAt = profilePath({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=' });
-  for (const path of ['/armory', profileAt, profileAt + '/skills', profileAt + '/appearance', profileAt + '/upgrade', findPath('GLOBAL_EU', 'Lumiel', 'Ka'), findPath('GLOBAL_NA', 'Siel', 'Žluťoučký'), findPath('GLOBAL_NAW', 'Siel', 'Ka')]) assert.ok(armoryRoute.test(path), path);
-  for (const path of ['/armory/', '/armory/xx/2304/kdPX-_ocYSqMloiCy7IXZ0CDm', '/armory/eu/2304/short', '/armory/find/GLOBAL_XX/Lumiel/Ka', '/armory/eu/2304/a/b', profileAt + '/gear', profileAt + '/']) assert.ok(!armoryRoute.test(path), path);
+  for (const path of ['/armory', profileAt, profileAt + '/skills', profileAt + '/appearance', profileAt + '/upgrade', '/armory/top', '/armory/top/Chanter', findPath('GLOBAL_EU', 'Lumiel', 'Ka'), findPath('GLOBAL_NA', 'Siel', 'Žluťoučký'), findPath('GLOBAL_NAW', 'Siel', 'Ka')]) assert.ok(armoryRoute.test(path), path);
+  for (const path of ['/armory/', '/armory/xx/2304/kdPX-_ocYSqMloiCy7IXZ0CDm', '/armory/eu/2304/short', '/armory/find/GLOBAL_XX/Lumiel/Ka', '/armory/eu/2304/a/b', profileAt + '/gear', profileAt + '/', '/armory/top/Chanter/x', '/armory/top/', '/armory/top/<b>']) assert.ok(!armoryRoute.test(path), path);
+  assert.deepEqual([armoryTarget('/armory/top'), armoryTarget('/armory/top/Chanter')], [{ top: { class: '' } }, { top: { class: 'Chanter' } }]);
+  assert.deepEqual([topPath(), topPath('Chanter'), topPath('<b>')], ['/armory/top', '/armory/top/Chanter', '/armory/top']);
   assert.deepEqual(armoryTarget(profileAt), { profile: { region: 'eu', serverId: '2304', characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=', tab: '' } });
   assert.deepEqual(armoryTarget(profileAt + '/daevanion').profile.tab, 'daevanion');
   assert.deepEqual(armoryTarget(profileAt + '/upgrade').profile.tab, 'upgrade');
@@ -200,7 +202,7 @@ test('the upgrade plan ranks the slots by how far the gear is behind the stronge
   const { upgradePlan, upgradeSlot, compareSlot, gradeRank } = await import('../src/upgrade.js');
   assert.deepEqual(['MainHand', 'Earring2', 'Ring1', 'Bracelet2', 'Rune1', 'Arcana3', 'Pet', 'Wings'].map(upgradeSlot), ['MainHand', 'Earring', 'Ring', 'Bracelet', 'Rune', 'Arcana3', '', 'Wings']);
   assert.deepEqual(['Common', 'Legend', 'Mythic', 'Special', undefined].map(gradeRank), [1, 3, 6, 0, 0]);
-  const plan = upgradePlan(profile, reference, answer());
+  const plan = upgradePlan(profile, reference);
   // Behind in item level (18 of 120), grade (two), exceed (two) and one empty stone slot.
   const main = plan.rows.find(r => r.slot === 'MainHand');
   assert.deepEqual(main.gaps, { itemLevel: 18, enchant: 0, exceed: 2, grade: 2, stones: 1 });
@@ -209,18 +211,19 @@ test('the upgrade plan ranks the slots by how far the gear is behind the stronge
   assert.deepEqual(plan.rows.map(r => [r.slot, r.score, r.state]), [['MainHand', 70, 'big'], ['Helmet', 0, 'even'], ['Earring', 100, 'big'], ['Earring', 100, 'big'], ['Arcana3', 0, 'even']]);
   assert.deepEqual(plan.picks.map(r => r.slot), ['Earring', 'Earring', 'MainHand']);
   // Its place: third with the three strongest, by combat power.
-  assert.equal(plan.place, 3); assert.equal(plan.own, false); assert.equal(plan.below, false);
+  assert.equal(plan.place, 3); assert.equal(plan.below, false);
   assert.deepEqual([plan.combatPower.mine, plan.combatPower.gap, plan.itemLevel.gap], [107458, 120000 - 107458, 1750 - 1671]);
   assert.deepEqual(plan.sets.map(s => [s.name, s.mine]), [['Primal Vigor', 2], ['Storm', 0]]);
   assert.deepEqual(plan.boards.map(b => [b.name, b.mine, b.gap]), [['Triniel', 0, 20], ['Nezekan', 12, 18]]);
   assert.deepEqual(plan.skills.map(s => [s.name, s.equipped, s.acquired, s.mine]), [['Bolt', true, true, 13], ['Absolution', false, false, 0]]);
-  // One of the strongest itself, or weaker than them all.
-  const own = upgradePlan(profile, { ...reference, players: [reference.players[0], { ...reference.players[1], region: 'eu', serverId: 2304, characterId: answer().characterId }, reference.players[2]] }, answer());
-  assert.deepEqual([own.place, own.own, own.below], [2, true, false]);
-  const weak = upgradePlan({ ...profile, combatPower: 1 }, reference, answer());
+  // Weaker than them all; among many more than are listed by name, its place by their combat power.
+  const weak = upgradePlan({ ...profile, combatPower: 1 }, reference);
   assert.deepEqual([weak.place, weak.below], [4, true]);
+  const many = upgradePlan(profile, { ...reference, sample: 500, combatPowers: Array.from({ length: 500 }, (_, i) => 500000 - i * 1000) });
+  assert.deepEqual([many.sample, many.place, many.below], [500, 394, false]);
   // Too few to compare with; an empty place few of the strongest fill counts for nothing.
-  assert.equal(upgradePlan(profile, { ...reference, players: reference.players.slice(0, 2) }, answer()), null);
+  assert.equal(upgradePlan(profile, { ...reference, players: reference.players.slice(0, 2) }), null);
+  assert.equal(upgradePlan(profile, { ...reference, sample: 2 }), null);
   assert.equal(upgradePlan(profile, null), null);
   assert.equal(compareSlot(null, reference.slots[3], 3).score, 0);
   // Wearing what the strongest wear most, enchanted further than they do: on par.
@@ -261,7 +264,8 @@ test('the upgrade tab shows the best upgrades, every slot, the sets, boards and 
   assert.match(html, /<li class="is-equipped">[\s\S]*?<strong>Bolt<\/strong><small>3 of the 3 strongest, level 15 · on your bar, level 13<\/small>/);
   assert.match(html, /<li class="is-locked">[\s\S]*?<strong>Absolution<\/strong><small>2 of the 3 strongest, level 10 · Not learned yet<\/small>/);
   assert.doesNotMatch(html, /Seldom/);
-  assert.match(html, /PLAYNC&#39;s Global pages list no rankings|PLAYNC's Global pages list no rankings/);
+  assert.match(html, /those Odyle's scout finds with PLAYNC's character search/);
+  assert.match(html, /<a class="text-button" href="#\/armory\/top\/Chanter">All top Chanter players /);
   // While it loads, when it did not, and while the armory keeps too few of the class.
   assert.match(view(null), /Comparing with the strongest Chanter characters the armory keeps…/);
   assert.match(view({ error: true }), /The comparison did not load\. Odyle tries again when you open this tab\./);
@@ -269,6 +273,26 @@ test('the upgrade tab shows the best upgrades, every slot, the sets, boards and 
   // On par everywhere: nothing to pick.
   const even = { ...reference, slots: [reference.slots[1]], boards: [], sets: [], skills: [] };
   assert.match(view(even), /The gear is on par with the strongest Chanter characters in every slot\./);
+});
+
+test('the top players page lists the strongest of a class, with a tab for each class', async () => {
+  const { armoryTop, armorySearch } = await import('../src/armory.js');
+  const top = { class: 'Chanter', characters: 1234, classes: [{ name: 'Gladiator', icon: 'class_icon_gladiator.png', characters: 0 }, { name: 'Chanter', icon: '', characters: 1234 }],
+    players: [{ place: 1, name: 'Top<i>', level: 45, server: 'Siel', region: 'nae', serverId: 1101, characterId: 'VG9wVG9wVG9wVG9wVG9w1A==', combatPower: 382198, itemLevel: 3100, portrait: 'portrait-a.jpg', built: true },
+      { place: 2, name: 'Second', level: 45, server: 'Lumiel', region: 'eu', serverId: 2304, characterId: 'U2Vjb25kU2Vjb25kU2Vjb25k', combatPower: 315968, itemLevel: 2900, portrait: '', built: false }] };
+  const html = armoryTop(top, images);
+  assert.match(html, /<h1>Top players by class<\/h1>/);
+  assert.match(html, /<nav class="armory-tabs top-classes" aria-label="Classes"><a href="#\/armory\/top\/Gladiator"><img class="class-icon" src="\/api\/odyle\/armory-images\/class_icon_gladiator.png"[^>]*>Gladiator<\/a><a href="#\/armory\/top\/Chanter" aria-current="page">Chanter <small>1,234<\/small><\/a><\/nav>/);
+  assert.match(html, /<h2>Strongest Chanter characters <span>2<\/span><\/h2>/);
+  assert.match(html, /<li><a href="#\/armory\/nae\/1101\/VG9wVG9wVG9wVG9wVG9w1A=="><span class="top-place">1<\/span><span class="armory-mini" aria-hidden="true">TO<img class="armory-img " src="\/api\/odyle\/armory-images\/portrait-a.jpg"[^>]*><\/span><span class="top-who"><strong>Top&lt;i&gt;<\/strong><small>Siel · North America East · Level 45<\/small><\/span><span class="top-power"><strong>382,198 <small>CP<\/small><\/strong><small>item level 3,100<\/small><\/span><\/a><\/li>/);
+  assert.match(html, /<span class="top-place">2<\/span>[\s\S]*Lumiel · Europe · Level 45/);
+  assert.match(html, /Odyle knows 1,234 Chanter characters\./);
+  assert.doesNotMatch(html, /<i>/);
+  // While it loads, and a class nobody is known of.
+  assert.match(armoryTop(null, images, 'Ranger'), /Loading the top players…/);
+  assert.match(armoryTop({ ...top, class: 'Ranger', players: [], characters: 0 }, images), /Odyle knows no Ranger character yet\./);
+  // The search page leads there.
+  assert.match(armorySearch([{ region: 'GLOBAL_EU', elyos: [], asmodian: ['Lumiel'] }], {}), /<a class="button secondary" href="#\/armory\/top">[\s\S]*Top players by class<\/a>/);
 });
 
 test('the search form keeps the last region and server and lists what PLAYNC found', async () => {

@@ -720,6 +720,15 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     }
     await page.locator('.armory-tabs a', { hasText: 'Gear & stats' }).click();
     await page.waitForURL(/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/); await items.first().waitFor();
+    // The top players by class: the first class, then the Chanters, where the looked-up character is.
+    await page.locator('.armory-back').click();
+    await page.locator('.heading-actions a', { hasText: 'Top players by class' }).click();
+    await page.waitForURL(/\/armory\/top$/); await page.locator('.top-classes a[aria-current="page"]', { hasText: 'Gladiator' }).waitFor();
+    await page.locator('.top-classes a', { hasText: 'Chanter' }).click();
+    await page.waitForURL(/\/armory\/top\/Chanter$/); await page.locator('.top-list').waitFor();
+    assert.match(await page.locator('.top-list li').first().innerText(), /1\s+AR\s+Armorer\s+Lumiel · Europe · Level 45\s+107,458 CP\s+item level 1,671/);
+    assert.equal(await page.title(), 'Strongest Chanter characters of AION 2 Global · Odyle Armory');
+    await shot(page, 'armory-top');
     // Back to the search, which keeps the region and server; a name PLAYNC does not list.
     await page.locator('.armory-back').click();
     assert.equal(await page.locator('#armory-form select[name="server"]').inputValue(), 'Lumiel');
@@ -1209,7 +1218,7 @@ test('the main pages pass the axe accessibility check, signed out and in', async
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
   const profileAt = '#/armory/eu/2304/' + armorer[0];
-  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/upgrade'], [null, profileAt + '/card'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account'], [null, '#/timers'], [null, '#/achievements'], [lead, '#/timers'], [lead, '#/achievements'], [lead, '#/week']];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/upgrade'], [null, profileAt + '/card'], [null, '#/armory/top/Chanter'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account'], [null, '#/timers'], [null, '#/achievements'], [lead, '#/timers'], [lead, '#/achievements'], [lead, '#/week']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);

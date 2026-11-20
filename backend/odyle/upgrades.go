@@ -16,18 +16,17 @@ import (
 // The armory's Upgrade tab (src/upgrade.js): what the strongest characters of a class wear,
 // slot by slot, so a player sees where their own gear falls furthest behind and what the
 // strongest wear there instead, how far they enchant it and where it comes from. PLAYNC's
-// Global pages list no rankings (docs/armory.md), so the strongest are those of the profiles
-// the armory keeps, from every Global region: the characters anyone looked up in the last 30
-// days, by combat power. Nothing more is asked of PLAYNC for it, and no player types anything
-// in (R1).
+// Global pages list no rankings (docs/armory.md), so the strongest are the characters of the
+// class with the most combat power the armory knows the gear of (armory_ranks, ranks.go): those
+// readers opened and those the scout found (scout.go), from every Global region. No player types
+// anything in (R1).
 //
-// Each saved profile names its class and combat power in indexed fields of armory_profiles
-// (watchArmoryProfiles), so a class's strongest are one query. They are read at most every
-// upgradeKeep and kept for everyone, without what the comparison does not need; each request
-// compares the profile it is for with the strongest other characters.
+// A class's comparison is worked out from their builds, one at a time, at most every upgradeKeep
+// and kept for everyone; a character among the strongest is compared with the others.
 
 const (
-	upgradeSample  = 20               // the strongest characters of a class compared with
+	upgradeSample  = rankLimit        // the strongest characters of a class compared with
+	upgradeShown   = 20               // of them listed by name
 	upgradeKeep    = 10 * time.Minute // a class's comparison is worked out again after
 	upgradePopular = 3                // items listed for a slot, most worn first
 )
@@ -57,15 +56,17 @@ var gradeRanks = map[string]int{"Common": 1, "Rare": 2, "Legend": 3, "Unique": 4
 
 // upgradeReference is what the strongest characters of a class wear, as the Upgrade tab reads it.
 type upgradeReference struct {
-	Class       string          `json:"class"`
-	Players     []upgradePlayer `json:"players"`
-	CombatPower upgradeSpread   `json:"combatPower"`
-	ItemLevel   upgradeSpread   `json:"itemLevel"`
-	Slots       []upgradeGear   `json:"slots"`
-	Sets        []upgradeSet    `json:"sets"`
-	Boards      []upgradeBoard  `json:"boards"`
-	Skills      []upgradeSkill  `json:"skills"`
-	BuiltAt     string          `json:"builtAt"`
+	Class        string          `json:"class"`
+	Players      []upgradePlayer `json:"players"`      // the strongest upgradeShown
+	Sample       int             `json:"sample"`       // how many were compared
+	CombatPowers []int64         `json:"combatPowers"` // theirs, strongest first
+	CombatPower  upgradeSpread   `json:"combatPower"`
+	ItemLevel    upgradeSpread   `json:"itemLevel"`
+	Slots        []upgradeGear   `json:"slots"`
+	Sets         []upgradeSet    `json:"sets"`
+	Boards       []upgradeBoard  `json:"boards"`
+	Skills       []upgradeSkill  `json:"skills"`
+	BuiltAt      string          `json:"builtAt"`
 }
 
 // A character of the comparison, strongest first, as the tab links its profile.
@@ -276,103 +277,122 @@ func (s *slotTally) gear(slot string) upgradeGear {
 	return out
 }
 
-// compareUpgrades works out the comparison from the profiles of the strongest characters of a
-// class, strongest first, as read at.
-func compareUpgrades(class string, players []upgradePlayer, profiles []armoryProfile, at time.Time) upgradeReference {
-	ref := upgradeReference{Class: class, Players: players, Slots: []upgradeGear{}, Sets: []upgradeSet{}, Boards: []upgradeBoard{}, Skills: []upgradeSkill{}, BuiltAt: isoTime(at)}
-	powers, levels := []int64{}, []int64{}
-	for _, p := range players {
-		powers, levels = append(powers, p.CombatPower), append(levels, p.ItemLevel)
-	}
-	ref.CombatPower, ref.ItemLevel = spread(powers), spread(levels)
-	slots, extra := map[string]*slotTally{}, []string{}
-	type setTally struct {
-		players int
-		pieces  []int64
-	}
-	sets, setOrder := map[string]*setTally{}, []string{}
-	type boardTally struct {
-		open  []int64
-		total int64
-	}
-	boards, boardOrder := map[string]*boardTally{}, []string{}
-	type skillTally struct {
-		skill  upgradeSkill
-		levels []int64
-	}
-	skills, skillOrder := map[string]*skillTally{}, []string{}
-	for i, p := range profiles {
-		worn := map[string]int64{} // the sets this character wears pieces of
-		for _, g := range p.Gear {
-			slot := upgradeSlot(g.Slot)
-			if slot == "" || g.Name == "" {
-				continue
-			}
-			if slots[slot] == nil {
-				slots[slot] = &slotTally{players: map[int]bool{}, worn: map[string]*itemTally{}}
-				if !slices.Contains(upgradeSlots, slot) {
-					extra = append(extra, slot)
-				}
-			}
-			slots[slot].add(i, g)
-			if g.Detail != nil && g.Detail.Set != nil && g.Detail.Set.Name != "" {
-				worn[g.Detail.Set.Name] = max(worn[g.Detail.Set.Name], g.Detail.Set.Equipped)
+// upgradeTally counts what the strongest characters of a class wear, one character at a time
+// (strongest first), so the comparison never holds more than one of their builds.
+type upgradeTally struct {
+	players  []upgradePlayer
+	slots    map[string]*slotTally
+	extra    []string // slots past upgradeSlots, in the order they came up
+	sets     map[string]*setTally
+	setOrder []string
+	boards   map[string]*boardTally
+	boardIds []string
+	skills   map[string]*skillTally
+	skillIds []string
+}
+
+type setTally struct {
+	players int
+	pieces  []int64
+}
+
+type boardTally struct {
+	open  []int64
+	total int64
+}
+
+type skillTally struct {
+	skill  upgradeSkill
+	levels []int64
+}
+
+func newUpgradeTally() *upgradeTally {
+	return &upgradeTally{players: []upgradePlayer{}, slots: map[string]*slotTally{}, sets: map[string]*setTally{}, boards: map[string]*boardTally{}, skills: map[string]*skillTally{}}
+}
+
+// add counts a character: its gear by slot, the sets it wears pieces of, its Daevanion boards and
+// the skills on its skill bar.
+func (t *upgradeTally) add(player upgradePlayer, p *armoryProfile) {
+	i := len(t.players)
+	t.players = append(t.players, player)
+	worn := map[string]int64{} // the sets this character wears pieces of
+	for _, g := range p.Gear {
+		slot := upgradeSlot(g.Slot)
+		if slot == "" || g.Name == "" {
+			continue
+		}
+		if t.slots[slot] == nil {
+			t.slots[slot] = &slotTally{players: map[int]bool{}, worn: map[string]*itemTally{}}
+			if !slices.Contains(upgradeSlots, slot) {
+				t.extra = append(t.extra, slot)
 			}
 		}
-		for _, g := range p.Gear {
-			if g.Detail == nil || g.Detail.Set == nil {
-				continue
-			}
+		t.slots[slot].add(i, g)
+		if g.Detail != nil && g.Detail.Set != nil && g.Detail.Set.Name != "" {
 			name := g.Detail.Set.Name
-			if pieces, ok := worn[name]; ok {
-				if sets[name] == nil {
-					sets[name] = &setTally{}
-					setOrder = append(setOrder, name)
-				}
-				sets[name].players++
-				sets[name].pieces = append(sets[name].pieces, pieces)
-				delete(worn, name)
+			if _, seen := worn[name]; !seen && t.sets[name] == nil {
+				t.sets[name] = &setTally{}
+				t.setOrder = append(t.setOrder, name)
 			}
-		}
-		for _, b := range p.Boards {
-			if b.Name == "" {
-				continue
-			}
-			if boards[b.Name] == nil {
-				boards[b.Name] = &boardTally{}
-				boardOrder = append(boardOrder, b.Name)
-			}
-			boards[b.Name].open = append(boards[b.Name].open, b.Open)
-			boards[b.Name].total = max(boards[b.Name].total, b.Total)
-		}
-		for _, s := range p.Skills {
-			if !s.Equipped || s.Name == "" {
-				continue
-			}
-			if skills[s.Name] == nil {
-				skills[s.Name] = &skillTally{skill: upgradeSkill{Name: s.Name, Category: s.Category, Icon: s.Icon}}
-				skillOrder = append(skillOrder, s.Name)
-			}
-			skills[s.Name].skill.Players++
-			skills[s.Name].levels = append(skills[s.Name].levels, s.Level)
+			worn[name] = max(worn[name], g.Detail.Set.Equipped)
 		}
 	}
-	for _, slot := range append(slices.Clone(upgradeSlots), extra...) {
-		if s := slots[slot]; s != nil {
+	for name, pieces := range worn {
+		t.sets[name].players++
+		t.sets[name].pieces = append(t.sets[name].pieces, pieces)
+	}
+	for _, b := range p.Boards {
+		if b.Name == "" {
+			continue
+		}
+		if t.boards[b.Name] == nil {
+			t.boards[b.Name] = &boardTally{}
+			t.boardIds = append(t.boardIds, b.Name)
+		}
+		t.boards[b.Name].open = append(t.boards[b.Name].open, b.Open)
+		t.boards[b.Name].total = max(t.boards[b.Name].total, b.Total)
+	}
+	for _, s := range p.Skills {
+		if !s.Equipped || s.Name == "" {
+			continue
+		}
+		if t.skills[s.Name] == nil {
+			t.skills[s.Name] = &skillTally{skill: upgradeSkill{Name: s.Name, Category: s.Category, Icon: s.Icon}}
+			t.skillIds = append(t.skillIds, s.Name)
+		}
+		t.skills[s.Name].skill.Players++
+		t.skills[s.Name].levels = append(t.skills[s.Name].levels, s.Level)
+	}
+}
+
+// reference is the comparison of the characters counted, as read at: the strongest upgradeShown
+// of them by name, every one's combat power, and what they wear.
+func (t *upgradeTally) reference(class string, at time.Time) upgradeReference {
+	ref := upgradeReference{Class: class, Players: t.players[:min(upgradeShown, len(t.players))], Sample: len(t.players), CombatPowers: []int64{},
+		Slots: []upgradeGear{}, Sets: []upgradeSet{}, Boards: []upgradeBoard{}, Skills: []upgradeSkill{}, BuiltAt: isoTime(at)}
+	levels := []int64{}
+	for _, p := range t.players {
+		ref.CombatPowers, levels = append(ref.CombatPowers, p.CombatPower), append(levels, p.ItemLevel)
+	}
+	ref.CombatPower, ref.ItemLevel = spread(ref.CombatPowers), spread(levels)
+	for _, slot := range append(slices.Clone(upgradeSlots), t.extra...) {
+		if s := t.slots[slot]; s != nil {
 			ref.Slots = append(ref.Slots, s.gear(slot))
 		}
 	}
-	for _, name := range setOrder {
-		ref.Sets = append(ref.Sets, upgradeSet{Name: name, Players: sets[name].players, Pieces: median(sets[name].pieces)})
+	for _, name := range t.setOrder {
+		if s := t.sets[name]; s.players > 0 {
+			ref.Sets = append(ref.Sets, upgradeSet{Name: name, Players: s.players, Pieces: median(s.pieces)})
+		}
 	}
 	slices.SortStableFunc(ref.Sets, func(a, b upgradeSet) int { return cmp.Or(b.Players-a.Players, cmp.Compare(b.Pieces, a.Pieces)) })
 	ref.Sets = ref.Sets[:min(8, len(ref.Sets))]
-	for _, name := range boardOrder {
-		ref.Boards = append(ref.Boards, upgradeBoard{Name: name, Players: len(boards[name].open), Open: median(boards[name].open), Total: boards[name].total})
+	for _, name := range t.boardIds {
+		ref.Boards = append(ref.Boards, upgradeBoard{Name: name, Players: len(t.boards[name].open), Open: median(t.boards[name].open), Total: t.boards[name].total})
 	}
-	for _, name := range skillOrder {
-		s := skills[name].skill
-		s.Level = median(skills[name].levels)
+	for _, name := range t.skillIds {
+		s := t.skills[name].skill
+		s.Level = median(t.skills[name].levels)
 		ref.Skills = append(ref.Skills, s)
 	}
 	slices.SortStableFunc(ref.Skills, func(a, b upgradeSkill) int { return cmp.Or(b.Players-a.Players, cmp.Compare(b.Level, a.Level)) })
@@ -380,135 +400,110 @@ func compareUpgrades(class string, players []upgradePlayer, profiles []armoryPro
 	return ref
 }
 
-// slim leaves out of a profile what the comparison does not read: stats, skins, titles, the
-// boards' nodes and most of the items' details.
-func (p *armoryProfile) slim() {
-	p.Stats, p.Skins, p.Titles = nil, nil, armoryTitles{}
-	for i := range p.Boards {
-		p.Boards[i].Nodes, p.Boards[i].StatEffects, p.Boards[i].SkillEffects = nil, nil, nil
+// compareUpgrades is the comparison of the characters given, strongest first, as read at.
+func compareUpgrades(class string, players []upgradePlayer, profiles []armoryProfile, at time.Time) upgradeReference {
+	t := newUpgradeTally()
+	for i := range players {
+		t.add(players[i], &profiles[i])
 	}
-	for i := range p.Gear {
-		if d := p.Gear[i].Detail; d != nil {
-			d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc = nil, nil, nil, nil, nil, nil, ""
-			if d.Set != nil {
-				d.Set = &armorySet{Name: d.Set.Name, Equipped: d.Set.Equipped}
-			}
-		}
-	}
+	return t.reference(class, at)
 }
 
-// strongestOf reads the strongest kept profiles of a class, hidden ones and those kept in an
-// older shape left out: one more than the comparison takes, so it still has as many when the
-// profile it is for is one of them.
-func strongestOf(app core.App, class string) ([]upgradePlayer, []armoryProfile, error) {
-	rows := []struct {
-		Region      string `db:"region"`
-		ServerId    int    `db:"serverId"`
-		CharacterId string `db:"characterId"`
-		Profile     string `db:"profile"`
-	}{}
-	if err := app.DB().NewQuery("SELECT region, serverId, characterId, profile FROM armory_profiles WHERE class = {:class} AND hidden = FALSE AND combatPower > 0 ORDER BY combatPower DESC, id LIMIT {:limit}").
-		Bind(dbx.Params{"class": class, "limit": 2 * upgradeSample}).All(&rows); err != nil {
-		return nil, nil, err
+// buildUpgrades compares the strongest characters of a class the armory knows the gear of
+// (armory_ranks, ranks.go), up to upgradeSample of them, without the one left out (serverId,
+// characterId; none when 0), and names those it compared.
+func buildUpgrades(app core.App, class string, serverId int, characterId string) (upgradeReference, map[string]bool, error) {
+	rows, err := app.DB().NewQuery("SELECT region, serverId, characterId, name, level, combatPower, itemLevel, portrait, COALESCE(CAST(build AS TEXT), '') FROM armory_ranks WHERE class = {:class} AND hidden = FALSE AND builtAt != '' ORDER BY combatPower DESC, id LIMIT {:limit}").
+		Bind(dbx.Params{"class": class, "limit": upgradeSample + 1}).Rows()
+	if err != nil {
+		return upgradeReference{}, nil, err
 	}
-	players, profiles := []upgradePlayer{}, []armoryProfile{}
-	for _, row := range rows {
+	defer rows.Close()
+	t, members, book := newUpgradeTally(), map[string]bool{}, serversOf(app)
+	for rows.Next() && len(t.players) < upgradeSample {
+		var player upgradePlayer
+		var build string
+		if err := rows.Scan(&player.Region, &player.ServerId, &player.CharacterId, &player.Name, &player.Level, &player.CombatPower, &player.ItemLevel, &player.Portrait, &build); err != nil {
+			return upgradeReference{}, nil, err
+		}
 		var p armoryProfile
-		if len(profiles) > upgradeSample || json.Unmarshal([]byte(row.Profile), &p) != nil || p.Version < armoryVersion || p.Class != class || len(p.Gear) == 0 {
+		if player.ServerId == serverId && player.CharacterId == characterId || json.Unmarshal([]byte(build), &p) != nil || len(p.Gear) == 0 {
 			continue
 		}
-		p.slim()
-		profiles = append(profiles, p)
-		players = append(players, upgradePlayer{Name: p.Name, Level: p.Level, Server: p.Server, Region: row.Region, ServerId: row.ServerId, CharacterId: row.CharacterId, CombatPower: p.CombatPower, ItemLevel: p.ItemLevel, Portrait: p.Portrait})
+		player.Server = book.name(player.ServerId)
+		members[armoryKey(player.ServerId, player.CharacterId)] = true
+		t.add(player, &p)
 	}
-	return players, profiles, nil
+	if err := rows.Err(); err != nil {
+		return upgradeReference{}, nil, err
+	}
+	return t.reference(class, time.Now()), members, nil
 }
 
-// upgradeCache keeps the strongest of each class for upgradeKeep.
+// upgradeCache keeps each class's comparison for upgradeKeep, and for a character among the
+// strongest the comparison without it.
 type upgradeCache struct {
 	mu   sync.Mutex
 	kept map[string]upgradeKept
 }
 
 type upgradeKept struct {
-	players  []upgradePlayer
-	profiles []armoryProfile
-	at       time.Time
+	ref     upgradeReference
+	members map[string]bool // the characters compared (armoryKey)
+	at      time.Time
 }
 
 func newUpgradeCache() *upgradeCache { return &upgradeCache{kept: map[string]upgradeKept{}} }
 
-// of is the strongest of the class, read again once they are upgradeKeep old. Only classes the
-// armory keeps characters of are kept, so asking for made-up ones keeps nothing.
-func (c *upgradeCache) of(app core.App, class string) (upgradeKept, error) {
+// of is the comparison for a character of the class: the class's, or, when the character is one
+// of the strongest, the one without it. Classes the armory knows no character of keep nothing.
+func (c *upgradeCache) of(app core.App, class string, serverId int, characterId string) (upgradeReference, error) {
+	kept, err := c.read(app, class+"|", class, 0, "")
+	if err != nil || !kept.members[armoryKey(serverId, characterId)] {
+		return kept.ref, err
+	}
+	kept, err = c.read(app, class+"|"+armoryKey(serverId, characterId), class, serverId, characterId)
+	return kept.ref, err
+}
+
+func (c *upgradeCache) read(app core.App, key, class string, serverId int, characterId string) (upgradeKept, error) {
 	c.mu.Lock()
-	kept, ok := c.kept[class]
+	kept, ok := c.kept[key]
 	c.mu.Unlock()
 	if ok && time.Since(kept.at) < upgradeKeep {
 		return kept, nil
 	}
-	players, profiles, err := strongestOf(app, class)
-	kept = upgradeKept{players: players, profiles: profiles, at: time.Now()}
-	if err != nil || len(players) == 0 {
+	ref, members, err := buildUpgrades(app, class, serverId, characterId)
+	kept = upgradeKept{ref: ref, members: members, at: time.Now()}
+	if err != nil || ref.Sample == 0 {
 		return kept, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.kept) >= 64 {
+	if len(c.kept) >= 256 {
 		c.kept = map[string]upgradeKept{}
 	}
-	c.kept[class] = kept
+	c.kept[key] = kept
 	return kept, nil
-}
-
-// compare is the comparison for a profile (serverId, characterId), with the strongest other
-// characters of the class.
-func (k upgradeKept) compare(class string, serverId int, characterId string) upgradeReference {
-	players, profiles := []upgradePlayer{}, []armoryProfile{}
-	for i, p := range k.players {
-		if len(players) < upgradeSample && (p.ServerId != serverId || p.CharacterId != characterId) {
-			players, profiles = append(players, p), append(profiles, k.profiles[i])
-		}
-	}
-	return compareUpgrades(class, players, profiles, k.at)
 }
 
 // A class as PLAYNC names it (Chanter, Spiritmaster).
 var upgradeClass = regexp.MustCompile(`^[A-Za-z][A-Za-z '-]{1,39}$`)
 
 // upgradesRoute answers GET /api/odyle/armory/upgrades/{class}?serverId=&characterId=: what the
-// strongest characters of the class the armory keeps wear, for the Upgrade tab of the profile the
-// query names, which is left out of them; no characters while the armory keeps none of the class.
-// Public; rate limited per address with the armory.
+// strongest characters of the class the armory knows the gear of wear, for the Upgrade tab of the
+// profile the query names, which is left out of them; nobody while the armory knows none of the
+// class. Public; rate limited per address with the armory.
 func upgradesRoute(e *core.RequestEvent) error {
 	class, q := e.Request.PathValue("class"), e.Request.URL.Query()
 	if !upgradeClass.MatchString(class) {
 		return notFound("The armory keeps no character of that class.")
 	}
 	serverId, _ := strconv.Atoi(q.Get("serverId"))
-	kept, err := stateOf(e.App).upgrades.of(e.App, class)
+	ref, err := stateOf(e.App).upgrades.of(e.App, class, serverId, q.Get("characterId"))
 	if err != nil {
 		return err
 	}
 	e.Response.Header().Set("Cache-Control", "public, max-age=300")
-	return e.JSON(200, kept.compare(class, serverId, q.Get("characterId")))
-}
-
-// watchArmoryProfiles keeps a saved profile's class and combat power in fields of their own,
-// indexed, for the Upgrade tab to find the strongest of a class in one query.
-func watchArmoryProfiles(app core.App) {
-	named := func(e *core.RecordEvent) error {
-		var p struct {
-			Class       string `json:"class"`
-			CombatPower int64  `json:"combatPower"`
-		}
-		if err := e.Record.UnmarshalJSONField("profile", &p); err != nil {
-			p.Class, p.CombatPower = "", 0
-		}
-		e.Record.Set("class", cut(p.Class, 40))
-		e.Record.Set("combatPower", max(0, p.CombatPower))
-		return e.Next()
-	}
-	app.OnRecordCreate("armory_profiles").BindFunc(named)
-	app.OnRecordUpdate("armory_profiles").BindFunc(named)
+	return e.JSON(200, ref)
 }

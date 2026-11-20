@@ -25,7 +25,7 @@ import { updated, updatedNote } from './updatenote.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
-import { armoryRoute, armoryTarget, armoryTitle, classBadge, profilePath, findPath, officialPath } from './armorylinks.js';
+import { armoryRoute, armoryTarget, armoryTitle, topTitle, classBadge, profilePath, findPath, officialPath } from './armorylinks.js';
 import { lazily, reloadOnce } from './lazy.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
@@ -487,8 +487,12 @@ async function loadUpgrade(ticket) {
 const armoryRefreshable = () => armoryAnswer?.state === 'fresh' && armoryAnswer.fetchedAt && Date.now() + serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
 // The armory's images (the game's icons, portraits) come from the backend (armoryimages.go).
 const armoryImages = () => pb.buildURL('/api/odyle/armory-images/');
+// The top players page (armory.js armoryTop): the class it shows ('' for the first, null on the
+// armory's other pages) and the backend's answer for it (backend/odyle/ranks.go).
+let armoryTopClass = null, armoryTopAnswer = null;
 function armoryRender(searching = false) {
   const armory = armoryPart.loaded(); if (!armory) return;
+  if (armoryTopClass !== null) { shell(armory.armoryTop(armoryTopAnswer, armoryImages(), armoryTopClass), 'armory'); return retitle(topTitle(armoryTopAnswer?.class || armoryTopClass)); }
   const chosen = armoryChosen || armoryChoice();
   const now = Date.now() + serverOffset, marks = bookmarks();
   shell(armoryAnswer ? armory.armoryProfile(armoryAnswer, now, armoryRefreshable(), armory.isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages(), upgrade: armoryUpgrade() }) : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
@@ -538,12 +542,25 @@ async function cardShow(path, target, ticket) {
   if (!unchanged) cardRender();
   armoryPoll(path, ticket);
 }
+// The top players of a class: what was fetched for it shows at once, the backend's answer then.
+async function topShow(className, ticket) {
+  armoryAnswer = armoryResults = null;
+  if (armoryTopAnswer && className && armoryTopAnswer.class !== className) armoryTopAnswer = null;
+  armoryRender();
+  let answer;
+  try { answer = await pb.send('/api/odyle/armory/top', { query: className ? { class: className } : {} }); }
+  catch (error) { if (ticket !== navigation) return; if (error?.status !== 404) throw error; armoryTopAnswer = { classes: armoryTopAnswer?.classes || [], class: className, players: [], characters: 0 }; armoryRender(); return toast(t(error.message)); }
+  if (ticket !== navigation) return;
+  online = true; armoryTopAnswer = answer; armoryRender();
+}
 async function armoryPage(path, ticket, refresh = false) {
   clearTimeout(armoryTimer);
   // The armory's pages (armory.js) load with the first of them, beside the servers.
   const [armory] = await Promise.all([armoryPart(), armoryServers || pb.send('/api/odyle/armory/servers').then(answer => { armoryServers = answer.regions; })]);
   if (ticket !== navigation) return;
   const target = armoryTarget(path);
+  armoryTopClass = target.top ? target.top.class : null;
+  if (target.top) return topShow(target.top.class, ticket);
   if (target.card) return cardShow(path, target.card, ticket);
   if (target.profile) {
     const { region, serverId, characterId, tab } = target.profile;
@@ -1351,7 +1368,7 @@ function currentPath() { return pageOf(current()) || '/'; }
 // The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
 // armory names its profiles once they are fetched (armoryRender).
 function pageTitle(path) {
-  if (path.startsWith('/armory')) return armoryTarget(path).profile || armoryTarget(path).card ? document.title : armoryTitle(null);
+  if (path.startsWith('/armory')) { const target = armoryTarget(path); return target.top ? topTitle(target.top.class) : target.profile || target.card ? document.title : armoryTitle(null); }
   return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle'), '/timers': t('AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle'), '/achievements': t('Achievements · Odyle'), '/week': t('Your week in Odyle') }[path] || t('Odyle — Party command');
 }
 async function show(force = false) {

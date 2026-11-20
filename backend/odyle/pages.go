@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +42,8 @@ func DescribePage(e *core.RequestEvent, route, base string) web.Page {
 	case route == "/armory":
 		return web.Page{Title: "AION 2 armory: look up any Global character · Odyle", Description: "Look up any AION 2 Global character: gear with every item's stats and stones, combat power, item level, stats, skills, Daevanion boards, titles and skins, as PLAYNC's official character pages list them. No sign-in needed.",
 			Heading: "Look up a character", Text: "Everything PLAYNC's official character pages show of any AION 2 Global character, kept by Odyle.", Data: []any{crumbs(base, [2]string{armorySite, "/armory"})}}
+	case parts[0] == "armory" && len(parts) > 1 && len(parts) <= 3 && parts[1] == "top":
+		return topPage(e.App, parts, base)
 	case parts[0] == "armory" && len(parts) > 1 && parts[1] == "find":
 		return web.Page{Title: "Character search · " + armorySite, Private: true}
 	case parts[0] == "armory" && (len(parts) == 4 || len(parts) == 5):
@@ -116,6 +119,28 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	}
 	page.Data = []any{crumbs(base, trail...)}
 	return page
+}
+
+// topPage names the top players page (/armory/top[/<class>], ranks.go): the first class, or the
+// class the path names; a class the armory does not know is no page.
+func topPage(app core.App, parts []string, base string) web.Page {
+	classes, err := rankClasses(app)
+	if err != nil || len(classes) == 0 {
+		return web.Page{Missing: true}
+	}
+	class := classes[0]
+	if len(parts) == 3 {
+		found := slices.IndexFunc(classes, func(c rankClass) bool { return c.Name == parts[2] })
+		if found < 0 {
+			return web.Page{Missing: true}
+		}
+		class = classes[found]
+	}
+	path := "/armory/top/" + class.Name
+	return web.Page{Title: fmt.Sprintf("Strongest %s characters of AION 2 Global · %s", class.Name, armorySite),
+		Description: fmt.Sprintf("The %s characters of AION 2 Global with the most combat power that Odyle knows, from every region: up to %d, with their server, level and item level, and each one's gear, stats and skills.", class.Name, rankLimit),
+		Heading:     "Top players by class", Text: fmt.Sprintf("The strongest %s characters of AION 2 Global that Odyle knows, by combat power.", class.Name),
+		Data: []any{crumbs(base, [2]string{armorySite, "/armory"}, [2]string{"Top " + class.Name + " players", path})}}
 }
 
 // tabSummary is what a profile tab counts, in words.
@@ -206,13 +231,21 @@ func sitemapRoute(e *core.RequestEvent) error {
 		return notFound("The sitemap needs the Application URL.")
 	}
 	entries := []sitemapEntry{{Loc: base + "/"}, {Loc: base + "/armory"}, {Loc: base + "/timers"}, {Loc: base + "/changelog"}, {Loc: base + "/privacy"}, {Loc: base + "/demo"}}
+	// The top players of each class (ranks.go).
+	classes, err := rankClasses(e.App)
+	if err != nil {
+		return err
+	}
+	for _, c := range classes {
+		entries = append(entries, sitemapEntry{Loc: base + "/armory/top/" + url.PathEscape(c.Name)})
+	}
 	var kept []struct {
 		Region      string `db:"region"`
 		ServerId    int    `db:"serverId"`
 		CharacterId string `db:"characterId"`
 		FetchedAt   string `db:"fetchedAt"`
 	}
-	err := e.App.DB().NewQuery("SELECT region, serverId, characterId, fetchedAt FROM armory_profiles WHERE hidden = FALSE AND fetchedAt != '' AND name != '' ORDER BY viewedAt DESC LIMIT {:limit}").Bind(dbx.Params{"limit": sitemapLimit}).All(&kept)
+	err = e.App.DB().NewQuery("SELECT region, serverId, characterId, fetchedAt FROM armory_profiles WHERE hidden = FALSE AND fetchedAt != '' AND name != '' ORDER BY viewedAt DESC LIMIT {:limit}").Bind(dbx.Params{"limit": sitemapLimit}).All(&kept)
 	if err != nil {
 		return err
 	}

@@ -501,12 +501,15 @@ func askPLAYNC(page string, j armoryJob, params ...string) (map[string]any, erro
 func (g *armoryGear) detailed() bool  { return g.id > 0 && g.order > 0 }
 func (b *armoryBoard) detailed() bool { return b.Id > 0 && b.Open > 0 }
 
-// detailArmory asks PLAYNC for the details of each equipped item and of each board with open
-// nodes, armoryStep apart. A detail PLAYNC does not give leaves its item or board without
-// one; PLAYNC refusing the server ends the lookup.
-func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack) error {
+// detailArmory asks PLAYNC for the details of each equipped item and, with withBoards, of each
+// board with open nodes, armoryStep apart. A detail PLAYNC does not give leaves its item or board
+// without one; PLAYNC refusing the server ends the lookup.
+func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack, withBoards bool) error {
 	var refused armoryRefused
 	items, boards := p.detailed()
+	if !withBoards {
+		boards = 0
+	}
 	track.begin("items", items, 1)
 	for i := range p.Gear {
 		g := &p.Gear[i]
@@ -526,7 +529,7 @@ func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack) error {
 	track.begin("boards", boards, 1)
 	for i := range p.Boards {
 		b := &p.Boards[i]
-		if !b.detailed() {
+		if !withBoards || !b.detailed() {
 			continue
 		}
 		time.Sleep(armoryStep)
@@ -914,7 +917,7 @@ func lookUpArmory(app core.App, j armoryJob, track *armoryTrack) (err error) {
 				track.plan(profile.detailed())
 				keepArmoryImages(app, &profile, track, true)
 				track.show(&profile)
-				if err = detailArmory(&profile, j, track); err == nil {
+				if err = detailArmory(&profile, j, track, true); err == nil {
 					keepArmoryImages(app, &profile, track, false)
 				}
 			}
@@ -958,6 +961,17 @@ func lookUpArmory(app core.App, j armoryJob, track *armoryTrack) (err error) {
 		return tx.Save(record)
 	}); txErr != nil {
 		return txErr
+	}
+	// The character's row among the top players, with its gear (ranks.go); a character PLAYNC no
+	// longer lists leaves them.
+	if errors.Is(err, errArmoryMissing) {
+		if rankErr := forgetRank(app, j.serverId, j.characterId); rankErr != nil {
+			warn(app, "Odyle could not forget a character's rank", "error", message(rankErr))
+		}
+	} else if err == nil {
+		if rankErr := keepRank(app, j.region, j.serverId, j.characterId, profile, true); rankErr != nil {
+			warn(app, "Odyle could not keep a character's rank", "error", message(rankErr))
+		}
 	}
 	// The page names the class of its class id, for every character with that id, and the
 	// class's emblem is kept once (classes.go).
@@ -1227,14 +1241,20 @@ func armoryServersRoute(e *core.RequestEvent) error {
 	return e.JSON(200, map[string]any{"regions": out})
 }
 
-// cleanArmory is a job: profiles nobody opened for 30 days are deleted, hidden ones kept, and
-// then the images no kept profile names (armoryimages.go).
+// cleanArmory is a job: profiles nobody opened for 30 days are deleted, hidden ones kept, the
+// characters below their class's top checked more than 30 days ago forgotten (ranks.go), and then
+// the images no kept profile or top player names (armoryimages.go).
 func cleanArmory(app core.App) (result, error) {
 	res, err := app.DB().NewQuery("DELETE FROM armory_profiles WHERE hidden = FALSE AND viewedAt < {:before}").Bind(dbx.Params{"before": ago(armoryKeep)}).Execute()
 	if err != nil {
 		return result{}, err
 	}
 	deleted, _ := res.RowsAffected()
+	forgotten, err := cleanRanks(app)
+	if err != nil {
+		return result{Done: int(deleted)}, err
+	}
+	deleted += int64(forgotten)
 	if _, err := cleanArmoryImages(app); err != nil {
 		return result{Done: int(deleted)}, err
 	}

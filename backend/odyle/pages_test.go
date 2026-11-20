@@ -76,9 +76,21 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 			t.Errorf("%s: private %v, missing %v", route, private, missing)
 		}
 	}
-	for _, route := range []string{"/", "/armory", "/timers", "/changelog", "/privacy", "/demo"} {
+	for _, route := range []string{"/", "/armory", "/timers", "/changelog", "/privacy", "/demo", "/armory/top", "/armory/top/Chanter"} {
 		if _, _, private, missing, _ := describe(route); private || missing {
 			t.Errorf("%s: private %v, missing %v", route, private, missing)
+		}
+	}
+	// The top players of a class, the first class without one; a class nobody plays is no page.
+	if title, description, _, _, _ := describe("/armory/top/Chanter"); title != "Strongest Chanter characters of AION 2 Global · Odyle Armory" || !strings.HasPrefix(description, "The Chanter characters of AION 2 Global with the most combat power") {
+		t.Errorf("top Chanters: %q %q", title, description)
+	}
+	if title, _, _, _, _ := describe("/armory/top"); title != "Strongest Gladiator characters of AION 2 Global · Odyle Armory" {
+		t.Errorf("top players: %q", title)
+	}
+	for _, route := range []string{"/armory/top/Nobody", "/armory/top/Chanter/more"} {
+		if _, _, _, missing, _ := describe(route); !missing {
+			t.Errorf("%s is a page", route)
 		}
 	}
 	// The timers say what they show, also to readers that run no JavaScript.
@@ -110,7 +122,7 @@ func TestRobotsAndSitemapListThePublicPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := w.Body.String()
-	for _, want := range []string{`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`, "<url><loc>https://odyle.example/app/armory</loc></url>", "<url><loc>https://odyle.example/app/timers</loc></url>", "<url><loc>https://odyle.example/app/armory/eu/2304/" + pageId + "</loc><lastmod>2026-10-27</lastmod></url>"} {
+	for _, want := range []string{`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`, "<url><loc>https://odyle.example/app/armory</loc></url>", "<url><loc>https://odyle.example/app/timers</loc></url>", "<url><loc>https://odyle.example/app/armory/top/Chanter</loc></url>", "<url><loc>https://odyle.example/app/armory/eu/2304/" + pageId + "</loc><lastmod>2026-10-27</lastmod></url>"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("the sitemap lacks %s:\n%s", want, body)
 		}

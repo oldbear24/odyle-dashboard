@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // gearOf is an equipped item with its details.
@@ -43,7 +43,7 @@ func TestUpgradesCompareTheStrongestOfAClass(t *testing.T) {
 	players := []upgradePlayer{{Name: "A", CombatPower: 300, ItemLevel: 1700}, {Name: "B", CombatPower: 200, ItemLevel: 1600}, {Name: "C", CombatPower: 100, ItemLevel: 1200}}
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 	ref := compareUpgrades("Chanter", players, []armoryProfile{strongest, second, third}, at)
-	if ref.Class != "Chanter" || ref.CombatPower != (upgradeSpread{Median: 200, Low: 100, High: 300}) || ref.ItemLevel.Median != 1600 || ref.BuiltAt != "2026-11-20T10:00:00.000Z" {
+	if ref.Sample != 3 || len(ref.CombatPowers) != 3 || ref.CombatPowers[0] != 300 || ref.Class != "Chanter" || ref.CombatPower != (upgradeSpread{Median: 200, Low: 100, High: 300}) || ref.ItemLevel.Median != 1600 || ref.BuiltAt != "2026-11-20T10:00:00.000Z" {
 		t.Fatalf("reference %+v", ref)
 	}
 	slots := []string{}
@@ -81,92 +81,67 @@ func TestUpgradesCompareTheStrongestOfAClass(t *testing.T) {
 	}
 }
 
-// The route compares the strongest kept profiles of the class, hidden ones, those of an older
-// shape and the profile it is for left out; every saved profile names its class and combat power
-// for it.
-func TestUpgradesRouteListsTheStrongestKeptOfAClass(t *testing.T) {
+// rankOf saves a character's row among the top players: with gear (a build) unless built is false.
+func rankOf(t *testing.T, app core.App, n int, class string, power int64, built bool, values map[string]any) {
+	t.Helper()
+	record := map[string]any{"region": "eu", "serverId": 2304, "characterId": fmt.Sprintf("AAAAAAAAAAAAAAAAAAAAA%03d", n), "name": fmt.Sprintf("Hero%d", n), "class": class, "level": 45,
+		"combatPower": power, "itemLevel": power / 100, "checkedAt": now()}
+	if built {
+		record["builtAt"] = now()
+		record["build"] = map[string]any{"v": armoryVersion, "name": fmt.Sprintf("Hero%d", n), "class": class, "gear": []any{map[string]any{"slot": "MainHand", "name": "Rod", "grade": "Unique", "enchant": 10, "exceed": 0}},
+			"boards": []any{}, "skills": []any{}}
+	}
+	for k, v := range values {
+		record[k] = v
+	}
+	saved(t, app, "armory_ranks", record)
+}
+
+// The route compares the strongest characters of the class the armory knows the gear of, hidden
+// ones and the character it is for left out, and lists the strongest 20 of them by name.
+func TestUpgradesRouteComparesTheStrongestOfAClass(t *testing.T) {
 	app := newTestApp(t)
-	keep := func(n int, class string, power int64, values map[string]any) {
-		t.Helper()
-		profile := map[string]any{"v": armoryVersion, "name": fmt.Sprintf("Hero%d", n), "level": 45, "class": class, "server": "Lumiel", "combatPower": power, "itemLevel": power / 100, "portrait": "",
-			"stats": []any{}, "gear": []any{map[string]any{"slot": "MainHand", "name": "Rod", "grade": "Unique", "enchant": 10, "exceed": 0}}, "skins": []any{}, "skills": []any{}, "boards": []any{}}
-		record := map[string]any{"region": "eu", "serverId": 2304, "characterId": fmt.Sprintf("AAAAAAAAAAAAAAAAAAAAAAA%d", n), "viewedAt": ago(time.Hour), "profile": profile}
-		for k, v := range values {
-			if k == "v" {
-				profile["v"] = v
-			} else {
-				record[k] = v
-			}
-		}
-		saved(t, app, "armory_profiles", record)
+	for n := 1; n <= 22; n++ {
+		rankOf(t, app, n, "Chanter", int64(n)*10000, true, nil)
 	}
-	keep(1, "Chanter", 100000, nil)
-	keep(2, "Chanter", 300000, nil)
-	keep(3, "Chanter", 200000, nil)
-	keep(4, "Chanter", 400000, map[string]any{"hidden": true})
-	keep(5, "Chanter", 500000, map[string]any{"v": 1})
-	keep(6, "Cleric", 900000, nil)
-	var class string
-	var power int64
-	if err := app.DB().NewQuery("SELECT class, combatPower FROM armory_profiles WHERE characterId = 'AAAAAAAAAAAAAAAAAAAAAAA2'").Row(&class, &power); err != nil || class != "Chanter" || power != 300000 {
-		t.Fatalf("a saved profile names %q %d (%v)", class, power, err)
-	}
+	rankOf(t, app, 23, "Chanter", 400000, true, map[string]any{"hidden": true})
+	rankOf(t, app, 24, "Chanter", 500000, false, nil)
+	rankOf(t, app, 25, "Cleric", 900000, true, nil)
 	body, headers := fetch(t, app, "/api/odyle/armory/upgrades/Chanter", 200)
 	var ref upgradeReference
 	if err := json.Unmarshal(body, &ref); err != nil {
 		t.Fatal(err)
 	}
-	order := []string{}
-	for _, p := range ref.Players {
-		order = append(order, fmt.Sprintf("%s %d", p.Name, p.CombatPower))
+	if ref.Sample != 22 || len(ref.Players) != upgradeShown || ref.Players[0].Name != "Hero22" || ref.Players[0].CombatPower != 220000 || ref.Players[0].Server != "Lumiel" || ref.Players[0].Region != "eu" ||
+		len(ref.CombatPowers) != 22 || ref.CombatPowers[21] != 10000 || ref.CombatPower.High != 220000 {
+		t.Fatalf("reference %+v", ref)
 	}
-	if strings.Join(order, ",") != "Hero2 300000,Hero3 200000,Hero1 100000" || ref.Players[0].Region != "eu" || ref.Players[0].ServerId != 2304 || ref.Players[0].CharacterId != "AAAAAAAAAAAAAAAAAAAAAAA2" || ref.Players[0].Server != "Lumiel" {
-		t.Fatalf("players %+v", ref.Players)
+	if len(ref.Slots) != 1 || ref.Slots[0].Players != 22 || ref.Slots[0].Popular[0].Name != "Rod" || headers.Get("Cache-Control") != "public, max-age=300" {
+		t.Fatalf("slots %+v, %v", ref.Slots, headers)
 	}
-	if len(ref.Slots) != 1 || ref.Slots[0].Players != 3 || ref.Slots[0].Popular[0].Name != "Rod" || headers.Get("Cache-Control") != "public, max-age=300" {
-		t.Fatalf("reference %+v, %v", ref, headers)
-	}
-	// The profile the comparison is for is not one of the strongest it is compared with.
-	without := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter?serverId=2304&characterId=AAAAAAAAAAAAAAAAAAAAAAA2", nil, "", 200)
-	if others := without["players"].([]any); len(others) != 2 || others[0].(map[string]any)["name"] != "Hero3" {
-		t.Fatalf("without itself: %v", others)
-	}
-	// What the comparison does not read is not kept.
-	if kept := stateOf(app).upgrades.kept["Chanter"]; len(kept.profiles) != 3 || kept.profiles[0].Stats != nil {
-		t.Fatalf("kept %+v", kept.profiles)
+	// The character the comparison is for is not one of the strongest it is compared with.
+	without := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter?serverId=2304&characterId=AAAAAAAAAAAAAAAAAAAAA022", nil, "", 200)
+	if without["sample"].(float64) != 21 || without["players"].([]any)[0].(map[string]any)["name"] != "Hero21" {
+		t.Fatalf("without itself: %v %v", without["sample"], without["players"].([]any)[0])
 	}
 	// Kept for everyone a while: a stronger character joins once it is worked out again.
-	keep(7, "Chanter", 600000, nil)
-	if again := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter", nil, "", 200); len(again["players"].([]any)) != 3 {
-		t.Fatalf("worked out again at once: %v", again["players"])
+	rankOf(t, app, 26, "Chanter", 600000, true, nil)
+	if again := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter", nil, "", 200); again["sample"].(float64) != 22 {
+		t.Fatalf("worked out again at once: %v", again["sample"])
 	}
-	kept := stateOf(app).upgrades.kept["Chanter"]
+	cache := stateOf(app).upgrades
+	kept := cache.kept["Chanter|"]
 	kept.at = time.Now().Add(-upgradeKeep)
-	stateOf(app).upgrades.kept["Chanter"] = kept
-	if again := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter", nil, "", 200); len(again["players"].([]any)) != 4 || again["players"].([]any)[0].(map[string]any)["name"] != "Hero7" {
-		t.Fatalf("not worked out again: %v", again["players"])
+	cache.kept["Chanter|"] = kept
+	if again := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter", nil, "", 200); again["sample"].(float64) != 23 || again["players"].([]any)[0].(map[string]any)["name"] != "Hero26" {
+		t.Fatalf("not worked out again: %v", again["sample"])
 	}
-	// A class the armory keeps no character of compares with nobody, and is not kept.
-	if none := ask(t, app, "GET", "/api/odyle/armory/upgrades/Templar", nil, "", 200); len(none["players"].([]any)) != 0 || len(none["slots"].([]any)) != 0 {
+	// A class the armory knows nobody of compares with nobody, and is not kept.
+	if none := ask(t, app, "GET", "/api/odyle/armory/upgrades/Templar", nil, "", 200); none["sample"].(float64) != 0 || len(none["players"].([]any)) != 0 || len(none["slots"].([]any)) != 0 {
 		t.Fatalf("nobody: %v", none)
 	}
-	if _, kept := stateOf(app).upgrades.kept["Templar"]; kept {
+	if _, kept := cache.kept["Templar|"]; kept {
 		t.Fatal("an empty comparison is kept")
 	}
 	ask(t, app, "GET", "/api/odyle/armory/upgrades/%3Cb%3E", nil, "", 404)
-	// A profile that loses its class with a lookup's error stays found by what it holds.
-	if _, err := app.DB().NewQuery("UPDATE armory_profiles SET class = '' WHERE characterId = 'AAAAAAAAAAAAAAAAAAAAAAA1'").Execute(); err != nil {
-		t.Fatal(err)
-	}
-	record, err := keptProfile(app, 2304, "AAAAAAAAAAAAAAAAAAAAAAA1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	record.Set("error", "PLAYNC answered 500.")
-	if err := app.Save(record); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.DB().Select("class").From("armory_profiles").Where(dbx.HashExp{"id": record.Id}).Row(&class); err != nil || class != "Chanter" {
-		t.Fatalf("class %q (%v)", class, err)
-	}
 }
