@@ -14,14 +14,37 @@ const gradeRanks = { Common: 1, Rare: 2, Legend: 3, Unique: 4, Epic: 5, Mythic: 
 export const gradeRank = grade => gradeRanks[grade] || 0;
 
 // How much one step behind counts for in a slot's score: the item level by the share it is
-// behind, the rest per level, grade or empty stone slot.
-const weights = { itemLevel: 200, enchant: 3, exceed: 4, grade: 15, stones: 2 };
+// behind, the rest per level, grade or empty stone slot, and per rolled stat missing (a rolled
+// stat rolled lower by the share it is behind).
+const weights = { itemLevel: 200, enchant: 3, exceed: 4, grade: 15, stones: 2, rolled: 3 };
 // A slot's score as words: big (25 and over), some (8 and over), small (above 0), even.
 export const upgradeState = score => score >= 25 ? 'big' : score >= 8 ? 'some' : score > 0 ? 'small' : 'even';
 
+// A rolled stat's value as PLAYNC writes it ("13%", "+120", "1,200"): its number and whether it
+// is a share, or null without a number.
+export function rolledValue(text) {
+  const found = String(text ?? '').match(/-?[\d,]*\d(?:\.\d+)?/);
+  return found ? { value: Number(found[0].replace(/,/g, '')), percent: String(text).includes('%') } : null;
+}
+// A share and a number of one name are two stats, as the backend counts them.
+const rolledKey = (name, percent) => `${name}|${percent ? '%' : ''}`;
+// An item's rolled stats (soul binding) by key, a stat rolled twice summed.
+function rolledOf(detail) {
+  const out = new Map();
+  for (const line of detail.sub) {
+    const v = rolledValue(line.value);
+    if (line.name && v) out.set(rolledKey(line.name, v.percent), (out.get(rolledKey(line.name, v.percent)) || 0) + v.value);
+  }
+  return out;
+}
+// The rolled stats most of the strongest roll in a slot (at least half of the items whose rolled
+// stats are known, once enough are), or none.
+export const usualRolls = slot => (slot.rolledItems || 0) >= upgradeLeast ? (slot.rolled || []).filter(r => r.count * 2 >= slot.rolledItems) : [];
+
 // One piece of gear (or an empty place) against its slot among the strongest: what it is behind
-// by (item level, enchantment, exceed level and grade below theirs, stone slots left empty) and
-// a score that orders the slots by how much an upgrade there gives.
+// by (item level, enchantment, exceed level and grade below theirs, stone slots left empty, the
+// stats most of them roll that it rolls lower or not at all) and a score that orders the slots by
+// how much an upgrade there gives.
 export function compareSlot(item, slot, sample) {
   const best = slot.popular?.[0] || null;
   if (!item) {
@@ -35,9 +58,15 @@ export function compareSlot(item, slot, sample) {
   gaps.exceed = (slot.exceed || 0) - (item.exceed || 0);
   if (gradeRank(item.grade) && gradeRank(slot.grade)) gaps.grade = gradeRank(slot.grade) - gradeRank(item.grade);
   if (d?.stoneSlots) gaps.stones = Math.max(0, d.stoneSlots - (d.stones?.length || 0));
+  if (Array.isArray(d?.sub)) {
+    const mine = rolledOf(d);
+    const rolled = usualRolls(slot).map(r => ({ name: r.name, percent: r.percent, theirs: r.value, mine: mine.get(rolledKey(r.name, r.percent)) ?? null })).filter(r => r.mine === null || r.mine < r.theirs);
+    if (rolled.length) gaps.rolled = rolled;
+  }
   const behind = key => Math.max(0, gaps[key] || 0);
+  const rolled = (gaps.rolled || []).reduce((sum, r) => sum + (r.mine === null ? 1 : r.theirs > 0 ? Math.min(1, (r.theirs - r.mine) / r.theirs) : 0), 0);
   const score = Math.round((gaps.itemLevel > 0 ? weights.itemLevel * gaps.itemLevel / slot.itemLevel : 0)
-    + weights.enchant * behind('enchant') + weights.exceed * behind('exceed') + weights.grade * behind('grade') + weights.stones * behind('stones'));
+    + weights.enchant * behind('enchant') + weights.exceed * behind('exceed') + weights.grade * behind('grade') + weights.stones * behind('stones') + weights.rolled * rolled);
   return { slot: item.slot, item, ref: slot, best, wearsBest: Boolean(best && best.name === item.name), gaps, score, state: upgradeState(score) };
 }
 

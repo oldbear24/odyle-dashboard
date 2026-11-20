@@ -21,9 +21,10 @@ const (
 )
 
 // slimmed is a copy of the profile with only what the Upgrade tab compares (its build): each
-// item's slot, name, grade, enchantment, exceed level, icon, type, item level, stones by name,
-// stone slots, set and where it comes from; the Daevanion boards' open nodes; the skills on the
-// skill bar. Some 6 KB for a character at the level cap.
+// item's slot, name, grade, enchantment, exceed level, icon, type, item level, rolled stats (soul
+// binding) by name and value, stones by name, stone slots, set and where it comes from; the
+// Daevanion boards' open nodes; the skills on the skill bar. Some 8 KB for a character at the
+// level cap.
 func slimmed(p armoryProfile) armoryProfile {
 	var out armoryProfile
 	if raw, err := json.Marshal(p); err == nil {
@@ -44,7 +45,11 @@ func (p *armoryProfile) slim() {
 		if d == nil {
 			continue
 		}
-		d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc, d.Race = []armoryLine{}, []armoryLine{}, []armorySubSkill{}, []armoryStone{}, []string{}, []string{}, "", ""
+		rolled := make([]armoryLine, 0, len(d.Sub))
+		for _, line := range d.Sub {
+			rolled = append(rolled, armoryLine{Name: line.Name, Value: line.Value})
+		}
+		d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc, d.Race = []armoryLine{}, rolled, []armorySubSkill{}, []armoryStone{}, []string{}, []string{}, "", ""
 		for j := range d.Stones {
 			d.Stones[j] = armoryStone{Name: d.Stones[j].Name}
 		}

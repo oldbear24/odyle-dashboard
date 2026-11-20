@@ -186,6 +186,7 @@ const reference = {
   combatPower: { median: 120000, low: 100000, high: 150000 }, itemLevel: { median: 1750, low: 1600, high: 1800 },
   slots: [
     { slot: 'MainHand', players: 3, items: 3, grade: 'Mythic', itemLevel: 120, enchant: 15, exceed: 5, stones: 2, stoneSlots: 2, stoneNames: [{ name: 'Attack', count: 5 }, { name: 'Critical Hit', count: 1 }],
+      rolledItems: 3, rolled: [{ name: 'Combat Speed', percent: true, count: 3, value: 15 }, { name: 'Critical Hit', percent: false, count: 2, value: 1200 }, { name: 'Accuracy', percent: false, count: 1, value: 80 }],
       popular: [{ name: 'Dragon Lord Mace', grade: 'Mythic', icon: 'Icon_Mace.png', category: 'Mace', count: 2, enchant: 15, exceed: 5, itemLevel: 120, sources: ['Crafting', "Dragon Lord's Refuge"] },
         { name: 'Enraged Kromede Rod', grade: 'Unique', icon: '', category: 'Mace', count: 1, enchant: 15, exceed: 3, itemLevel: 102, sources: [] }] },
     { slot: 'Helmet', players: 3, items: 3, grade: 'Legend', itemLevel: 0, enchant: 0, exceed: 0, stones: 0, stoneSlots: 0, stoneNames: [], popular: [{ name: 'Vakron Helm', grade: 'Legend', icon: '', category: '', count: 3, enchant: 0, exceed: 0, itemLevel: 0, sources: [] }] },
@@ -203,12 +204,13 @@ test('the upgrade plan ranks the slots by how far the gear is behind the stronge
   assert.deepEqual(['MainHand', 'Earring2', 'Ring1', 'Bracelet2', 'Rune1', 'Arcana3', 'Pet', 'Wings'].map(upgradeSlot), ['MainHand', 'Earring', 'Ring', 'Bracelet', 'Rune', 'Arcana3', '', 'Wings']);
   assert.deepEqual(['Common', 'Legend', 'Mythic', 'Special', undefined].map(gradeRank), [1, 3, 6, 0, 0]);
   const plan = upgradePlan(profile, reference);
-  // Behind in item level (18 of 120), grade (two), exceed (two) and one empty stone slot.
+  // Behind in item level (18 of 120), grade (two), exceed (two), one empty stone slot and the stats
+  // most of the strongest roll: Combat Speed lower (13 % of their 15 %), no Critical Hit; few roll Accuracy.
   const main = plan.rows.find(r => r.slot === 'MainHand');
-  assert.deepEqual(main.gaps, { itemLevel: 18, enchant: 0, exceed: 2, grade: 2, stones: 1 });
-  assert.equal(main.score, 70); assert.equal(main.state, 'big'); assert.equal(main.best.name, 'Dragon Lord Mace'); assert.equal(main.wearsBest, false);
+  assert.deepEqual(main.gaps, { itemLevel: 18, enchant: 0, exceed: 2, grade: 2, stones: 1, rolled: [{ name: 'Combat Speed', percent: true, theirs: 15, mine: 13 }, { name: 'Critical Hit', percent: false, theirs: 1200, mine: null }] });
+  assert.equal(main.score, 73); assert.equal(main.state, 'big'); assert.equal(main.best.name, 'Dragon Lord Mace'); assert.equal(main.wearsBest, false);
   // Both earrings, which every one of the strongest wears, are missing; the helmet and arcana are on par.
-  assert.deepEqual(plan.rows.map(r => [r.slot, r.score, r.state]), [['MainHand', 70, 'big'], ['Helmet', 0, 'even'], ['Earring', 100, 'big'], ['Earring', 100, 'big'], ['Arcana3', 0, 'even']]);
+  assert.deepEqual(plan.rows.map(r => [r.slot, r.score, r.state]), [['MainHand', 73, 'big'], ['Helmet', 0, 'even'], ['Earring', 100, 'big'], ['Earring', 100, 'big'], ['Arcana3', 0, 'even']]);
   assert.deepEqual(plan.picks.map(r => r.slot), ['Earring', 'Earring', 'MainHand']);
   // Its place: third with the three strongest, by combat power.
   assert.equal(plan.place, 3); assert.equal(plan.below, false);
@@ -229,6 +231,15 @@ test('the upgrade plan ranks the slots by how far the gear is behind the stronge
   // Wearing what the strongest wear most, enchanted further than they do: on par.
   const same = compareSlot({ slot: 'MainHand', name: 'Dragon Lord Mace', grade: 'Mythic', enchant: 15, exceed: 5, detail: { itemLevel: 120, stoneSlots: 2, stones: [{}, {}] } }, reference.slots[0], 3);
   assert.deepEqual([same.score, same.state, same.wearsBest], [0, 'even', true]);
+  // Rolled stats: as many as theirs or more, summed when rolled twice ("1,200" is a number), are on
+  // par; an item without them misses them all; too few of the strongest's known compare nothing.
+  const { rolledValue } = await import('../src/upgrade.js');
+  assert.deepEqual(['13%', '+120', '1,200', '-2.5%', '?', undefined].map(rolledValue), [{ value: 13, percent: true }, { value: 120, percent: false }, { value: 1200, percent: false }, { value: -2.5, percent: true }, null, null]);
+  const rolls = sub => compareSlot({ ...same.item, detail: { ...same.item.detail, sub } }, reference.slots[0], 3);
+  assert.equal(rolls([{ name: 'Combat Speed', value: '9%' }, { name: 'Combat Speed', value: '6%' }, { name: 'Critical Hit', value: '1,200' }]).score, 0);
+  assert.deepEqual([rolls([]).score, rolls([]).gaps.rolled.map(r => r.name)], [6, ['Combat Speed', 'Critical Hit']]);
+  assert.deepEqual(rolls([{ name: 'Critical Hit', value: '1200%' }, { name: 'Combat Speed', value: '15%' }]).gaps.rolled, [{ name: 'Critical Hit', percent: false, theirs: 1200, mine: null }]);
+  assert.equal(compareSlot({ ...same.item, detail: { ...same.item.detail, sub: [] } }, { ...reference.slots[0], rolledItems: 2 }, 3).score, 0);
 });
 
 test('the upgrade tab shows the best upgrades, every slot, the sets, boards and skills of the strongest', async () => {
@@ -252,8 +263,8 @@ test('the upgrade tab shows the best upgrades, every slot, the sets, boards and 
   assert.match(picks[0], /<strong>Empty<\/strong>[\s\S]*<strong>Berk Earrings<\/strong><small>100 % of the strongest · usually \+10 · item level 54<\/small>/);
   assert.match(picks[0], /<li>3 of the 3 strongest wear something here<\/li>[\s\S]*<dt>How to obtain<\/dt><dd>Expedition<\/dd>/);
   assert.match(picks[2], /<h3>Main hand<\/h3>[\s\S]*<strong>\+15 Enraged Kromede Rod<\/strong><small>Unique · item level 102<\/small>[\s\S]*<strong>Dragon Lord Mace<\/strong><small>67 % of the strongest · usually \+15 · item level 120<\/small>/);
-  assert.match(picks[2], /<ul class="upgrade-reasons"><li>Item level 102 → 120<\/li><li>Grade Unique → Mythic<\/li><li>Exceed 3 → 5<\/li><li>1 empty stone slot<\/li><\/ul>/);
-  assert.match(picks[2], /<dt>How to obtain<\/dt><dd>Crafting, Dragon Lord&#39;s Refuge<\/dd><\/div><div><dt>Stones they engrave<\/dt><dd>Attack, Critical Hit<\/dd><\/div><div><dt>Also worn<\/dt><dd>Enraged Kromede Rod<\/dd>/);
+  assert.match(picks[2], /<ul class="upgrade-reasons"><li>Item level 102 → 120<\/li><li>Grade Unique → Mythic<\/li><li>Exceed 3 → 5<\/li><li>1 empty stone slot<\/li><li>Rolled Combat Speed 13% → 15%<\/li><li>Rolled Critical Hit: none → 1,200<\/li><\/ul>/);
+  assert.match(picks[2], /<dt>How to obtain<\/dt><dd>Crafting, Dragon Lord&#39;s Refuge<\/dd><\/div><div><dt>Stats they roll<\/dt><dd>Combat Speed 15%, Critical Hit 1,200<\/dd><\/div><div><dt>Stones they engrave<\/dt><dd>Attack, Critical Hit<\/dd><\/div><div><dt>Also worn<\/dt><dd>Enraged Kromede Rod<\/dd>/);
   assert.match(picks[2], /src="\/api\/odyle\/armory-images\/Icon_Mace.png"/);
   // Every slot, the sets, the boards furthest behind first and the skills on the strongest's bars.
   assert.match(html, /<li class="upgrade-row is-even"><div class="upgrade-row-slot"><small>Helmet<\/small>[\s\S]*?<span class="upgrade-badge">On par<\/span><\/div><\/li>/);

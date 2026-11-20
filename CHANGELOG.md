@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.64.0 · 2026-11-20
+
+### New
+- The armory's **Upgrade** tab compares rolled stats too (soul binding): for each slot it shows which stats the strongest of your class roll on their items and how high, and tells you where your item lacks one of them or rolls it lower ("Rolled Combat Speed 8% → 13%"), which counts towards the best upgrades. Characters looked up before keep theirs from their saved profile; the others join as the scout reads their gear again, so the comparison fills in over the next two weeks.
+
 ## 0.63.0 · 2026-11-20
 
 ### New
