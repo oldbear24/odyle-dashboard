@@ -1053,6 +1053,11 @@ func session(e *core.RequestEvent) error {
 		if err := app.Save(s); err != nil {
 			return nil, err
 		}
+		if device == nil {
+			if err := endExtraSessions(app, user.Id); err != nil {
+				return nil, err
+			}
+		}
 		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats")}, nil
 	})
 }
@@ -1179,6 +1184,9 @@ var pauseUnawareAdapters = []string{"global-reference-v1"}
 // (Server controls) every reading is refused with 503; apps that know the switch stop
 // capturing until it is off, older ones keep sending and are refused (400, above).
 func report(e *core.RequestEvent) error {
+	if ok, wait := allowReading(e.App, e.Auth.Id, time.Now()); !ok {
+		return tooManyReadings(e, wait)
+	}
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		if readSettings(app).ReaderPaused {
 			if contains(pauseUnawareAdapters, b.str("parserVersion")) {
@@ -1190,6 +1198,9 @@ func report(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
+		// Only a reading from the account's own open session names its adapter on the
+		// monitor and in the operator's alerts (seenAdapters).
+		e.Set(ownReadingKey, true)
 		data, err := validReading(b, session.Id, session.Sequence(), acceptedAdapters(app))
 		if err != nil {
 			return nil, err
@@ -1615,28 +1626,28 @@ func desktopCode(e *core.RequestEvent) error {
 // the app keeps the key (DPAPI) and trades it for account tokens with desktopSignIn. An
 // account keeps its most recently used devices, so stale pairings of reinstalled PCs
 // drop off.
-func newDevice(app core.App, userId, name string) (string, error) {
+func newDevice(app core.App, userId, name string) (string, *Device, error) {
 	devices, err := devicesOf(app, userId, 500)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if len(devices) >= limits.DesktopDevices {
 		for _, old := range devices[limits.DesktopDevices-1:] {
 			if err := dropDevice(app, old); err != nil {
-				return "", err
+				return "", nil, err
 			}
 		}
 	}
 	key := security.RandomString(48)
 	device, err := newAs[Device](app, "desktop_devices")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	device.Set("user", userId)
 	device.Set("digest", security.SHA256(key))
 	device.SetName(name)
 	device.Used()
-	return key, app.Save(device)
+	return key, device, app.Save(device)
 }
 
 // devicesOf is an account's paired PCs, the most recently used first (up to limit, 0 for all).
@@ -1701,11 +1712,11 @@ func pair(e *core.RequestEvent) error {
 			if err := app.Delete(code); err != nil {
 				return err
 			}
-			token, err := user.NewAuthToken()
+			key, device, err := newDevice(app, user.Id, deviceName(b["name"]))
 			if err != nil {
 				return err
 			}
-			key, err := newDevice(app, user.Id, deviceName(b["name"]))
+			token, err := appToken(user, device)
 			if err != nil {
 				return err
 			}
@@ -1720,10 +1731,14 @@ func pair(e *core.RequestEvent) error {
 }
 
 // desktopDevice gives a device key to an app paired before keys existed; it asks with
-// its still-valid token.
+// its still-valid token. An app that has a key holds a token bound to it (devices.go),
+// which cannot mint another: a forgotten PC must not pair itself again.
 func desktopDevice(e *core.RequestEvent) error {
+	if requestDevice(e) != "" {
+		return forbidden("This PC is already paired.")
+	}
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		key, err := newDevice(app, user.Id, deviceName(b["name"]))
+		key, _, err := newDevice(app, user.Id, deviceName(b["name"]))
 		if err != nil {
 			return nil, err
 		}
@@ -1759,7 +1774,7 @@ func desktopSignIn(e *core.RequestEvent) error {
 		if err := e.App.Save(device); err != nil {
 			return err
 		}
-		token, err := user.NewAuthToken()
+		token, err := appToken(user, device)
 		if err != nil {
 			return err
 		}
@@ -1823,7 +1838,7 @@ func forgetDevice(e *core.RequestEvent) error {
 }
 
 // cleanup is the expiry job: invite links three days after they expired (inviteGrace),
-// expired pairing codes and reader sessions, Odyle history, places and PvP events older than
+// expired pairing codes and reader sessions, pairings unused for half a year (deviceKeep), Odyle history, places and PvP events older than
 // Game settings keep them (30 days by default, PvP events 90) and planned runs a day after
 // they started.
 func cleanup(app core.App) (result, error) {
@@ -1843,6 +1858,12 @@ func cleanup(app core.App) (result, error) {
 		return result{}, err
 	}
 	done += sessions
+	// Pairings unused for half a year end (devices.go).
+	devices, err := dropUnusedDevices(app, at)
+	if err != nil {
+		return result{}, err
+	}
+	done += devices
 	// The Odyle history and the places of location sharing are kept as long as Game settings
 	// say; planned runs go a day after they started.
 	rules := readSettings(app)

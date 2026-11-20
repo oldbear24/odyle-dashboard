@@ -1668,7 +1668,7 @@ app.addEventListener('click', async e => {
       const result = await send('sharing', { roomId, characterId: el.dataset.promptShare, enabled: true });
       rooms = rooms.map(r => r.id === roomId ? { ...r, sharedCharacters: result.sharedCharacters, sharing: true } : r);
       if (room?.id === roomId) changedRoom(roomId, () => applyShared(me(), result.sharedCharacters)); else if (!room) renderSharing();
-      el.classList.add('done'); el.setAttribute('aria-pressed', 'true'); el.innerHTML = icon('tick') + el.textContent;
+      el.classList.add('done'); el.setAttribute('aria-pressed', 'true'); el.innerHTML = icon('tick') + esc(el.textContent);
       return;
     }
     if (el.dataset.share) {

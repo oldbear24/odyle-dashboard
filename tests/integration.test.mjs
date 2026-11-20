@@ -1040,14 +1040,16 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
   await t.test('a paired app keeps its pairing: its device key signs in again until it unpairs', async () => {
     const paired = (await action('pair', { code: (await action('desktop-code', {}, player)).data.code })).data;
     assert.match(paired.deviceKey, /^[A-Za-z0-9]{48}$/);
-    // The key, not the seven-day token, is what lasts: each sign-in issues a fresh account token.
+    // The key, not the one-day token, is what lasts: each sign-in issues a fresh account token.
     const signedIn = await action('desktop-sign-in', { deviceKey: paired.deviceKey }); assert.equal(signedIn.status, 200, JSON.stringify(signedIn.data));
     assert.equal(signedIn.data.record.id, player.record.id); assert.equal((await request('/api/odyle/rooms', undefined, signedIn.data, 'GET')).status, 200);
     // Device sign-in is capped at 30 a minute per client; the whole run stays below that.
     assert.equal((await action('desktop-sign-in', { deviceKey: 'x'.repeat(48) })).status, 401);
     assert.equal((await action('desktop-sign-in', { deviceKey: 7 })).status, 400);
-    // An app paired before device keys existed gets one with its token.
-    const upgraded = await action('desktop-device', {}, paired); assert.equal(upgraded.status, 200); assert.notEqual(upgraded.data.deviceKey, paired.deviceKey);
+    // An app paired before device keys existed gets one with its (refreshable) token; a paired
+    // app's token is bound to its PC and cannot mint another key.
+    assert.equal((await action('desktop-device', {}, paired)).status, 403);
+    const upgraded = await action('desktop-device', {}, player); assert.equal(upgraded.status, 200); assert.notEqual(upgraded.data.deviceKey, paired.deviceKey);
     assert.equal((await action('desktop-device', {})).status, 401);
     assert.equal((await action('desktop-sign-in', { deviceKey: upgraded.data.deviceKey })).data.record.id, player.record.id);
     // Disconnecting forgets only that app's key.

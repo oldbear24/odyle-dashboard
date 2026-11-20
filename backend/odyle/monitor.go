@@ -107,6 +107,9 @@ func broadcast(app core.App, packet *object) {
 	}
 }
 
+// ownReadingKey marks a report that passed its session check (report).
+const ownReadingKey = "odyleOwnReading"
+
 func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 	b, err := requestBody(e)
 	if err != nil {
@@ -122,6 +125,14 @@ func publish(e *core.RequestEvent, kind string, failure error, ms int64) {
 	}
 	packet := newObject().set("at", now()).set("kind", kind).set("source", source).set("user", user).set("account", account).set("ok", failure == nil).set("ms", ms)
 	details(packet, kind, b)
+	// A report names its adapter only when it came from the account's own open session
+	// and the name is one an adapter can have: anyone signed in can send a report, and
+	// these names reach Server status and the operator's alert channel (health.go).
+	if kind == "report" {
+		if name, _ := packet.values["parserVersion"].(string); e.Get(ownReadingKey) != true || !adapterName.MatchString(name) {
+			packet.drop("parserVersion")
+		}
+	}
 	if failure != nil {
 		text := message(failure)
 		if text == "" {

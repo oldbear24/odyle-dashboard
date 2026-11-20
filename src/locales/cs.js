@@ -354,6 +354,8 @@ export default {
   'Use close to delete an owned room. Characters are retained.': 'Vlastní místnost smažeš zavřením. Postavy zůstanou.',
   'Pairing code is invalid or expired.': 'Párovací kód je neplatný nebo vypršel.',
   'This PC is no longer paired with an account.': 'Tento počítač už není spárovaný s žádným účtem.',
+  'This PC is already paired.': 'Tento počítač už je spárovaný.',
+  'Too many readings from this account. Odyle tries again in a minute.': 'Z tohoto účtu přichází příliš mnoho údajů. Odyle to zkusí znovu za minutu.',
   'This run is no longer planned.': 'Tento run už není naplánovaný.',
   'Only its planner, an officer or the room owner can cancel this run.': 'Run může zrušit jen ten, kdo ho naplánoval, důstojník nebo vlastník místnosti.',
   'Viewers cannot join runs.': 'Diváci se nemohou přidávat k runům.',

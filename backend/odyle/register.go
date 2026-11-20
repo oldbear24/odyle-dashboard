@@ -67,6 +67,8 @@ func Register(app core.App) {
 		// Superuser dashboard → Odyle (backend/admin, a PocketBase UI extension).
 		se.UIExtensions = append(se.UIExtensions, core.UIExtension{Name: "odyle", FS: admin.Files})
 		se.Router.BindFunc(hardening)
+		// A paired app's token works only while its PC is paired (devices.go).
+		se.Router.Bind(boundDevice)
 		routes(se)
 		if testFixtures != nil {
 			testFixtures(se)
@@ -90,6 +92,7 @@ func Register(app core.App) {
 	watchChanges(app)
 	watchPresence(app)
 	watchHealth(app)
+	watchDevices(app)
 
 	// The Background jobs page counts from this server start.
 	app.OnBootstrap().BindFunc(func(e *core.BootstrapEvent) error {

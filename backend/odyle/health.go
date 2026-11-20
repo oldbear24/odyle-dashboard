@@ -34,6 +34,9 @@ var gameBuildText = regexp.MustCompile(`^[A-Za-z0-9 ._-]{1,40}$`)
 // within a few minutes even when the reader started after login.
 const silentFor = 10 * time.Minute
 
+// The refused adapters the operator hears of at once; Server status lists them all.
+const adapterAlerts = 5
+
 type readerReport struct {
 	status, game string
 	since, at    time.Time
@@ -129,6 +132,11 @@ func readerHealth(app core.App, at time.Time) (*object, map[string]string) {
 		name, _ := e.values["name"].(string)
 		if n, _ := e.values["rejected"].(int); n > 0 && !accepted[name] {
 			refused = append(refused, name)
+			// A few refused adapters are a game patch or a new release; more are noise, and
+			// each would be its own message and its own "cleared" in the alert channel.
+			if len(refused) > adapterAlerts {
+				continue
+			}
 			problems["adapter:"+name] = "Odyle alert: readings arrive under the packet adapter " + plain(name) + ", which this backend refuses, so they are not saved. Accept it under Server controls, or deploy the backend that lists it."
 		}
 	}

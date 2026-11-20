@@ -52,6 +52,7 @@ const (
 	scoutPageSize = 40
 	scoutHits     = 200   // characters from search pages waiting to be checked, at most
 	scoutNames    = 500   // party and force members waiting to be searched for, at most
+	scoutNamesBy  = 100   // of them sent by one account, at most
 	scoutTried    = 50000 // names and characters remembered as tried, at most
 	scoutPicks    = 50    // Odyle's characters, PvP players or top players a step picks from
 	scoutOwnRetry = 24 * time.Hour
@@ -77,6 +78,7 @@ type scoutHit struct {
 // Odyle region (GLOBAL_EU), as characters are saved.
 type scoutName struct {
 	name, server, region string
+	by                   string // the account whose app sent the name
 }
 
 func (n scoutName) key() string {
@@ -156,19 +158,30 @@ func (s *armoryScout) try(key string, ttl time.Duration) bool {
 	return true
 }
 
-// enqueue adds the party and force members a Windows app sent to the names the scout searches
-// for, and says how many it took: none it tried lately, waits for already or met at all when
-// scoutNames wait.
-func (s *armoryScout) enqueue(names []scoutName) int {
+// enqueue adds the party and force members the Windows app of account by sent to the names the
+// scout searches for, and says how many it took: none it tried lately or waits for already. One
+// account has at most scoutNamesBy names waiting, so its app cannot crowd the others' out; past
+// that, and when scoutNames wait, its newest names take the place of the oldest.
+func (s *armoryScout) enqueue(by string, names []scoutName) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	at, taken := time.Now(), 0
 	for _, n := range names {
-		if len(s.names) >= scoutNames {
-			break
-		}
+		n.by = by
 		if until, ok := s.tried[n.key()]; ok && until.After(at) || slices.ContainsFunc(s.names, func(w scoutName) bool { return w.key() == n.key() }) {
 			continue
+		}
+		mine := 0
+		for _, w := range s.names {
+			if w.by == by {
+				mine++
+			}
+		}
+		if mine >= scoutNamesBy {
+			oldest := slices.IndexFunc(s.names, func(w scoutName) bool { return w.by == by })
+			s.names = slices.Delete(s.names, oldest, oldest+1)
+		} else if len(s.names) >= scoutNames {
+			s.names = s.names[1:]
 		}
 		s.names = append(s.names, n)
 		taken++

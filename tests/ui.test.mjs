@@ -556,7 +556,9 @@ test('a room follows heartbeats and readings as they arrive, without fetching th
 });
 test('new characters reach the rooms that ask for them, and a prompt offers the others', async () => {
   const player = await account('Alt player');
-  const auto = (await request('/api/odyle/create', { name: 'Auto room' }, player)).data.room.id, other = (await request('/api/odyle/create', { name: 'Other room' }, player)).data.room.id;
+  // A room name is any text, markup included: it shows as text everywhere, the prompt's chips too.
+  const hostile = '<img src=x onerror="window.injected=1">Other room';
+  const auto = (await request('/api/odyle/create', { name: 'Auto room' }, player)).data.room.id, other = (await request('/api/odyle/create', { name: hostile }, player)).data.room.id;
   const session = (await request('/api/odyle/session', {}, player)).data;
   const reading = { sessionId: session.sessionId, server: 'Lumiel', region: 'GLOBAL_EU', source: 'packet', parserVersion: 'test-fixture-v1', confirmed: true };
   assert.equal((await request('/api/odyle/report', { ...reading, sequence: 1, characterName: 'Main', value: 100 }, player)).status, 200);
@@ -569,12 +571,15 @@ test('new characters reach the rooms that ask for them, and a prompt offers the 
     // The reader saves a new character: it is in Auto room at once, and the page offers Other room.
     assert.equal((await request('/api/odyle/report', { ...reading, sequence: 2, characterName: 'Fresh alt', value: 60 }, player)).status, 200);
     await page.locator('#modal', { hasText: 'New character Fresh alt saved' }).waitFor({ timeout: 8000 });
-    assert.deepEqual(await page.locator('#modal [data-prompt-share]').allInnerTexts(), ['Other room']);
+    assert.deepEqual(await page.locator('#modal [data-prompt-share]').allInnerTexts(), [hostile]);
     assert.equal(await page.locator('#modal [data-prompt-share]').getAttribute('data-room-id'), other);
     await page.locator('#modal [data-prompt-share]').click();
     await page.locator('#modal [data-prompt-share][aria-pressed="true"]').waitFor();
+    assert.deepEqual(await page.locator('#modal [data-prompt-share]').allInnerTexts(), [hostile]);
+    assert.equal(await page.locator('#modal [data-prompt-share] img').count(), 0);
+    assert.equal(await page.evaluate(() => window.injected), undefined);
     const listed = (await request('/api/odyle/rooms', undefined, player, 'GET')).data.rooms, fresh = (await request('/api/collections/characters/records?filter=' + encodeURIComponent("characterName='Fresh alt'"), undefined, player, 'GET')).data.items[0];
-    assert.deepEqual(listed.map(r => [r.name, r.shareNew, r.sharedCharacters.includes(fresh.id)]).sort(), [['Auto room', true, true], ['Other room', false, true]]);
+    assert.deepEqual(listed.map(r => [r.name, r.shareNew, r.sharedCharacters.includes(fresh.id)]).sort(), [[hostile, false, true], ['Auto room', true, true]]);
     await shot(page, 'new-character-prompt');
     assert.deepEqual(errors, []);
   } finally { await close(); }

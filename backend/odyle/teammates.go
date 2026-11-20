@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
@@ -63,13 +64,15 @@ func teammates(e *core.RequestEvent) error {
 				return badRequest("A player's name is 1 to 40 letters or digits.")
 			}
 			// The members are on the character's server, as far as Odyle knows: the rosters name none.
-			if strings.ToLower(name) != own {
+			// A one-letter name is left out: the search cannot narrow it down, so it would cost the
+			// scout every search page (the armory's lookups need two letters too).
+			if strings.ToLower(name) != own && utf8.RuneCountInString(name) >= 2 {
 				names = append(names, scoutName{name: name, server: c.GetString("server"), region: c.GetString("region")})
 			}
 		}
 		queued := 0
 		if !readSettings(app).ArmoryPaused {
-			queued = stateOf(app).scout.enqueue(names)
+			queued = stateOf(app).scout.enqueue(e.Auth.Id, names)
 		}
 		return e.JSON(200, map[string]any{"queued": queued, "serverNow": now()})
 	})
