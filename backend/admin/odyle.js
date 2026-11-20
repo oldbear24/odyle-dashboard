@@ -339,6 +339,21 @@ export function statusPage() {
     t.td(null, (q.server || q.serverId) + ' · ' + q.region),
     t.td(null, q.scout ? 'Armory scout' : 'a reader'),
     t.td({ className: 'txt-nowrap' }, () => ago(q.since, now())));
+  // What the Armory scout still reads of PLAYNC: the top players' gear, the strongest first, and
+  // the characters its searches found, for their combat power (the first 20 of each).
+  const scout = () => armory().scout || { builds: 0, neverBuilt: 0, buildQueue: [], checks: 0, checkQueue: [], level: 0, buildEvery: 0, lastBuildAt: '' };
+  const span = seconds => seconds < 5400 ? Math.max(1, Math.round(seconds / 60)) + ' minutes' : seconds < 172800 ? Math.round(seconds / 3600) + ' hours' : Math.round(seconds / 86400) + ' days';
+  const pendingName = c => c.name || t.span({ className: 'txt-hint odyle-id', title: c.characterId }, c.characterId.length > 12 ? c.characterId.slice(0, 12) + '…' : c.characterId);
+  const pendingServer = c => (c.server || c.serverId) + ' · ' + region(c.region);
+  const buildRow = (c, i) => t.tr({ rid: i + '@' + signature(c) },
+    t.td({ className: 'txt-right txt-hint' }, number(i + 1)), t.td(null, pendingName(c)), t.td(null, c.class), t.td({ className: 'txt-nowrap' }, pendingServer(c)),
+    t.td({ className: 'txt-right' }, number(c.combatPower)),
+    t.td({ className: 'txt-nowrap' }, c.builtAt ? () => 'read ' + ago(c.builtAt, now()) : t.span({ className: 'label sm' }, 'never read')));
+  const checkRow = (c, i) => t.tr({ rid: i + '@' + signature(c) },
+    t.td({ className: 'txt-right txt-hint' }, number(i + 1)), t.td({ className: 'txt-nowrap' }, pendingName(c)), t.td({ className: 'txt-nowrap' }, pendingServer(c)),
+    t.td({ className: 'txt-nowrap' }, c.combatPower ? number(c.combatPower) + ' · 30+ days old' : t.span({ className: 'txt-hint' }, 'not yet')));
+  const buildPace = () => armory().paused ? 'paused with the armory' : !scout().buildEvery ? 'no scout lanes under Server controls, so none is read'
+    : 'one every ' + span(scout().buildEvery) + ' while no reader waits' + (scout().builds ? ', all in about ' + span(scout().builds * scout().buildEvery) : '');
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -557,6 +572,21 @@ export function statusPage() {
         t.thead(null, t.tr(null, t.th(null, 'Lookup'), t.th(null, 'Character'), t.th(null, 'Server'), t.th(null, 'For'), t.th(null, 'Since'))),
         t.tbody(null, () => queue().length ? queue().map(queueRow) : t.tr(null, t.td({ colSpan: 5, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'Nothing waits for PLAYNC.'))))),
       t.p({ className: 'txt-hint txt-sm m-b-base' }, 'Browse, search and delete the kept images under ', t.a({ href: '#/collections?collection=armory_images' }, 'Collections → armory_images'), '; a profile that names a deleted image fetches it again when it is opened. The queue names no address that asked.'),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Armory scout'), t.span({ className: 'txt-hint txt-sm' }, 'what the scout still reads of PLAYNC for the top players, in the order it reads it')),
+      t.div({ className: 'odyle-stats m-b-sm' },
+        stat('Gear to read', () => number(scout().builds), () => (scout().builds ? number(scout().neverBuilt) + ' never read, ' + number(scout().builds - scout().neverBuilt) + ' read 14 or more days ago · ' : '') + buildPace()),
+        stat('Combat power to read', () => number(scout().checks), () => scout().level ? 'characters of level ' + number(scout().level) + ' its searches found, read between searches · in server memory' : 'characters its searches find, read between searches · in server memory'),
+        stat('Last gear read', () => scout().lastBuildAt ? ago(scout().lastBuildAt, now()) : 'none yet', () => scout().lastBuildAt ? 'queued ' + when(scout().lastBuildAt) : 'since the server started')),
+      t.div({ className: 'grid m-b-sm' },
+        t.div({ className: 'col-lg-7' }, t.div({ className: 'odyle-table' }, t.table(null,
+          t.thead(null, t.tr(null, t.th({ className: 'txt-right' }, '#'), t.th(null, 'Character'), t.th(null, 'Class'), t.th(null, 'Server'), t.th({ className: 'txt-right' }, 'Combat power'), t.th(null, 'Gear'))),
+          t.tbody(null, () => scout().buildQueue.length ? scout().buildQueue.map(buildRow) : t.tr(null, t.td({ colSpan: 6, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'The gear of every top player is read.'))))),
+          t.div({ className: 'field-help' }, () => scout().builds > scout().buildQueue.length ? 'The first ' + number(scout().buildQueue.length) + ' of ' + number(scout().builds) + ', strongest first.' : 'Strongest first.')),
+        t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-table' }, t.table(null,
+          t.thead(null, t.tr(null, t.th({ className: 'txt-right' }, '#'), t.th(null, 'Character'), t.th(null, 'Server'), t.th(null, 'Combat power'))),
+          t.tbody(null, () => scout().checkQueue.length ? scout().checkQueue.map(checkRow) : t.tr(null, t.td({ colSpan: 4, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'Nothing waits; the next step searches.'))))),
+          t.div({ className: 'field-help' }, () => scout().checks > scout().checkQueue.length ? 'The first ' + number(scout().checkQueue.length) + ' of ' + number(scout().checks) + ', in the order it reads them.' : 'In the order it reads them.'))),
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'The search pages name a character only by its id; its name comes with its info page. A restart forgets the characters waiting for their combat power, not the top players.'),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },

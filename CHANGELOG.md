@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.63.0 · 2026-11-20
+
+### New
+- Server operators see under **Server status → Armory scout** what the scout still reads for the top players: whose gear, the strongest first, with how often it reads one and about how long all of them take, and which characters its searches found wait for their combat power.
+
 ## 0.62.0 · 2026-11-20
 
 ### New

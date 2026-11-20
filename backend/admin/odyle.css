@@ -11,6 +11,7 @@
 .odyle-table table{font-variant-numeric:tabular-nums}
 /* Ages change every second; a fixed width keeps the columns from shifting. */
 .odyle-table td.odyle-age{min-width:7.5em}
+.odyle-id{font-family:var(--monospaceFontFamily);font-size:.95em;white-space:nowrap}
 .odyle-filters{display:inline-flex;gap:2px;flex-wrap:wrap}
 .odyle-jobs{display:flex;flex-direction:column;gap:10px}
 .odyle-job{padding:12px 15px;border:1px solid var(--surfaceAlt3Color);border-radius:var(--borderRadius);background:var(--surfaceColor)}

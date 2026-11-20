@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"ganigeorgiev.com/pocketbase/dbx"
 )
 
 // fastScout shortens the scout's steps and has it pick the first server, class, letter and page.
@@ -29,6 +31,11 @@ func TestScoutFindsTheStrongestOfEachClass(t *testing.T) {
 	if asked, err := scout.step(app); err != nil || !asked || stand.searches.Load() != 1 || len(scout.hits) != 1 || scout.hits[0].characterId != id || scout.level != 45 {
 		t.Fatalf("search: %v %v, %d searches, hits %+v, level %d", asked, err, stand.searches.Load(), scout.hits, scout.level)
 	}
+	// Server status names it among the characters whose combat power the scout reads next.
+	if st := scoutStatus(app); st["checks"] != 1 || st["checkQueue"].([]scoutPending)[0].CharacterId != id || st["checkQueue"].([]scoutPending)[0].Server == "" ||
+		st["level"] != int64(45) || st["builds"] != 0 || len(st["buildQueue"].([]scoutPending)) != 0 || st["lastBuildAt"] != "" {
+		t.Fatalf("status after the search %+v", st)
+	}
 	// Its info page: its combat power, without its gear.
 	if asked, err := scout.step(app); err != nil || !asked || stand.lookups.Load() != 1 || stand.details.Load() != 0 {
 		t.Fatalf("check: %v %v, %d info pages, %d others", asked, err, stand.lookups.Load(), stand.details.Load())
@@ -36,6 +43,12 @@ func TestScoutFindsTheStrongestOfEachClass(t *testing.T) {
 	row, ok := rankAt(t, app, id)
 	if !ok || row.Name != "Hero" || row.Class != "Chanter" || row.CombatPower != 107458 || row.BuiltAt != "" || row.Build != "null" && row.Build != "" {
 		t.Fatalf("checked %+v", row)
+	}
+	// Then among the top players whose gear it reads, never read yet, one every 3 minutes.
+	if st := scoutStatus(app); st["checks"] != 0 || st["builds"] != 1 || st["neverBuilt"] != 1 || st["buildEvery"] != 180 {
+		t.Fatalf("status after the check %+v", st)
+	} else if q := st["buildQueue"].([]scoutPending); len(q) != 1 || q[0].Name != "Hero" || q[0].Class != "Chanter" || q[0].CombatPower != 107458 || q[0].Server == "" || q[0].BuiltAt != "" {
+		t.Fatalf("gear to read %+v", q)
 	}
 	// It is in its class's top: the armory's queue reads its gear (info, equipment and the item
 	// pages, no board), with the icons and no portrait; the step searches on meanwhile, and the
@@ -55,6 +68,16 @@ func TestScoutFindsTheStrongestOfEachClass(t *testing.T) {
 	}
 	if countOf(t, app, "armory_profiles") != 0 {
 		t.Fatal("the scout keeps profiles")
+	}
+	// Its gear read, nothing waits; read 14 days ago, it waits again.
+	if st := scoutStatus(app); st["builds"] != 0 || len(st["buildQueue"].([]scoutPending)) != 0 || st["lastBuildAt"] == "" {
+		t.Fatalf("status after the build %+v", st)
+	}
+	if _, err := app.DB().NewQuery("UPDATE armory_ranks SET builtAt = {:old}").Bind(dbx.Params{"old": ago(scoutRebuild + time.Hour)}).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if st := scoutStatus(app); st["builds"] != 1 || st["neverBuilt"] != 0 || !strings.HasSuffix(st["buildQueue"].([]scoutPending)[0].BuiltAt, "Z") {
+		t.Fatalf("status with old gear %+v", st)
 	}
 	// The job: up to five pages a run; paused with the armory.
 	out, err := scoutArmory(app)

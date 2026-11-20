@@ -158,15 +158,82 @@ func (s *armoryScout) next() (scoutHit, bool) {
 	return hit, true
 }
 
+// pendingBuilds is the SQL of the characters whose gear the scout reads next: those in their
+// class's top rankLimit whose gear is unknown or scoutRebuild old (bind limit and old), the
+// strongest first with "ORDER BY combatPower DESC, id".
+const pendingBuilds = "FROM armory_ranks WHERE id IN (" + inTop + ") AND (builtAt = '' OR builtAt < {:old})"
+
 // nextBuild is the strongest character in its class's top whose gear is unknown or old.
 func nextBuild(app core.App) (scoutHit, bool, error) {
 	var hit scoutHit
-	err := app.DB().NewQuery("SELECT region, serverId, characterId FROM armory_ranks WHERE id IN ("+inTop+") AND (builtAt = '' OR builtAt < {:old}) ORDER BY combatPower DESC, id LIMIT 1").
+	err := app.DB().NewQuery("SELECT region, serverId, characterId "+pendingBuilds+" ORDER BY combatPower DESC, id LIMIT 1").
 		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild)}).Row(&hit.region, &hit.serverId, &hit.characterId)
 	if isNoRows(err) {
 		return hit, false, nil
 	}
 	return hit, err == nil, err
+}
+
+// scoutShown is how many characters of each of the scout's lists the Server status page names.
+const scoutShown = 20
+
+// scoutPending is a character the scout still reads, on the Server status page.
+type scoutPending struct {
+	Region      string `db:"region" json:"region"`
+	ServerId    int    `db:"serverId" json:"serverId"`
+	Server      string `db:"-" json:"server"`
+	CharacterId string `db:"characterId" json:"characterId"`
+	Name        string `db:"name" json:"name"`
+	Class       string `db:"class" json:"class"`
+	CombatPower int64  `db:"combatPower" json:"combatPower"`
+	BuiltAt     string `db:"builtAt" json:"builtAt"`
+	Total       int    `db:"total" json:"-"`
+	Never       int    `db:"never" json:"-"`
+}
+
+// scoutStatus is the scout's part of the Server status page: what it still reads of PLAYNC.
+// builds counts the top players whose gear it reads (neverBuilt of them never read, the others
+// scoutRebuild old) and buildQueue names the first scoutShown in the order it reads them; checks
+// counts the characters its search pages listed whose combat power it reads next (in server
+// memory, so a restart forgets them) and checkQueue names the first scoutShown, as far as the
+// armory knows them. level is the highest level its searches met (it keeps only characters of
+// it), buildEvery how often it may queue a character's gear (in seconds, 0 with no scout lanes;
+// only while no reader's lookup waits) and lastBuildAt when it last did.
+func scoutStatus(app core.App) map[string]any {
+	s := stateOf(app).scout
+	s.mu.Lock()
+	hits := slices.Clone(s.hits[:min(len(s.hits), scoutShown)])
+	checks, level, builtAt := len(s.hits), s.level, s.builtAt
+	s.mu.Unlock()
+	book := serversOf(app)
+	builds := []scoutPending{}
+	_ = app.DB().NewQuery("SELECT region, serverId, characterId, name, class, combatPower, builtAt, COUNT(*) OVER () AS total, SUM(builtAt = '') OVER () AS never "+pendingBuilds+" ORDER BY combatPower DESC, id LIMIT {:shown}").
+		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild), "shown": scoutShown}).All(&builds)
+	total, never := 0, 0
+	if len(builds) > 0 {
+		total, never = builds[0].Total, builds[0].Never
+	}
+	for i := range builds {
+		b := &builds[i]
+		b.Server = book.inRegion(b.Region, b.ServerId)
+		if at, err := time.Parse(stampLayout, b.BuiltAt); err == nil {
+			b.BuiltAt = isoTime(at)
+		}
+	}
+	queue := make([]scoutPending, len(hits))
+	for i, h := range hits {
+		q := &queue[i]
+		q.Region, q.ServerId, q.Server, q.CharacterId = h.region, h.serverId, book.inRegion(h.region, h.serverId), h.characterId
+		// A character checked more than rankKeep ago may still be kept, with its name.
+		_ = app.DB().NewQuery("SELECT name, class, combatPower FROM armory_ranks WHERE serverId = {:server} AND characterId = {:id}").
+			Bind(dbx.Params{"server": h.serverId, "id": h.characterId}).Row(&q.Name, &q.Class, &q.CombatPower)
+	}
+	every := 0
+	if lanes := readSettings(app).ScoutLanes; lanes > 0 {
+		every = int((scoutBuildGap / time.Duration(lanes)).Seconds())
+	}
+	return map[string]any{"builds": total, "neverBuilt": never, "buildQueue": builds, "checks": checks, "checkQueue": queue,
+		"level": level, "buildEvery": every, "lastBuildAt": isoTime(builtAt)}
 }
 
 func (h scoutHit) job() armoryJob {

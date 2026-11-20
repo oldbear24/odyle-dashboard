@@ -2082,6 +2082,10 @@ test('superusers search, open and export packets and read the server status', as
     // The armory's lanes as Server controls set them, and its queue, empty now.
     await page.getByText("up to 5 readers' lookups and 0 of the scout's at once").waitFor();
     await page.locator('td', { hasText: 'Nothing waits for PLAYNC.' }).waitFor();
+    // What the scout still reads: nothing yet, and no lanes to read gear with.
+    assert.match(await page.locator('.odyle-stat', { hasText: 'Gear to read' }).innerText(), /Gear to read\s+0\s+no scout lanes under Server controls/);
+    await page.locator('td', { hasText: 'The gear of every top player is read.' }).waitFor();
+    await page.locator('td', { hasText: 'Nothing waits; the next step searches.' }).waitFor();
     assert.equal(await page.locator('.odyle-minute').count(), 60);
     await page.locator('.odyle-minute').last().hover();
     assert.match(await page.locator('.odyle-tip').innerText(), /Rejected[\s\S]*Windows app[\s\S]*Reads[\s\S]*requests?/);
