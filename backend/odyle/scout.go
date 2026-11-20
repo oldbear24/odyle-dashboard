@@ -432,7 +432,7 @@ func nextBuilds(app core.App) ([]scoutHit, error) {
 		ServerId    int    `db:"serverId"`
 		CharacterId string `db:"characterId"`
 	}{}
-	if err := app.DB().NewQuery("SELECT region, serverId, characterId "+pendingBuilds+" ORDER BY combatPower DESC, id LIMIT {:picks}").
+	if err := app.DB().NewQuery("SELECT region, serverId, characterId " + pendingBuilds + " ORDER BY combatPower DESC, id LIMIT {:picks}").
 		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild), "picks": scoutPicks}).All(&rows); err != nil {
 		return nil, err
 	}
