@@ -2,6 +2,12 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.64.1 · 2026-11-20
+
+### Fixed
+- The armory's scout reads as many top players' gear at once as **Server controls → Scout lookups at once** allows. Before, it read one at a time however many lookups were allowed, and a character whose gear could not be read held back everyone after it.
+- **Server status → Armory scout** names the characters waiting for their combat power, with their class, as PLAYNC's search lists them. Before, it showed the start of their PLAYNC id, which is the same for every character of a server, so the list looked like one character over and over. Regions read NA, NAW, EU, SA and Asia instead of PLAYNC's codes (naw, eu…).
+
 ## 0.64.0 · 2026-11-20
 
 ### New
