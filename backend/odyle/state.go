@@ -55,7 +55,7 @@ type state struct {
 	storageMove  *storageMove // the last move of the files on disk into the S3 storage
 	moving       atomic.Bool  // a move runs now
 	serving      atomic.Bool  // the server serves (moves start only then)
-	byHand       atomic.Bool  // moves and imports never start by themselves (tests run them)
+	byHand       atomic.Bool  // moves, imports and the release warm-up never start by themselves (tests run them)
 
 	releaseAt        time.Time // the last lookup
 	release          map[string]any

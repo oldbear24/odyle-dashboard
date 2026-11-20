@@ -71,8 +71,12 @@ func Register(app core.App) {
 		if testFixtures != nil {
 			testFixtures(se)
 		}
-		// The newest Windows release, so the first visitors need not wait for GitHub.
-		go latestRelease(se.App)
+		// The newest Windows release, so the first visitors need not wait for GitHub. Not in the
+		// tests (byHand), where every request serves: the lookup's warning would race a test's
+		// settings save, which sets the logger's level (go test -race).
+		if !stateOf(se.App).byHand.Load() {
+			go latestRelease(se.App)
+		}
 		// The files on disk move into the S3 storage when it is on (storage.go).
 		stateOf(se.App).serving.Store(true)
 		startMove(se.App)
