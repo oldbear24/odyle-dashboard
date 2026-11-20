@@ -452,7 +452,8 @@ The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetc
   "combatPower": { "median": 160000, "low": 131000, "high": 382198 }, "itemLevel": { "median": 2133, "low": 1750, "high": 3100 },
   "slots": [{ "slot": "MainHand", "players": 500, "items": 500, "grade": "Unique", "itemLevel": 102, "enchant": 13, "exceed": 2, "stones": 4, "stoneSlots": 4,
     "popular": [{ "name": "…", "grade": "Unique", "icon": "…", "category": "Mace", "count": 312, "enchant": 15, "exceed": 3, "itemLevel": 102, "sources": ["Crafting"] }],
-    "stoneNames": [{ "name": "Attack", "count": 1210 }] }],
+    "stoneNames": [{ "name": "Attack", "count": 1210 }],
+    "rolledItems": 430, "rolled": [{ "name": "Combat Speed", "percent": true, "count": 388, "value": 13 }, { "name": "Critical Hit", "percent": false, "count": 290, "value": 120 }] }],
   "sets": [{ "name": "Primal Vigor", "players": 340, "pieces": 5 }],
   "boards": [{ "name": "Nezekan", "players": 500, "open": 28, "total": 40 }],
   "skills": [{ "name": "Bolt", "category": "Active", "icon": "…", "players": 480, "level": 15 }]
@@ -460,7 +461,7 @@ The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetc
 ```
 
 - `sample` is how many characters were compared: up to 500 of the class with a build in `armory_ranks`, by combat power, hidden ones left out; `combatPowers` is each one's, strongest first, and `players` names the strongest 20. `builtAt` is when the server compared them; it does again after 10 minutes.
-- `slots` follow the paper doll: `Earring`, `Ring`, `Bracelet` and `Rune` count both of a character's items (`items` is then up to twice `players`), the arcana keep their places (`Arcana1`–`5`), and the pet is left out. `grade` is the grade most items there have, and `itemLevel`, `enchant`, `exceed`, `stones` (engraved) and `stoneSlots` are medians (the item level and stones of the items with details). `popular` lists the three items worn most there and `stoneNames` the five stones engraved most.
+- `slots` follow the paper doll: `Earring`, `Ring`, `Bracelet` and `Rune` count both of a character's items (`items` is then up to twice `players`), the arcana keep their places (`Arcana1`–`5`), and the pet is left out. `grade` is the grade most items there have, and `itemLevel`, `enchant`, `exceed`, `stones` (engraved) and `stoneSlots` are medians (the item level and stones of the items with details). `popular` lists the three items worn most there and `stoneNames` the five stones engraved most. `rolled` (dashboard 0.63.0) lists the eight stats rolled most on the items there (soul binding, PLAYNC's `subStats`), by on how many of the `rolledItems` they are, the items whose rolled stats the builds keep (builds kept before 0.63.0 and not read again keep none); `value` is the median where rolled (a stat rolled twice on an item summed), `percent` whether it is a share ("13%") rather than a number, and a share and a number of one name are two stats.
 - `sets` are the sets the characters wear pieces of (up to 8, by how many wear them; `pieces` is the median), `boards` the median of open nodes per Daevanion board, and `skills` the skills on their skill bars (up to 24, by how many keep them there; `level` is the median).
 - A class the armory knows no character of answers `sample` 0 and empty lists; a class that is no name (letters, spaces, `'` and `-`, up to 40) answers 404. Browsers may keep the answer for 5 minutes. It counts against the armory's rate limit.
 

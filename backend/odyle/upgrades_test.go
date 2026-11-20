@@ -40,6 +40,10 @@ func TestUpgradesCompareTheStrongestOfAClass(t *testing.T) {
 		gearOf("Earring1", "Ear X", "Unique", 7, 54, nil),
 	}, Boards: []armoryBoard{{Name: "Nezekan", Open: 30, Total: 40}}, Skills: []armorySkill{{Name: "Bolt", Category: "Active", Level: 11, Equipped: true}}}
 	third := armoryProfile{Gear: []armoryGear{{Slot: "MainHand", Name: "Rod B", Grade: "Legend", Enchant: 10}}}
+	// Rolled stats: the first two rods roll Combat Speed (one twice, summed) and the first Critical
+	// Hit too; the third rod's are unknown (a build kept before 0.63.0).
+	strongest.Gear[0].Detail.Sub = []armoryLine{{Name: "Combat Speed", Value: "13%"}, {Name: "Critical Hit", Value: "1,200"}, {Name: "Odd", Value: "?"}}
+	second.Gear[0].Detail.Sub = []armoryLine{{Name: "Combat Speed", Value: "4%"}, {Name: "Combat Speed", Value: "5.5%"}, {Name: "Critical Hit", Value: "+12%"}}
 	players := []upgradePlayer{{Name: "A", CombatPower: 300, ItemLevel: 1700}, {Name: "B", CombatPower: 200, ItemLevel: 1600}, {Name: "C", CombatPower: 100, ItemLevel: 1200}}
 	at := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 	ref := compareUpgrades("Chanter", players, []armoryProfile{strongest, second, third}, at)
@@ -63,6 +67,14 @@ func TestUpgradesCompareTheStrongestOfAClass(t *testing.T) {
 	}
 	if len(main.StoneNames) != 2 || main.StoneNames[0] != (upgradeName{Name: "Attack", Count: 2}) || main.StoneNames[1].Name != "Critical Hit" {
 		t.Fatalf("stones %+v", main.StoneNames)
+	}
+	// A share and a number of one name are two stats; the median of two is the upper one.
+	if main.RolledItems != 2 || len(main.Rolled) != 3 || main.Rolled[0] != (upgradeRolled{Name: "Combat Speed", Percent: true, Count: 2, Value: 13}) ||
+		main.Rolled[1] != (upgradeRolled{Name: "Critical Hit", Count: 1, Value: 1200}) || main.Rolled[2] != (upgradeRolled{Name: "Critical Hit", Percent: true, Count: 1, Value: 12}) {
+		t.Fatalf("rolled stats %+v", main.Rolled)
+	}
+	if earring := ref.Slots[1]; earring.RolledItems != 0 || earring.Rolled == nil || len(earring.Rolled) != 0 {
+		t.Fatalf("earrings' rolled stats %+v", earring.Rolled)
 	}
 	if earring := ref.Slots[1]; earring.Players != 2 || earring.Items != 3 || earring.Popular[0].Name != "Ear X" || earring.Popular[0].Count != 2 || earring.Popular[0].Enchant != 7 || earring.Grade != "Unique" {
 		t.Fatalf("earrings %+v", earring)

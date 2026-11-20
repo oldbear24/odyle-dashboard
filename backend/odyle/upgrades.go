@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ const (
 	upgradeShown   = 20               // of them listed by name
 	upgradeKeep    = 10 * time.Minute // a class's comparison is worked out again after
 	upgradePopular = 3                // items listed for a slot, most worn first
+	upgradeRolls   = 8                // rolled stats listed for a slot, most rolled first
 )
 
 // upgradeSlots is the order of the slots compared: the paper doll's (src/armory.js). A
@@ -90,8 +92,8 @@ type upgradeSpread struct {
 }
 
 // upgradeGear is one slot: how many of the characters wear something there, its usual grade, the
-// medians of its item level, enchantment, exceed level and stones, the items worn most and the
-// stones engraved most.
+// medians of its item level, enchantment, exceed level and stones, the items worn most, the stones
+// engraved most and the stats rolled most on its items.
 type upgradeGear struct {
 	Slot       string        `json:"slot"`
 	Players    int           `json:"players"`
@@ -104,6 +106,31 @@ type upgradeGear struct {
 	StoneSlots int64         `json:"stoneSlots"`
 	Popular    []upgradeItem `json:"popular"`
 	StoneNames []upgradeName `json:"stoneNames"`
+	// The items whose rolled stats are known: those of builds kept before 0.63.0 are not.
+	RolledItems int             `json:"rolledItems"`
+	Rolled      []upgradeRolled `json:"rolled"`
+}
+
+// A stat rolled on the items of a slot (soul binding, PLAYNC's subStats): on how many of the items
+// whose rolled stats are known, and its median on them; a share ("13%") or a number ("120").
+type upgradeRolled struct {
+	Name    string  `json:"name"`
+	Percent bool    `json:"percent"`
+	Count   int     `json:"count"`
+	Value   float64 `json:"value"`
+}
+
+// rolledNumber is the number in a rolled stat's value as PLAYNC writes it ("13%", "+120", "1,200").
+var rolledNumber = regexp.MustCompile(`-?[\d,]*\d(?:\.\d+)?`)
+
+// rolledValue reads a rolled stat's value: its number and whether it is a share.
+func rolledValue(text string) (value float64, percent, ok bool) {
+	found := rolledNumber.FindString(text)
+	if found == "" {
+		return 0, false, false
+	}
+	value, err := strconv.ParseFloat(strings.ReplaceAll(found, ",", ""), 64)
+	return value, strings.Contains(text, "%"), err == nil
 }
 
 // An item worn in a slot: how many wear it, how far they enchant it (medians), and where it
@@ -150,9 +177,10 @@ type upgradeSkill struct {
 }
 
 // median is the middle of the values (the upper one of an even count), 0 for none.
-func median(values []int64) int64 {
+func median[T cmp.Ordered](values []T) T {
 	if len(values) == 0 {
-		return 0
+		var none T
+		return none
 	}
 	sorted := slices.Clone(values)
 	slices.Sort(sorted)
@@ -200,7 +228,7 @@ func names(list []upgradeName) []string {
 	return out
 }
 
-// The tallies of one slot, and of one item worn in it.
+// The tallies of one slot, of one item worn in it and of one stat rolled on its items.
 type slotTally struct {
 	players                                        map[int]bool
 	items                                          int
@@ -208,6 +236,14 @@ type slotTally struct {
 	levels, enchants, exceeds, engraved, stoneRoom []int64
 	worn                                           map[string]*itemTally
 	order                                          []string
+	rolledItems                                    int
+	rolled                                         map[string]*rolledTally
+	rolledOrder                                    []string
+}
+
+type rolledTally struct {
+	stat   upgradeRolled
+	values []float64
 }
 
 type itemTally struct {
@@ -251,6 +287,35 @@ func (s *slotTally) add(player int, g armoryGear) {
 	for _, stone := range d.Stones {
 		s.stones.add(stone.Name)
 	}
+	s.addRolled(d.Sub)
+}
+
+// addRolled counts an item's rolled stats, a stat rolled twice on it once with both summed. An item
+// without any counts as unknown: builds kept before 0.63.0 left them out.
+func (s *slotTally) addRolled(lines []armoryLine) {
+	sums, order := map[string]float64{}, []string{}
+	for _, line := range lines {
+		value, percent, ok := rolledValue(line.Value)
+		if !ok || line.Name == "" {
+			continue
+		}
+		key := line.Name + "|" + strconv.FormatBool(percent)
+		if _, seen := sums[key]; !seen {
+			order = append(order, key)
+			if s.rolled[key] == nil {
+				s.rolled[key] = &rolledTally{stat: upgradeRolled{Name: line.Name, Percent: percent}}
+				s.rolledOrder = append(s.rolledOrder, key)
+			}
+		}
+		sums[key] += value
+	}
+	if len(order) == 0 {
+		return
+	}
+	s.rolledItems++
+	for _, key := range order {
+		s.rolled[key].values = append(s.rolled[key].values, sums[key])
+	}
 }
 
 func (s *slotTally) gear(slot string) upgradeGear {
@@ -274,6 +339,15 @@ func (s *slotTally) gear(slot string) upgradeGear {
 		return cmp.Or(b.Count-a.Count, cmp.Compare(b.ItemLevel, a.ItemLevel), cmp.Compare(gradeRanks[b.Grade], gradeRanks[a.Grade]))
 	})
 	out.Popular = out.Popular[:min(upgradePopular, len(out.Popular))]
+	out.RolledItems, out.Rolled = s.rolledItems, []upgradeRolled{}
+	for _, key := range s.rolledOrder {
+		r := s.rolled[key]
+		stat := r.stat
+		stat.Count, stat.Value = len(r.values), median(r.values)
+		out.Rolled = append(out.Rolled, stat)
+	}
+	slices.SortStableFunc(out.Rolled, func(a, b upgradeRolled) int { return b.Count - a.Count })
+	out.Rolled = out.Rolled[:min(upgradeRolls, len(out.Rolled))]
 	return out
 }
 
@@ -322,7 +396,7 @@ func (t *upgradeTally) add(player upgradePlayer, p *armoryProfile) {
 			continue
 		}
 		if t.slots[slot] == nil {
-			t.slots[slot] = &slotTally{players: map[int]bool{}, worn: map[string]*itemTally{}}
+			t.slots[slot] = &slotTally{players: map[int]bool{}, worn: map[string]*itemTally{}, rolled: map[string]*rolledTally{}}
 			if !slices.Contains(upgradeSlots, slot) {
 				t.extra = append(t.extra, slot)
 			}

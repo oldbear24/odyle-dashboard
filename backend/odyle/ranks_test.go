@@ -37,7 +37,7 @@ func rankAt(t *testing.T, app interface {
 }
 
 // A lookup keeps the character among the top players with its build: the gear as the Upgrade tab
-// compares it, without what it does not read; a character PLAYNC no longer lists leaves them, and
+// compares it, rolled stats included, without what it does not read; a character PLAYNC no longer lists leaves them, and
 // hiding its profile hides it there too.
 func TestArmoryLookupsKeepTheTopPlayers(t *testing.T) {
 	fastArmory(t)
@@ -57,6 +57,7 @@ func TestArmoryLookupsKeepTheTopPlayers(t *testing.T) {
 	}
 	main := build.Gear[0].Detail
 	if build.Gear[0].Slot != "MainHand" || main == nil || main.ItemLevel != 102 || len(main.Stones) != 1 || main.Stones[0] != (armoryStone{Name: "Attack"}) || len(main.Main) != 0 || main.Set.Name != "Primal Vigor" || len(main.Set.Bonuses) != 0 ||
+		len(main.Sub) != 2 || main.Sub[0] != (armoryLine{Name: "Combat Speed", Value: "13%"}) || main.Sub[1] != (armoryLine{Name: "Might", Value: "32"}) ||
 		len(build.Stats) != 0 || len(build.Skills) != 1 || build.Skills[0].Name != "Earth's Retribution" || len(build.Boards) != 2 || len(build.Boards[0].Nodes) != 0 || build.Boards[0].Open != 12 || build.Portrait != "" {
 		t.Fatalf("build %s", row.Build)
 	}

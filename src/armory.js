@@ -14,7 +14,7 @@ import { age, escape as esc } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { armoryRoute, profilePath, topPath, imageUrl, classBadge } from './armorylinks.js';
-import { upgradePlan, upgradeLeast } from './upgrade.js';
+import { upgradePlan, upgradeLeast, usualRolls } from './upgrade.js';
 
 export const regionNames = () => ({ GLOBAL_NA: t('North America East'), GLOBAL_NAW: t('North America West'), GLOBAL_EU: t('Europe'), GLOBAL_SA: t('South America'), GLOBAL_ASIA: t('Asia') });
 // PLAYNC's search regions and the regions Odyle names them by.
@@ -261,6 +261,8 @@ function appearanceTab(p, images) {
 
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '±') + number(Math.abs(n));
 const stateNames = () => ({ big: t('Big upgrade'), some: t('Worth an upgrade'), small: t('Small upgrade'), even: t('On par') });
+// A rolled stat's value: a share ("13%") or a number.
+const rolledText = (value, percent) => number(value) + (percent ? '%' : '');
 // What a piece of gear is behind the strongest by, in words.
 function upgradeReasons(row, sample) {
   const g = row.item, d = g?.detail, ref = row.ref, gaps = row.gaps;
@@ -271,6 +273,9 @@ function upgradeReasons(row, sample) {
     gaps.enchant > 0 ? t('Enchantment +{mine} → +{theirs}', { mine: number(g.enchant), theirs: number(ref.enchant) }) : '',
     gaps.exceed > 0 ? t('Exceed {mine} → {theirs}', { mine: number(g.exceed), theirs: number(ref.exceed) }) : '',
     gaps.stones > 0 ? tn(gaps.stones, '{n} empty stone slot', '{n} empty stone slots') : '',
+    ...(gaps.rolled || []).map(r => r.mine === null
+      ? t('Rolled {stat}: none → {theirs}', { stat: r.name, theirs: rolledText(r.theirs, r.percent) })
+      : t('Rolled {stat} {mine} → {theirs}', { stat: r.name, mine: rolledText(r.mine, r.percent), theirs: rolledText(r.theirs, r.percent) })),
   ].filter(Boolean);
 }
 // The item the strongest wear most in a slot: how many of them, how far they enchant it, where it comes from.
@@ -286,11 +291,12 @@ function yourItem(images, g) {
 function upgradePick(images, row, index, sample) {
   const ref = row.ref, best = row.best, reasons = upgradeReasons(row, sample);
   const others = ref.popular.slice(1).map(i => esc(i.name)).join(', ');
+  const rolls = usualRolls(ref).map(r => esc(`${r.name} ${rolledText(r.value, r.percent)}`)).join(', ');
   const target = best && !row.wearsBest ? popularItem(images, best, ref.items) : `<p class="upgrade-same">${row.wearsBest ? t('The strongest wear this item most too; take it further.') : t('No item stands out here.')}</p>`;
   return `<li class="upgrade-pick is-${row.state}"><div class="upgrade-pick-head"><span class="upgrade-rank" aria-hidden="true">${index + 1}</span><h3>${esc(slotLabel(row.slot))}</h3><span class="upgrade-badge">${esc(stateNames()[row.state])}</span></div>`
     + `<div class="upgrade-compare"><div><small>${t('Yours')}</small>${yourItem(images, row.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div><small>${t('The strongest wear')}</small>${target}</div></div>`
     + `<ul class="upgrade-reasons">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
-    + `<dl class="upgrade-facts">${best?.sources?.length ? `<div><dt>${t('How to obtain')}</dt><dd>${best.sources.map(esc).join(', ')}</dd></div>` : ''}${ref.stoneNames?.length ? `<div><dt>${t('Stones they engrave')}</dt><dd>${ref.stoneNames.map(s => esc(s.name)).join(', ')}</dd></div>` : ''}${others ? `<div><dt>${t('Also worn')}</dt><dd>${others}</dd></div>` : ''}</dl></li>`;
+    + `<dl class="upgrade-facts">${best?.sources?.length ? `<div><dt>${t('How to obtain')}</dt><dd>${best.sources.map(esc).join(', ')}</dd></div>` : ''}${rolls ? `<div><dt>${t('Stats they roll')}</dt><dd>${rolls}</dd></div>` : ''}${ref.stoneNames?.length ? `<div><dt>${t('Stones they engrave')}</dt><dd>${ref.stoneNames.map(s => esc(s.name)).join(', ')}</dd></div>` : ''}${others ? `<div><dt>${t('Also worn')}</dt><dd>${others}</dd></div>` : ''}</dl></li>`;
 }
 function upgradeRow(images, row, sample) {
   const best = row.best, reasons = upgradeReasons(row, sample);
