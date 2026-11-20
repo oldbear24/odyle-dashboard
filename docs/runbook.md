@@ -62,7 +62,7 @@ After the game's Wednesday maintenance the decoder may stop matching the game's 
 
 ## Pause a feature
 
-**Server controls → Switches** pauses each outbound feature without a deploy: **Pause portrait refresh** (PLAYNC portrait, class and level lookups), **Pause the armory** (new PLAYNC profile reads; kept profiles still show), **Pause Discord reminders**, **Pause new pairings** (paired apps keep working) and **Pause packet readers**. Each job's last result is on **Background jobs**.
+**Server controls → Switches** pauses each outbound feature without a deploy: **Pause portrait refresh** (PLAYNC portrait, class and level lookups), **Pause the armory** (new PLAYNC profile reads and the armory scout; kept profiles still show), **Pause Discord reminders**, **Pause new pairings** (paired apps keep working) and **Pause packet readers**. Each job's last result is on **Background jobs**. **Server controls → Armory queue** sets how many armory lookups run at once: readers' (3 by default) and the scout's (1); fewer ask PLAYNC less at once, and **Server status** lists the queue.
 
 ## Post an announcement
 

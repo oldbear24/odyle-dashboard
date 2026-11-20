@@ -11,6 +11,7 @@ import (
 
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/hook"
 
 	"github.com/oldbear24/odyle-dashboard/backend/admin"
 )
@@ -39,6 +40,23 @@ var accountActions = []action{
 // device key, and whoever opens an invite link learns which room it opens.
 var publicActions = []action{{"pair", pair}, {"desktop-sign-in", desktopSignIn}, {"unpair", unpair}, {"invite-preview", invitePreview}}
 
+// staleTokenIgnored lets the public actions (pairing, a Windows app's sign-in with its device key,
+// unpairing, an invite's preview) answer a request whose Authorization header names a token that
+// signs nobody in, as they did before PocketBase 0.42.0, which refuses such a request with 401 on
+// every route. Windows apps send their expired token with the very request that renews it
+// (desktop-sign-in), and take a 401 there for a pairing that ended. A token that does sign someone
+// in stays; the header is dropped only just before PocketBase's check.
+var staleTokenIgnored = &hook.Handler[*core.RequestEvent]{
+	Id:       "odyleStaleTokenIgnored",
+	Priority: apis.DefaultRejectUnknownTokenMiddlewarePriority - 1,
+	Func: func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			e.Request.Header.Del("Authorization")
+		}
+		return e.Next()
+	},
+}
+
 // testFixtures adds the routes of the disposable test backend (build tag odyletest).
 var testFixtures func(se *core.ServeEvent)
 
@@ -53,8 +71,12 @@ func Register(app core.App) {
 		if testFixtures != nil {
 			testFixtures(se)
 		}
-		// The newest Windows release, so the first visitors need not wait for GitHub.
-		go latestRelease(se.App)
+		// The newest Windows release, so the first visitors need not wait for GitHub. Not in the
+		// tests (byHand), where every request serves: the lookup's warning would race a test's
+		// settings save, which sets the logger's level (go test -race).
+		if !stateOf(se.App).byHand.Load() {
+			go latestRelease(se.App)
+		}
 		// The files on disk move into the S3 storage when it is on (storage.go).
 		stateOf(se.App).serving.Store(true)
 		startMove(se.App)
@@ -133,6 +155,7 @@ func Register(app core.App) {
 	watchShares(app)
 	watchCharacters(app)
 	watchMembership(app)
+	watchArmoryProfiles(app)
 	watchRunPosts(app)
 	scheduleJobs(app)
 }
@@ -144,7 +167,7 @@ func routes(se *core.ServeEvent) {
 		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(signedIn, small)
 	}
 	for _, a := range publicActions {
-		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(small)
+		se.Router.POST("/api/odyle/"+a.name, observed(a.name, a.handle)).Bind(small, staleTokenIgnored)
 	}
 	// A full information board (2,000 characters with its lines) needs more than 4 KB.
 	se.Router.POST("/api/odyle/board", observed("board", board)).Bind(signedIn, apis.BodyLimit(16384))
@@ -172,6 +195,10 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/armory/servers", timed("armory-servers", armoryServersRoute))
 	se.Router.GET("/api/odyle/armory/search", timed("armory-search", armorySearchRoute))
 	se.Router.GET("/api/odyle/armory/{region}/{serverId}/{characterId}", timed("armory", armoryRoute))
+	// What the strongest characters of a class wear, for a profile's Upgrade tab (upgrades.go).
+	se.Router.GET("/api/odyle/armory/upgrades/{class}", timed("armory-upgrades", upgradesRoute))
+	// The strongest characters of each class the armory knows (ranks.go).
+	se.Router.GET("/api/odyle/armory/top", timed("armory-top", topRoute))
 	// Its images (armoryimages.go) are outside /api/odyle/armory/, under the general rate limit:
 	// a profile shows some hundred of them, which browsers then keep.
 	se.Router.GET("/api/odyle/armory-images/{file}", timed("armory-image", armoryImageRoute))

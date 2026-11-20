@@ -39,6 +39,8 @@ type state struct {
 
 	armory       *armoryWork     // has its own lock
 	armorySearch *armorySearches // has its own lock
+	upgrades     *upgradeCache   // has its own lock (upgrades.go)
+	scout        *armoryScout    // has its own lock (scout.go)
 
 	serverBook atomic.Pointer[serverBook] // the Global servers (servers.go), nil until read
 
@@ -53,7 +55,7 @@ type state struct {
 	storageMove  *storageMove // the last move of the files on disk into the S3 storage
 	moving       atomic.Bool  // a move runs now
 	serving      atomic.Bool  // the server serves (moves start only then)
-	byHand       atomic.Bool  // moves and imports never start by themselves (tests run them)
+	byHand       atomic.Bool  // moves, imports and the release warm-up never start by themselves (tests run them)
 
 	releaseAt        time.Time // the last lookup
 	release          map[string]any
@@ -74,7 +76,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(),
+		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), scout: newArmoryScout(),
 			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence(), health: newHealth()}
 	}).(*state)
 }

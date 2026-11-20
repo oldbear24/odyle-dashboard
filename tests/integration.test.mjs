@@ -456,7 +456,7 @@ test('superusers watch connected apps and their packets live and edit the server
   } finally { await stream.close(); }
   // Server-wide settings: validated, partial changes keep the rest, and every client follows.
   const settings = (body, auth = operator) => request('/api/odyle/admin/settings', body, auth, body === undefined ? 'GET' : 'POST');
-  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', announcementFrom: '', announcementUntil: '', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, armoryPaused: false, adapters: { extra: [], disabled: [] }, taskTemplates: [], clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, windowsBlocked: [], maintenance: { day: '', hour: 0, hours: 0 },
+  const initial = { odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', inactiveAccountDays: 0, catalog: [], dungeons: [], announcement: '', announcementLevel: 'info', announcementFrom: '', announcementUntil: '', portraitsPaused: false, remindersPaused: false, pairingPaused: false, readerPaused: false, armoryPaused: false, armoryLanes: 3, scoutLanes: 1, adapters: { extra: [], disabled: [] }, taskTemplates: [], clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false }, windowsBlocked: [], maintenance: { day: '', hour: 0, hours: 0 },
     classRoles: [['Templar', 'tank'], ['Gladiator', 'damage'], ['Assassin', 'damage'], ['Ranger', 'damage'], ['Sorcerer', 'damage'], ['Spiritmaster', 'damage'], ['Cleric', 'healer'], ['Chanter', 'support']].map(([name, role]) => ({ class: name, role })), slots: { dailySpins: 3, perCharacter: 1 }, maps: [], historyDays: 30, locationDays: 30, pvpDays: 90 };
   assert.deepEqual((await settings()).data.settings, initial);
   assert.deepEqual((await settings()).data.thglMaps.find(m => m.name.startsWith('Herb Cave')), { name: "Herb Cave / Valka's Nest (+3)", places: ['Herb Cave', "Valka's Nest"] }, 'TH.GL maps with the places they list');
@@ -485,7 +485,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   const settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
   assert.equal((await jobs(null)).status, 401); assert.equal((await jobs(member)).status, 403); assert.equal((await run('odyle-expiry', member)).status, 403);
   const listed = (await jobs(operator)).data;
-  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-old-characters', true, 'active'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active'], ['odyle-party-ready', true, 'active'], ['odyle-armory', true, 'active'], ['odyle-announcement', true, 'active']]);
+  assert.deepEqual(listed.jobs.map(j => [j.name, j.manual, j.state]), [['odyle-expiry', true, 'active'], ['odyle-portraits', true, 'active'], ['odyle-reminders', true, 'active'], ['odyle-retention', false, 'off'], ['odyle-old-characters', true, 'active'], ['odyle-stats', true, 'active'], ['odyle-health', true, 'active'], ['odyle-release', true, 'active'], ['odyle-cap-alerts', true, 'active'], ['odyle-push', true, 'active'], ['odyle-party-ready', true, 'active'], ['odyle-armory', true, 'active'], ['odyle-armory-scout', true, 'active'], ['odyle-announcement', true, 'active']]);
   assert.ok(Date.parse(listed.startedAt) <= Date.now());
   // A run by hand is recorded with its result; the account clean-up only runs on its schedule.
   const ran = await run('odyle-expiry'); assert.equal(ran.status, 200, JSON.stringify(ran.data));
@@ -503,7 +503,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     const armory = await request('/api/odyle/armory/eu/2304/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', undefined, null, 'GET');
     assert.deepEqual([armory.status, armory.data.state, armory.data.profile], [200, 'paused', null]);
     assert.equal((await request('/api/odyle/armory/search?name=Armorer&server=Lumiel&region=GLOBAL_EU', undefined, null, 'GET')).status, 503);
-    for (const name of ['odyle-portraits', 'odyle-reminders']) {
+    for (const name of ['odyle-portraits', 'odyle-reminders', 'odyle-armory-scout']) {
       const paused = await run(name); assert.equal(paused.status, 200, JSON.stringify(paused.data));
       assert.equal(paused.data.result.skipped, 'paused'); assert.equal(paused.data.jobs.find(j => j.name === name).state, 'paused');
     }
@@ -559,7 +559,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
   assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
   assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.announcement, null);
   assert.equal(await snapshotNotice(), null);
-  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active']);
+  assert.deepEqual((await jobs(operator)).data.jobs.map(j => j.state), ['active', 'active', 'active', 'off', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active', 'active']);
   // A body id never replaces a packet's own number.
   const added = (await action('task', { title: 'Watched task', cadence: 'daily' }, member)).data.tasks.find(x => x.title === 'Watched task');
   assert.equal((await action('task', { id: added.id, done: true }, member)).status, 200);
@@ -813,6 +813,14 @@ test('accounts list their paired PCs and remove one without signing out elsewher
   const desk = (await action('desktop-device', { name: 'DESK-PC' }, me)).data.deviceKey, laptop = (await action('desktop-device', {}, me)).data.deviceKey;
   assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 'LAPTOP' })).status, 200);
   assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 42 })).status, 200);
+  // A Windows app sends its expired token with the sign-in that renews it: the sign-in answers as
+  // before PocketBase 0.42.0, while a route that needs no account refuses the token it cannot read.
+  const stale = { token: me.token.slice(0, -4) + 'xxxx' };
+  const renewed = await action('desktop-sign-in', { deviceKey: laptop }, stale);
+  assert.equal(renewed.status, 200, JSON.stringify(renewed.data)); assert.ok(renewed.data.token);
+  assert.equal((await action('invite-preview', { code: 'nope-nope' }, stale)).status !== 401, true);
+  assert.equal((await request('/api/odyle/armory/servers', undefined, stale, 'GET')).status, 401);
+  assert.equal((await request('/api/odyle/armory/servers', undefined, null, 'GET')).status, 200);
   let page = await account(); assert.deepEqual(page.devices.map(d => d.name).sort(), ['DESK-PC', 'LAPTOP']);
   for (const d of page.devices) assert.deepEqual(Object.keys(d).sort(), ['id', 'lastSignInAt', 'name', 'pairedAt']);
   // A reader session opened with the key belongs to that PC; an unknown key is a pairing that ended.

@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.62.0 · 2026-11-20
+
+### New
+- Every armory profile has an **Upgrade** tab: it compares the character with the 500 strongest characters of its class that Odyle knows, from every Global region, and shows where you gain the most. The best upgrades come first, slot by slot: what you wear, what the strongest wear there instead, how far they enchant it, where it comes from and which stones they engrave. Below are every slot, the arcana sets they wear, how far they opened each Daevanion board and the skills most of them keep on their skill bar, with your place among them by combat power.
+- **Top players by class** in the armory lists the 500 strongest characters of each class by combat power, a tab for each class, each one a click from its profile. PLAYNC lists no rankings for Global, so Odyle builds them itself: from every character anyone looks up, and from a slow scout that reads PLAYNC's character search in the background. The lists grow more complete day by day.
+- Server operators set how many armory lookups run at once under **Server controls → Armory queue**, and see the queue under **Server status**: each lookup running or waiting, for a player or the scout, with how far it got.
+
+### Changed
+- The armory looks up to three characters up at once instead of one after another, so a busy armory shows your profile sooner. The scout's background lookups run on a lane of their own and wait while players wait.
+- The server runs on PocketBase 0.42.3 and the dashboard on its JavaScript SDK 0.29.0. A sign-in that expired is now refused on every page, so the dashboard renews it or asks you to sign in again instead of quietly showing you signed out. Windows apps renew theirs with their device key as before and stay paired.
+
 ## 0.61.0 · 2026-11-17
 
 ### New

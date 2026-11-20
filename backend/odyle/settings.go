@@ -157,9 +157,13 @@ type settings struct {
 	PairingPaused       bool           `json:"pairingPaused"`
 	ReaderPaused        bool           `json:"readerPaused"`
 	ArmoryPaused        bool           `json:"armoryPaused"`
-	Adapters            adapterLists   `json:"adapters"`
-	Clock               clockRules     `json:"clock"`
-	TaskTemplates       []taskTemplate `json:"taskTemplates"`
+	// How many of the armory's lookups run at once (armory.go): readers' and, beside them, the
+	// scout's (scout.go; 0 lets it read no gear).
+	ArmoryLanes   int64          `json:"armoryLanes"`
+	ScoutLanes    int64          `json:"scoutLanes"`
+	Adapters      adapterLists   `json:"adapters"`
+	Clock         clockRules     `json:"clock"`
+	TaskTemplates []taskTemplate `json:"taskTemplates"`
 	// Windows versions held back (odyle-windows#19): apps from 0.18.0 never install one, and an
 	// app running one moves to the latest release, older or not. Rolling a bad release back is
 	// blocking it here and marking it a pre-release on GitHub (docs/runbook.md).
@@ -243,7 +247,7 @@ func (s settings) MarshalJSON() ([]byte, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, PvpDays: defaultPvpDays, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, PvpDays: defaultPvpDays, ArmoryLanes: defaultArmoryLanes, ScoutLanes: defaultScoutLanes, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -347,9 +351,17 @@ func loadSettings(app core.App) settings {
 		Dungeons: storedCatalog(parseJSON(s.GetString("dungeons"), "[]")), TaskTemplates: storedTemplates(parseJSON(s.GetString("taskTemplates"), "[]")), Announcement: s.GetString("announcement"), AnnouncementLevel: s.GetString("announcementLevel"),
 		AnnouncementFrom: isoOf(s.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(s.GetDateTime("announcementUntil")),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused"),
+		ArmoryLanes: s.GetInt64("armoryLanes"), ScoutLanes: s.GetInt64("scoutLanes"),
 		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays"), PvpDays: s.GetInt64("pvpDays")}
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
+	}
+	// Lanes never saved (or cleared under Collections) are the default; the scout's may be 0.
+	if out.ArmoryLanes < 1 || out.ArmoryLanes > maxArmoryLanes {
+		out.ArmoryLanes = defaultArmoryLanes
+	}
+	if out.ScoutLanes < 0 || out.ScoutLanes > maxScoutLanes {
+		out.ScoutLanes = defaultScoutLanes
 	}
 	// Periods never saved (or cleared under Collections) are the default.
 	for _, days := range []*int64{&out.HistoryDays, &out.LocationDays} {
@@ -607,6 +619,9 @@ func keptDays(value any, name string) (int64, error) {
 	return integer(value, name, 1, maxKeptDays)
 }
 
+// How many of the armory's lookups run at once: readers' (1 to 10) and the scout's (0 to 5).
+const defaultArmoryLanes, maxArmoryLanes, defaultScoutLanes, maxScoutLanes = 3, 10, 1, 5
+
 // writeSettings saves the given settings (all optional) and creates the record if a
 // superuser deleted it.
 func writeSettings(app core.App, b body) (settings, error) {
@@ -717,6 +732,16 @@ func writeSettings(app core.App, b body) (settings, error) {
 			*s.target = on
 		}
 	}
+	if b.has("armoryLanes") {
+		if next.ArmoryLanes, err = integer(b["armoryLanes"], "Armory lookups at once", 1, maxArmoryLanes); err != nil {
+			return settings{}, err
+		}
+	}
+	if b.has("scoutLanes") {
+		if next.ScoutLanes, err = integer(b["scoutLanes"], "Scout lookups at once", 0, maxScoutLanes); err != nil {
+			return settings{}, err
+		}
+	}
 	if b.has("adapters") {
 		if next.Adapters, err = adapterSettings(b["adapters"]); err != nil {
 			return settings{}, err
@@ -770,6 +795,8 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("pairingPaused", next.PairingPaused)
 	record.Set("readerPaused", next.ReaderPaused)
 	record.Set("armoryPaused", next.ArmoryPaused)
+	record.Set("armoryLanes", next.ArmoryLanes)
+	record.Set("scoutLanes", next.ScoutLanes)
 	record.Set("adapters", map[string]any{"extra": next.Adapters.Extra, "disabled": next.Adapters.Disabled})
 	record.Set("clock", next.Clock)
 	record.Set("taskTemplates", next.TaskTemplates)
@@ -779,6 +806,10 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("maps", next.Maps)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
+	}
+	// More or fewer armory lookups at once start or wait at once (armory.go).
+	if b.has("armoryLanes") || b.has("scoutLanes") {
+		stateOf(app).armory.resize(next)
 	}
 	// Answered caps follow changed caps (membership.go).
 	if b.has("clock") {

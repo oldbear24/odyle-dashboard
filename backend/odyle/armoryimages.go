@@ -320,27 +320,30 @@ func notModified(r *http.Request, tag string, at time.Time) bool {
 	return match == "*" || strings.Contains(match, tag) || match == "" && err == nil && !at.Truncate(time.Second).After(since)
 }
 
-// cleanArmoryImages deletes the kept images that no kept profile names, once they are an hour
-// old: a lookup keeps its images before it keeps the profile that names them. Deleting a record
-// deletes its file.
+// cleanArmoryImages deletes the kept images that no kept profile or top player (ranks.go) names,
+// once they are an hour old: a lookup keeps its images before it keeps the profile that names
+// them. Deleting a record deletes its file.
 func cleanArmoryImages(app core.App) (int, error) {
 	named := map[string]bool{}
-	rows, err := app.DB().NewQuery("SELECT COALESCE(CAST(profile AS TEXT), '') FROM armory_profiles").Rows()
-	if err != nil {
-		return 0, err
-	}
-	for rows.Next() {
-		var profile string
-		if err := rows.Scan(&profile); err != nil {
-			rows.Close()
+	// The kept profiles and the top players' builds and portraits (ranks.go).
+	for _, query := range []string{"SELECT COALESCE(CAST(profile AS TEXT), '') FROM armory_profiles", `SELECT COALESCE(CAST(build AS TEXT), '') || '"portrait":"' || portrait || '"' FROM armory_ranks`} {
+		rows, err := app.DB().NewQuery(query).Rows()
+		if err != nil {
 			return 0, err
 		}
-		for _, m := range imageMentions.FindAllStringSubmatch(profile, -1) {
-			named[m[1]] = true
+		for rows.Next() {
+			var profile string
+			if err := rows.Scan(&profile); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			for _, m := range imageMentions.FindAllStringSubmatch(profile, -1) {
+				named[m[1]] = true
+			}
 		}
-	}
-	if err := rows.Close(); err != nil {
-		return 0, err
+		if err := rows.Close(); err != nil {
+			return 0, err
+		}
 	}
 	// The classes' emblems (classes.go).
 	for _, c := range gameClasses(app) {
