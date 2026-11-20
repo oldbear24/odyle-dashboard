@@ -902,22 +902,39 @@ func (w *armoryWork) ask(app core.App, j armoryJob) armoryState {
 	return w.queued(len(w.waiting)-1, at)
 }
 
-// scout queues the scout's lookup of a character's gear (scout.go), unless as many of its as may
-// run at once wait or run, a reader's waits, or the character's reader's lookup or the scout's
-// waits or runs. It says whether it did.
-func (w *armoryWork) scout(app core.App, hit scoutHit) bool {
+// scout queues the scout's lookups of characters' gear (scout.go): up to n of hits, in their
+// order, while fewer of its than may run at once wait or run. It queues none while a reader's
+// waits or PLAYNC refuses the server, and passes over a character whose reader's lookup or the
+// scout's waits or runs, or whose scout's lookup failed lately. It says how many it queued.
+func (w *armoryWork) scout(app core.App, hits []scoutHit, n int) int {
 	s := readSettings(app)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.limit(s)
+	at := time.Now()
 	_, scouts, readersWaiting, scoutsWaiting := w.counts()
-	key, own := armoryKey(hit.serverId, hit.characterId), scoutKey(hit.serverId, hit.characterId)
-	if scouts+scoutsWaiting >= w.scoutLanes || readersWaiting > 0 || w.running[key] != nil || w.running[own] != nil || slices.ContainsFunc(w.waiting, func(j armoryJob) bool { return j.key == own }) || w.blocked.After(time.Now()) {
-		return false
+	if readersWaiting > 0 || w.blocked.After(at) {
+		return 0
 	}
-	w.waiting = append(w.waiting, armoryJob{key: own, region: hit.region, serverId: hit.serverId, characterId: hit.characterId, auto: true, queuedAt: time.Now()})
-	w.staff(app)
-	return true
+	queued := 0
+	for _, hit := range hits {
+		if queued >= n || scouts+scoutsWaiting+queued >= w.scoutLanes {
+			break
+		}
+		key, own := armoryKey(hit.serverId, hit.characterId), scoutKey(hit.serverId, hit.characterId)
+		if w.running[key] != nil || w.running[own] != nil || slices.ContainsFunc(w.waiting, func(j armoryJob) bool { return j.key == key || j.key == own }) {
+			continue
+		}
+		if miss, ok := w.misses[own]; ok && at.Before(miss.until) {
+			continue
+		}
+		w.waiting = append(w.waiting, armoryJob{key: own, region: hit.region, serverId: hit.serverId, characterId: hit.characterId, auto: true, queuedAt: at})
+		queued++
+	}
+	if queued > 0 {
+		w.staff(app)
+	}
+	return queued
 }
 
 // peek says where the profile's lookup stands while it waits or runs, without queuing it:

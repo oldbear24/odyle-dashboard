@@ -20,7 +20,9 @@ const pages = [
 const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const timestamp = value => Date.parse(String(value || '').replace(' ', 'T'));
 const number = value => typeof value === 'number' ? value.toLocaleString() : '?';
-const region = value => String(value || '').replace('GLOBAL_', '').replace('ASIA', 'Asia');
+// PLAYNC's search regions (the armory's) by the Odyle region they belong to.
+const searchRegions = { nae: 'NA', naw: 'NAW', eu: 'EU', la: 'SA', as: 'Asia' };
+const region = value => searchRegions[value] || String(value || '').replace('GLOBAL_', '').replace('ASIA', 'Asia');
 const capital = text => text.charAt(0).toUpperCase() + text.slice(1);
 function ago(at, now) {
   const seconds = Math.max(0, Math.floor((now - timestamp(at)) / 1000));
@@ -343,7 +345,8 @@ export function statusPage() {
   // the characters its searches found, for their combat power (the first 20 of each).
   const scout = () => armory().scout || { builds: 0, neverBuilt: 0, buildQueue: [], checks: 0, checkQueue: [], own: 0, names: 0, nameQueue: [], level: 0, buildEvery: 0, lastBuildAt: '' };
   const span = seconds => seconds < 5400 ? Math.max(1, Math.round(seconds / 60)) + ' minutes' : seconds < 172800 ? Math.round(seconds / 3600) + ' hours' : Math.round(seconds / 86400) + ' days';
-  const pendingName = c => c.name || t.span({ className: 'txt-hint odyle-id', title: c.characterId }, c.characterId.length > 12 ? c.characterId.slice(0, 12) + '…' : c.characterId);
+  // PLAYNC's ids begin alike for every character of a server: an id is told apart by its end.
+  const pendingName = c => c.name || t.span({ className: 'txt-hint odyle-id', title: c.characterId }, c.characterId.length > 12 ? '…' + c.characterId.slice(-12) : c.characterId);
   const pendingServer = c => (c.server || c.serverId) + ' · ' + region(c.region);
   const buildRow = (c, i) => t.tr({ rid: i + '@' + signature(c) },
     t.td({ className: 'txt-right txt-hint' }, number(i + 1)), t.td(null, pendingName(c)), t.td(null, c.class), t.td({ className: 'txt-nowrap' }, pendingServer(c)),
@@ -355,7 +358,7 @@ export function statusPage() {
   const nameRow = (n, i) => t.tr({ rid: i + '@' + signature(n) },
     t.td({ className: 'txt-right txt-hint' }, number(i + 1)), t.td({ className: 'txt-nowrap' }, n.name), t.td({ className: 'txt-nowrap' }, n.server + ' · ' + region(n.region)));
   const buildPace = () => armory().paused ? 'paused with the armory' : !scout().buildEvery ? 'no scout lanes under Server controls, so none is read'
-    : 'one every ' + span(scout().buildEvery) + ' while no reader waits' + (scout().builds ? ', all in about ' + span(scout().builds * scout().buildEvery) : '');
+    : (lanes().scouts > 1 ? number(lanes().scouts) + ' at once, each lane one every 3 minutes' : 'one every 3 minutes') + ' while no reader waits' + (scout().builds ? ', all in about ' + span(scout().builds * scout().buildEvery) : '');
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -594,7 +597,7 @@ export function statusPage() {
             t.thead(null, t.tr(null, t.th({ className: 'txt-right' }, '#'), t.th(null, 'Name to find'), t.th(null, 'Server'))),
             t.tbody(null, () => (scout().nameQueue || []).length ? scout().nameQueue.map(nameRow) : t.tr(null, t.td({ colSpan: 3, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'No party or force member waits.'))))),
           t.div({ className: 'field-help' }, () => scout().names > (scout().nameQueue || []).length ? 'The first ' + number(scout().nameQueue.length) + ' of ' + number(scout().names) + ', in the order it searches for them.' : 'In the order it searches for them.'))),
-      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'The search pages name a character only by its id; its name comes with its info page. A restart forgets the characters waiting for their combat power and the names waiting to be found, not the top players. Names are never kept with who sent them.'),
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'The search pages list a character\'s id and name; its combat power comes with its info page. A restart forgets the characters waiting for their combat power and the names waiting to be found, not the top players. Names are never kept with who sent them.'),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
@@ -624,7 +627,7 @@ const jobInfo = {
   'odyle-push': { label: 'Push reminders', schedule: () => 'Every minute', unit: 'notifications sent', about: 'Sends planned-run reminders by Web Push to players going to a run who turned push on, at their reminder times and outside their quiet hours. Devices whose push service forgot them are removed.' },
   'odyle-party-ready': { label: 'Party ready', schedule: () => 'Every minute', unit: 'runs told', about: 'From an hour before a planned run to half an hour after its start: once everyone going plays live with enough Odyle for a cube, tells each of them once (dashboards, Windows apps and push, by their notification settings).' },
   'odyle-armory': { label: 'Armory clean-up', schedule: () => 'Daily at 04:41 UTC (' + localHour(4, 41) + ' here)', unit: 'profiles and top players forgotten', about: 'Deletes armory profiles nobody opened for 30 days, forgets the top players below their class\'s top 500 checked more than 30 days ago, and deletes the images no profile or top player names. Hidden ones stay, so the armory keeps them out. Then reads PLAYNC\'s class list again and downloads the class emblems the server lacks. Profiles are fetched from PLAYNC when readers open them, one at a time, not by this job.' },
-  'odyle-armory-scout': { label: 'Armory scout', schedule: () => 'Every minute', unit: 'PLAYNC pages read', about: 'PLAYNC lists no rankings for Global, so this builds the armory\'s top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then the characters Odyle\'s accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC\'s character search (random servers, classes and letters); while no reader waits and at most every 3 minutes, the gear of a top-500 character not read for 14 days. Profiles kept before 0.62.0 join first, without asking PLAYNC. Paused with the armory, and while PLAYNC refuses the server.' },
+  'odyle-armory-scout': { label: 'Armory scout', schedule: () => 'Every minute', unit: 'PLAYNC pages read', about: 'PLAYNC lists no rankings for Global, so this builds the armory\'s top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then the characters Odyle\'s accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC\'s character search (random servers, classes and letters); while no reader waits, the gear of the strongest top-500 characters not read for 14 days, each of the scout\'s lanes one every 3 minutes at most, so they read at once. Profiles kept before 0.62.0 join first, without asking PLAYNC. Paused with the armory, and while PLAYNC refuses the server.' },
   'odyle-release': { label: 'Release check', schedule: () => 'Every 2 minutes', unit: 'lookups', about: 'Asks GitHub for the newest Windows release. A newer one is news for every open dashboard and running app at once, so run it by hand right after publishing a release.' },
   'odyle-announcement': { label: 'Announcement schedule', schedule: () => 'Every minute', unit: 'changes told', about: 'When a scheduled announcement (Server controls) starts or ends, tells every open dashboard and running Windows app at once, so it shows or goes within a minute. A saved change is told when it is saved.' },
 };

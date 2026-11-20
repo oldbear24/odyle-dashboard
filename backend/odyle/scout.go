@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -21,12 +22,15 @@ import (
 // run of the odyle-armory-scout job (every minute, paused with the armory) asks for scoutSteps
 // pages, scoutStep apart, one per step:
 //
-//   - at most every scoutBuildGap, and while no reader's lookup waits, it queues the scout's
-//     lookup of the strongest character of a class's top rankLimit whose gear is unknown or
-//     scoutRebuild old: the armory's queue runs one such at a time, beside the readers' (armory.go),
-//     reading its info and equipment pages and each item's page as a lookup does, and keeps it as
-//     its build in armory_ranks (ranks.go), with the icons but no portrait and no profile;
-//   - a character the last search page listed: its info page, for its combat power;
+//   - while no reader's lookup waits, it queues the scout's lookups of the strongest characters of
+//     a class's top rankLimit whose gear is unknown or scoutRebuild old, as many as its lanes
+//     (scoutLanes under Server controls) have free, each lane one every scoutBuildGap at most,
+//     passing over the characters whose gear is read already or whose lookup failed lately: the
+//     armory's queue runs them beside the readers' (armory.go), reading the info and equipment
+//     pages and each item's page as a lookup does, and keeps each as its build in armory_ranks
+//     (ranks.go), with the icons but no portrait and no profile;
+//   - a character the last search page listed (by id and name): its info page, for its combat
+//     power;
 //   - else a character an Odyle account plays, whose PLAYNC id the portrait lookup learned
 //     (portraits.go): its info page, without a search;
 //   - else a player Odyle met by name: a party or force member a Windows app sent
@@ -49,7 +53,7 @@ const (
 	scoutHits     = 200   // characters from search pages waiting to be checked, at most
 	scoutNames    = 500   // party and force members waiting to be searched for, at most
 	scoutTried    = 50000 // names and characters remembered as tried, at most
-	scoutPicks    = 50    // Odyle's characters or PvP players a step picks from
+	scoutPicks    = 50    // Odyle's characters, PvP players or top players a step picks from
 	scoutOwnRetry = 24 * time.Hour
 )
 
@@ -61,10 +65,12 @@ var scoutStep, scoutPick = 10 * time.Second, rand.IntN
 // holds one of these more often than not.
 var scoutLetters = []string{"a", "e", "i", "o", "u", "y", "n", "r", "l", "s", "t", "k", "m", "d"}
 
-// scoutHit is a character a search page listed.
+// scoutHit is a character a search page listed, with its name and class when the page named
+// them (Server status shows them before its info page is read).
 type scoutHit struct {
 	region, characterId string
 	serverId            int
+	name, class         string
 }
 
 // scoutName is a player the scout looks for by name, on their server (its name) and in their
@@ -80,20 +86,50 @@ func (n scoutName) key() string {
 // armoryScout is what the scout remembers between its pages, in server memory: the characters
 // the last search pages listed, the party and force members waiting to be searched for, the
 // names and characters it tried lately (until when it passes them over), how many pages each
-// search has, the highest level met (lower characters are passed over) and when it last read a
-// character's gear.
+// search has, the highest level met (lower characters are passed over) and when it last queued
+// characters' gear (the latest last, at most maxScoutLanes).
 type armoryScout struct {
-	mu      sync.Mutex
-	hits    []scoutHit
-	names   []scoutName
-	tried   map[string]time.Time
-	pages   map[string]int
-	level   int64
-	builtAt time.Time
+	mu    sync.Mutex
+	hits  []scoutHit
+	names []scoutName
+	tried map[string]time.Time
+	pages map[string]int
+	level int64
+	built []time.Time
 }
 
 func newArmoryScout() *armoryScout {
 	return &armoryScout{pages: map[string]int{}, tried: map[string]time.Time{}}
+}
+
+// buildsDue is how many characters' gear the scout may queue now with lanes lanes: each lane one
+// every scoutBuildGap, so up to lanes at once (s.mu held).
+func (s *armoryScout) buildsDue(lanes int, at time.Time) int {
+	recent := 0
+	for _, t := range s.built {
+		if at.Sub(t) < scoutBuildGap {
+			recent++
+		}
+	}
+	return max(0, lanes-recent)
+}
+
+// queuedBuilds remembers n characters' gear queued at at (s.mu held).
+func (s *armoryScout) queuedBuilds(n int, at time.Time) {
+	for range n {
+		s.built = append(s.built, at)
+	}
+	if len(s.built) > maxScoutLanes {
+		s.built = slices.Clone(s.built[len(s.built)-maxScoutLanes:])
+	}
+}
+
+// lastBuild is when the scout last queued a character's gear (zero since the server started).
+func (s *armoryScout) lastBuild() time.Time {
+	if len(s.built) == 0 {
+		return time.Time{}
+	}
+	return s.built[len(s.built)-1]
 }
 
 // try says whether key was not tried lately, and remembers it as tried for ttl (s.mu held). Past
@@ -192,25 +228,11 @@ func (w *armoryWork) refuse(r armoryRefused) {
 	w.blocked = later(w.blocked, time.Now().Add(max(r.wait, armoryBlocked)))
 }
 
-// step queues a top character's gear when it is time to, then asks PLAYNC for one page, and says
+// step queues top characters' gear when it is time to, then asks PLAYNC for one page, and says
 // whether it asked.
 func (s *armoryScout) step(app core.App) (bool, error) {
-	// More lanes for the scout (Server controls) read gear more often: every scoutBuildGap
-	// divided among them, none while it has none.
-	lanes := readSettings(app).ScoutLanes
-	s.mu.Lock()
-	building := lanes > 0 && time.Since(s.builtAt) >= scoutBuildGap/time.Duration(max(1, lanes))
-	s.mu.Unlock()
-	if building {
-		hit, ok, err := nextBuild(app)
-		if err != nil {
-			return false, err
-		}
-		if ok && stateOf(app).armory.scout(app, hit) {
-			s.mu.Lock()
-			s.builtAt = time.Now()
-			s.mu.Unlock()
-		}
+	if err := s.build(app); err != nil {
+		return false, err
 	}
 	if hit, ok := s.next(); ok {
 		return true, checkRank(app, hit)
@@ -230,6 +252,29 @@ func (s *armoryScout) step(app core.App) (bool, error) {
 		return s.find(app, n)
 	}
 	return s.search(app)
+}
+
+// build queues the gear of the strongest top characters whose gear is unknown or old, as many as
+// the scout's lanes (Server controls) may read now: each lane one every scoutBuildGap at most, so
+// they run at once; none while it has none.
+func (s *armoryScout) build(app core.App) error {
+	lanes := int(readSettings(app).ScoutLanes)
+	s.mu.Lock()
+	due := s.buildsDue(lanes, time.Now())
+	s.mu.Unlock()
+	if due == 0 {
+		return nil
+	}
+	hits, err := nextBuilds(app)
+	if err != nil || len(hits) == 0 {
+		return err
+	}
+	if n := stateOf(app).armory.scout(app, hits, due); n > 0 {
+		s.mu.Lock()
+		s.queuedBuilds(n, time.Now())
+		s.mu.Unlock()
+	}
+	return nil
 }
 
 // nextOwn is a character an Odyle account plays, of the highest level the searches met, whose
@@ -348,12 +393,13 @@ func (s *armoryScout) find(app core.App, n scoutName) (bool, error) {
 	if err != nil {
 		return true, err
 	}
+	class := gameClasses(app)[hit.classId].Name
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !armoryIds.MatchString(hit.id) || hit.level < s.level {
 		return true, nil
 	}
-	s.hits = append([]scoutHit{{region: hit.region, serverId: hit.serverId, characterId: hit.id}}, s.hits...)
+	s.hits = append([]scoutHit{{region: hit.region, serverId: hit.serverId, characterId: hit.id, name: n.name, class: class}}, s.hits...)
 	if len(s.hits) > scoutHits {
 		s.hits = s.hits[:scoutHits]
 	}
@@ -377,15 +423,24 @@ func (s *armoryScout) next() (scoutHit, bool) {
 // strongest first with "ORDER BY combatPower DESC, id".
 const pendingBuilds = "FROM armory_ranks WHERE id IN (" + inTop + ") AND (builtAt = '' OR builtAt < {:old})"
 
-// nextBuild is the strongest character in its class's top whose gear is unknown or old.
-func nextBuild(app core.App) (scoutHit, bool, error) {
-	var hit scoutHit
-	err := app.DB().NewQuery("SELECT region, serverId, characterId "+pendingBuilds+" ORDER BY combatPower DESC, id LIMIT 1").
-		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild)}).Row(&hit.region, &hit.serverId, &hit.characterId)
-	if isNoRows(err) {
-		return hit, false, nil
+// nextBuilds are the strongest characters in their class's top whose gear is unknown or old, up
+// to scoutPicks, strongest first: the armory's queue takes the first it may (armoryWork.scout),
+// passing over those whose gear it reads already or whose lookup failed lately.
+func nextBuilds(app core.App) ([]scoutHit, error) {
+	rows := []struct {
+		Region      string `db:"region"`
+		ServerId    int    `db:"serverId"`
+		CharacterId string `db:"characterId"`
+	}{}
+	if err := app.DB().NewQuery("SELECT region, serverId, characterId " + pendingBuilds + " ORDER BY combatPower DESC, id LIMIT {:picks}").
+		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild), "picks": scoutPicks}).All(&rows); err != nil {
+		return nil, err
 	}
-	return hit, err == nil, err
+	hits := make([]scoutHit, len(rows))
+	for i, r := range rows {
+		hits[i] = scoutHit{region: r.Region, serverId: r.ServerId, characterId: r.CharacterId}
+	}
+	return hits, nil
 }
 
 // scoutShown is how many characters of each of the scout's lists the Server status page names.
@@ -412,15 +467,16 @@ type scoutPending struct {
 // (in server memory, so a restart forgets them) and checkQueue names the first scoutShown, as far
 // as the armory knows them. own counts the characters Odyle's accounts play it checks next, names
 // the party and force members Windows apps sent that it searches for (in server memory too), and
-// nameQueue names the first scoutShown. level is the highest level its searches met (it keeps only characters of
-// it), buildEvery how often it may queue a character's gear (in seconds, 0 with no scout lanes;
-// only while no reader's lookup waits) and lastBuildAt when it last did.
+// nameQueue names the first scoutShown. level is the highest level its searches met (it keeps
+// only characters of it), buildEvery how often it queues a character's gear on average (in
+// seconds, 0 with no scout lanes; each lane one every scoutBuildGap, only while no reader's lookup
+// waits) and lastBuildAt when it last did.
 func scoutStatus(app core.App) map[string]any {
 	s := stateOf(app).scout
 	s.mu.Lock()
 	hits := slices.Clone(s.hits[:min(len(s.hits), scoutShown)])
 	waiting := slices.Clone(s.names[:min(len(s.names), scoutShown)])
-	checks, names, level, builtAt := len(s.hits), len(s.names), s.level, s.builtAt
+	checks, names, level, builtAt := len(s.hits), len(s.names), s.level, s.lastBuild()
 	s.mu.Unlock()
 	book := serversOf(app)
 	builds := []scoutPending{}
@@ -441,9 +497,13 @@ func scoutStatus(app core.App) map[string]any {
 	for i, h := range hits {
 		q := &queue[i]
 		q.Region, q.ServerId, q.Server, q.CharacterId = h.region, h.serverId, book.inRegion(h.region, h.serverId), h.characterId
-		// A character checked more than rankKeep ago may still be kept, with its name.
-		_ = app.DB().NewQuery("SELECT name, class, combatPower FROM armory_ranks WHERE serverId = {:server} AND characterId = {:id}").
-			Bind(dbx.Params{"server": h.serverId, "id": h.characterId}).Row(&q.Name, &q.Class, &q.CombatPower)
+		q.Name, q.Class = h.name, h.class
+		// A character checked more than rankKeep ago may still be kept, with its combat power.
+		var name, class string
+		if err := app.DB().NewQuery("SELECT name, class, combatPower FROM armory_ranks WHERE serverId = {:server} AND characterId = {:id}").
+			Bind(dbx.Params{"server": h.serverId, "id": h.characterId}).Row(&name, &class, &q.CombatPower); err == nil {
+			q.Name, q.Class = cmp.Or(q.Name, name), cmp.Or(q.Class, class)
+		}
 	}
 	every := 0
 	if lanes := readSettings(app).ScoutLanes; lanes > 0 {
@@ -578,7 +638,8 @@ func (s *armoryScout) search(app core.App) (bool, error) {
 		if level > s.level {
 			s.level, hits = level, hits[:0]
 		}
-		hits = append(hits, scoutHit{region: region, serverId: server.Id, characterId: id})
+		// The search marks the letter in the name (<strong>a</strong>).
+		hits = append(hits, scoutHit{region: region, serverId: server.Id, characterId: id, name: jsonText(h, "name", 100), class: class})
 	}
 	s.mu.Unlock()
 	if len(hits) == 0 {

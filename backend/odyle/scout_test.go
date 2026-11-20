@@ -3,7 +3,9 @@ package odyle
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,8 +34,10 @@ func TestScoutFindsTheStrongestOfEachClass(t *testing.T) {
 	if asked, err := scout.step(app); err != nil || !asked || stand.searches.Load() != 1 || len(scout.hits) != 1 || scout.hits[0].characterId != id || scout.level != 45 {
 		t.Fatalf("search: %v %v, %d searches, hits %+v, level %d", asked, err, stand.searches.Load(), scout.hits, scout.level)
 	}
-	// Server status names it among the characters whose combat power the scout reads next.
+	// Server status names it among the characters whose combat power the scout reads next, by the
+	// name and class the search page listed it with.
 	if st := scoutStatus(app); st["checks"] != 1 || st["checkQueue"].([]scoutPending)[0].CharacterId != id || st["checkQueue"].([]scoutPending)[0].Server == "" ||
+		st["checkQueue"].([]scoutPending)[0].Name != "a" || st["checkQueue"].([]scoutPending)[0].Class == "" ||
 		st["level"] != int64(45) || st["builds"] != 0 || len(st["buildQueue"].([]scoutPending)) != 0 || st["lastBuildAt"] != "" {
 		t.Fatalf("status after the search %+v", st)
 	}
@@ -98,9 +102,80 @@ func TestScoutFindsTheStrongestOfEachClass(t *testing.T) {
 	if _, err := app.DB().NewQuery("UPDATE armory_ranks SET builtAt = ''").Execute(); err != nil {
 		t.Fatal(err)
 	}
-	scout.builtAt = time.Time{}
+	scout.built = nil
 	if _, err := scout.step(app); err != nil || armoryStatus(app)["waiting"] != 0 || armoryStatus(app)["running"] != 0 {
 		t.Fatalf("with no lanes: %v %v", err, armoryStatus(app))
+	}
+}
+
+// Each of the scout's lanes reads a character's gear every 3 minutes at most, so with two lanes
+// the gear of the two strongest characters it lacks is read at once. A character whose gear is
+// read already, or whose lookup failed lately, is passed over for the next.
+func TestScoutReadsGearInAllItsLanes(t *testing.T) {
+	fastArmory(t)
+	fastScout(t)
+	stand := &armoryStand{gate: make(chan struct{})}
+	stand.serve(t)
+	release := sync.OnceFunc(func() { close(stand.gate) })
+	t.Cleanup(release) // before the stand closes, which waits for the answers it holds
+	app := newTestApp(t)
+	if _, err := writeSettings(app, body{"scoutLanes": 2.0}); err != nil {
+		t.Fatal(err)
+	}
+	for i, power := range []int64{900000, 800000, 700000, 600000} {
+		rankOf(t, app, i+1, "Chanter", power, false, nil)
+	}
+	idOf := func(n int) string { return fmt.Sprintf("AAAAAAAAAAAAAAAAAAAAA%03d", n) }
+	scout, work := stateOf(app).scout, stateOf(app).armory
+	running := func(n int) {
+		t.Helper()
+		for i := 0; i < 200 && armoryStatus(app)["running"] != n; i++ {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got := armoryStatus(app)["running"]; got != n {
+			t.Fatalf("%v running, want %d", got, n)
+		}
+	}
+	// The two strongest at once.
+	if err := scout.build(app); err != nil {
+		t.Fatal(err)
+	}
+	running(2)
+	queue := armoryStatus(app)["queue"].([]map[string]any)
+	if ids := []any{queue[0]["characterId"], queue[1]["characterId"]}; queue[0]["scout"] != true || queue[1]["scout"] != true ||
+		!(ids[0] == idOf(1) && ids[1] == idOf(2) || ids[0] == idOf(2) && ids[1] == idOf(1)) {
+		t.Fatalf("queue %v", queue)
+	}
+	// Both lanes read one in these 3 minutes: nothing more now. 3 minutes on, the lanes are still
+	// busy, and the two being read are not queued again.
+	if err := scout.build(app); err != nil || armoryStatus(app)["waiting"] != 0 {
+		t.Fatalf("again: %v, %v waiting", err, armoryStatus(app)["waiting"])
+	}
+	scout.built = []time.Time{time.Now().Add(-scoutBuildGap), time.Now().Add(-scoutBuildGap)}
+	if err := scout.build(app); err != nil || armoryStatus(app)["waiting"] != 0 || armoryStatus(app)["running"] != 2 {
+		t.Fatalf("lanes busy: %v, %v", err, armoryStatus(app))
+	}
+	release()
+	work.wait()
+	for _, n := range []int{1, 2} {
+		if row, ok := rankAt(t, app, idOf(n)); !ok || row.BuiltAt == "" {
+			t.Fatalf("the gear of %d: %+v", n, row)
+		}
+	}
+	// The third's lookup failed a moment ago: the fourth is read in its place, alone.
+	work.mu.Lock()
+	work.misses[scoutKey(2304, idOf(3))] = armoryMiss{until: time.Now().Add(armoryRetry), error: "PLAYNC answered 500."}
+	work.mu.Unlock()
+	scout.built = nil
+	if err := scout.build(app); err != nil {
+		t.Fatal(err)
+	}
+	work.wait()
+	if row, _ := rankAt(t, app, idOf(3)); row.BuiltAt != "" {
+		t.Fatalf("the failed one was read again: %+v", row)
+	}
+	if row, _ := rankAt(t, app, idOf(4)); row.BuiltAt == "" || len(scout.built) != 1 {
+		t.Fatalf("the fourth: %+v, %d queued", row, len(scout.built))
 	}
 }
 
@@ -176,7 +251,7 @@ func TestScoutChecksOdyleCharactersAndThePlayersTheyMet(t *testing.T) {
 	}
 	// Then the party member: a search for the name on the character's server, and the character
 	// it lists is checked next.
-	if asked, err := scout.step(app); err != nil || !asked || stand.searches.Load() != 2 || len(scout.hits) != 1 || scout.hits[0] != (scoutHit{region: "eu", serverId: 2304, characterId: found}) {
+	if asked, err := scout.step(app); err != nil || !asked || stand.searches.Load() != 2 || len(scout.hits) != 1 || scout.hits[0] != (scoutHit{region: "eu", serverId: 2304, characterId: found, name: "Mate", class: "Chanter"}) {
 		t.Fatalf("party member: %v %v, %d searches, hits %+v", asked, err, stand.searches.Load(), scout.hits)
 	}
 	if asked, err := scout.step(app); err != nil || !asked || stand.lookups.Load() != 2 {

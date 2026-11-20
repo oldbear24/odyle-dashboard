@@ -475,7 +475,7 @@ func TestArmoryRunsLookupsSideBySide(t *testing.T) {
 		t.Fatalf("the fourth: %v", fourth)
 	}
 	// A reader waits: the scout queues nothing.
-	if work.scout(app, scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA9"}) {
+	if work.scout(app, []scoutHit{{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA9"}}, 1) != 0 {
 		t.Fatal("the scout went ahead of a reader")
 	}
 	status := armoryStatus(app)
@@ -490,9 +490,10 @@ func TestArmoryRunsLookupsSideBySide(t *testing.T) {
 	}
 	ask(t, app, "GET", armoryPath(ids[3]), nil, "", 200)
 	running(4)
-	// No reader waits: the scout's lookup runs beside the readers', one at a time.
-	hit := scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA9"}
-	if !work.scout(app, hit) || work.scout(app, scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA8"}) {
+	// No reader waits: the scout's lookup runs beside the readers', as many at once as its lanes
+	// (one); a reader's character is passed over.
+	hit, other := scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA9"}, scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA8"}
+	if work.scout(app, []scoutHit{{region: "eu", serverId: 2304, characterId: ids[0]}, hit, other}, 2) != 1 || work.scout(app, []scoutHit{other}, 1) != 0 {
 		t.Fatal("the scout's lookups")
 	}
 	running(5)
