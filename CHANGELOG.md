@@ -2,6 +2,18 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.65.0 · 2026-11-20
+
+### Changed
+- **Remove PC** under Account & data now cuts that PC off at once: its Odyle app stops reaching your account straight away, cannot pair itself again, and its live connection closes. Before, a removed PC could keep using your account for up to a week. The app's own **Disconnect** and **Sign out everywhere** work the same way.
+- A paired PC that has not started Odyle for 180 days is unpaired by itself, so a sold, lost or reinstalled PC does not keep a lasting key to your account. Pair it again with a new code if you come back to it.
+- Odyle for Windows renews its sign-in every day instead of every week. You notice nothing: it does so by itself with its pairing.
+
+### Fixed
+- A room whose name contains markup (such as `<img …>`) now always shows as plain text, also on the "Add it to your rooms?" prompt after you add a room there.
+- Server sign-ins, password resets, live updates and files are now rate limited like the rest of Odyle, so no one can try passwords against the server operators' accounts without limit.
+- One account can no longer flood the server with reader sessions or readings, crowd other players' party members out of the armory's scout, or put text of its choosing into the server operators' alert channel.
+
 ## 0.64.1 · 2026-11-20
 
 ### Fixed

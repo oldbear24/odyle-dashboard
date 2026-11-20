@@ -49,11 +49,15 @@ func TestTeammatesGoToTheScoutOnly(t *testing.T) {
 		t.Fatalf("queued: %v", got)
 	}
 	scout := stateOf(app).scout
-	if len(scout.names) != 2 || scout.names[0] != (scoutName{"Mate", "Lumiel", "GLOBAL_EU"}) || scout.names[1].name != "Ranger" {
+	if len(scout.names) != 2 || scout.names[0] != (scoutName{"Mate", "Lumiel", "GLOBAL_EU", player.Id}) || scout.names[1].name != "Ranger" {
 		t.Fatalf("waiting %+v", scout.names)
 	}
 	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, send(session.Id, c.Id, "global-teammates-v1", `["Mate"]`), 200); got["queued"] != 0.0 {
 		t.Fatalf("again: %v", got)
+	}
+	// A one-letter name is left out: searching for it would cost the scout every search page.
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, send(session.Id, c.Id, "global-teammates-v1", `["Q","Ra"]`), 200); got["queued"] != 1.0 || scout.names[len(scout.names)-1].name != "Ra" {
+		t.Fatalf("short names: %v %+v", got, scout.names)
 	}
 	// The packet list shows the request without the names.
 	shown := 0
@@ -72,7 +76,7 @@ func TestTeammatesGoToTheScoutOnly(t *testing.T) {
 	if _, err := writeSettings(app, body{"armoryPaused": true}); err != nil {
 		t.Fatal(err)
 	}
-	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, send(session.Id, c.Id, "global-teammates-v1", `["Healer"]`), 200); got["queued"] != 0.0 || len(scout.names) != 2 {
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, send(session.Id, c.Id, "global-teammates-v1", `["Healer"]`), 200); got["queued"] != 0.0 || len(scout.names) != 3 {
 		t.Fatalf("paused: %v", got)
 	}
 	if _, err := writeSettings(app, body{"armoryPaused": false, "adapters": map[string]any{"extra": []any{}, "disabled": []any{"global-teammates-v1"}}}); err != nil {

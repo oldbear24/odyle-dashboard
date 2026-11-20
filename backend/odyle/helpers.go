@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,12 +45,12 @@ func unauthorized(message string) error { return apis.NewUnauthorizedError(messa
 // unavailable answers 503: superusers switched the part off for now (Server controls).
 func unavailable(message string) error { return apis.NewApiError(503, message, nil) }
 
-// apiStatus is the status of an error meant for the client (400, 401, 403, 404, 503), or 0.
+// apiStatus is the status of an error meant for the client (400, 401, 403, 404, 429, 503), or 0.
 func apiStatus(err error) int {
 	var apiErr *router.ApiError
 	if errors.As(err, &apiErr) {
 		switch apiErr.Status {
-		case 400, 401, 403, 404, 503:
+		case 400, 401, 403, 404, 429, 503:
 			return apiErr.Status
 		}
 	}
@@ -294,6 +295,14 @@ func (o *object) set(key string, value any) *object {
 }
 
 func (o *object) get(key string) (any, bool) { v, ok := o.values[key]; return v, ok }
+
+func (o *object) drop(key string) *object {
+	if _, ok := o.values[key]; ok {
+		delete(o.values, key)
+		o.keys = slices.DeleteFunc(o.keys, func(k string) bool { return k == key })
+	}
+	return o
+}
 
 func (o *object) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer

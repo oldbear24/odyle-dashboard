@@ -235,7 +235,7 @@ func TestScoutChecksOdyleCharactersAndThePlayersTheyMet(t *testing.T) {
 	}
 	scout.hits = nil
 	// A party member waits to be searched for, once, whatever the case of the name.
-	if n := scout.enqueue([]scoutName{{"Mate", "Lumiel", "GLOBAL_EU"}, {"mate", "Lumiel", "GLOBAL_EU"}, {"Mate", "Lumiel", "GLOBAL_EU"}}); n != 1 {
+	if n := scout.enqueue("account", []scoutName{{"Mate", "Lumiel", "GLOBAL_EU", ""}, {"mate", "Lumiel", "GLOBAL_EU", ""}, {"Mate", "Lumiel", "GLOBAL_EU", ""}}); n != 1 {
 		t.Fatalf("queued %d", n)
 	}
 	if st := scoutStatus(app); st["own"] != 1 || st["names"] != 1 || st["nameQueue"].([]map[string]any)[0]["name"] != "Mate" {
@@ -257,7 +257,7 @@ func TestScoutChecksOdyleCharactersAndThePlayersTheyMet(t *testing.T) {
 	if asked, err := scout.step(app); err != nil || !asked || stand.lookups.Load() != 2 {
 		t.Fatalf("found: %v %v, %d info pages", asked, err, stand.lookups.Load())
 	}
-	if n := scout.enqueue([]scoutName{{"Mate", "Lumiel", "GLOBAL_EU"}}); n != 0 {
+	if n := scout.enqueue("account", []scoutName{{"Mate", "Lumiel", "GLOBAL_EU", ""}}); n != 0 {
 		t.Fatal("a name searched for lately was queued again")
 	}
 	// Then the players met in PvP, each once: two searches, two checks, then the searches go on.
@@ -285,9 +285,43 @@ func TestScoutChecksOdyleCharactersAndThePlayersTheyMet(t *testing.T) {
 		t.Fatalf("hidden %v (%v)", hidden, err)
 	}
 	// PLAYNC refusing a name search stops the scout with the armory's queue.
-	scout.enqueue([]scoutName{{"Refused", "Lumiel", "GLOBAL_EU"}})
+	scout.enqueue("account", []scoutName{{"Refused", "Lumiel", "GLOBAL_EU", ""}})
 	var refused armoryRefused
 	if _, err := scout.step(app); !errors.As(err, &refused) {
 		t.Fatalf("refused: %v", err)
+	}
+}
+
+// One account's app cannot crowd the others' names out of the scout's queue: past its share, its
+// newest names take the place of its oldest, and a full queue drops its oldest name.
+func TestScoutQueueSharesBetweenAccounts(t *testing.T) {
+	scout := newArmoryScout()
+	names := func(prefix string, n int) []scoutName {
+		out := make([]scoutName, n)
+		for i := range out {
+			out[i] = scoutName{name: fmt.Sprintf("%s%d", prefix, i), server: "Lumiel", region: "GLOBAL_EU"}
+		}
+		return out
+	}
+	scout.enqueue("other", names("Friend", 3))
+	if n := scout.enqueue("flood", names("Junk", scoutNamesBy+50)); n != scoutNamesBy+50 {
+		t.Fatalf("queued %d", n)
+	}
+	flood := 0
+	for _, w := range scout.names {
+		if w.by == "flood" {
+			flood++
+		}
+	}
+	if flood != scoutNamesBy || len(scout.names) != scoutNamesBy+3 || scout.names[0].name != "Friend0" || scout.names[len(scout.names)-1].name != fmt.Sprintf("Junk%d", scoutNamesBy+49) {
+		t.Fatalf("%d of the flood's names wait, %d in all, first %q", flood, len(scout.names), scout.names[0].name)
+	}
+	for i := 0; len(scout.names) < scoutNames; i++ {
+		scout.enqueue(fmt.Sprintf("account%d", i), names(fmt.Sprintf("Player%d-", i), scoutNamesBy))
+	}
+	second := scout.names[1]
+	scout.enqueue("late", names("Late", 1))
+	if len(scout.names) != scoutNames || scout.names[0] != second || scout.names[len(scout.names)-1].name != "Late0" {
+		t.Fatalf("full queue: %d, first %q, last %q", len(scout.names), scout.names[0].name, scout.names[len(scout.names)-1].name)
 	}
 }

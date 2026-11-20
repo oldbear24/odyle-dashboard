@@ -14,14 +14,14 @@ The dashboard presents a connection link such as `https://your-backend.example/#
 
 ### Lasting pairing
 
-The link is used once; the pairing lasts. `deviceKey` is a 48-character secret for that one app; the server keeps only its SHA-256 digest (`desktop_devices`). Account tokens last seven days, so the app trades the key for a fresh token whenever it starts, every 24 hours while it runs, and whenever a request answers 401:
+The link is used once; the pairing lasts. `deviceKey` is a 48-character secret for that one app; the server keeps only its SHA-256 digest (`desktop_devices`). Since dashboard 0.65.0 the token `pair` and `desktop-sign-in` give an app names its PC (the claim `odyleDevice`), lasts one day and cannot be refreshed; every request with it answers 401 once that PC's pairing ended (**Remove PC**, the app's Disconnect, **Sign out everywhere**, or a pairing nobody signed in with for 180 days, which the expiry job ends), and the PC's realtime connections close. Tokens given before 0.65.0 run out within seven days. The app trades the key for a fresh token whenever it starts, every 24 hours while it runs, and whenever a request answers 401:
 
 | Method / route | Body | Result |
 | --- | --- | --- |
 | POST `/api/odyle/desktop-sign-in` | `{ deviceKey, name? }` | Public, 30 a minute per client: `{ token, record }` for the paired account; the key's `lastUsedAt` is updated and a given `name` replaces the PC's name. An unknown key answers 401 and the app asks to pair again |
-| POST `/api/odyle/desktop-device` | `{ name? }` | Signed-in account: `{ deviceKey }` for a new pairing. Apps paired before device keys existed call it once with their still-valid token |
+| POST `/api/odyle/desktop-device` | `{ name? }` | Signed-in account: `{ deviceKey }` for a new pairing. Apps paired before device keys existed call it once with their still-valid token; a token bound to a PC (since 0.65.0) answers 403 |
 | POST `/api/odyle/unpair` | `{ deviceKey }` | Public, 30 a minute per client: forgets that key and ends its reader sessions (the app's **Disconnect**); unknown keys answer 200 too |
-| POST `/api/odyle/forget-device` | `{ deviceId }` | Signed-in account (**Account & data → Remove PC**): forgets one of its pairings and ends that PC's reader sessions; another account's PC answers 403, an unknown one 404 |
+| POST `/api/odyle/forget-device` | `{ deviceId }` | Signed-in account (**Account & data → Remove PC**): forgets one of its pairings, ends that PC's reader sessions and cuts off its token and realtime connections at once; another account's PC answers 403, an unknown one 404 |
 
 A pairing has no inactivity expiry: it ends when the app disconnects, the PC is removed on the dashboard, the account signs out everywhere or is deleted. An account keeps its 10 most recently used pairings; pairing an eleventh PC drops the one unused longest. The account page lists them (`devices` in `GET /api/odyle/account`) and the data export as `pairedWindowsApps` (`name`, `pairedAt`, `lastSignInAt`), without keys or digests.
 
