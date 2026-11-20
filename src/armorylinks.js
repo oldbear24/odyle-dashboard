@@ -5,9 +5,9 @@ import { t } from './i18n.js';
 import { escape as esc } from './model.js';
 
 // A profile's tabs after its first one (gear and stats), as their paths name them.
-export const armoryTabs = ['skills', 'daevanion', 'titles', 'appearance'];
+export const armoryTabs = ['skills', 'daevanion', 'titles', 'appearance', 'upgrade'];
 // PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes.
-export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|card))?)?$/;
+export const armoryRoute = /^\/armory(?:\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card))?)?$/;
 export const profilePath = (hit, tab = '') => `/armory/${hit.region}/${hit.serverId}/${hit.characterId}${armoryTabs.includes(tab) ? '/' + tab : ''}`;
 // A character's own profile, once the daily lookup found it on PLAYNC (officialId), else "".
 export const officialPath = c => {
@@ -40,6 +40,6 @@ export function armoryTitle(answer, tab = '') {
   if (!answer) return t('AION 2 armory: look up any Global character · Odyle');
   if (!p) return t('A character on {server} · Odyle Armory', { server: answer.server });
   const of = { name: p.name, level: p.level, class: p.class, server: p.server || answer.server };
-  return { skills: t("{name}'s skills · {server} · Odyle Armory", of), daevanion: t("{name}'s Daevanion boards · {server} · Odyle Armory", of), titles: t("{name}'s titles · {server} · Odyle Armory", of), appearance: t("{name}'s appearance · {server} · Odyle Armory", of) }[tab]
+  return { skills: t("{name}'s skills · {server} · Odyle Armory", of), daevanion: t("{name}'s Daevanion boards · {server} · Odyle Armory", of), titles: t("{name}'s titles · {server} · Odyle Armory", of), appearance: t("{name}'s appearance · {server} · Odyle Armory", of), upgrade: t("{name}'s upgrades · {server} · Odyle Armory", of) }[tab]
     || t('{name} · Level {level} {class} on {server} · Odyle Armory', of);
 }

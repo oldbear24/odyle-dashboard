@@ -133,6 +133,7 @@ func Register(app core.App) {
 	watchShares(app)
 	watchCharacters(app)
 	watchMembership(app)
+	watchArmoryProfiles(app)
 	watchRunPosts(app)
 	scheduleJobs(app)
 }
@@ -172,6 +173,8 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/armory/servers", timed("armory-servers", armoryServersRoute))
 	se.Router.GET("/api/odyle/armory/search", timed("armory-search", armorySearchRoute))
 	se.Router.GET("/api/odyle/armory/{region}/{serverId}/{characterId}", timed("armory", armoryRoute))
+	// What the strongest characters of a class wear, for a profile's Upgrade tab (upgrades.go).
+	se.Router.GET("/api/odyle/armory/upgrades/{class}", timed("armory-upgrades", upgradesRoute))
 	// Its images (armoryimages.go) are outside /api/odyle/armory/, under the general rate limit:
 	// a profile shows some hundred of them, which browsers then keep.
 	se.Router.GET("/api/odyle/armory-images/{file}", timed("armory-image", armoryImageRoute))

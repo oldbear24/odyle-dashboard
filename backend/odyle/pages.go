@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"cmp"
 	"encoding/xml"
 	"fmt"
 	"net/url"
@@ -28,7 +29,7 @@ var regionTitles = map[string]string{"nae": "North America East", "naw": "North 
 
 // The profile tabs (src/armory.js armoryTabs) as titles name them; the player card
 // (/card, cards.go) is a page of its own.
-var tabTitles = map[string]string{"skills": "skills", "daevanion": "Daevanion boards", "titles": "titles", "appearance": "appearance"}
+var tabTitles = map[string]string{"skills": "skills", "daevanion": "Daevanion boards", "titles": "titles", "appearance": "appearance", "upgrade": "upgrades"}
 
 // DescribePage tells what the dashboard page at route shows (web.Describe).
 func DescribePage(e *core.RequestEvent, route, base string) web.Page {
@@ -136,6 +137,8 @@ func tabSummary(tab string, p *armoryProfile) string {
 		return fmt.Sprintf("The Daevanion boards (%d of %d nodes open, with every board's effects)", open, total)
 	case "titles":
 		return fmt.Sprintf("The titles (%d of %d owned, with the equipped ones' effects)", p.Titles.Owned, p.Titles.Total)
+	case "upgrade":
+		return fmt.Sprintf("The upgrades (the slots, arcana, stones and Daevanion boards furthest behind the strongest %ss the armory keeps, and what they wear there)", cmp.Or(p.Class, "character"))
 	}
 	return "The look (the skins worn over the gear, the pet and the wings)"
 }

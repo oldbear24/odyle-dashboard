@@ -466,6 +466,24 @@ function toggleBookmark() {
   if (!keepBookmarks(on ? armory.removeBookmark(list, `${armoryAnswer.region}/${armoryAnswer.serverId}/${armoryAnswer.characterId}`) : armory.addBookmark(list, armoryAnswer, new Date().toISOString()))) return;
   armoryRender(); toast(on ? t('Removed {name} from your bookmarks.', { name }) : t('Bookmarked {name}. The armory page lists it.', { name }));
 }
+// The Upgrade tab's comparison of a profile with the strongest other characters of its class
+// (backend/odyle/upgrades.go), kept here by profile for five minutes; one that did not load is
+// asked for again after half a minute.
+const armoryUpgrades = new Map();
+const upgradeKey = answer => answer?.profile?.class ? `${answer.profile.class}|${answer.serverId}|${answer.characterId}` : '';
+function armoryUpgrade() {
+  const kept = armoryUpgrades.get(upgradeKey(armoryAnswer));
+  return kept?.answer || (kept?.error ? { error: true } : null);
+}
+async function loadUpgrade(ticket) {
+  const key = upgradeKey(armoryAnswer), kept = armoryUpgrades.get(key), age = Date.now() - (kept?.at || 0);
+  if (armoryTab !== 'upgrade' || !key || kept?.loading || kept?.answer && age < 5 * 60000 || kept?.error && age < 30000) return;
+  armoryUpgrades.set(key, { ...kept, loading: true });
+  const { serverId, characterId, profile } = armoryAnswer;
+  try { armoryUpgrades.set(key, { at: Date.now(), answer: await pb.send(`/api/odyle/armory/upgrades/${encodeURIComponent(profile.class)}`, { query: { serverId, characterId } }) }); }
+  catch { armoryUpgrades.set(key, { at: Date.now(), answer: kept?.answer, error: !kept?.answer }); }
+  if (ticket === navigation && armoryTab === 'upgrade' && upgradeKey(armoryAnswer) === key) armoryRender();
+}
 const armoryRefreshable = () => armoryAnswer?.state === 'fresh' && armoryAnswer.fetchedAt && Date.now() + serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
 // The armory's images (the game's icons, portraits) come from the backend (armoryimages.go).
 const armoryImages = () => pb.buildURL('/api/odyle/armory-images/');
@@ -473,7 +491,7 @@ function armoryRender(searching = false) {
   const armory = armoryPart.loaded(); if (!armory) return;
   const chosen = armoryChosen || armoryChoice();
   const now = Date.now() + serverOffset, marks = bookmarks();
-  shell(armoryAnswer ? armory.armoryProfile(armoryAnswer, now, armoryRefreshable(), armory.isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages() }) : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
+  shell(armoryAnswer ? armory.armoryProfile(armoryAnswer, now, armoryRefreshable(), armory.isBookmarked(marks, armoryAnswer), { tab: armoryTab, board: armoryBoard, images: armoryImages(), upgrade: armoryUpgrade() }) : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()), 'armory');
   retitle(armoryTitle(armoryAnswer, armoryTab));
 }
 // While a profile waits for PLAYNC, it is asked for again when the backend says to.
@@ -531,7 +549,7 @@ async function armoryPage(path, ticket, refresh = false) {
     const { region, serverId, characterId, tab } = target.profile;
     const same = armoryAnswer && armoryAnswer.region === region && String(armoryAnswer.serverId) === serverId && armoryAnswer.characterId === characterId;
     // Another tab of the profile on screen: shown at once, from what was fetched.
-    if (same && tab !== armoryTab && !refresh) { armoryTab = tab; armoryRender(); return armoryPoll(path, ticket); }
+    if (same && tab !== armoryTab && !refresh) { armoryTab = tab; armoryRender(); loadUpgrade(ticket).catch(failure); return armoryPoll(path, ticket); }
     if (!same) armoryBoard = '';
     armoryTab = tab;
     let answer;
@@ -545,6 +563,7 @@ async function armoryPage(path, ticket, refresh = false) {
     if (answer.profile && !answer.partial && armory.isBookmarked(bookmarks(), answer)) keepBookmarks(armory.refreshBookmark(bookmarks(), answer));
     if (unchanged) document.querySelector('.armory-status').outerHTML = armory.lookupStatus(answer, Date.now() + serverOffset, armoryRefreshable());
     else armoryRender();
+    loadUpgrade(ticket).catch(failure);
     return armoryPoll(path, ticket);
   }
   armoryAnswer = armoryResults = null;

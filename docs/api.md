@@ -427,11 +427,32 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 
 The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes, imagesOffHost }` (`images` and `imageBytes` count the records of `armory_images` and their bytes; `imagesOffHost` is true while their files are in S3 storage). `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
 
+`GET /api/odyle/armory/upgrades/{class}?serverId=&characterId=` (dashboard 0.62.0) answers what the strongest characters of a class (`Chanter`, as profiles name it) the armory keeps wear, for the profile's [Upgrade tab](armory.md#upgrade-tab); the profile the query names is left out of them:
+
+```json
+{
+  "class": "Chanter", "builtAt": "2026-11-20T12:00:00.000Z",
+  "players": [{ "name": "…", "level": 45, "server": "Siel", "region": "nae", "serverId": 1101, "characterId": "…=", "combatPower": 182000, "itemLevel": 2400, "portrait": "portrait-….jpg" }],
+  "combatPower": { "median": 160000, "low": 131000, "high": 182000 }, "itemLevel": { "median": 2133, "low": 1750, "high": 2400 },
+  "slots": [{ "slot": "MainHand", "players": 20, "items": 20, "grade": "Unique", "itemLevel": 102, "enchant": 13, "exceed": 2, "stones": 4, "stoneSlots": 4,
+    "popular": [{ "name": "…", "grade": "Unique", "icon": "…", "category": "Mace", "count": 12, "enchant": 15, "exceed": 3, "itemLevel": 102, "sources": ["Crafting"] }],
+    "stoneNames": [{ "name": "Attack", "count": 31 }] }],
+  "sets": [{ "name": "Primal Vigor", "players": 14, "pieces": 5 }],
+  "boards": [{ "name": "Nezekan", "players": 20, "open": 28, "total": 40 }],
+  "skills": [{ "name": "Bolt", "category": "Active", "icon": "…", "players": 19, "level": 15 }]
+}
+```
+
+- `players` are up to 20 kept profiles of the class with the most combat power, strongest first; hidden profiles and those kept before 0.46.0 are left out. `builtAt` is when the server read them; it reads them again after 10 minutes.
+- `slots` follow the paper doll: `Earring`, `Ring`, `Bracelet` and `Rune` count both of a character's items (`items` is then up to twice `players`), the arcana keep their places (`Arcana1`–`5`), and the pet is left out. `grade` is the grade most items there have, and `itemLevel`, `enchant`, `exceed`, `stones` (engraved) and `stoneSlots` are medians (the item level and stones of the items with details). `popular` lists the three items worn most there and `stoneNames` the five stones engraved most.
+- `sets` are the sets the characters wear pieces of (up to 8, by how many wear them; `pieces` is the median), `boards` the median of open nodes per Daevanion board, and `skills` the skills on their skill bars (up to 24, by how many keep them there; `level` is the median).
+- A class the armory keeps no character of answers no `players` and empty lists; a class that is no name (letters, spaces, `'` and `-`, up to 40) answers 404. Browsers may keep the answer for 5 minutes. It counts against the armory's rate limit.
+
 `POST /api/odyle/card` (signed in) saves the look of a player card: `{ region, serverId, characterId, design, finish, options }` (`options` as above, any left out at their defaults) with the profile's search region, server id and PLAYNC character id. It answers the card as the armory route does. Only an account with a character tied to that profile may change it (403), and a holo finish needs the account's membership answer `yes` (403). An unknown design, finish or option, or a skill the kept profile does not list as learned, answers 400, and a profile that is not in the armory 404. Every character of the account tied to the profile keeps the choice (`cardDesign`, `cardFinish`, `cardOptions`); it is no character news for rooms.
 
 ## Pages, robots.txt and sitemap.xml
 
-`GET` on any other path answers the dashboard (`backend/web`): a file of the build, or the page named for the path (`backend/odyle/pages.go`). Each page gets a `<base>` back to the dashboard's root, `<meta name="odyle-routes" content="paths">` (the dashboard then uses paths instead of `#/` fragments, `src/routes.js`), its `<title>`, description, Open Graph and Twitter tags, and, with a public Application URL, a canonical link, `og:url`, absolute pictures and schema.org JSON-LD (`WebSite` on the start, `BreadcrumbList` in the armory). Armory profiles (`/armory/<region>/<server id>/<character id>[/skills|daevanion|titles|appearance]`) are named after the kept copy: name, level, class, server, combat power and item level, with the portrait as picture. Signed-in pages (`/room/<id>`, `/tasks`, `/account`, `/slots`), searches (`/armory/find/…`) and profiles not kept yet get `noindex`; hidden profiles and paths that are no page answer 404 with the dashboard, which opens the start. Pages are revalidated by their content hash (ETag).
+`GET` on any other path answers the dashboard (`backend/web`): a file of the build, or the page named for the path (`backend/odyle/pages.go`). Each page gets a `<base>` back to the dashboard's root, `<meta name="odyle-routes" content="paths">` (the dashboard then uses paths instead of `#/` fragments, `src/routes.js`), its `<title>`, description, Open Graph and Twitter tags, and, with a public Application URL, a canonical link, `og:url`, absolute pictures and schema.org JSON-LD (`WebSite` on the start, `BreadcrumbList` in the armory). Armory profiles (`/armory/<region>/<server id>/<character id>[/skills|daevanion|titles|appearance|upgrade]`) are named after the kept copy: name, level, class, server, combat power and item level, with the portrait as picture. Signed-in pages (`/room/<id>`, `/tasks`, `/account`, `/slots`), searches (`/armory/find/…`) and profiles not kept yet get `noindex`; hidden profiles and paths that are no page answer 404 with the dashboard, which opens the start. Pages are revalidated by their content hash (ETag).
 
 `GET /robots.txt` lets crawlers read the dashboard, the armory's routes and images and the timers' game rules (`/api/odyle/game`), not the rest of `/api/` or `/_/`, and names the sitemap under a public Application URL. `GET /sitemap.xml` lists the public pages (`/`, `/armory`, `/timers`, `/changelog`, `/privacy`, `/demo`) and up to 45,000 kept, visible armory profiles (most recently opened first, with their fetch date as `lastmod`); without a public Application URL it answers 404.
 

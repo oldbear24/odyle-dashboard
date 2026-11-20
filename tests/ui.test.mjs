@@ -712,7 +712,7 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     await page.mouse.move(1, 1);
     await tip.waitFor({ state: 'hidden' });
     // The other tabs show what was fetched, each at its own address.
-    for (const [tab, ready, text] of [['Skills', '.armory-skill', /Bolt/], ['Daevanion', '.armory-node.is-open', /Combat Speed \+1.5%/], ['Titles', '.armory-title-card', /Guardian of Altgard/], ['Appearance', '.armory-gear-slot', /Howling Dragon/]]) {
+    for (const [tab, ready, text] of [['Skills', '.armory-skill', /Bolt/], ['Daevanion', '.armory-node.is-open', /Combat Speed \+1.5%/], ['Titles', '.armory-title-card', /Guardian of Altgard/], ['Appearance', '.armory-gear-slot', /Howling Dragon/], ['Upgrade', '.armory-tab .armory-note', /too few Chanter characters to compare with yet \(0 of 3\)/]]) {
       await page.locator('.armory-tabs a', { hasText: tab }).click();
       await page.waitForURL(new RegExp(`/${tab.toLowerCase()}$`)); await page.locator(ready).first().waitFor();
       assert.match(await page.locator('.armory-tab').innerText(), text);
@@ -1209,7 +1209,7 @@ test('the main pages pass the axe accessibility check, signed out and in', async
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
   const profileAt = '#/armory/eu/2304/' + armorer[0];
-  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/card'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account'], [null, '#/timers'], [null, '#/achievements'], [lead, '#/timers'], [lead, '#/achievements'], [lead, '#/week']];
+  const pages = [[null, '#/'], [null, '#/armory'], [null, profileAt], [null, profileAt + '/skills'], [null, profileAt + '/daevanion'], [null, profileAt + '/titles'], [null, profileAt + '/upgrade'], [null, profileAt + '/card'], [null, '#/changelog'], [null, '#/privacy'], [lead, '#/'], [lead, '#/room/' + created.room.id], [lead, '#/tasks'], [lead, '#/account'], [null, '#/timers'], [null, '#/achievements'], [lead, '#/timers'], [lead, '#/achievements'], [lead, '#/week']];
   const found = [];
   for (const [auth, path] of pages) {
     const { page, close } = await open(auth, path);

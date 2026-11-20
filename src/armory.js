@@ -2,7 +2,7 @@
 // pages list them, kept by the backend and fetched from PLAYNC one at a time
 // (backend/odyle/armory.go). Pages: #/armory (search), #/armory/find/<region>/<server>/<name>
 // (a search, as character cards link it), #/armory/<search region>/<server id>/<character
-// id>[/<tab>] (a profile: gear and stats, or its skills, daevanion, titles or appearance tab)
+// id>[/<tab>] (a profile: gear and stats, or its skills, daevanion, titles, appearance or upgrade tab)
 // and the profile's player card, /card, a page of its own (card.js).
 // Nothing here is typed in or changed by players. Bookmarks (#72) are kept in the browser
 // only, so they need no account. Images (the game's icons, the character's portrait) come
@@ -14,6 +14,7 @@ import { age, escape as esc } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { armoryRoute, profilePath, imageUrl, classBadge } from './armorylinks.js';
+import { upgradePlan, upgradeLeast } from './upgrade.js';
 
 export const regionNames = () => ({ GLOBAL_NA: t('North America East'), GLOBAL_NAW: t('North America West'), GLOBAL_EU: t('Europe'), GLOBAL_SA: t('South America'), GLOBAL_ASIA: t('Asia') });
 // PLAYNC's search regions and the regions Odyle names them by.
@@ -239,15 +240,84 @@ function appearanceTab(p, images) {
   return `<section class="armory-panel"><div class="section-heading"><h2>${t('Skins')} <span>${number(p.skins.length)}</span></h2></div>${p.skins.length ? `<ul class="armory-gear is-grid">${p.skins.map(s => tile(slotLabel(s.slot), s)).join('')}</ul>` : `<p class="armory-empty">${t('No skin is worn over the gear.')}</p>`}</section>${companions.length ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Pet and wings')}</h2></div><ul class="armory-gear is-grid">${companions.map(g => tile(slotLabel(g.slot), g)).join('')}</ul></section>` : ''}`;
 }
 
-// The tabs a profile has: gear and stats always, the others once the kept copy holds them.
+// ---------------------------------------------------------------- Upgrade
+
+const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '±') + number(Math.abs(n));
+const stateNames = () => ({ big: t('Big upgrade'), some: t('Worth an upgrade'), small: t('Small upgrade'), even: t('On par') });
+// What a piece of gear is behind the strongest by, in words.
+function upgradeReasons(row, sample) {
+  const g = row.item, d = g?.detail, ref = row.ref, gaps = row.gaps;
+  if (!g) return [t('{n} of the {total} strongest wear something here', { n: number(ref.players), total: number(sample) })];
+  return [
+    gaps.itemLevel > 0 ? t('Item level {mine} → {theirs}', { mine: number(d.itemLevel), theirs: number(ref.itemLevel) }) : '',
+    gaps.grade > 0 ? t('Grade {mine} → {theirs}', { mine: gradeName(g.grade), theirs: gradeName(ref.grade) }) : '',
+    gaps.enchant > 0 ? t('Enchantment +{mine} → +{theirs}', { mine: number(g.enchant), theirs: number(ref.enchant) }) : '',
+    gaps.exceed > 0 ? t('Exceed {mine} → {theirs}', { mine: number(g.exceed), theirs: number(ref.exceed) }) : '',
+    gaps.stones > 0 ? tn(gaps.stones, '{n} empty stone slot', '{n} empty stone slots') : '',
+  ].filter(Boolean);
+}
+// The item the strongest wear most in a slot: how many of them, how far they enchant it, where it comes from.
+function popularItem(images, item, total) {
+  const facts = [t('{p} % of the strongest', { p: percent(item.count, total) }), item.enchant ? t('usually +{n}', { n: number(item.enchant) }) : '', item.itemLevel ? t('item level {n}', { n: number(item.itemLevel) }) : ''].filter(Boolean);
+  return `<div class="upgrade-item ${gradeClass(item.grade)}">${itemIcon(images, { ...item, enchant: 0, exceed: 0 })}<span><strong>${esc(item.name)}</strong><small>${esc(facts.join(' · '))}</small></span></div>`;
+}
+function yourItem(images, g) {
+  if (!g) return `<div class="upgrade-item is-empty"><span class="armory-icon is-empty" aria-hidden="true"></span><span><strong>${t('Empty')}</strong></span></div>`;
+  const facts = [gradeName(g.grade), g.detail?.itemLevel ? t('item level {n}', { n: number(g.detail.itemLevel) }) : ''].filter(Boolean);
+  return `<div class="upgrade-item ${gradeClass(g.grade)}">${itemIcon(images, g)}<span><strong>${g.enchant ? `+${number(g.enchant)} ` : ''}${esc(g.name)}</strong><small>${esc(facts.join(' · '))}</small></span></div>`;
+}
+function upgradePick(images, row, index, sample) {
+  const ref = row.ref, best = row.best, reasons = upgradeReasons(row, sample);
+  const others = ref.popular.slice(1).map(i => esc(i.name)).join(', ');
+  const target = best && !row.wearsBest ? popularItem(images, best, ref.items) : `<p class="upgrade-same">${row.wearsBest ? t('The strongest wear this item most too; take it further.') : t('No item stands out here.')}</p>`;
+  return `<li class="upgrade-pick is-${row.state}"><div class="upgrade-pick-head"><span class="upgrade-rank" aria-hidden="true">${index + 1}</span><h3>${esc(slotLabel(row.slot))}</h3><span class="upgrade-badge">${esc(stateNames()[row.state])}</span></div>`
+    + `<div class="upgrade-compare"><div><small>${t('Yours')}</small>${yourItem(images, row.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div><small>${t('The strongest wear')}</small>${target}</div></div>`
+    + `<ul class="upgrade-reasons">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+    + `<dl class="upgrade-facts">${best?.sources?.length ? `<div><dt>${t('How to obtain')}</dt><dd>${best.sources.map(esc).join(', ')}</dd></div>` : ''}${ref.stoneNames?.length ? `<div><dt>${t('Stones they engrave')}</dt><dd>${ref.stoneNames.map(s => esc(s.name)).join(', ')}</dd></div>` : ''}${others ? `<div><dt>${t('Also worn')}</dt><dd>${others}</dd></div>` : ''}</dl></li>`;
+}
+function upgradeRow(images, row, sample) {
+  const best = row.best, reasons = upgradeReasons(row, sample);
+  return `<li class="upgrade-row is-${row.state}"><div class="upgrade-row-slot"><small>${esc(slotLabel(row.slot))}</small>${yourItem(images, row.item)}</div><div class="upgrade-row-best"><small>${t('Worn most by the strongest')}</small>${best ? popularItem(images, best, row.ref.items) : ''}</div>`
+    + `<div class="upgrade-row-gap"><span class="upgrade-badge">${esc(stateNames()[row.state])}</span>${row.score > 0 ? `<small>${esc(reasons.join(' · '))}</small>` : ''}</div></li>`;
+}
+
+// The Upgrade tab: where the profile's gear falls furthest behind the strongest characters of its
+// class the armory keeps, and what they wear there (upgrade.js); upgrade is the backend's
+// comparison, null while it loads.
+function upgradeTab(answer, p, images, upgrade) {
+  const of = { class: p.class || t('this class') };
+  if (!upgrade) return `<section class="armory-panel"><p class="armory-empty upgrade-wait"><span class="armory-spinner" aria-hidden="true"></span>${esc(t('Comparing with the strongest {class} characters the armory keeps…', of))}</p></section>`;
+  if (upgrade.error) return `<section class="armory-panel"><p class="armory-empty">${t('The comparison did not load. Odyle tries again when you open this tab.')}</p></section>`;
+  const plan = upgradePlan(p, upgrade, answer);
+  const note = `<p class="armory-note">${icon('info')}<span>${t('The strongest are the characters of the class with the most combat power among the profiles Odyle keeps: every character anyone looked up in the last 30 days, from every Global region. PLAYNC\'s Global pages list no rankings. The comparison is worked out again every 10 minutes.')}</span></p>`;
+  if (!plan) return `<section class="armory-panel"><div class="section-heading"><h2>${t('Upgrades')}</h2></div><p class="armory-empty">${esc(t('The armory keeps too few {class} characters to compare with yet ({n} of {least}). Every character anyone looks up joins the comparison.', { ...of, n: number(upgrade.players?.length || 0), least: upgradeLeast }))}</p></section>${note}`;
+  const n = plan.sample, cp = plan.combatPower, il = plan.itemLevel;
+  // Its place by combat power among the strongest (the backend leaves the profile out of them).
+  const place = plan.below ? [t('Your place'), t('below them'), t('of the {n} strongest', { n: number(n) })] : [t('Your place'), `#${number(plan.place)}`, plan.own ? t('of the {n} strongest', { n: number(n) }) : t('with the {n} strongest', { n: number(n) })];
+  const metrics = [[t('Combat power'), number(cp.mine), t('their median {value} ({gap})', { value: number(cp.median), gap: signed(-cp.gap) }), true], [t('Item level'), number(il.mine), t('their median {value} ({gap})', { value: number(il.median), gap: signed(-il.gap) })], place];
+  const player = q => { const self = q.characterId === answer.characterId && String(q.serverId) === String(answer.serverId); return `<li${self ? ' class="is-self"' : ''}><a href="${esc(link(profilePath(q)))}"${self ? ' aria-current="page"' : ''}><span class="armory-mini" aria-hidden="true">${esc(initials(q.name))}${picture(images, q.portrait)}</span><strong>${esc(q.name)}</strong><span>${esc([q.server, `${number(q.combatPower)} CP`].filter(Boolean).join(' · '))}</span></a></li>`; };
+  const intro = `<section class="armory-panel upgrade-intro"><div class="section-heading"><h2>${t('Upgrades')}</h2></div><p>${esc(t('Compared with the {n} strongest {class} characters the armory keeps, from every Global region, by combat power.', { ...of, n: number(n) }))}</p>`
+    + `<dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl>`
+    + `<details class="upgrade-players-box"><summary>${esc(t('The {n} strongest {class} characters', { ...of, n: number(n) }))}</summary><ol class="upgrade-players">${upgrade.players.map(player).join('')}</ol></details></section>`;
+  const picks = `<section class="armory-panel"><div class="section-heading"><h2>${t('Best upgrades')}</h2></div>${plan.picks.length ? `<ol class="upgrade-picks">${plan.picks.map((row, i) => upgradePick(images, row, i, n)).join('')}</ol>` : `<p class="armory-empty">${esc(t('The gear is on par with the strongest {class} characters in every slot.', of))}</p>`}</section>`;
+  const rows = plan.rows.length ? `<section class="armory-panel"><details class="upgrade-all"><summary><h2>${t('Every slot')} <span>${number(plan.rows.length)}</span></h2></summary><ul class="upgrade-rows">${plan.rows.map(row => upgradeRow(images, row, n)).join('')}</ul></details></section>` : '';
+  const sets = plan.sets.length ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Arcana and sets')}</h2></div><ul class="upgrade-sets">${plan.sets.map(s => `<li class="${s.mine ? 'is-mine' : ''}"><strong>${esc(s.name)}</strong><span>${esc(t('{n} of the {total} strongest, usually {pieces} pieces', { n: number(s.players), total: number(n), pieces: number(s.pieces) }))}</span><small>${s.mine ? esc(t('Yours: {n} pieces', { n: number(s.mine) })) : t('Not worn')}</small></li>`).join('')}</ul></section>` : '';
+  const boards = plan.boards.length ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Daevanion')}</h2></div><ul class="upgrade-boards">${plan.boards.map(b => `<li class="${b.gap > 0 ? 'is-behind' : ''}"><span><strong>${esc(b.name)}</strong><small>${esc(t('{mine} of {total} nodes · the strongest {theirs}', { mine: number(b.mine), total: number(b.total), theirs: number(b.open) }))}</small></span><span class="armory-track upgrade-track" role="img" aria-label="${esc(t('{mine} of {total} nodes · the strongest {theirs}', { mine: number(b.mine), total: number(b.total), theirs: number(b.open) }))}"><i style="width:${percent(b.mine, b.total)}%"></i><b style="left:${percent(b.open, b.total)}%"></b></span></li>`).join('')}</ul><p class="armory-legend"><span class="is-open"></span>${t('Yours')}<span class="is-mark"></span>${t('Median of the strongest')}</p></section>` : '';
+  const skills = plan.skills.length ? `<section class="armory-panel"><div class="section-heading"><h2>${t('On the skill bars of the strongest')}</h2></div><ul class="upgrade-skills">${plan.skills.map(s => `<li class="${s.equipped ? 'is-equipped' : s.acquired ? '' : 'is-locked'}"><span class="armory-icon is-skill${imageUrl(images, s.icon) ? '' : ' is-empty'}" aria-hidden="true">${picture(images, s.icon)}</span><span><strong>${esc(s.name)}</strong><small>${esc([t('{n} of the {total} strongest, level {level}', { n: number(s.players), total: number(n), level: number(s.level) }), s.equipped ? t('on your bar, level {level}', { level: number(s.mine) }) : s.acquired ? t('learned, not on your bar') : t('Not learned yet')].join(' · '))}</small></span></li>`).join('')}</ul></section>` : '';
+  return intro + picks + rows + sets + boards + skills + note;
+}
+
+// The tabs a profile has: gear and stats always, the others once the kept copy holds them; the
+// upgrades once it lists gear and a class to compare with.
 export function profileTabs(p) {
-  return [['', t('Gear & stats')], ['skills', t('Skills'), p.skills?.length], ['daevanion', t('Daevanion'), p.boards?.length], ['titles', t('Titles'), p.titles?.total], ['appearance', t('Appearance'), p.skins?.length || p.gear?.some(g => companionSlots.includes(g.slot))]]
+  return [['', t('Gear & stats')], ['skills', t('Skills'), p.skills?.length], ['daevanion', t('Daevanion'), p.boards?.length], ['titles', t('Titles'), p.titles?.total], ['appearance', t('Appearance'), p.skins?.length || p.gear?.some(g => companionSlots.includes(g.slot))], ['upgrade', t('Upgrade'), p.class && p.gear?.some(g => !companionSlots.includes(g.slot))]]
     .filter(([key, , has]) => key === '' || has);
 }
 
 // A profile page: the kept profile (or the wait for it, or what the running lookup read so
-// far: partial) and where its lookup stands. view names the tab, the Daevanion board shown
-// and where the backend serves images.
+// far: partial) and where its lookup stands. view names the tab, the Daevanion board shown,
+// where the backend serves images and, for the Upgrade tab, the comparison with the strongest
+// of the class (null while it loads, { error } when it did not).
 export function armoryProfile(answer, now, refreshable, bookmarked = false, view = {}) {
   const p = answer.profile, images = view.images || '', loading = Boolean(answer.partial);
   const status = lookupStatus(answer, now, refreshable);
@@ -266,6 +336,6 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
 <div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
-  const content = tab === 'skills' ? skillsTab(profile, images) : tab === 'daevanion' ? daevanionTab(profile, images, view.board, loading) : tab === 'titles' ? titlesTab(profile) : tab === 'appearance' ? appearanceTab(profile, images) : gearTab(profile, images, loading);
+  const content = tab === 'skills' ? skillsTab(profile, images) : tab === 'daevanion' ? daevanionTab(profile, images, view.board, loading) : tab === 'titles' ? titlesTab(profile) : tab === 'appearance' ? appearanceTab(profile, images) : tab === 'upgrade' ? upgradeTab(answer, profile, images, view.upgrade) : gearTab(profile, images, loading);
   return `<main class="dashboard armory armory-profile">${hero}${status}${nav}<div class="armory-tab">${content}</div>${back}</main>`;
 }
