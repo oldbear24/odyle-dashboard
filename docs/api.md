@@ -1,6 +1,6 @@
 # Odyle API v2 · Discord accounts
 
-PocketBase 0.40.5. JSON requests; authenticated requests use a PocketBase **users** token (`Authorization: Bearer <token>`). HTTPS for hosted connections. No superuser credentials belong in either client.
+PocketBase 0.42.3. JSON requests; authenticated requests use a PocketBase **users** token (`Authorization: Bearer <token>`). Since PocketBase 0.42.0 (dashboard 0.62.0) a request with an unknown or expired token answers 401 on every route, public ones included, instead of being treated as signed out: a client then refreshes its token or signs in again. HTTPS for hosted connections. No superuser credentials belong in either client.
 
 ## Authentication
 
@@ -427,7 +427,7 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 
 `armory_ranks` (dashboard 0.62.0, superusers only under **Collections**) is what both read ([Armory](armory.md#top-players-and-the-scout)); `hidden` on a row keeps that character out of them and out of the scout, and hiding a character's profile sets it.
 
-The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes, imagesOffHost }` (`images` and `imageBytes` count the records of `armory_images` and their bytes; `imagesOffHost` is true while their files are in S3 storage). `armoryPaused` is one of the [server controls](#superuser-monitor-and-settings).
+The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetching, running, done, failed, lastAt, lastError, lastErrorAt, blockedUntil, paused, images, imageBytes, imagesOffHost, lanes, readers, scouts, queue, ranked, built }` (`images` and `imageBytes` count the records of `armory_images` and their bytes; `imagesOffHost` is true while their files are in S3 storage). From dashboard 0.62.0: `running` is how many lookups run now (`fetching` is true while any does), `lanes` is `{ readers, scouts }`, how many of each may run at once, `readers` and `scouts` are `{ running, waiting }`, and `queue` lists every lookup running and then waiting, in order: `{ state, scout, region, serverId, characterId, name, server, since, progress, position }` (`state` `fetching` with `progress` as the armory route gives it, or `queued` with its `position` in the queue; `scout` for the scout's; `name` as the armory knows the character, or empty; no address). `ranked` and `built` count the top players the armory knows and those whose gear it read. `armoryPaused`, `armoryLanes` (readers' lookups at once, 1 to 10, 3 by default) and `scoutLanes` (the scout's, 0 to 5, 1 by default) are [server controls](#superuser-monitor-and-settings); a value outside them answers 400.
 
 `GET /api/odyle/armory/top?class=` (dashboard 0.62.0) answers the [top players](armory.md#top-players-and-the-scout) of a class (`Chanter`, as profiles name it; the first class without one):
 

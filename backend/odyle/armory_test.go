@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -376,8 +377,8 @@ func TestArmoryFetchesProfilesThroughTheQueueAndKeepsThem(t *testing.T) {
 	}
 	work.mu.Lock()
 	work.blocked = time.Time{}
+	work.nudge()
 	work.mu.Unlock()
-	work.wake <- struct{}{}
 	work.wait()
 	if done := ask(t, app, "GET", armoryPath(id), nil, "", 200); done["state"] != "fresh" || stand.lookups.Load() != 2 {
 		t.Fatalf("after the Refresh: %v after %d lookups", done, stand.lookups.Load())
@@ -440,11 +441,86 @@ func TestArmoryLookupsThatFail(t *testing.T) {
 	w.wait()
 }
 
+// Readers' lookups run side by side, as many as Server controls say (3 until set), and the
+// scout's one at a time beside them, only while no reader's waits; superusers see the queue.
+func TestArmoryRunsLookupsSideBySide(t *testing.T) {
+	fastArmory(t)
+	stand := &armoryStand{gate: make(chan struct{})}
+	stand.serve(t)
+	release := sync.OnceFunc(func() { close(stand.gate) })
+	t.Cleanup(release) // before the stand closes, which waits for the answers it holds
+	app := newTestApp(t)
+	work := stateOf(app).armory
+	running := func(n int) {
+		t.Helper()
+		for i := 0; i < 200 && armoryStatus(app)["running"] != n; i++ {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got := armoryStatus(app)["running"]; got != n {
+			t.Fatalf("%v running, want %d", got, n)
+		}
+	}
+	ids := []string{"AAAAAAAAAAAAAAAAAAAAAAA1", "AAAAAAAAAAAAAAAAAAAAAAA2", "AAAAAAAAAAAAAAAAAAAAAAA3", "AAAAAAAAAAAAAAAAAAAAAAA4"}
+	for i, id := range ids {
+		ask(t, app, "GET", armoryPath(id), map[string]string{"X-Forwarded-For": fmt.Sprintf("10.0.0.%d", i)}, "", 200)
+	}
+	running(3)
+	fourth := ask(t, app, "GET", armoryPath(ids[3]), nil, "", 200)
+	if fourth["state"] != "queued" || fourth["position"].(float64) != 3 {
+		t.Fatalf("the fourth: %v", fourth)
+	}
+	// A reader waits: the scout queues nothing.
+	if work.scout(app, scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA9"}) {
+		t.Fatal("the scout went ahead of a reader")
+	}
+	status := armoryStatus(app)
+	queue := status["queue"].([]map[string]any)
+	if len(queue) != 4 || queue[0]["state"] != "fetching" || queue[3]["state"] != "queued" || queue[3]["position"] != 1 || queue[3]["server"] != "Lumiel" || queue[0]["scout"] != false ||
+		fmt.Sprint(status["lanes"]) != "map[readers:3 scouts:1]" || fmt.Sprint(status["readers"]) != "map[running:3 waiting:1]" {
+		t.Fatalf("status %v", status)
+	}
+	// More lanes: the fourth starts with the next request.
+	if _, err := writeSettings(app, body{"armoryLanes": 4.0}); err != nil {
+		t.Fatal(err)
+	}
+	ask(t, app, "GET", armoryPath(ids[3]), nil, "", 200)
+	running(4)
+	// No reader waits: the scout's lookup runs beside the readers', one at a time.
+	hit := scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA9"}
+	if !work.scout(app, hit) || work.scout(app, scoutHit{region: "eu", serverId: 2304, characterId: "AAAAAAAAAAAAAAAAAAAAAAA8"}) {
+		t.Fatal("the scout's lookups")
+	}
+	running(5)
+	if queue := armoryStatus(app)["queue"].([]map[string]any); queue[4]["scout"] != true || queue[4]["state"] != "fetching" {
+		t.Fatalf("queue %v", queue)
+	}
+	release()
+	work.wait()
+	if stand.lookups.Load() != 5 || countOf(t, app, "armory_profiles") != 4 {
+		t.Fatalf("%d lookups, %d profiles", stand.lookups.Load(), countOf(t, app, "armory_profiles"))
+	}
+	if row, ok := rankAt(t, app, hit.characterId); !ok || row.BuiltAt == "" {
+		t.Fatalf("the scout's lookup kept %+v", row)
+	}
+	// Lanes are 1 to 10 for readers, 0 to 5 for the scout.
+	for _, b := range []body{{"armoryLanes": 0.0}, {"armoryLanes": 11.0}, {"scoutLanes": -1.0}, {"scoutLanes": 6.0}, {"armoryLanes": 2.5}} {
+		if _, err := writeSettings(app, b); err == nil {
+			t.Errorf("%v saved", b)
+		}
+	}
+}
+
 func TestArmoryQueueLimitsEachAddressAndPauses(t *testing.T) {
 	fastArmory(t)
 	stand := &armoryStand{gate: make(chan struct{})}
 	stand.serve(t)
+	release := sync.OnceFunc(func() { close(stand.gate) })
+	t.Cleanup(release)
 	app := newTestApp(t)
+	// One lookup at a time (Server controls).
+	if _, err := writeSettings(app, body{"armoryLanes": 1.0}); err != nil {
+		t.Fatal(err)
+	}
 	states := []string{}
 	for _, id := range []string{"AAAAAAAAAAAAAAAAAAAAAAA1", "AAAAAAAAAAAAAAAAAAAAAAA2", "AAAAAAAAAAAAAAAAAAAAAAA3", "AAAAAAAAAAAAAAAAAAAAAAA4", "AAAAAAAAAAAAAAAAAAAAAAA5"} {
 		states = append(states, ask(t, app, "GET", armoryPath(id), nil, "", 200)["state"].(string))
@@ -471,7 +547,7 @@ func TestArmoryQueueLimitsEachAddressAndPauses(t *testing.T) {
 		t.Fatalf("paused: %v", paused)
 	}
 	ask(t, app, "GET", "/api/odyle/armory/search?name=Ka&server=Lumiel&region=GLOBAL_EU", nil, "", 503)
-	close(stand.gate)
+	release()
 	stateOf(app).armory.wait()
 	if n := stand.lookups.Load(); n != 1 {
 		t.Fatalf("%d lookups while paused", n)

@@ -97,6 +97,8 @@ var auditFields = []struct{ path, label string }{
 	{"announcementUntil", "Announcement shown until"},
 	{"portraitsPaused", "Pause portrait refresh"},
 	{"armoryPaused", "Pause the armory"},
+	{"armoryLanes", "Armory lookups at once"},
+	{"scoutLanes", "Scout lookups at once"},
 	{"remindersPaused", "Pause Discord reminders"},
 	{"pairingPaused", "Pause new pairings"},
 	{"readerPaused", "Pause packet readers"},

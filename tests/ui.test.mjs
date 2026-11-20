@@ -1962,6 +1962,10 @@ test('superusers set the announcement with its schedule, the switches and the ad
     await page.locator('.odyle-timing', { hasText: 'The end must come after the start.' }).waitFor();
     await page.locator('#odyle-announcement-until').fill('');
     await page.locator('label[for="odyle-armoryPaused"]').click();
+    // How many armory lookups run at once: readers' and the scout's.
+    assert.deepEqual([await page.locator('#odyle-armory-lanes').inputValue(), await page.locator('#odyle-scout-lanes').inputValue()], ['3', '1']);
+    await page.locator('#odyle-armory-lanes').fill('5');
+    await page.locator('#odyle-scout-lanes').fill('0');
     // Location adapters are listed beside the built-in ones and switch off the same way.
     await page.locator('label[for="odyle-adapter-test-location-v1"]').click();
     assert.equal(await page.locator('#odyle-adapter-test-pvp-v1').isChecked(), true, 'the PvP adapter is listed, accepted');
@@ -1972,7 +1976,7 @@ test('superusers set the announcement with its schedule, the switches and the ad
     await page.getByText('Saved the Odyle server controls.').waitFor();
     await shot(page, 'admin-controls');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
-    assert.deepEqual([saved.announcement, saved.armoryPaused, saved.adapters, saved.windowsBlocked], ['Maintenance on Thursday', true, { extra: ['next-decoder-v3'], disabled: ['test-location-v1'] }, ['0.18.0']]);
+    assert.deepEqual([saved.announcement, saved.armoryPaused, saved.armoryLanes, saved.scoutLanes, saved.adapters, saved.windowsBlocked], ['Maintenance on Thursday', true, 5, 0, { extra: ['next-decoder-v3'], disabled: ['test-location-v1'] }, ['0.18.0']]);
     assert.deepEqual([saved.announcementFrom, saved.announcementUntil], [start.toISOString(), '']);
     // Nobody sees it before its start.
     assert.equal((await request('/api/odyle/announcement', undefined, null, 'GET')).data.announcement, null);
@@ -2075,6 +2079,9 @@ test('superusers search, open and export packets and read the server status', as
     // Server status: the last hour per minute, routes and rejection reasons.
     await page.goto(url + '/_/#/odyle/status');
     await page.locator('.odyle-minute .odyle-bar').first().waitFor();
+    // The armory's lanes as Server controls set them, and its queue, empty now.
+    await page.getByText("up to 5 readers' lookups and 0 of the scout's at once").waitFor();
+    await page.locator('td', { hasText: 'Nothing waits for PLAYNC.' }).waitFor();
     assert.equal(await page.locator('.odyle-minute').count(), 60);
     await page.locator('.odyle-minute').last().hover();
     assert.match(await page.locator('.odyle-tip').innerText(), /Rejected[\s\S]*Windows app[\s\S]*Reads[\s\S]*requests?/);

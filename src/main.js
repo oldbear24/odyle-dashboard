@@ -39,6 +39,8 @@ const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'h
 // Persisted in localStorage: the sign-in is shared by every tab of this browser and survives restarts.
 const pb = new PocketBase(backend, new LocalAuthStore('odyle.account'));
 pb.autoCancellation(false);
+// A refused token ends the sign-in only after a refresh fails too (expired), not as soon as the SDK sees a 401.
+pb.autoClearAuthStore(false);
 // localStorage can be missing or throw (private modes, blocked storage); every use goes through this.
 const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.probe'); return s; } catch { return { getItem: () => null, setItem() {}, removeItem() {} }; } })();
 const languageKey = 'odyle.language';

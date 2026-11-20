@@ -21,11 +21,12 @@ import (
 // run of the odyle-armory-scout job (every minute, paused with the armory) asks for scoutSteps
 // pages, scoutStep apart, one per step:
 //
-//   - while no reader waits for the armory and at most every scoutBuildGap, the gear of the
-//     strongest character of a class's top rankLimit whose gear is unknown or scoutRebuild old:
-//     its info and equipment pages and each item's page, as a lookup reads them, kept as its
-//     build in armory_ranks (ranks.go), with the icons but no portrait and no profile;
-//   - else a character the last search page listed: its info page, for its combat power;
+//   - at most every scoutBuildGap, and while no reader's lookup waits, it queues the scout's
+//     lookup of the strongest character of a class's top rankLimit whose gear is unknown or
+//     scoutRebuild old: the armory's queue runs one such at a time, beside the readers' (armory.go),
+//     reading its info and equipment pages and each item's page as a lookup does, and keeps it as
+//     its build in armory_ranks (ranks.go), with the icons but no portrait and no profile;
+//   - a character the last search page listed: its info page, for its combat power;
 //   - else a page of PLAYNC's character search: a random open server, class, letter and page,
 //     the characters of the highest level listed that were not checked for rankKeep.
 //
@@ -119,28 +120,24 @@ func (w *armoryWork) refuse(r armoryRefused) {
 	w.blocked = later(w.blocked, time.Now().Add(max(r.wait, armoryBlocked)))
 }
 
-// quiet says no reader's lookup waits or runs.
-func (w *armoryWork) quiet() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return len(w.waiting) == 0 && w.current == ""
-}
-
-// step asks PLAYNC for one page (a top character's gear is a few), and says whether it asked.
+// step queues a top character's gear when it is time to, then asks PLAYNC for one page, and says
+// whether it asked.
 func (s *armoryScout) step(app core.App) (bool, error) {
+	// More lanes for the scout (Server controls) read gear more often: every scoutBuildGap
+	// divided among them, none while it has none.
+	lanes := readSettings(app).ScoutLanes
 	s.mu.Lock()
-	building := time.Since(s.builtAt) >= scoutBuildGap
+	building := lanes > 0 && time.Since(s.builtAt) >= scoutBuildGap/time.Duration(max(1, lanes))
 	s.mu.Unlock()
-	if building && stateOf(app).armory.quiet() {
+	if building {
 		hit, ok, err := nextBuild(app)
 		if err != nil {
 			return false, err
 		}
-		if ok {
+		if ok && stateOf(app).armory.scout(app, hit) {
 			s.mu.Lock()
 			s.builtAt = time.Now()
 			s.mu.Unlock()
-			return true, buildRank(app, hit)
 		}
 	}
 	if hit, ok := s.next(); ok {
@@ -194,11 +191,17 @@ func checkRank(app core.App, hit scoutHit) error {
 	return keepRank(app, hit.region, hit.serverId, hit.characterId, p, false)
 }
 
-// buildRank reads a character's gear as a lookup does (info, equipment, each item's page; not the
-// boards', whose open nodes the info page lists) and keeps it as its build, with the icons it
-// names but not its portrait.
-func buildRank(app core.App, hit scoutHit) error {
+// buildRank is the scout's lookup in the armory's queue: it reads a character's gear as a reader's
+// lookup does (info, equipment, each item's page; not the boards', whose open nodes the info page
+// lists) and keeps it as its build, with the icons it names but not its portrait.
+func buildRank(app core.App, hit scoutHit, track *armoryTrack) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("the scout's lookup failed: %v", r)
+		}
+	}()
 	j := hit.job()
+	track.begin("profile", 2, 1)
 	info, err := askPLAYNC("info", j)
 	if errors.Is(err, errArmoryMissing) {
 		return forgetRank(app, hit.serverId, hit.characterId)
@@ -206,19 +209,23 @@ func buildRank(app core.App, hit scoutHit) error {
 	if err != nil {
 		return err
 	}
+	track.tick()
 	time.Sleep(armoryStep)
 	equipment, err := askPLAYNC("equipment", j)
 	if err != nil {
 		return err
 	}
+	track.tick()
 	p, err := readArmory(info, equipment)
 	if err != nil {
 		return err
 	}
-	if err := detailArmory(&p, j, nil, false); err != nil {
+	items, _ := p.detailed()
+	track.plan(items, 0)
+	if err := detailArmory(&p, j, track, false); err != nil {
 		return err
 	}
-	keepArmoryImages(app, &p, nil, false)
+	keepArmoryImages(app, &p, track, false)
 	learnRankClass(app, p)
 	return keepRank(app, hit.region, hit.serverId, hit.characterId, p, true)
 }

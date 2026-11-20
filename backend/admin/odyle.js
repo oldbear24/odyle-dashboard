@@ -330,6 +330,15 @@ export function statusPage() {
   const readers = () => state.data.readers || { reporting: 0, connected: 0, stuck: 0, statuses: {}, games: [], refusedAdapters: [], alerts: false };
   const clock = () => readers().clock || { checked: 0, matched: 0, checkedToday: 0, missedToday: 0 };
   const armory = () => state.data.armory || { profiles: 0, hidden: 0, waiting: 0, fetching: false, done: 0, failed: 0, lastAt: '', lastError: '', lastErrorAt: '', blockedUntil: '', paused: false, images: 0, imageBytes: 0 };
+  // The armory's queue: the lookups running (with how far they got) and waiting, readers' and the scout's.
+  const lanes = () => armory().lanes || { readers: 1, scouts: 0 };
+  const queue = () => armory().queue || [];
+  const queueRow = q => t.tr({ rid: q.state + q.serverId + '/' + q.characterId },
+    t.td(null, q.state === 'fetching' ? t.span({ className: 'label sm success' }, 'running' + (q.progress ? ' · ' + q.progress.percent + '%' : '')) : t.span({ className: 'label sm' }, 'waiting #' + number(q.position))),
+    t.td(null, q.name || t.span({ className: 'txt-hint txt-code' }, q.characterId)),
+    t.td(null, (q.server || q.serverId) + ' · ' + q.region),
+    t.td(null, q.scout ? 'Armory scout' : 'a reader'),
+    t.td({ className: 'txt-nowrap' }, () => ago(q.since, now())));
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -535,15 +544,19 @@ export function statusPage() {
         stat('Game builds', () => readers().games.length ? readers().games.map(g => g.game.replace(/^Steam build /, '')).join(', ') : '—', () => readers().games.length ? readers().games.map(g => number(g.apps) + ' on ' + g.game).join(' · ') : 'Steam builds the apps read'),
         stat('Odyle clock', () => clock().checked ? Math.round(clock().matched / clock().checked * 100) + '%' : '—', () => clock().checked ? number(clock().matched) + ' of ' + number(clock().checked) + ' login readings of the last 7 days matched its projection' : 'login readings after a tick, compared with its projection'),
         stat('Operator alerts', () => readers().alerts ? 'on' : 'off', () => readers().alerts ? 'Discord, by the Reader health job every 5 minutes' : 'set ODYLE_ALERT_WEBHOOK to a Discord webhook')),
-      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Armory'), t.span({ className: 'txt-hint txt-sm' }, 'public character profiles from PLAYNC, one lookup at a time; counts since the server started')),
+      t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Armory'), t.span({ className: 'txt-hint txt-sm' }, () => 'public character profiles from PLAYNC, up to ' + number(lanes().readers) + ' readers\' lookups and ' + number(lanes().scouts) + ' of the scout\'s at once (Server controls); counts since the server started')),
       () => armory().blockedUntil ? t.div({ className: 'alert warning m-b-sm' }, 'PLAYNC refused the armory lookups; the queue waits until ' + new Date(armory().blockedUntil).toLocaleTimeString() + '. If it keeps happening, pause the armory under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), '.') : null,
       t.div({ className: 'odyle-stats m-b-base' },
         stat('Kept profiles', () => number(armory().profiles), () => number(armory().hidden) + ' hidden · kept 30 days after they were last opened'),
-        stat('Queue', () => armory().paused ? 'paused' : number(armory().waiting + (armory().fetching ? 1 : 0)), () => armory().paused ? 'Server controls' : armory().fetching ? 'one lookup running' : 'waiting for PLAYNC'),
+        stat('Queue', () => armory().paused ? 'paused' : number(armory().waiting + (armory().running ?? (armory().fetching ? 1 : 0))), () => armory().paused ? 'Server controls' : number(armory().running ?? 0) + ' running · ' + number(armory().waiting) + ' waiting'),
+        stat('Top players', () => number(armory().ranked ?? 0), () => number(armory().built ?? 0) + ' with their gear read · Armory scout'),
         stat('Lookups', () => number(armory().done), () => (armory().failed ? number(armory().failed) + ' failed · ' : '') + (armory().lastAt ? 'last ' + new Date(armory().lastAt).toLocaleString() : 'none yet')),
         stat('Last error', () => armory().lastError ? new Date(armory().lastErrorAt).toLocaleString() : 'none', () => armory().lastError || 'PLAYNC answered every lookup'),
         stat('Images', () => number(armory().images || 0), () => app.utils.formattedFileSize(armory().imageBytes || 0) + ' of icons and portraits, their files ' + (armory().imagesOffHost ? 'in S3 storage' : 'on the data volume'))),
-      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'Browse, search and delete the kept images under ', t.a({ href: '#/collections?collection=armory_images' }, 'Collections → armory_images'), '; a profile that names a deleted image fetches it again when it is opened.'),
+      t.div({ className: 'odyle-table m-b-sm' }, t.table(null,
+        t.thead(null, t.tr(null, t.th(null, 'Lookup'), t.th(null, 'Character'), t.th(null, 'Server'), t.th(null, 'For'), t.th(null, 'Since'))),
+        t.tbody(null, () => queue().length ? queue().map(queueRow) : t.tr(null, t.td({ colSpan: 5, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'Nothing waits for PLAYNC.'))))),
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'Browse, search and delete the kept images under ', t.a({ href: '#/collections?collection=armory_images' }, 'Collections → armory_images'), '; a profile that names a deleted image fetches it again when it is opened. The queue names no address that asked.'),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
@@ -887,7 +900,7 @@ export function controlsPage() {
   app.store.title = 'Server controls';
   // extra is the extra adapter list as typed; form.adapters.extra is the list it saves.
   const text = store({ extra: '', blocked: '' });
-  const { state, load, save, buttons, changed } = settingsForm(['announcement', 'announcementLevel', 'announcementFrom', 'announcementUntil', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'adapters', 'windowsBlocked'], form => { text.extra = form.adapters.extra.join('\n'); text.blocked = (form.windowsBlocked || []).join('\n'); });
+  const { state, load, save, buttons, changed } = settingsForm(['announcement', 'announcementLevel', 'announcementFrom', 'announcementUntil', 'portraitsPaused', 'remindersPaused', 'pairingPaused', 'readerPaused', 'armoryPaused', 'armoryLanes', 'scoutLanes', 'adapters', 'windowsBlocked'], form => { text.extra = form.adapters.extra.join('\n'); text.blocked = (form.windowsBlocked || []).join('\n'); });
   // The announcement's schedule as the form holds it, saved or not: shown now, waiting for its
   // start, over, or impossible.
   const shortTime = ms => new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -935,6 +948,11 @@ export function controlsPage() {
       switchField('remindersPaused', 'Pause Discord reminders', 'No planned run is posted to Discord. Runs that start while paused are not announced afterwards; saving a webhook still posts its test message.'),
       switchField('pairingPaused', 'Pause new pairings', 'The dashboard stops creating connection links and Windows apps cannot pair. PCs already paired keep signing in and reading.'),
       switchField('readerPaused', 'Pause packet readers', 'Paired Windows apps stop reading game packets and close Npcap within about 20 seconds, say so on their card and resume by themselves once this is off. Readings sent meanwhile are refused; apps from before this switch keep capturing, but their readings are refused too.'),
+      section('Armory queue', 'How many lookups of PLAYNC\'s character pages run at once. Each lookup reads some 25 pages a quarter of a second apart, and each lane rests 5 seconds between lookups, so more lanes ask PLAYNC more at once. Server status lists the queue.'),
+      field('odyle-armory-lanes', 'Readers\' lookups at once', t.input({ id: 'odyle-armory-lanes', type: 'number', min: 1, max: 10, step: 1, required: true, value: () => state.form.armoryLanes ?? '', oninput: e => { const n = parseInt(e.target.value, 10); state.form.armoryLanes = Number.isNaN(n) ? null : n; } }),
+        'Profiles players open or refresh, 1 to 10 at once (3 by default). More lanes shorten the wait when many look characters up.'),
+      field('odyle-scout-lanes', 'Scout lookups at once', t.input({ id: 'odyle-scout-lanes', type: 'number', min: 0, max: 5, step: 1, required: true, value: () => state.form.scoutLanes ?? '', oninput: e => { const n = parseInt(e.target.value, 10); state.form.scoutLanes = Number.isNaN(n) ? null : n; } }),
+        'The Armory scout\'s reads of top players\' gear, 0 to 5 (1 by default), beside the readers\' and only while none of theirs waits; it reads one every 3 minutes divided among them. 0 reads no gear, while the scout still finds characters and their combat power.'),
       section('Packet adapters', 'The Windows app names its decoder with every reading, and only readings from accepted adapters are stored. Built-in adapters come with the backend code; accept a new decoder here before the next deploy, or stop one that reads wrong values.'),
       t.div({ className: 'col-lg-4' }, t.div({ className: 'txt-bold m-b-xs' }, 'Built-in adapters'),
         builtIn().map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
