@@ -574,14 +574,14 @@ func adapterSettings(value any) (adapterLists, error) {
 	}
 	lists := adapterLists{Extra: []string{}, Disabled: []string{}}
 	for _, name := range extraNames {
-		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) && !contains(verifiedGroupAdapters, name) && !contains(verifiedPvpAdapters, name) {
+		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) && !contains(verifiedGroupAdapters, name) && !contains(verifiedPvpAdapters, name) && !contains(verifiedTeammateAdapters, name) {
 			lists.Extra = append(lists.Extra, name)
 		}
 	}
-	// The location, group and PvP adapters (location.go, groups.go, pvp.go) are switched off here
-	// too, never accepted as reading ones.
+	// The location, group, PvP and teammate adapters (location.go, groups.go, pvp.go,
+	// teammates.go) are switched off here too, never accepted as reading ones.
 	for _, name := range disabledNames {
-		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) || contains(verifiedGroupAdapters, name) || contains(verifiedPvpAdapters, name) {
+		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) || contains(verifiedGroupAdapters, name) || contains(verifiedPvpAdapters, name) || contains(verifiedTeammateAdapters, name) {
 			lists.Disabled = append(lists.Disabled, name)
 		}
 	}

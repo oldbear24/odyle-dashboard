@@ -2086,6 +2086,8 @@ test('superusers search, open and export packets and read the server status', as
     assert.match(await page.locator('.odyle-stat', { hasText: 'Gear to read' }).innerText(), /Gear to read\s+0\s+no scout lanes under Server controls/);
     await page.locator('td', { hasText: 'The gear of every top player is read.' }).waitFor();
     await page.locator('td', { hasText: 'Nothing waits; the next step searches.' }).waitFor();
+    await page.locator('td', { hasText: 'No party or force member waits.' }).waitFor();
+    assert.match(await page.locator('.odyle-stat', { hasText: 'Names to find' }).innerText(), /Names to find\s+0\s+party and force members/);
     assert.equal(await page.locator('.odyle-minute').count(), 60);
     await page.locator('.odyle-minute').last().hover();
     assert.match(await page.locator('.odyle-tip').innerText(), /Rejected[\s\S]*Windows app[\s\S]*Reads[\s\S]*requests?/);

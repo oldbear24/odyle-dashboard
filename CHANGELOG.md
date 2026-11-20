@@ -5,7 +5,11 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ## 0.63.0 · 2026-11-20
 
 ### New
-- Server operators see under **Server status → Armory scout** what the scout still reads for the top players: whose gear, the strongest first, with how often it reads one and about how long all of them take, and which characters its searches found wait for their combat power.
+- **Top players by class** fill up faster with the players who matter: the armory's scout now also checks the characters Odyle's players play, looks up the players they met in PvP, and, from Odyle for Windows 0.35.0, the players in their party or force. Only what PLAYNC's public pages show is kept, never who played with whom.
+- Server operators see under **Server status → Armory scout** what the scout still reads for the top players: whose gear, the strongest first, with how often it reads one and about how long all of them take, which characters wait for their combat power, how many of Odyle's characters it checks next and which party and force members it looks up. **Server controls** can switch off the party and force names (the teammate adapter).
+
+### Fixed
+- A character whose armory profile the operators hid no longer shows up among the top players when the scout finds it.
 
 ## 0.62.0 · 2026-11-20
 

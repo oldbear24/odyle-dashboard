@@ -341,7 +341,7 @@ export function statusPage() {
     t.td({ className: 'txt-nowrap' }, () => ago(q.since, now())));
   // What the Armory scout still reads of PLAYNC: the top players' gear, the strongest first, and
   // the characters its searches found, for their combat power (the first 20 of each).
-  const scout = () => armory().scout || { builds: 0, neverBuilt: 0, buildQueue: [], checks: 0, checkQueue: [], level: 0, buildEvery: 0, lastBuildAt: '' };
+  const scout = () => armory().scout || { builds: 0, neverBuilt: 0, buildQueue: [], checks: 0, checkQueue: [], own: 0, names: 0, nameQueue: [], level: 0, buildEvery: 0, lastBuildAt: '' };
   const span = seconds => seconds < 5400 ? Math.max(1, Math.round(seconds / 60)) + ' minutes' : seconds < 172800 ? Math.round(seconds / 3600) + ' hours' : Math.round(seconds / 86400) + ' days';
   const pendingName = c => c.name || t.span({ className: 'txt-hint odyle-id', title: c.characterId }, c.characterId.length > 12 ? c.characterId.slice(0, 12) + '…' : c.characterId);
   const pendingServer = c => (c.server || c.serverId) + ' · ' + region(c.region);
@@ -352,6 +352,8 @@ export function statusPage() {
   const checkRow = (c, i) => t.tr({ rid: i + '@' + signature(c) },
     t.td({ className: 'txt-right txt-hint' }, number(i + 1)), t.td({ className: 'txt-nowrap' }, pendingName(c)), t.td({ className: 'txt-nowrap' }, pendingServer(c)),
     t.td({ className: 'txt-nowrap' }, c.combatPower ? number(c.combatPower) + ' · 30+ days old' : t.span({ className: 'txt-hint' }, 'not yet')));
+  const nameRow = (n, i) => t.tr({ rid: i + '@' + signature(n) },
+    t.td({ className: 'txt-right txt-hint' }, number(i + 1)), t.td({ className: 'txt-nowrap' }, n.name), t.td({ className: 'txt-nowrap' }, n.server + ' · ' + region(n.region)));
   const buildPace = () => armory().paused ? 'paused with the armory' : !scout().buildEvery ? 'no scout lanes under Server controls, so none is read'
     : 'one every ' + span(scout().buildEvery) + ' while no reader waits' + (scout().builds ? ', all in about ' + span(scout().builds * scout().buildEvery) : '');
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
@@ -576,6 +578,8 @@ export function statusPage() {
       t.div({ className: 'odyle-stats m-b-sm' },
         stat('Gear to read', () => number(scout().builds), () => (scout().builds ? number(scout().neverBuilt) + ' never read, ' + number(scout().builds - scout().neverBuilt) + ' read 14 or more days ago · ' : '') + buildPace()),
         stat('Combat power to read', () => number(scout().checks), () => scout().level ? 'characters of level ' + number(scout().level) + ' its searches found, read between searches · in server memory' : 'characters its searches find, read between searches · in server memory'),
+        stat('Odyle characters to check', () => number(scout().own ?? 0), () => 'played by Odyle\'s accounts, of the highest level, not checked for 30 days; read before names and searches'),
+        stat('Names to find', () => number(scout().names ?? 0), () => 'party and force members the apps sent, searched for on the sending character\'s server · in server memory; then players met in PvP'),
         stat('Last gear read', () => scout().lastBuildAt ? ago(scout().lastBuildAt, now()) : 'none yet', () => scout().lastBuildAt ? 'queued ' + when(scout().lastBuildAt) : 'since the server started')),
       t.div({ className: 'grid m-b-sm' },
         t.div({ className: 'col-lg-7' }, t.div({ className: 'odyle-table' }, t.table(null,
@@ -585,8 +589,12 @@ export function statusPage() {
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-table' }, t.table(null,
           t.thead(null, t.tr(null, t.th({ className: 'txt-right' }, '#'), t.th(null, 'Character'), t.th(null, 'Server'), t.th(null, 'Combat power'))),
           t.tbody(null, () => scout().checkQueue.length ? scout().checkQueue.map(checkRow) : t.tr(null, t.td({ colSpan: 4, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'Nothing waits; the next step searches.'))))),
-          t.div({ className: 'field-help' }, () => scout().checks > scout().checkQueue.length ? 'The first ' + number(scout().checkQueue.length) + ' of ' + number(scout().checks) + ', in the order it reads them.' : 'In the order it reads them.'))),
-      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'The search pages name a character only by its id; its name comes with its info page. A restart forgets the characters waiting for their combat power, not the top players.'),
+          t.div({ className: 'field-help m-b-sm' }, () => scout().checks > scout().checkQueue.length ? 'The first ' + number(scout().checkQueue.length) + ' of ' + number(scout().checks) + ', in the order it reads them.' : 'In the order it reads them.'),
+          t.div({ className: 'odyle-table' }, t.table(null,
+            t.thead(null, t.tr(null, t.th({ className: 'txt-right' }, '#'), t.th(null, 'Name to find'), t.th(null, 'Server'))),
+            t.tbody(null, () => (scout().nameQueue || []).length ? scout().nameQueue.map(nameRow) : t.tr(null, t.td({ colSpan: 3, className: 'txt-hint txt-center' }, () => state.loading ? 'Loading…' : 'No party or force member waits.'))))),
+          t.div({ className: 'field-help' }, () => scout().names > (scout().nameQueue || []).length ? 'The first ' + number(scout().nameQueue.length) + ' of ' + number(scout().names) + ', in the order it searches for them.' : 'In the order it searches for them.'))),
+      t.p({ className: 'txt-hint txt-sm m-b-base' }, 'The search pages name a character only by its id; its name comes with its info page. A restart forgets the characters waiting for their combat power and the names waiting to be found, not the top players. Names are never kept with who sent them.'),
       t.div({ className: 'flex m-b-sm' }, t.div({ className: 'txt-lg' }, 'Windows app')),
       t.div({ className: 'grid m-b-base' },
         t.div({ className: 'col-lg-5' }, t.div({ className: 'odyle-card' },
@@ -616,7 +624,7 @@ const jobInfo = {
   'odyle-push': { label: 'Push reminders', schedule: () => 'Every minute', unit: 'notifications sent', about: 'Sends planned-run reminders by Web Push to players going to a run who turned push on, at their reminder times and outside their quiet hours. Devices whose push service forgot them are removed.' },
   'odyle-party-ready': { label: 'Party ready', schedule: () => 'Every minute', unit: 'runs told', about: 'From an hour before a planned run to half an hour after its start: once everyone going plays live with enough Odyle for a cube, tells each of them once (dashboards, Windows apps and push, by their notification settings).' },
   'odyle-armory': { label: 'Armory clean-up', schedule: () => 'Daily at 04:41 UTC (' + localHour(4, 41) + ' here)', unit: 'profiles and top players forgotten', about: 'Deletes armory profiles nobody opened for 30 days, forgets the top players below their class\'s top 500 checked more than 30 days ago, and deletes the images no profile or top player names. Hidden ones stay, so the armory keeps them out. Then reads PLAYNC\'s class list again and downloads the class emblems the server lacks. Profiles are fetched from PLAYNC when readers open them, one at a time, not by this job.' },
-  'odyle-armory-scout': { label: 'Armory scout', schedule: () => 'Every minute', unit: 'PLAYNC pages read', about: 'PLAYNC lists no rankings for Global, so this builds the armory\'s top players by class: up to 5 pages a run, 10 seconds apart, from PLAYNC\'s character search (random servers, classes and letters) and the found characters\' info pages, for their combat power; while no reader waits and at most every 3 minutes, the gear of a top-500 character not read for 14 days. Profiles kept before 0.62.0 join first, without asking PLAYNC. Paused with the armory, and while PLAYNC refuses the server.' },
+  'odyle-armory-scout': { label: 'Armory scout', schedule: () => 'Every minute', unit: 'PLAYNC pages read', about: 'PLAYNC lists no rankings for Global, so this builds the armory\'s top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then the characters Odyle\'s accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC\'s character search (random servers, classes and letters); while no reader waits and at most every 3 minutes, the gear of a top-500 character not read for 14 days. Profiles kept before 0.62.0 join first, without asking PLAYNC. Paused with the armory, and while PLAYNC refuses the server.' },
   'odyle-release': { label: 'Release check', schedule: () => 'Every 2 minutes', unit: 'lookups', about: 'Asks GitHub for the newest Windows release. A newer one is news for every open dashboard and running app at once, so run it by hand right after publishing a release.' },
   'odyle-announcement': { label: 'Announcement schedule', schedule: () => 'Every minute', unit: 'changes told', about: 'When a scheduled announcement (Server controls) starts or ends, tells every open dashboard and running Windows app at once, so it shows or goes within a minute. A saved change is told when it is saved.' },
 };
@@ -995,7 +1003,10 @@ export function controlsPage() {
           t.div({ className: 'field-help' }, 'Switched off, the party and force ids apps send are refused, and rooms stop putting their players together.')] : null,
         () => (state.data?.pvpAdapters || []).length ? [t.div({ className: 'txt-bold m-t-sm m-b-xs' }, 'PvP adapters'),
           ...state.data.pvpAdapters.map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
-          t.div({ className: 'field-help' }, 'Switched off, the kills, assists and deaths apps send for players with PvP stats on are refused, and those apps stop reading PvP.')] : null),
+          t.div({ className: 'field-help' }, 'Switched off, the kills, assists and deaths apps send for players with PvP stats on are refused, and those apps stop reading PvP.')] : null,
+        () => (state.data?.teammateAdapters || []).length ? [t.div({ className: 'txt-bold m-t-sm m-b-xs' }, 'Teammate adapters'),
+          ...state.data.teammateAdapters.map(name => toggle('odyle-adapter-' + name, name, () => !state.form.adapters.disabled.includes(name), checked => adapters({ disabled: checked ? state.form.adapters.disabled.filter(n => n !== name) : [...state.form.adapters.disabled, name] }))),
+          t.div({ className: 'field-help' }, 'Switched off, the names of party and force members apps send for the Armory scout are refused, and those apps stop sending them until they restart.')] : null),
       field('odyle-adapters-extra', 'Also accept', t.textarea({ id: 'odyle-adapters-extra', rows: 3, placeholder: 'One adapter name per line', value: () => text.extra, oninput: e => { text.extra = e.target.value; adapters({ extra: lines(e.target.value) }); } }),
         'Letters, digits, dots, dashes and underscores, up to 20 names.', 8),
       t.div({ className: 'col-lg-12' }, () => accepted().length ? t.p(null, 'Readings are stored from: ', t.span({ className: 'txt-code' }, accepted().join(', ')), '.') : t.div({ className: 'alert danger' }, 'Keep at least one adapter accepted, or no reading can be saved.')),

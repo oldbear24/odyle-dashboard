@@ -41,3 +41,10 @@ var verifiedGroupAdapters = []string{"global-group-v1"}
 // account that turned on PvP stats; only kills, assists and deaths of the own character leave
 // the PC, with the name of the other player. Never damage, HP or skills.
 var verifiedPvpAdapters = []string{"global-pvp-v1"}
+
+// The teammate adapters (teammates.go), listed and switched off the same way.
+//
+// global-teammates-v1: the names of the other members of the own party's roster (00 92) and the
+// own force's roster (02 96) on the Global stream, sent without their party or force for the
+// armory's scout to search for; never their ids, account GUIDs or anything else of them.
+var verifiedTeammateAdapters = []string{"global-teammates-v1"}

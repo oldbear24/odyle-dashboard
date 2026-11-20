@@ -173,6 +173,8 @@ func routes(se *core.ServeEvent) {
 	se.Router.POST("/api/odyle/board", observed("board", board)).Bind(signedIn, apis.BodyLimit(16384))
 	// Twenty PvP events with their players' names need more too.
 	se.Router.POST("/api/odyle/pvp", observed("pvp", pvp)).Bind(signedIn, apis.BodyLimit(16384))
+	// So do a force's members' names.
+	se.Router.POST("/api/odyle/teammates", observed("teammates", teammates)).Bind(signedIn, apis.BodyLimit(16384))
 	// Reads are timed for the superuser dashboard's Server status page (traffic.go).
 	se.Router.GET("/api/odyle/rooms", timed("rooms", rooms)).Bind(signedIn)
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
