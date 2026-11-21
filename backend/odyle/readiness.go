@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -283,19 +284,26 @@ func membersOf(app core.App, roomIds []string) ([]*Member, error) {
 
 // charactersShown are the characters the members share in their rooms, and every character of
 // the account viewer (none when ""), by account, in the order they were saved: only those, not
-// every character of every member.
+// every character of every member. The shares are named by room, not listed: 50 rooms of 50
+// members sharing 30 characters each are more than SQLite takes as parameters.
 func charactersShown(app core.App, members []*Member, viewer string) (map[string][]*Character, error) {
-	ids := []any{}
+	owned, rooms, sharing := map[string][]*Character{}, []string{}, false
 	for _, m := range members {
-		for _, id := range m.Shared(app) {
-			ids = append(ids, id)
-		}
+		rooms = append(rooms, m.Room())
+		sharing = sharing || len(m.Shared(app)) > 0
 	}
-	owned := map[string][]*Character{}
-	if len(ids) == 0 && viewer == "" {
+	if !sharing && viewer == "" {
 		return owned, nil
 	}
-	where := dbx.In("id", ids...)
+	params, names := dbx.Params{}, []string{}
+	for i, room := range unique(rooms) {
+		names = append(names, fmt.Sprintf("{:room%d}", i))
+		params[fmt.Sprintf("room%d", i)] = room
+	}
+	var where dbx.Expression = dbx.NewExp("0 = 1")
+	if sharing {
+		where = dbx.NewExp("id IN (SELECT s.character FROM room_shares s JOIN room_members m ON m.id = s.member WHERE m.room IN ("+strings.Join(names, ", ")+"))", params)
+	}
 	if viewer != "" {
 		where = dbx.Or(dbx.HashExp{"user": viewer}, where)
 	}
