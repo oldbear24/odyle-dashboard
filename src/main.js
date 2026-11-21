@@ -51,7 +51,7 @@ const app = document.querySelector('#app');
 // error shows for a page that is going away.
 const tabStorage = (() => { try { return window.sessionStorage; } catch { return null; } })();
 function gone(error) {
-  if (!reloadOnce(tabStorage, Date.now(), navigator.onLine !== false)) throw Object.assign(new Error('This part of Odyle could not load. Check your connection, then reload the page.'), { cause: error });
+  if (!reloadOnce(tabStorage, Date.now(), navigator.onLine !== false)) throw Object.assign(new Error('This part of Odyle could not load. Check your connection, then reload the page.'), { cause: error, part: true });
   location.reload(); return new Promise(() => { /* the new build takes over */ });
 }
 const lazyPart = load => lazily(load, gone);
@@ -1392,7 +1392,9 @@ async function show(force = false) {
 // A page that could not load says why and loads again in ten seconds, or with Try again now.
 function pageFailed(error) {
   shown = null; drawn = navigation;
-  const why = !error?.status || error.status >= 500 ? t('The Odyle server did not answer.') : t(error.message || 'Request could not be completed.');
+  // A part of the page that stayed gone after an update (gone) says so; other failures without an
+  // answer, or with a server error, are the server's.
+  const why = error?.part || (error?.status >= 400 && error.status < 500) ?t(error.message || 'Request could not be completed.') : t('The Odyle server did not answer.');
   shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('NOT LOADED')}</div><h1>${t('This page could not be loaded')}<span class="mint">.</span></h1><p class="intro">${esc(why)} ${t('The dashboard tries again in ten seconds.')}</p><button class="button secondary" data-action="reload-page">${t('Try again now')} ${icon('arrow')}</button></main>`);
   reloadTimer = setTimeout(() => show().catch(failure), 10000);
 }

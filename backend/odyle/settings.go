@@ -918,7 +918,9 @@ func announcementSchedule(app core.App) (result, error) {
 	since := s.announcementCheckedAt
 	s.announcementCheckedAt = at
 	s.mu.Unlock()
-	if since.IsZero() || !since.Before(at) {
+	// A clock that went back starts over from a minute ago. Two runs within one tick of a coarse
+	// clock (Windows) see the same time: the second has nothing new to tell.
+	if since.IsZero() || since.After(at) {
 		since = at.Add(-time.Minute)
 	}
 	current := readSettings(app)

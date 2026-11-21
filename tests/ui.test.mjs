@@ -987,6 +987,7 @@ test('party and force names go to the armory until the player turns that off und
     const box = page.locator('#teammates-form input[name="shareTeammates"]');
     await box.waitFor();
     assert.equal(await box.isChecked(), true);
+    await shot(page, 'account-teammates');
     await box.uncheck();
     await page.locator('#teammates-form [type="submit"]').click();
     await toast(page).filter({ hasText: 'Saved: the Windows app no longer sends your party and force members\' names.' }).waitFor();
@@ -1717,6 +1718,7 @@ test('a page that fails to load says so, replaces the page before it and loads b
     await page.goto(url + '/#/');
     await page.getByRole('heading', { name: 'This page could not be loaded.' }).waitFor();
     assert.match(await page.locator('main .intro').innerText(), /The Odyle server did not answer\./);
+    await shot(page, 'page-failed');
     await page.unroute('**/api/odyle/rooms');
     await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor({ timeout: 15000 });
     // Moving on to a page that fails replaces the page before it, and Try again now loads it.
@@ -1838,9 +1840,10 @@ test('pages load with their first visit, and a tab from before an update loads t
     await page.locator('main.changelog h1').waitFor();
     assert.equal(loads, 1);
     assert.match(await page.locator('.changelog-entry.is-current').innerText(), new RegExp(dashboardVersion.replace(/\./g, '\\.')));
-    // A page that stays gone says so, instead of loading the tab again and again.
+    // A page that stays gone says so in its place (#173), instead of loading the tab again and again.
     await page.locator('footer .footer-link').click();
-    await toast(page).filter({ hasText: 'This part of Odyle could not load.' }).waitFor();
+    await page.getByRole('heading', { name: 'This page could not be loaded.' }).waitFor();
+    assert.match(await page.locator('main .intro').innerText(), /This part of Odyle could not load\./);
     assert.equal(loads, 1);
     assert.deepEqual(errors, []);
   } finally { await close(); }
