@@ -100,7 +100,13 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 			record.Set("portrait", p.Portrait)
 		}
 		record.Set("build", slimmed(p))
-		record.Set("builtAt", now())
+		// A build read with some details missing is due again a day later, not after
+		// scoutRebuild: it counts as read that much earlier.
+		builtAt := time.Now()
+		if p.Missing > 0 {
+			builtAt = builtAt.Add(24*time.Hour - scoutRebuild)
+		}
+		record.Set("builtAt", iso(builtAt))
 	}
 	return app.Save(record)
 }

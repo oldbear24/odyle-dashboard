@@ -1,7 +1,6 @@
 package odyle
 
 import (
-	"errors"
 	"strings"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -26,24 +25,24 @@ type taskTemplate struct {
 func checkTemplates(value any) ([]taskTemplate, error) {
 	list, ok := value.([]any)
 	if !ok {
-		return nil, errors.New("Task templates must be a list of tasks.")
+		return nil, badRequest("Task templates must be a list of tasks.")
 	}
 	if len(list) > templateLimit {
-		return nil, errors.New("The Global list can keep up to 100 tasks.")
+		return nil, badRequest("The Global list can keep up to 100 tasks.")
 	}
 	out := []taskTemplate{}
 	seen := map[string]bool{}
 	for _, item := range list {
 		entry, ok := item.(map[string]any)
 		if !ok {
-			return nil, errors.New("Task templates must be a list of tasks.")
+			return nil, badRequest("Task templates must be a list of tasks.")
 		}
 		title, cadence, err := task(entry["title"], entry["cadence"])
 		if err != nil {
 			return nil, err
 		}
 		if seen[strings.ToLower(title)] {
-			return nil, errors.New("Each task of the Global list can be listed once.")
+			return nil, badRequest("Each task of the Global list can be listed once.")
 		}
 		seen[strings.ToLower(title)] = true
 		out = append(out, taskTemplate{Title: title, Cadence: cadence})

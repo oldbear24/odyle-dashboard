@@ -474,9 +474,12 @@ func delivered(app core.App, room *Room, link string, res response, fail failer,
 const startPostWindow = 5 * time.Minute
 
 // dueLead is the lead a run is due to be posted at now, if any: the smallest of its room's
-// lead times that has come, unless a post for this start came close enough to it (within half
-// the lead again, so a run planned 20 minutes ahead is posted once, not for 60 and again for
-// 15), or 0 for the start post in the first five minutes, when the room asks for it.
+// lead times that has come, unless a post for this start came close enough to it, or 0 for the
+// start post in the first five minutes, when the room asks for it. Close enough is within half
+// the lead again (so a run planned 20 minutes ahead is posted once, not for 60 and again for
+// 15), but never back to where the next larger lead came due: a post must have come at least
+// halfway from that lead's time to this one, so the larger lead's own post, made when it came
+// due or a little later, does not count (leads 15 and 10 get both posts).
 func dueLead(room *Room, r *Run, posts []*core.Record, at time.Time) (int64, bool) {
 	start := timeOf(r.StartsAt())
 	postedAt := []time.Time{}
@@ -489,8 +492,8 @@ func dueLead(room *Room, r *Run, posts []*core.Record, at time.Time) (int64, boo
 	if reminded := r.GetString("remindedAt"); reminded != "" {
 		postedAt = append(postedAt, timeOf(reminded))
 	}
-	covered := func(lead int64) bool {
-		window := time.Duration(lead) * time.Minute * 3 / 2
+	// covered says whether a post came within window before the start.
+	covered := func(window time.Duration) bool {
 		for _, p := range postedAt {
 			if start.Sub(p) <= window {
 				return true
@@ -503,9 +506,15 @@ func dueLead(room *Room, r *Run, posts []*core.Record, at time.Time) (int64, boo
 	}
 	leads := room.DiscordLeads()
 	for i := len(leads) - 1; i >= 0; i-- {
-		if lead := leads[i]; start.Sub(at) <= time.Duration(lead)*time.Minute {
-			return lead, !covered(lead)
+		lead := time.Duration(leads[i]) * time.Minute
+		if start.Sub(at) > lead {
+			continue
 		}
+		window := lead * 3 / 2
+		if i > 0 {
+			window = min(window, (lead+time.Duration(leads[i-1])*time.Minute)/2)
+		}
+		return leads[i], !covered(window)
 	}
 	return 0, false
 }

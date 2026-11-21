@@ -33,6 +33,7 @@ type pushBrowser struct {
 	got    []pushMessage
 	heads  []http.Header
 	status int
+	retry  string // Retry-After of its answers, "" for none
 }
 
 func newPushBrowser(t *testing.T) (*pushBrowser, *httptest.Server) {
@@ -52,6 +53,9 @@ func newPushBrowser(t *testing.T) (*pushBrowser, *httptest.Server) {
 		} else {
 			b.got = append(b.got, message)
 			b.heads = append(b.heads, r.Header.Clone())
+		}
+		if b.retry != "" {
+			w.Header().Set("Retry-After", b.retry)
 		}
 		w.WriteHeader(b.status)
 	}))
@@ -226,6 +230,57 @@ func TestPushRemindsOfRunsAndTellsOfCaps(t *testing.T) {
 	}
 	if m := capAlertPush("cs", capAlert{CharacterName: "Lumina", State: "full", Cap: 560, Tick: 15}, time.Now()); m.Body != "Přirozená zásoba je na 560: pokud je to její strop, každých 15 propadá." {
 		t.Fatal(m.Body)
+	}
+}
+
+// A push service that fails loses no run reminder: the next run of the job sends it, and one
+// that asks to wait (429) is left alone that long.
+func TestPushRemindersComeAgainWhenThePushServiceFails(t *testing.T) {
+	app := newTestApp(t)
+	browser, server := newPushBrowser(t)
+	answer := func(status int, retry string) {
+		browser.mu.Lock()
+		browser.status, browser.retry = status, retry
+		browser.mu.Unlock()
+	}
+	lead := newUser(t, app, "PushRetry")
+	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Evening", "cost": 40})
+	member := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
+	run := saved(t, app, "room_runs", map[string]any{"room": room.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(10 * time.Minute)), "plannedBy": member.Id, "attendees": []string{member.Id}})
+	subscribe(t, app, lead.Id, browser, server.URL+"/push/retry", "en")
+	pushed := func() string {
+		fresh, _ := app.FindRecordById("room_runs", run.Id)
+		return fresh.GetString("pushed")
+	}
+	answer(http.StatusServiceUnavailable, "")
+	if out, err := pushReminders(app); err != nil || out.Done != 0 || out.Failed != 1 || !strings.Contains(out.Error, "answered 503") || strings.Contains(pushed(), lead.Id) {
+		t.Fatalf("a failing push service: %+v %v, pushed %s", out, err, pushed())
+	}
+	answer(http.StatusCreated, "")
+	if out, _ := pushReminders(app); out.Done != 1 || !strings.Contains(pushed(), lead.Id) {
+		t.Fatalf("tried again: %+v, pushed %s", out, pushed())
+	}
+	if out, _ := pushReminders(app); out.Done != 0 || len(browser.received()) != 2 {
+		t.Fatalf("sent twice: %+v", out)
+	}
+	// Moved: due again. The push service asks to wait two minutes, so the next run does not ask it.
+	moved, _ := app.FindRecordById("room_runs", run.Id)
+	moved.Set("startsAt", stamp(time.Now().Add(12*time.Minute)))
+	if err := app.Save(moved); err != nil {
+		t.Fatal(err)
+	}
+	answer(http.StatusTooManyRequests, "120")
+	if out, _ := pushReminders(app); out.Done != 0 || !strings.Contains(out.Error, "asked to wait 2m0s") || len(browser.received()) != 3 {
+		t.Fatalf("429: %+v", out)
+	}
+	answer(http.StatusCreated, "")
+	if out, _ := pushReminders(app); out.Done != 0 || !strings.Contains(out.Error, "asked to wait") || len(browser.received()) != 3 {
+		t.Fatalf("waiting: %+v after %d", out, len(browser.received()))
+	}
+	// The wait over, the reminder comes.
+	stateOf(app).pushWaits.Clear()
+	if out, _ := pushReminders(app); out.Done != 1 || len(browser.received()) != 4 {
+		t.Fatalf("after the wait: %+v", out)
 	}
 }
 

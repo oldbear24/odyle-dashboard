@@ -2,7 +2,6 @@ package odyle
 
 import (
 	"cmp"
-	"errors"
 	"regexp"
 	"slices"
 	"strconv"
@@ -90,7 +89,7 @@ type pvpEvent struct {
 func pvpPlayer(entry map[string]any, nameKey, serverKey, regionKey string) (name, server, region string, err error) {
 	name, _ = entry[nameKey].(string)
 	if !pvpName.MatchString(name) {
-		return "", "", "", errors.New("A player's name is 1 to 40 letters or digits.")
+		return "", "", "", badRequest("A player's name is 1 to 40 letters or digits.")
 	}
 	server, _ = entry[serverKey].(string)
 	region, _ = entry[regionKey].(string)
@@ -98,7 +97,7 @@ func pvpPlayer(entry map[string]any, nameKey, serverKey, regionKey string) (name
 		return name, "", "", nil
 	}
 	if !pvpServer.MatchString(server) || !contains(regions, region) {
-		return "", "", "", errors.New("A player's server comes with its Global region, or both are left out.")
+		return "", "", "", badRequest("A player's server comes with its Global region, or both are left out.")
 	}
 	// Windows 0.33.0 names seven servers otherwise (servers.go).
 	return name, globalServer(server), region, nil
@@ -109,7 +108,7 @@ func pvpPlayer(entry map[string]any, nameKey, serverKey, regionKey string) (name
 func validPvpEvents(b body, at time.Time) ([]pvpEvent, error) {
 	raw, ok := b["events"].([]any)
 	if !ok || len(raw) == 0 || len(raw) > pvpBatch {
-		return nil, errors.New("Send 1 to 20 PvP events.")
+		return nil, badRequest("Send 1 to 20 PvP events.")
 	}
 	out, seen := make([]pvpEvent, 0, len(raw)), map[string]bool{}
 	for _, item := range raw {
@@ -117,11 +116,11 @@ func validPvpEvents(b body, at time.Time) ([]pvpEvent, error) {
 		var e pvpEvent
 		var err error
 		if e.id, _ = entry["id"].(string); !pvpEventId.MatchString(e.id) || seen[e.id] {
-			return nil, errors.New("A PvP event's id is 32 hexadecimal digits, each once.")
+			return nil, badRequest("A PvP event's id is 32 hexadecimal digits, each once.")
 		}
 		seen[e.id] = true
 		if e.kind, _ = entry["kind"].(string); !contains(pvpKinds, e.kind) {
-			return nil, errors.New("A PvP event is a kill, an assist or a death.")
+			return nil, badRequest("A PvP event is a kill, an assist or a death.")
 		}
 		if e.name, e.server, e.region, err = pvpPlayer(entry, "name", "server", "region"); err != nil {
 			return nil, err

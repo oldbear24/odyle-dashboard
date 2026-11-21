@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -126,23 +127,40 @@ func failed(method string, u *url.URL, err error) error {
 	return fmt.Errorf("%s %s: %v", method, u.Host, err)
 }
 
+// maxRetryAfter is the longest wait an answer can ask for: a larger one (a year, or 1e30
+// seconds) would stop the armory's queue, the scout or a webhook until the server restarts.
+const maxRetryAfter = time.Hour
+
 // retryAfter is how long an answer asks to wait (Retry-After in seconds or as a date,
-// or Discord's retry_after in the body), or 0.
+// or Discord's retry_after in the body), from 0 to maxRetryAfter; 0 when it does not say.
 func retryAfter(r response) time.Duration {
 	if v := strings.TrimSpace(r.header.Get("Retry-After")); v != "" {
-		if seconds, err := strconv.ParseFloat(v, 64); err == nil && seconds >= 0 {
-			return time.Duration(seconds * float64(time.Second))
+		// A number too large for a float is infinite, which waits the longest.
+		if seconds, err := strconv.ParseFloat(v, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+			return boundedWait(seconds)
 		}
 		if at, err := http.ParseTime(v); err == nil {
-			return max(0, time.Until(at))
+			return boundedWait(time.Until(at).Seconds())
 		}
 	}
 	if body, ok := r.json().(map[string]any); ok {
-		if seconds, ok := body["retry_after"].(float64); ok && seconds >= 0 {
-			return time.Duration(seconds * float64(time.Second))
+		if seconds, ok := body["retry_after"].(float64); ok {
+			return boundedWait(seconds)
 		}
 	}
 	return 0
+}
+
+// boundedWait is a wait in seconds as a duration from 0 to maxRetryAfter: nothing for a
+// negative one or one that is not a number, maxRetryAfter for anything longer.
+func boundedWait(seconds float64) time.Duration {
+	switch {
+	case math.IsNaN(seconds) || seconds <= 0:
+		return 0
+	case seconds >= maxRetryAfter.Seconds():
+		return maxRetryAfter
+	}
+	return time.Duration(seconds * float64(time.Second))
 }
 
 const userAgent = "Odyle (AION 2 party dashboard)"

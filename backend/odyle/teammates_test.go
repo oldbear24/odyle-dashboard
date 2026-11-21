@@ -87,3 +87,54 @@ func TestTeammatesGoToTheScoutOnly(t *testing.T) {
 		t.Fatalf("%d rows kept", got)
 	}
 }
+
+// Sending party and force members' names is on for every account until it turns it off: then the
+// session, heartbeat and account answers say so and the names it sends are not queued.
+func TestAccountsTurnSendingTeammatesOff(t *testing.T) {
+	app := newTestApp(t)
+	if _, err := writeSettings(app, body{"portraitsPaused": true}); err != nil {
+		t.Fatal(err)
+	}
+	player := newUser(t, app, "Leader")
+	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
+	c := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Scout", "server": "Lumiel", "region": "GLOBAL_EU"})
+	raw, err := player.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := map[string]string{"Authorization": raw}
+	names := func(list string) string {
+		return `{"sessionId":"` + session.Id + `","characterId":"` + c.Id + `","adapter":"global-teammates-v1","names":` + list + `}`
+	}
+	says := func(want bool) {
+		t.Helper()
+		beat := ask(t, app, http.MethodPost, "/api/odyle/heartbeat", auth, `{"sessionId":"`+session.Id+`"}`, 200)
+		fresh := ask(t, app, http.MethodPost, "/api/odyle/session", auth, `{}`, 200)
+		account := ask(t, app, http.MethodGet, "/api/odyle/account", auth, "", 200)
+		if beat["shareTeammates"] != want || fresh["shareTeammates"] != want || account["shareTeammates"] != want {
+			t.Fatalf("want %v: heartbeat %v, session %v, account %v", want, beat["shareTeammates"], fresh["shareTeammates"], account["shareTeammates"])
+		}
+	}
+	says(true)
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, names(`["Mate"]`), 200); got["shared"] != true || got["queued"] != 1.0 {
+		t.Fatalf("on by default: %v", got)
+	}
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates-sharing", auth, `{"enabled":"no"}`, 400); got["message"] != "Switches must be true or false." {
+		t.Fatalf("not a switch: %v", got)
+	}
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates-sharing", auth, `{"enabled":false}`, 200); got["shareTeammates"] != false {
+		t.Fatalf("turned off: %v", got)
+	}
+	says(false)
+	scout := stateOf(app).scout
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, names(`["Ranger"]`), 200); got["shared"] != false || got["queued"] != nil || len(scout.names) != 1 {
+		t.Fatalf("off: %v, waiting %+v", got, scout.names)
+	}
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates-sharing", auth, `{"enabled":true}`, 200); got["shareTeammates"] != true {
+		t.Fatalf("turned on: %v", got)
+	}
+	says(true)
+	if got := ask(t, app, http.MethodPost, "/api/odyle/teammates", auth, names(`["Ranger"]`), 200); got["shared"] != true || got["queued"] != 1.0 || len(scout.names) != 2 {
+		t.Fatalf("on again: %v", got)
+	}
+}

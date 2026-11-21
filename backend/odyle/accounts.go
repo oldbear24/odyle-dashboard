@@ -211,8 +211,11 @@ func touch(e *core.RequestEvent) {
 	}
 }
 
-// run answers a route: errors meant for the client pass as they are, a record deleted
-// meanwhile (another tab, another member) is 404, anything else 400 with its message.
+// run answers a route: errors meant for the client (badRequest and the others in helpers.go)
+// pass as they are, and a record deleted meanwhile (another tab, another member) is 404.
+// Anything else is the server's (a locked database, a broken constraint, a bug): it is logged
+// with the route and the account and answers 500 without its text, which the client could not
+// act on.
 func run(e *core.RequestEvent, action func() error) error {
 	touch(e)
 	err := action()
@@ -222,11 +225,17 @@ func run(e *core.RequestEvent, action func() error) error {
 	if isNoRows(err) {
 		return notFound("This no longer exists. Reload the page.")
 	}
-	text := err.Error()
-	if text == "" {
-		text = "Request could not be completed."
+	account := ""
+	if e.Auth != nil {
+		account = e.Auth.Id
 	}
-	return badRequest(text)
+	// The route's pattern, not its path, which can carry a token (the calendar feed).
+	route := e.Request.Pattern
+	if route == "" {
+		route = e.Request.Method
+	}
+	warn(e.App, "Odyle request failed", "route", route, "user", account, "error", err.Error())
+	return serverError()
 }
 
 type change func(app core.App, user *core.Record, b body, affected *[]string) (any, error)
@@ -1058,7 +1067,7 @@ func session(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
-		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats")}, nil
+		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats"), "shareTeammates": shareTeammates(user)}, nil
 	})
 }
 
@@ -1361,7 +1370,7 @@ func heartbeat(e *core.RequestEvent) error {
 			beat(e.App, session, read, time.Now())
 			noteReader(e.App, session.Id, b, time.Now())
 		}
-		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation"), "pvpStats": e.Auth.GetBool("pvpStats")})
+		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation"), "pvpStats": e.Auth.GetBool("pvpStats"), "shareTeammates": shareTeammates(e.Auth)})
 	})
 }
 
@@ -2813,22 +2822,23 @@ func account(e *core.RequestEvent) error {
 			paired[i] = map[string]any{"id": d.Id, "name": d.Name(), "pairedAt": d.PairedAt(), "lastSignInAt": d.LastUsedAt()}
 		}
 		return e.JSON(200, map[string]any{
-			"account":       map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
-			"notifications": notificationsOf(user.Record),
-			"membership":    user.GetString("membership"),
-			"shareLocation": user.GetBool("shareLocation"),
-			"pvpStats":      user.GetBool("pvpStats"),
-			"push":          pushState(e.App, user.Id),
-			"limits":        limits,
-			"usage":         map[string]any{"ownedRooms": owned, "memberships": memberships, "desktopDevices": len(devices), "characters": characters},
-			"retention":     map[string]any{"inactiveAccountDays": rules.InactiveAccountDays, "deleteAfter": deleteAfter, "historyDays": rules.HistoryDays, "locationDays": rules.LocationDays, "pvpDays": rules.PvpDays},
-			"paused":        map[string]any{"pairing": rules.PairingPaused, "reminders": rules.RemindersPaused},
-			"latestVersion": latestVersion(e.App),
-			"calendar":      calendarState(user.Record),
-			"serverNow":     now(),
-			"characters":    characters,
-			"apps":          apps,
-			"devices":       paired,
+			"account":        map[string]any{"id": user.Id, "displayName": user.DisplayName(), "email": user.Email(), "created": user.Created(), "lastActiveAt": user.LastActiveAt()},
+			"notifications":  notificationsOf(user.Record),
+			"membership":     user.GetString("membership"),
+			"shareLocation":  user.GetBool("shareLocation"),
+			"pvpStats":       user.GetBool("pvpStats"),
+			"shareTeammates": shareTeammates(user.Record),
+			"push":           pushState(e.App, user.Id),
+			"limits":         limits,
+			"usage":          map[string]any{"ownedRooms": owned, "memberships": memberships, "desktopDevices": len(devices), "characters": characters},
+			"retention":      map[string]any{"inactiveAccountDays": rules.InactiveAccountDays, "deleteAfter": deleteAfter, "historyDays": rules.HistoryDays, "locationDays": rules.LocationDays, "pvpDays": rules.PvpDays},
+			"paused":         map[string]any{"pairing": rules.PairingPaused, "reminders": rules.RemindersPaused},
+			"latestVersion":  latestVersion(e.App),
+			"calendar":       calendarState(user.Record),
+			"serverNow":      now(),
+			"characters":     characters,
+			"apps":           apps,
+			"devices":        paired,
 		})
 	})
 }
