@@ -27,6 +27,7 @@ type state struct {
 	realtimeAddresses addressCounts // open realtime connections per client address (realtimequeue.go)
 	classes           classCache    // game_classes, kept until it changes (classes.go)
 	weekSpends        weekSpends    // what each character spent this week, for the rooms' week (weekly.go)
+	places            placeNews     // characters in flight whose rooms hear of their places in a while (location.go)
 
 	settings settingsCache // has its own lock
 

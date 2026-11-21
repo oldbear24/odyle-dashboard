@@ -93,6 +93,7 @@ func Register(app core.App) {
 	watchChanges(app)
 	watchGameClasses(app)
 	watchWeekSpends(app)
+	watchPlaces(app)
 	watchPresence(app)
 	watchHealth(app)
 	watchDevices(app)

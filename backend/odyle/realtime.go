@@ -353,16 +353,25 @@ func notifyUsers(app core.App, userIds ...string) {
 // characterChanged sends a changed character to its owner and to every room the owner
 // is in; each member hears of it only if they may see it.
 func characterChanged(app core.App, c *Character) {
-	owner, copy := c.User(), viewOf[Character](c.Clone())
+	tellCharacter(app, c, true, true)
+}
+
+// tellCharacter sends a character to every room its owner is in, to its owner, or both.
+func tellCharacter(app core.App, c *Character, rooms, owner bool) {
+	account, copy := c.User(), viewOf[Character](c.Clone())
 	present(app, copy)
-	roomIds, err := roomsFor(app, owner)
-	if err != nil {
-		warn(app, "Odyle realtime delivery failed", "character", c.Id, "error", err.Error())
+	if rooms {
+		roomIds, err := roomsFor(app, account)
+		if err != nil {
+			warn(app, "Odyle realtime delivery failed", "character", c.Id, "error", err.Error())
+		}
+		for _, id := range unique(roomIds) {
+			changes(app).room(app, id, func(n *roomNews) { n.characters[copy.Id] = copy })
+		}
 	}
-	for _, id := range unique(roomIds) {
-		changes(app).room(app, id, func(n *roomNews) { n.characters[copy.Id] = copy })
+	if owner {
+		changes(app).user(app, account, func(n *userNews) { n.characters[copy.Id] = copy })
 	}
-	changes(app).user(app, owner, func(n *userNews) { n.characters[copy.Id] = copy })
 }
 
 // characterFields are the fields of a character clients show; a change to any other
