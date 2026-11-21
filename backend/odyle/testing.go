@@ -275,6 +275,7 @@ func fixtures(se *core.ServeEvent) {
 			update = "UPDATE room_runs SET startsAt = {:at} WHERE id = {:id}"
 		}
 		_, err := e.App.DB().NewQuery(update).Bind(dbx.Params{"at": ago(time.Duration(count(b["days"])) * 24 * time.Hour), "id": b.str("id")}).Execute()
+		forgetWeekSpends(e.App)
 		return map[string]any{}, err
 	})
 	// Moves a character's places back by the given minutes: its latest place and its history.

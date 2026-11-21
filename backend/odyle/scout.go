@@ -440,27 +440,49 @@ func (s *armoryScout) next() (scoutHit, bool) {
 	return hit, true
 }
 
-// pendingBuilds is the SQL of the characters whose gear the scout reads next: those in their
-// class's top rankLimit whose gear is unknown or scoutRebuild old (bind limit and old), the
-// strongest first with "ORDER BY combatPower DESC, id".
-const pendingBuilds = "FROM armory_ranks WHERE id IN (" + inTop + ") AND (builtAt = '' OR builtAt < {:old})"
+// pendingBuilds are the characters whose gear the scout reads next: those in their class's top
+// rankLimit (topRows) whose gear is unknown or older than old, the strongest first.
+func pendingBuilds(app core.App, old string) ([]topRow, error) {
+	rows, err := topRows(app)
+	if err != nil {
+		return nil, err
+	}
+	pending := rows[:0]
+	for _, r := range rows {
+		if r.BuiltAt == "" || r.BuiltAt < old {
+			pending = append(pending, r)
+		}
+	}
+	return pending, nil
+}
 
 // nextBuilds are the strongest characters in their class's top whose gear is unknown or old, up
 // to scoutPicks, strongest first: the armory's queue takes the first it may (armoryWork.scout),
 // passing over those whose gear it reads already or whose lookup failed lately.
 func nextBuilds(app core.App) ([]scoutHit, error) {
+	pending, err := pendingBuilds(app, ago(scoutRebuild))
+	if err != nil {
+		return nil, err
+	}
+	pending = pending[:min(len(pending), scoutPicks)]
 	rows := []struct {
+		Id          string `db:"id"`
 		Region      string `db:"region"`
 		ServerId    int    `db:"serverId"`
 		CharacterId string `db:"characterId"`
 	}{}
-	if err := app.DB().NewQuery("SELECT region, serverId, characterId " + pendingBuilds + " ORDER BY combatPower DESC, id LIMIT {:picks}").
-		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild), "picks": scoutPicks}).All(&rows); err != nil {
+	if err := app.DB().Select("id", "region", "serverId", "characterId").From("armory_ranks").Where(dbx.In("id", topIds(pending)...)).All(&rows); err != nil {
 		return nil, err
 	}
-	hits := make([]scoutHit, len(rows))
-	for i, r := range rows {
-		hits[i] = scoutHit{region: r.Region, serverId: r.ServerId, characterId: r.CharacterId}
+	byId := make(map[string]scoutHit, len(rows))
+	for _, r := range rows {
+		byId[r.Id] = scoutHit{region: r.Region, serverId: r.ServerId, characterId: r.CharacterId}
+	}
+	hits := []scoutHit{}
+	for _, p := range pending {
+		if hit, ok := byId[p.Id]; ok {
+			hits = append(hits, hit)
+		}
 	}
 	return hits, nil
 }
@@ -478,8 +500,7 @@ type scoutPending struct {
 	Class       string `db:"class" json:"class"`
 	CombatPower int64  `db:"combatPower" json:"combatPower"`
 	BuiltAt     string `db:"builtAt" json:"builtAt"`
-	Total       int    `db:"total" json:"-"`
-	Never       int    `db:"never" json:"-"`
+	Id          string `db:"id" json:"-"`
 }
 
 // scoutStatus is the scout's part of the Server status page: what it still reads of PLAYNC.
@@ -502,12 +523,19 @@ func scoutStatus(app core.App) map[string]any {
 	s.mu.Unlock()
 	book := serversOf(app)
 	builds := []scoutPending{}
-	_ = app.DB().NewQuery("SELECT region, serverId, characterId, name, class, combatPower, builtAt, COUNT(*) OVER () AS total, SUM(builtAt = '') OVER () AS never " + pendingBuilds + " ORDER BY combatPower DESC, id LIMIT {:shown}").
-		Bind(dbx.Params{"limit": rankLimit, "old": ago(scoutRebuild), "shown": scoutShown}).All(&builds)
-	total, never := 0, 0
-	if len(builds) > 0 {
-		total, never = builds[0].Total, builds[0].Never
+	pending, _ := pendingBuilds(app, ago(scoutRebuild))
+	total, never := len(pending), 0
+	for _, p := range pending {
+		if p.BuiltAt == "" {
+			never++
+		}
 	}
+	shown := pending[:min(len(pending), scoutShown)]
+	_ = app.DB().Select("id", "region", "serverId", "characterId", "name", "class", "combatPower", "builtAt").From("armory_ranks").Where(dbx.In("id", topIds(shown)...)).All(&builds)
+	slices.SortFunc(builds, func(a, b scoutPending) int {
+		at := func(id string) int { return slices.IndexFunc(shown, func(p topRow) bool { return p.Id == id }) }
+		return at(a.Id) - at(b.Id)
+	})
 	for i := range builds {
 		b := &builds[i]
 		b.Server = book.inRegion(b.Region, b.ServerId)

@@ -37,6 +37,8 @@ ODYLE_TRUSTED_PROXY_HEADERS=X-Real-IP
 
 The backend writes it into **Settings → Application → Trusted proxy** at every start. When the header holds a list, the rightmost address is used (the one your proxy added); `ODYLE_TRUSTED_PROXY_IP=leftmost` takes the first instead, only for a chain of proxies that all replace the header. Trust only a header that your proxy *replaces* with the address it sees: a header a client can send itself lets that client pick its address and slip past the limits. A list of headers is refused, because a request is counted under the first trusted header it carries; pair each sample proxy below with exactly the header it replaces. Never set it while clients can reach port 8090 directly. Without the variable the setting stays as saved under Settings; set to an empty value, it trusts no header. A wrong value is logged and shown on **Server status**, which also warns when most of the last hour's requests came from private or loopback addresses: then no header is trusted, or the proxy does not set the trusted one.
 
+Open realtime connections are capped the same way, per client address: 200 at a time (each dashboard tab and each running Windows app holds one), so a household or a LAN party behind one address stays well within it. `ODYLE_REALTIME_PER_ADDRESS` changes the cap, and `0` turns it off. Private and loopback addresses are never capped, so a proxy whose header is not trusted does not lock players out, but then the cap does not apply either.
+
 Caddy replaces `X-Forwarded-For` with the address it sees (unless you list `trusted_proxies`) and passes SSE through without buffering:
 
 ```caddyfile

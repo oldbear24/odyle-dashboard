@@ -503,10 +503,11 @@ func readersOf(app core.App, userId string) ([]any, error) {
 }
 
 // rooms answers with one query for the memberships, one for their rooms and one for
-// the settings, plus the account's readers (readersOf); serverNow lets the dashboard
-// correct its clock without a heartbeat round trip. The Windows app shows the
-// announcement from here, as it refreshes rooms every 15 seconds anyway, and learns
-// whether packet readers are paused.
+// the settings, plus the account's readers (readersOf) and the rooms at a glance in three
+// queries for all of them (roomsEntries); serverNow lets the dashboard correct its clock
+// without a heartbeat round trip. The Windows app shows the announcement from here, as it
+// fetches the rooms every 5 minutes with realtime (and every 15 seconds without), and
+// learns whether packet readers are paused.
 func rooms(e *core.RequestEvent) error {
 	return run(e, func() error {
 		rules := readSettings(e.App)
@@ -529,6 +530,10 @@ func rooms(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		glance, members, err := roomsEntries(e.App, pluck(memberships, (*Member).Room))
+		if err != nil {
+			return err
+		}
 		out, at := []any{}, time.Now()
 		for _, m := range memberships {
 			room := byId[m.Room()]
@@ -539,12 +544,8 @@ func rooms(e *core.RequestEvent) error {
 			j["role"], j["sharedCharacters"], j["sharing"], j["shareNew"] = m.Role(), linked, len(linked) > 0, m.GetBool("shareNew")
 			// The room at a glance (#51): its members, the players live now and the cubes their
 			// party can open now (the readiness rules, readiness.go), and its next run.
-			entries, users, err := roomEntries(e.App, room.Id)
-			if err != nil {
-				return err
-			}
-			party := partyOf(entries, at, rules.OdylePerCube)
-			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(users), len(party.Players), party.Cubes, next[room.Id]
+			party := partyOf(glance[room.Id], at, rules.OdylePerCube)
+			j["memberCount"], j["liveCount"], j["partyCubes"], j["nextRun"] = len(members[room.Id]), len(party.Players), party.Cubes, next[room.Id]
 			out = append(out, j)
 		}
 		return e.JSON(200, map[string]any{"odylePerCube": rules.OdylePerCube, "serverNow": now(), "announcement": announcement(rules), "readerPaused": rules.ReaderPaused, "readers": readers, "rooms": out, "clock": rules.Clock, "notifications": notificationsOf(e.Auth), "maps": rules.Maps, "classIcons": classIcons(e.App), "kept": map[string]any{"historyDays": rules.HistoryDays, "locationDays": rules.LocationDays, "pvpDays": rules.PvpDays},
@@ -552,11 +553,12 @@ func rooms(e *core.RequestEvent) error {
 	})
 }
 
-// snapshot is a whole room in three queries: members, their accounts and all their
-// characters, instead of two lookups per member. Others see only the characters a
-// member linked to this room; members always see all of their own, each flagged with
-// whether it is shared here. The announcement rides along, so an open dashboard room
-// needs no separate request for it, and so do the viewer's own readers (readersOf). The
+// snapshot is a whole room in three queries: members, their accounts and the characters
+// shown, instead of two lookups per member. Others see only the characters a member linked
+// to this room, so only those and the viewer's own are read; members always see all of
+// their own, each flagged with whether it is shared here. The announcement rides along, so
+// an open dashboard room needs no separate request for it, and so do the viewer's own
+// readers (readersOf). The
 // dungeon catalog comes twice: `dungeons` keeps the names that older dashboards read,
 // and `catalog` adds each dungeon's cost, party size and category.
 func snapshot(e *core.RequestEvent) error {
@@ -584,15 +586,9 @@ func snapshot(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		owned := map[string][]*Character{}
-		if len(userIds) > 0 {
-			found, err := e.App.FindAllRecords("characters", dbx.In("user", anys(userIds)...))
-			if err != nil {
-				return err
-			}
-			for _, c := range views[Character](found) {
-				owned[c.User()] = append(owned[c.User()], c)
-			}
+		owned, err := charactersShown(e.App, members, e.Auth.Id)
+		if err != nil {
+			return err
 		}
 		for _, list := range owned {
 			sort.SliceStable(list, func(a, b int) bool { return list[a].Created() < list[b].Created() })
@@ -1879,6 +1875,9 @@ func cleanup(app core.App) (result, error) {
 	history, err := purge(app, "character_readings", "created < {:cutoff}", stamp(at.Add(-daysOf(rules.HistoryDays))))
 	if err != nil {
 		return result{}, err
+	}
+	if history > 0 {
+		forgetWeekSpends(app) // the rooms' week (weekly.go) is read again
 	}
 	runs, err := purge(app, "room_runs", "startsAt < {:cutoff}", stamp(at.Add(-24*time.Hour)))
 	if err != nil {

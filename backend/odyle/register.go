@@ -90,7 +90,11 @@ func Register(app core.App) {
 
 	// Realtime topics and their news (realtime.go), heartbeats (presence.go).
 	watchSubscriptions(app)
+	watchRealtimeConnections(app)
 	watchChanges(app)
+	watchGameClasses(app)
+	watchWeekSpends(app)
+	watchPlaces(app)
 	watchPresence(app)
 	watchHealth(app)
 	watchDevices(app)

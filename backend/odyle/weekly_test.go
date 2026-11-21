@@ -39,6 +39,7 @@ func addKinds(t *testing.T, app core.App, character string, rows []struct {
 			t.Fatal(err)
 		}
 	}
+	forgetWeekSpends(app, character) // written past the hooks
 }
 
 func TestTheRoomSeesItsWeekAndRunsSeeTheirSpends(t *testing.T) {

@@ -1218,17 +1218,18 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("partial", false).set("classIcon", "").set("fetchedAt", "").set("error", "")
 	var fetched time.Time
-	outdated, missing, incomplete := false, false, false
+	var shown *keptMeta // what the profile shown says of itself, while it is an object
+	outdated, incomplete := false, false
 	if record != nil {
 		fetched = record.GetDateTime("fetchedAt").Time()
-		profile := parseJSON(record.GetString("profile"), "null")
-		if kept, ok := profile.(map[string]any); ok {
-			outdated = number(kept["v"]) < armoryVersion
-			incomplete = number(kept["missingDetails"]) > 0
+		// The kept JSON goes out as it is, read only for what decides a lookup: a profile is
+		// some 100 KB, which every view and every poll of a lookup parsed and wrote again.
+		profile, meta := keptJSON(record.GetString("profile"))
+		if meta != nil {
+			outdated = number(meta.Version) < armoryVersion
+			incomplete = number(meta.Missing) > 0
+			shown = meta
 		}
-		// A profile that names an image the server no longer keeps (a restore, a change of the
-		// file storage) is fetched again, which keeps its images, as a Refresh would.
-		missing = imagesMissing(e.App, record.GetString("profile"))
 		out.set("profile", profile).set("fetchedAt", isoTime(fetched)).set("error", record.GetString("error"))
 		// Opened: kept for another 30 days (written at most daily).
 		if record.GetDateTime("viewedAt").Time().Before(time.Now().Add(-24 * time.Hour)) {
@@ -1239,8 +1240,14 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	age := time.Since(fetched)
 	state := armoryState{State: "fresh"}
-	// A profile some of whose details PLAYNC did not give is fetched again after an hour.
-	if record == nil || age > armoryRefresh || outdated || incomplete && age > armoryIncomplete || (missing || e.Request.URL.Query().Get("refresh") == "1") && age > armoryReaderRefresh {
+	// A profile some of whose details PLAYNC did not give is fetched again after an hour. One that
+	// names an image the server no longer keeps (a restore, a change of the file storage) is
+	// fetched again, which keeps its images, as a Refresh would: looked at only once that counts.
+	due := record == nil || age > armoryRefresh || outdated || incomplete && age > armoryIncomplete
+	if !due && age > armoryReaderRefresh {
+		due = e.Request.URL.Query().Get("refresh") == "1" || imagesMissing(e.App, record.GetString("profile"))
+	}
+	if due {
 		if readSettings(e.App).ArmoryPaused {
 			state = armoryState{State: "paused"}
 		} else {
@@ -1255,10 +1262,12 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	// Without a kept profile in today's shape, the reader sees the one being read meanwhile.
 	if state.Partial != "" && (record == nil || outdated) {
-		out.set("profile", parseJSON(state.Partial, "null")).set("partial", true)
+		profile, meta := keptJSON(state.Partial)
+		out.set("profile", profile).set("partial", true)
+		shown = meta
 	}
-	if shown, ok := out.values["profile"].(map[string]any); ok {
-		class, _ := shown["class"].(string)
+	if shown != nil {
+		class, _ := shown.Class.(string)
 		out.set("classIcon", classIcons(e.App)[class])
 	}
 	// Its player card's look (cards.go), and whether the reader may change it.
@@ -1268,6 +1277,30 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	out.set("card", card)
 	return e.JSON(200, out.set("state", state.State).set("position", state.Position).set("wait", state.Wait).set("retryAfter", state.RetryAfter).set("lookupError", state.Error).set("progress", state.Progress))
+}
+
+// keptMeta is what the armory route reads of a profile's JSON.
+type keptMeta struct {
+	Version any `json:"v"`
+	Missing any `json:"missingDetails"`
+	Class   any `json:"class"`
+}
+
+// keptJSON is a profile's JSON as it is sent (nil, for null, when it is empty or not JSON), and
+// what it says of itself when it is an object (nil otherwise).
+func keptJSON(raw string) (any, *keptMeta) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "null" || !json.Valid([]byte(trimmed)) {
+		return nil, nil
+	}
+	if trimmed[0] != '{' {
+		return json.RawMessage(trimmed), nil
+	}
+	meta := &keptMeta{}
+	if json.Unmarshal([]byte(trimmed), meta) != nil {
+		return nil, nil
+	}
+	return json.RawMessage(trimmed), meta
 }
 
 // armoryHit is a character the official search lists.

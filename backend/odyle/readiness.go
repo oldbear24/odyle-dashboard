@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -220,28 +221,36 @@ func runClaims(r *Run, party []string, entries []readyEntry, users map[string]st
 // member's characters shared in the room, with presence from the readers' heartbeats, and a
 // member without one as an entry without a character; users maps memberships to accounts.
 func roomEntries(app core.App, roomId string) (entries []readyEntry, users map[string]string, err error) {
-	members, err := roomMembers(app, roomId)
+	all, members, err := roomsEntries(app, []string{roomId})
 	if err != nil {
 		return nil, nil, err
 	}
-	users, ids := map[string]string{}, []any{}
-	for _, m := range members {
-		users[m.Id] = m.User()
-		ids = append(ids, m.User())
+	return all[roomId], members[roomId], nil
+}
+
+// roomsEntries are the entries of several rooms (roomEntries) in three queries: their members,
+// what each shares, and the characters shared, by room; users maps each room's memberships to
+// accounts (an empty map for a room without members).
+func roomsEntries(app core.App, roomIds []string) (map[string][]readyEntry, map[string]map[string]string, error) {
+	entries, users := map[string][]readyEntry{}, map[string]map[string]string{}
+	for _, id := range roomIds {
+		users[id] = map[string]string{}
 	}
-	owned := map[string][]*Character{}
-	if len(ids) > 0 {
-		found, err := app.FindAllRecords("characters", dbx.In("user", ids...))
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, c := range views[Character](found) {
-			owned[c.User()] = append(owned[c.User()], c)
-		}
+	if len(roomIds) == 0 {
+		return entries, users, nil
+	}
+	members, err := membersOf(app, roomIds)
+	if err != nil {
+		return nil, nil, err
+	}
+	characters, err := charactersShown(app, members, "")
+	if err != nil {
+		return nil, nil, err
 	}
 	for _, m := range members {
+		users[m.Room()][m.Id] = m.User()
 		added := false
-		for _, c := range owned[m.User()] {
+		for _, c := range characters[m.User()] {
 			if !m.Shares(app, c.Id) {
 				continue
 			}
@@ -253,12 +262,57 @@ func roomEntries(app core.App, roomId string) (entries []readyEntry, users map[s
 			if base, bonus, ok := c.naturalParts(); ok {
 				e.Base, e.Bonus = &base, &bonus
 			}
-			entries = append(entries, e)
+			entries[m.Room()] = append(entries[m.Room()], e)
 			added = true
 		}
 		if !added {
-			entries = append(entries, readyEntry{User: m.User(), Role: m.Role()})
+			entries[m.Room()] = append(entries[m.Room()], readyEntry{User: m.User(), Role: m.Role()})
 		}
 	}
 	return entries, users, nil
+}
+
+// membersOf are the memberships of the rooms, by id like roomMembers, with what each shares.
+func membersOf(app core.App, roomIds []string) ([]*Member, error) {
+	found := []*core.Record{}
+	if err := app.RecordQuery("room_members").Where(dbx.In("room", anys(unique(roomIds))...)).OrderBy("id").All(&found); err != nil {
+		return nil, err
+	}
+	members := views[Member](found)
+	return members, loadShares(app, members)
+}
+
+// charactersShown are the characters the members share in their rooms, and every character of
+// the account viewer (none when ""), by account, in the order they were saved: only those, not
+// every character of every member. The shares are named by room, not listed: 50 rooms of 50
+// members sharing 30 characters each are more than SQLite takes as parameters.
+func charactersShown(app core.App, members []*Member, viewer string) (map[string][]*Character, error) {
+	owned, rooms, sharing := map[string][]*Character{}, []string{}, false
+	for _, m := range members {
+		rooms = append(rooms, m.Room())
+		sharing = sharing || len(m.Shared(app)) > 0
+	}
+	if !sharing && viewer == "" {
+		return owned, nil
+	}
+	params, names := dbx.Params{}, []string{}
+	for i, room := range unique(rooms) {
+		names = append(names, fmt.Sprintf("{:room%d}", i))
+		params[fmt.Sprintf("room%d", i)] = room
+	}
+	var where dbx.Expression = dbx.NewExp("0 = 1")
+	if sharing {
+		where = dbx.NewExp("id IN (SELECT s.character FROM room_shares s JOIN room_members m ON m.id = s.member WHERE m.room IN ("+strings.Join(names, ", ")+"))", params)
+	}
+	if viewer != "" {
+		where = dbx.Or(dbx.HashExp{"user": viewer}, where)
+	}
+	found := []*core.Record{}
+	if err := app.RecordQuery("characters").Where(where).OrderBy("rowid").All(&found); err != nil {
+		return nil, err
+	}
+	for _, c := range views[Character](found) {
+		owned[c.User()] = append(owned[c.User()], c)
+	}
+	return owned, nil
 }

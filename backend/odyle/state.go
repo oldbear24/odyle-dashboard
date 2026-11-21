@@ -20,8 +20,14 @@ type state struct {
 	changes   *outbox        // realtime news, delivered at once
 	sightings *outbox        // heartbeats for realtime, delivered every two seconds
 	presence  *presence      // heartbeats not written yet
+	admins    adminListeners // connections on a superusers' topic (realtimequeue.go)
 	health    *health        // what each reader last reported (health.go)
 	pushes    sync.WaitGroup // Run now pushes on their way (inviteToRun)
+
+	realtimeAddresses addressCounts // open realtime connections per client address (realtimequeue.go)
+	classes           classCache    // game_classes, kept until it changes (classes.go)
+	weekSpends        weekSpends    // what each character spent this week, for the rooms' week (weekly.go)
+	places            placeNews     // characters in flight whose rooms hear of their places in a while (location.go)
 
 	settings settingsCache // has its own lock
 
