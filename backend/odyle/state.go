@@ -25,6 +25,8 @@ type state struct {
 	pushes    sync.WaitGroup // Run now pushes on their way (inviteToRun)
 
 	realtimeAddresses addressCounts // open realtime connections per client address (realtimequeue.go)
+	classes           classCache    // game_classes, kept until it changes (classes.go)
+	weekSpends        weekSpends    // what each character spent this week, for the rooms' week (weekly.go)
 
 	settings settingsCache // has its own lock
 
