@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"cmp"
+	lru "container/list"
 	"encoding/json"
 	"regexp"
 	"slices"
@@ -515,10 +516,15 @@ func buildUpgrades(app core.App, class string, serverId int, characterId string)
 }
 
 // upgradeCache keeps each class's comparison for upgradeKeep, and for a character among the
-// strongest the comparison without it.
+// strongest the comparison without it, upgradeCached of them at most: when full, a class
+// without anyone to compare goes first, then the one read longest ago. A comparison is worked
+// out once however many ask for it meanwhile (they wait for it), and a class without anyone to
+// compare is kept too, for upgradeEmptyKeep, so asking again reads nothing.
 type upgradeCache struct {
-	mu   sync.Mutex
-	kept map[string]upgradeKept
+	mu      sync.Mutex
+	kept    map[string]*lru.Element // key → its place in order
+	order   *lru.List               // of *upgradeEntry, the one read last first
+	working map[string]*upgradeWork // comparisons being worked out, by key
 }
 
 type upgradeKept struct {
@@ -527,10 +533,29 @@ type upgradeKept struct {
 	at      time.Time
 }
 
-func newUpgradeCache() *upgradeCache { return &upgradeCache{kept: map[string]upgradeKept{}} }
+type upgradeEntry struct {
+	key  string
+	kept upgradeKept
+}
+
+// upgradeWork is a comparison being worked out; done closes once kept and err are set.
+type upgradeWork struct {
+	done chan struct{}
+	kept upgradeKept
+	err  error
+}
+
+const (
+	upgradeCached    = 256         // comparisons kept at most
+	upgradeEmptyKeep = time.Minute // a class without anyone to compare is asked again after
+)
+
+func newUpgradeCache() *upgradeCache {
+	return &upgradeCache{kept: map[string]*lru.Element{}, order: lru.New(), working: map[string]*upgradeWork{}}
+}
 
 // of is the comparison for a character of the class: the class's, or, when the character is one
-// of the strongest, the one without it. Classes the armory knows no character of keep nothing.
+// of the strongest, the one without it.
 func (c *upgradeCache) of(app core.App, class string, serverId int, characterId string) (upgradeReference, error) {
 	kept, err := c.read(app, class+"|", class, 0, "")
 	if err != nil || !kept.members[armoryKey(serverId, characterId)] {
@@ -540,25 +565,69 @@ func (c *upgradeCache) of(app core.App, class string, serverId int, characterId 
 	return kept.ref, err
 }
 
+// fresh says whether a kept comparison may still be given.
+func (k upgradeKept) fresh() bool {
+	keep := upgradeKeep
+	if k.ref.Sample == 0 {
+		keep = upgradeEmptyKeep
+	}
+	return time.Since(k.at) < keep
+}
+
 func (c *upgradeCache) read(app core.App, key, class string, serverId int, characterId string) (upgradeKept, error) {
 	c.mu.Lock()
-	kept, ok := c.kept[key]
+	if el, ok := c.kept[key]; ok {
+		if entry := el.Value.(*upgradeEntry); entry.kept.fresh() {
+			c.order.MoveToFront(el)
+			c.mu.Unlock()
+			return entry.kept, nil
+		}
+	}
+	if work, ok := c.working[key]; ok {
+		c.mu.Unlock()
+		<-work.done
+		return work.kept, work.err
+	}
+	work := &upgradeWork{done: make(chan struct{})}
+	c.working[key] = work
 	c.mu.Unlock()
-	if ok && time.Since(kept.at) < upgradeKeep {
-		return kept, nil
+	defer func() {
+		c.mu.Lock()
+		delete(c.working, key)
+		if work.err == nil {
+			c.keep(key, work.kept)
+		}
+		c.mu.Unlock()
+		close(work.done)
+	}()
+	work.err = unavailable("Many lookups at the moment. Try again in a minute.") // what those waiting hear should it panic
+	ref, members, err := workOutUpgrades(app, class, serverId, characterId)
+	work.kept, work.err = upgradeKept{ref: ref, members: members, at: time.Now()}, err
+	return work.kept, err
+}
+
+// workOutUpgrades works a comparison out (buildUpgrades; tests count the calls).
+var workOutUpgrades = buildUpgrades
+
+// keep keeps a comparison (with c.mu held), making room when full.
+func (c *upgradeCache) keep(key string, kept upgradeKept) {
+	if el, ok := c.kept[key]; ok {
+		el.Value.(*upgradeEntry).kept = kept
+		c.order.MoveToFront(el)
+		return
 	}
-	ref, members, err := buildUpgrades(app, class, serverId, characterId)
-	kept = upgradeKept{ref: ref, members: members, at: time.Now()}
-	if err != nil || ref.Sample == 0 {
-		return kept, err
+	if c.order.Len() >= upgradeCached {
+		victim := c.order.Back()
+		for el := c.order.Back(); el != nil; el = el.Prev() {
+			if el.Value.(*upgradeEntry).kept.ref.Sample == 0 {
+				victim = el
+				break
+			}
+		}
+		delete(c.kept, victim.Value.(*upgradeEntry).key)
+		c.order.Remove(victim)
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.kept) >= 256 {
-		c.kept = map[string]upgradeKept{}
-	}
-	c.kept[key] = kept
-	return kept, nil
+	c.kept[key] = c.order.PushFront(&upgradeEntry{key: key, kept: kept})
 }
 
 // A class as PLAYNC names it (Chanter, Spiritmaster).

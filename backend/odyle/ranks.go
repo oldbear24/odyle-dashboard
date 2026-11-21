@@ -1,7 +1,10 @@
 package odyle
 
 import (
+	"cmp"
 	"encoding/json"
+	"slices"
+	"strings"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -168,6 +171,49 @@ func rankKeptProfiles(app core.App, n int) (int, error) {
 
 // inTop is the SQL of the ids of the rows within their class's top rankLimit.
 const inTop = "SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY class ORDER BY combatPower DESC, id) AS place FROM armory_ranks WHERE hidden = FALSE AND class != '') WHERE place <= {:limit}"
+
+// topRow is a row within its class's top: its id, combat power and when its gear was read.
+type topRow struct {
+	Id          string `db:"id"`
+	CombatPower int64  `db:"combatPower"`
+	BuiltAt     string `db:"builtAt"`
+}
+
+// rankedClasses is the SQL of the classes of the rows shown (not empty), one index seek each.
+const rankedClasses = "WITH RECURSIVE c(class) AS (SELECT (SELECT MIN(class) FROM armory_ranks WHERE hidden = FALSE AND class > '') " +
+	"UNION ALL SELECT (SELECT MIN(class) FROM armory_ranks WHERE hidden = FALSE AND class > c.class) FROM c WHERE c.class IS NOT NULL) SELECT class FROM c WHERE class IS NOT NULL"
+
+// topRows are the rows within their class's top rankLimit (the rows of inTop), the strongest
+// first as "ORDER BY combatPower DESC, id" orders them: read class by class from the top players
+// index (idx_armory_ranks_top) alone, instead of numbering every row of the table.
+func topRows(app core.App) ([]topRow, error) {
+	classes := []string{}
+	if err := app.DB().NewQuery(rankedClasses).Column(&classes); err != nil {
+		return nil, err
+	}
+	rows := []topRow{}
+	for _, class := range classes {
+		top := []topRow{}
+		if err := app.DB().NewQuery("SELECT id, combatPower, builtAt FROM armory_ranks WHERE class = {:class} AND hidden = FALSE ORDER BY combatPower DESC, id LIMIT {:limit}").
+			Bind(dbx.Params{"class": class, "limit": rankLimit}).All(&top); err != nil {
+			return nil, err
+		}
+		rows = append(rows, top...)
+	}
+	slices.SortFunc(rows, func(a, b topRow) int {
+		return cmp.Or(cmp.Compare(b.CombatPower, a.CombatPower), strings.Compare(a.Id, b.Id))
+	})
+	return rows, nil
+}
+
+// topIds are the rows' ids, for dbx.In.
+func topIds(rows []topRow) []any {
+	ids := make([]any, len(rows))
+	for i, r := range rows {
+		ids[i] = r.Id
+	}
+	return ids
+}
 
 // cleanRanks forgets the characters checked more than rankKeep ago that are not in their class's
 // top, so the scout may find them again; hidden ones are kept.

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -142,18 +144,79 @@ func TestUpgradesRouteComparesTheStrongestOfAClass(t *testing.T) {
 		t.Fatalf("worked out again at once: %v", again["sample"])
 	}
 	cache := stateOf(app).upgrades
-	kept := cache.kept["Chanter|"]
-	kept.at = time.Now().Add(-upgradeKeep)
-	cache.kept["Chanter|"] = kept
+	cache.kept["Chanter|"].Value.(*upgradeEntry).kept.at = time.Now().Add(-upgradeKeep)
 	if again := ask(t, app, "GET", "/api/odyle/armory/upgrades/Chanter", nil, "", 200); again["sample"].(float64) != 23 || again["players"].([]any)[0].(map[string]any)["name"] != "Hero26" {
 		t.Fatalf("not worked out again: %v", again["sample"])
 	}
-	// A class the armory knows nobody of compares with nobody, and is not kept.
+	// A class the armory knows nobody of compares with nobody, kept a minute.
 	if none := ask(t, app, "GET", "/api/odyle/armory/upgrades/Templar", nil, "", 200); none["sample"].(float64) != 0 || len(none["players"].([]any)) != 0 || len(none["slots"].([]any)) != 0 {
 		t.Fatalf("nobody: %v", none)
 	}
-	if _, kept := cache.kept["Templar|"]; kept {
-		t.Fatal("an empty comparison is kept")
+	empty, kept := cache.kept["Templar|"]
+	if !kept || !empty.Value.(*upgradeEntry).kept.fresh() {
+		t.Fatal("an empty comparison is not kept")
+	}
+	if empty.Value.(*upgradeEntry).kept.at = time.Now().Add(-upgradeEmptyKeep); empty.Value.(*upgradeEntry).kept.fresh() {
+		t.Fatal("an empty comparison is kept as long as one with players")
 	}
 	ask(t, app, "GET", "/api/odyle/armory/upgrades/%3Cb%3E", nil, "", 404)
+}
+
+// Readers asking for a comparison that is being worked out wait for it instead of working it
+// out again; when full, the cache lets a class without anyone to compare go first, then the
+// comparison read longest ago.
+func TestUpgradeComparisonsAreWorkedOutOnceAndMakeRoom(t *testing.T) {
+	app := newTestApp(t)
+	for n := 1; n <= 30; n++ {
+		rankOf(t, app, n, "Chanter", int64(n)*10000, true, nil)
+	}
+	cache := newUpgradeCache()
+	var builds atomic.Int32
+	t.Cleanup(func() { workOutUpgrades = buildUpgrades })
+	workOutUpgrades = func(app core.App, class string, serverId int, characterId string) (upgradeReference, map[string]bool, error) {
+		builds.Add(1)
+		time.Sleep(50 * time.Millisecond) // the others ask meanwhile
+		return buildUpgrades(app, class, serverId, characterId)
+	}
+	var wg sync.WaitGroup
+	refs := make([]upgradeReference, 20)
+	for i := range refs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ref, err := cache.of(app, "Chanter", 0, "")
+			if err != nil {
+				t.Error(err)
+			}
+			refs[i] = ref
+		}()
+	}
+	wg.Wait()
+	if n := builds.Load(); n != 1 {
+		t.Fatalf("worked out %d times", n)
+	}
+	for _, ref := range refs {
+		if ref.Sample != 30 {
+			t.Fatalf("a reader got %d", ref.Sample)
+		}
+	}
+	// Full: the empty classes go first, then the one read longest ago.
+	for i := range upgradeCached - 2 {
+		cache.keep(fmt.Sprintf("Filler%d|", i), upgradeKept{ref: upgradeReference{Sample: 1}, at: time.Now()})
+	}
+	cache.keep("Empty|", upgradeKept{at: time.Now()})
+	if _, err := cache.of(app, "Chanter", 0, ""); err != nil { // read again: the newest
+		t.Fatal(err)
+	}
+	cache.keep("New1|", upgradeKept{ref: upgradeReference{Sample: 1}, at: time.Now()})
+	if _, kept := cache.kept["Empty|"]; kept || len(cache.kept) != upgradeCached {
+		t.Fatalf("the empty class stays (%d kept)", len(cache.kept))
+	}
+	cache.keep("New2|", upgradeKept{ref: upgradeReference{Sample: 1}, at: time.Now()})
+	if _, kept := cache.kept["Filler0|"]; kept {
+		t.Fatal("the comparison read longest ago stays")
+	}
+	if _, kept := cache.kept["Chanter|"]; !kept {
+		t.Fatal("the comparison read last went")
+	}
 }
