@@ -256,7 +256,7 @@ export default {
   'Room closed. Your saved characters are retained.': 'Místnost zavřena. Uložené postavy zůstávají.',
   'You left the room. Your saved characters are retained.': 'Odešel(a) jsi z místnosti. Uložené postavy zůstávají.',
   'Sign out everywhere?': 'Odhlásit všude?',
-  'Every other browser and every paired Windows app loses access and must sign in or pair again. This browser stays signed in.': 'Všechny ostatní prohlížeče a spárované Windows aplikace ztratí přístup a musí se znovu přihlásit nebo spárovat. Tento prohlížeč zůstane přihlášený.',
+  'Every other browser and every paired Windows app loses access and must sign in or pair again. Your calendar link stops working, so you will need a new one. This browser stays signed in.': 'Všechny ostatní prohlížeče a spárované Windows aplikace ztratí přístup a musí se znovu přihlásit nebo spárovat. Tvůj odkaz na kalendář přestane fungovat, takže budeš potřebovat nový. Tento prohlížeč zůstane přihlášený.',
   'Signed out everywhere else. Pair your Windows app again to keep reading.': 'Odhlášeno všude jinde. Aby čtení pokračovalo, spáruj Windows aplikaci znovu.',
   'Delete your account?': 'Smazat účet?',
   'Your characters, their history, your memberships, wishlist entries and tasks are deleted for good. Rooms you own pass to their longest-standing player, or close if there is none. Download your data first if you want to keep it.': 'Tvoje postavy, jejich historie, členství, položky wishlistu a úkoly se natrvalo smažou. Místnosti, které vlastníš, převezme nejdéle přítomný hráč, nebo se zavřou, pokud tam žádný není. Jestli si data chceš nechat, nejdřív si je stáhni.',

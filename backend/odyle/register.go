@@ -304,6 +304,8 @@ func dropHistoryInBulk(app core.App) {
 					return err
 				}
 			}
+			// The readings went without their record hooks, so the rooms' week (weekly.go) forgets them here.
+			forgetWeekSpends(e.App, e.Record.Id)
 			return e.Next()
 		},
 		Priority: 100,
