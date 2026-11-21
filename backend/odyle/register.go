@@ -128,6 +128,8 @@ func Register(app core.App) {
 		}
 		err := e.Next()
 		stateOf(e.App).backups.drop()
+		// A backup that failed is the operator's to hear of (alerts.go).
+		stateOf(e.App).ops.noteBackup(err)
 		return err
 	})
 	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
@@ -153,6 +155,7 @@ func Register(app core.App) {
 		return e.Next()
 	})
 	dropHistoryInBulk(app)
+	watchServing(app)
 
 	watchSettings(app)
 	watchAudit(app)

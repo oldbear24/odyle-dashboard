@@ -478,6 +478,8 @@ export function statusPage() {
       () => clock().checkedToday >= 5 && clock().missedToday * 2 > clock().checkedToday ? t.div({ className: 'alert warning m-b-sm' }, number(clock().missedToday) + ' of ' + number(clock().checkedToday) + ' login readings in the last 24 hours did not match the Odyle clock. A game patch may have changed the regeneration: check its rules under ', t.a({ href: '#/odyle/settings' }, 'Game settings'), ', or hide the Odyle clock there until they are right.') : null,
       () => readers().refusedAdapters.length ? t.div({ className: 'alert warning m-b-sm' }, 'Readings arrive under ' + readers().refusedAdapters.join(', ') + ', which this backend refuses, so they are not saved. Accept it under ', t.a({ href: '#/odyle/controls' }, 'Server controls'), ' or deploy the backend that lists it.') : null,
       () => [backups().setup, storage().setup, proxy().setup].filter(Boolean).map(problem => t.div({ className: 'alert warning m-b-sm odyle-error' }, problem)),
+      // The server's own problems the operator alerts tell of (backend/odyle/alerts.go), but those warned of above.
+      () => (readers().serverProblems || []).filter(p => !(p.key === 'backup' && staleBackups()) && !(p.key === 'armory' && armory().blockedUntil)).map(p => t.div({ className: 'alert warning m-b-sm odyle-error' }, p.message)),
       t.div({ className: 'odyle-stats m-b-base' },
         stat('Server running', () => state.data.startedAt ? duration(now() - timestamp(state.data.startedAt)) : '—', () => state.data.startedAt ? 'since ' + when(state.data.startedAt) : ''),
         stat('Requests last hour', () => number(traffic().total.count), () => perMinute().toLocaleString([], { maximumFractionDigits: 1 }) + ' a minute · busiest ' + number(busiest())),
