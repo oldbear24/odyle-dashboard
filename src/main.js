@@ -182,9 +182,11 @@ document.addEventListener('keydown', event => {
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
 const seenKey = 'odyle.seenVersion';
-try { if (!storage.getItem(seenKey)) storage.setItem(seenKey, storage.getItem('odyle.location') || storage.getItem('odyle.account') ? 'earlier' : __APP_VERSION__); } catch { /* storage blocked */ }
-const updateNote = () => shown !== '/changelog' && updated(storage.getItem(seenKey), __APP_VERSION__) ? updatedNote(__APP_VERSION__) : '';
-function seenVersion() { try { storage.setItem(seenKey, __APP_VERSION__); } catch { /* storage blocked */ } document.querySelector('.update-note')?.remove(); }
+// This build's version, from the page (vite.config.js), so the built files keep their names across releases (#185).
+const appVersion = document.querySelector('meta[name="odyle-version"]')?.content || 'dev';
+try { if (!storage.getItem(seenKey)) storage.setItem(seenKey, storage.getItem('odyle.location') || storage.getItem('odyle.account') ? 'earlier' : appVersion); } catch { /* storage blocked */ }
+const updateNote = () => shown !== '/changelog' && updated(storage.getItem(seenKey), appVersion) ? updatedNote(appVersion) : '';
+function seenVersion() { try { storage.setItem(seenKey, appVersion); } catch { /* storage blocked */ } document.querySelector('.update-note')?.remove(); }
 function announcementBar() {
   if (!announcement || storage.getItem(hiddenAnnouncementKey) === announcement.text) return '<div class="announcement-slot"></div>';
   const warning = announcement.level === 'warning';
@@ -213,7 +215,7 @@ function shell(content, active = 'overview') {
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent, reader = pb.authStore.isValid && !demo ? readerButton(`${icon('plus')} ${t('Connect reader')}`) : '';
   const home = cls => `<a href="${link('/')}" class="${cls}" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span class="brand-name">odyle<span class="brand-dot">.</span></span></a>`;
-  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar">${home('brand')}${roomSwitch()}<nav aria-label="${esc(t('Pages'))}">${pages().map(([action, name, label]) => navItem(action, active, name, label)).join('')}</nav><div class="sidebar-foot">${reader}${accountMenu()}</div></aside><header class="topbar">${home('brand brand-mini')}${roomSwitch()}${accountMenu()}</header><div class="main">${announcementBar()}${updateNote()}${content}<footer><span>Odyle <a class="version-link" href="${link('/changelog')}" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a></span><span>${t('Unofficial fan project')} · <a class="footer-link" href="${link('/privacy')}">${t('Privacy')}</a></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
+  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar">${home('brand')}${roomSwitch()}<nav aria-label="${esc(t('Pages'))}">${pages().map(([action, name, label]) => navItem(action, active, name, label)).join('')}</nav><div class="sidebar-foot">${reader}${accountMenu()}</div></aside><header class="topbar">${home('brand brand-mini')}${roomSwitch()}${accountMenu()}</header><div class="main">${announcementBar()}${updateNote()}${content}<footer><span>Odyle <a class="version-link" href="${link('/changelog')}" title="${esc(t('What\'s new'))}">${esc(appVersion)}</a></span><span>${t('Unofficial fan project')} · <a class="footer-link" href="${link('/privacy')}">${t('Privacy')}</a></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
   if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
@@ -612,7 +614,7 @@ async function privacyShow(ticket) { await privacyPart(); if (ticket === navigat
 function changelogRender() {
   const news = whatsnewPart.loaded(); if (!news) return;
   const app = windowsApp(windowsRelease);
-  shell(news.whatsNew(news.changelog, __APP_VERSION__, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog');
+  shell(news.whatsNew(news.changelog, appVersion, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog');
 }
 async function changelogPage(ticket) {
   await whatsnewPart(); if (ticket !== navigation) return;
