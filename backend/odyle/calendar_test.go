@@ -67,3 +67,27 @@ func TestRunsReachCalendarsAndEventLinks(t *testing.T) {
 	feed(again, 404)
 	feed("/api/odyle/calendar/short.ics", 404)
 }
+
+// Sign out everywhere (#198) also ends the calendar feed's address: whoever was given it, with
+// the rest of the account, loses it too. The account turns the feed on again for a new address.
+func TestSigningOutEverywhereEndsTheCalendarFeed(t *testing.T) {
+	app := newTestApp(t)
+	user := newUser(t, app, "Leaver")
+	auth := tokenOf(t, user)
+	path := ask(t, app, http.MethodPost, "/api/odyle/calendar", auth, `{"enabled":true}`, 200)["path"].(string)
+	feed := func(status int) {
+		t.Helper()
+		(&tests.ApiScenario{Name: "GET feed", Method: http.MethodGet, URL: path, ExpectedStatus: status, ExpectedContent: []string{map[bool]string{true: "BEGIN:VCALENDAR", false: "{"}[status == 200]},
+			TestAppFactory: func(testing.TB) *tests.TestApp { return app }, DisableTestAppCleanup: true}).Test(t)
+	}
+	feed(200)
+	token, _ := ask(t, app, http.MethodPost, "/api/odyle/sign-out-everywhere", auth, `{}`, 200)["token"].(string)
+	fresh := map[string]string{"Authorization": token}
+	feed(404)
+	if account := ask(t, app, http.MethodGet, "/api/odyle/account", fresh, "", 200); account["calendar"].(map[string]any)["on"] != false {
+		t.Fatalf("account calendar %v", account["calendar"])
+	}
+	if again := ask(t, app, http.MethodPost, "/api/odyle/calendar", fresh, `{"enabled":true}`, 200)["path"].(string); again == path {
+		t.Fatal("the feed came back at its old address")
+	}
+}

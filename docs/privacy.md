@@ -32,7 +32,7 @@ Room invitations: for each invite link the server keeps the digest of its code, 
 
 Information board: what a room's owner or officers write on its board is kept with the room, with who wrote it last and when, until they change or clear it or the room closes; every member of the room reads it, and the room keeps it while its owner has the board turned off. Your data download lists the board of a room you wrote last.
 
-Calendar feed: if you make one under **Account & data**, the dashboard keeps a fingerprint of its private link, never the link itself. Whoever has the link (your calendar app, or anyone you give it to) sees the dungeon, room and time of the runs you are going to, never notes. Making a new link or stopping the feed ends the old one at once.
+Calendar feed: if you make one under **Account & data**, the dashboard keeps a fingerprint of its private link, never the link itself. Whoever has the link (your calendar app, or anyone you give it to) sees the dungeon, room and time of the runs you are going to, never notes. Making a new link, stopping the feed or **Sign out everywhere** ends the old one at once.
 
 Slot machine: the dashboard keeps how many spins your account has (free spins of the day included) and which cosmetic items it won and wears; members of your rooms see the items you wear next to your name. Your data download lists them, and deleting the account deletes them. Whether the slot machine plays its sounds is kept in this browser only (`odyle.slotSound`).
 
