@@ -271,8 +271,10 @@ func TestDiscordPingsOnlyThoseWhoAskedAndNeverInEdits(t *testing.T) {
 	}
 	on := `{"channels":{"tray":true,"browser":true,"push":true,"discord":true},"leadMinutes":[15],"kinds":{"runs":true,"cap":false},"capTicks":1,"quiet":{"from":"","to":"","timeZone":""}}`
 	asked.Set("notifications", on)
-	// Quiet hours over the whole day hold the ping too.
-	quiet.Set("notifications", strings.Replace(on, `"from":"","to":"","timeZone":""`, `"from":"00:00","to":"23:59","timeZone":"UTC"`, 1))
+	// Quiet hours hold the ping too: two hours around now, so the test does not depend on the
+	// time of day (a fixed 00:00 to 23:59 left out the last minute of the day).
+	from, to := time.Now().UTC().Add(-time.Hour).Format("15:04"), time.Now().UTC().Add(time.Hour).Format("15:04")
+	quiet.Set("notifications", strings.Replace(on, `"from":"","to":"","timeZone":""`, `"from":"`+from+`","to":"`+to+`","timeZone":"UTC"`, 1))
 	for _, u := range []*core.Record{asked, quiet} {
 		if err := app.Save(u); err != nil {
 			t.Fatal(err)
