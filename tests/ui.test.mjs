@@ -978,6 +978,30 @@ test('the membership answer settles the clock\'s cap, a reading that contradicts
   } finally { await close(); }
 });
 
+test('party and force names go to the armory until the player turns that off under Account & data (W#81)', async () => {
+  const me = await account('Grouped');
+  const session = (await request('/api/odyle/session', {}, me)).data;
+  assert.equal(session.shareTeammates, true, 'on by default');
+  const { page, errors, close } = await open(me, '#/account');
+  try {
+    const box = page.locator('#teammates-form input[name="shareTeammates"]');
+    await box.waitFor();
+    assert.equal(await box.isChecked(), true);
+    await box.uncheck();
+    await page.locator('#teammates-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: the Windows app no longer sends your party and force members\' names.' }).waitFor();
+    assert.equal(await page.locator('#teammates-form input[name="shareTeammates"]').isChecked(), false);
+    assert.equal((await request('/api/odyle/heartbeat', { sessionId: session.sessionId, characterId: null }, me)).data.shareTeammates, false);
+    await page.reload();
+    await page.locator('#teammates-form').waitFor();
+    assert.equal(await page.locator('#teammates-form input[name="shareTeammates"]').isChecked(), false);
+    await page.locator('#teammates-form input[name="shareTeammates"]').check();
+    await page.locator('#teammates-form [type="submit"]').click();
+    await toast(page).filter({ hasText: 'Saved: the Windows app sends your party and force members\' names to the armory.' }).waitFor();
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
 test('location sharing is off until turned on, rooms see where a character was, and its map centres TH.GL on it', async () => {
   const operator = (await request('/__test__/superuser', {})).data, me = await account('Wanderer'), friend = await account('Friend');
   assert.equal((await request('/api/odyle/admin/settings', { maps: [{ id: 1110, name: 'Altgard', thgl: 'Altgard' }] }, operator)).status, 200);
@@ -1680,6 +1704,29 @@ test('an unreachable server keeps the sign-in and the connection state follows i
     await page.locator('.connection:not(.connected):visible').waitFor({ timeout: 30000 });
     await page.unroute('**/api/**');
     await page.locator('.connection.connected:visible').waitFor({ timeout: 30000 });
+  } finally { await context.close(); }
+});
+test('a page that fails to load says so, replaces the page before it and loads by itself (#173)', async () => {
+  const user = await account('Halfway');
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-GB' });
+  await context.addInitScript(session => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('odyle.account', session); } }, JSON.stringify({ token: user.token, record: user.record }));
+  const page = await context.newPage();
+  try {
+    // The sign-in refresh works, the page's own request does not (a deploy or a restart).
+    await page.route('**/api/odyle/rooms', route => route.fulfill({ status: 502, contentType: 'application/json', body: '{"message":"Bad gateway."}' }));
+    await page.goto(url + '/#/');
+    await page.getByRole('heading', { name: 'This page could not be loaded.' }).waitFor();
+    assert.match(await page.locator('main .intro').innerText(), /The Odyle server did not answer\./);
+    await page.unroute('**/api/odyle/rooms');
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor({ timeout: 15000 });
+    // Moving on to a page that fails replaces the page before it, and Try again now loads it.
+    await page.route('**/api/odyle/tasks', route => route.abort());
+    await page.evaluate(() => { location.hash = '#/tasks'; });
+    await page.getByRole('heading', { name: 'This page could not be loaded.' }).waitFor();
+    assert.equal(await page.locator('.personal-characters').count(), 0);
+    await page.unroute('**/api/odyle/tasks');
+    await page.locator('[data-action=reload-page]').click();
+    await page.getByRole('heading', { name: 'Daily & weekly.' }).waitFor();
   } finally { await context.close(); }
 });
 test('the privacy notice is a page of the dashboard, and no page loads anything from another site (#39)', async () => {
