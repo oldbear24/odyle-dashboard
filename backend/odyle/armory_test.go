@@ -155,6 +155,17 @@ func TestArmoryKeepsWhatTheOfficialPagesList(t *testing.T) {
 	if _, err := readArmory(map[string]any{"detail": "Resource not found"}, decoded(t, officialEquipment())); err == nil {
 		t.Fatal("an answer without a character was read")
 	}
+	// Combat power without any equipped item is a format PLAYNC changed (a renamed list), not a
+	// profile; the scout's check of the info page alone reads no gear.
+	renamed := decoded(t, officialEquipment())
+	gear := renamed["equipment"].(map[string]any)
+	gear["equipments"], gear["equipmentList"] = gear["equipmentList"], nil
+	if _, err := readArmory(decoded(t, officialInfo("Ka")), renamed); err != errArmoryAnswer {
+		t.Fatalf("a renamed equipment list: %v", err)
+	}
+	if p, err := readArmory(decoded(t, officialInfo("Ka")), nil); err != nil || p.CombatPower != 107458 || len(p.Gear) != 0 {
+		t.Fatalf("the info page alone: %+v %v", p, err)
+	}
 }
 
 func TestArmoryReadsItemsAndBoards(t *testing.T) {
@@ -206,11 +217,13 @@ func TestArmoryServerIdsBelongToTheirRegion(t *testing.T) {
 // each answer, and held the item and board pages'. lookups counts the info pages asked for
 // (one a lookup), details the item and board pages, images the icons and portraits, and
 // together the most images downloaded at once; classLists the class lists, classIcons the
-// class emblems (the Ranger's is missing) and serverLists the server lists.
+// class emblems (the Ranger's is missing) and serverLists the server lists. While broken, the
+// item and board pages fail (500).
 type armoryStand struct {
 	lookups, details, images, searches  atomic.Int32
 	downloading, together               atomic.Int32
 	classLists, classIcons, serverLists atomic.Int32
+	broken                              atomic.Bool
 	gate, held                          chan struct{}
 	url                                 string
 }
@@ -314,6 +327,8 @@ func (s *armoryStand) serve(t *testing.T) {
 		case strings.HasPrefix(id, "refused"):
 			w.Header().Set("Retry-After", "1")
 			w.WriteHeader(429)
+		case s.broken.Load() && r.URL.Path != "/api/character/info" && r.URL.Path != "/api/character/equipment":
+			w.WriteHeader(500)
 		case r.URL.Path == "/api/character/info":
 			json.NewEncoder(w).Encode(officialInfo("Hero"))
 		case r.URL.Path == "/api/character/equipment":
@@ -412,6 +427,56 @@ func TestArmoryFetchesProfilesThroughTheQueueAndKeepsThem(t *testing.T) {
 	}
 }
 
+// A lookup whose pages of details mostly fail keeps the profile it had, as it was: no fresh
+// fetchedAt, and no new build among the top players. One that lacks a few is kept with how many
+// it lacks and fetched again after an hour.
+func TestArmoryKeepsTheProfileWhenItsDetailsFail(t *testing.T) {
+	fastArmory(t)
+	stand := &armoryStand{}
+	stand.serve(t)
+	app := newTestApp(t)
+	const id = "kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="
+	ask(t, app, "GET", armoryPath(id), nil, "", 200)
+	stateOf(app).armory.wait()
+	// The stand has no page for the breastplate: one of three pages of details.
+	kept := ask(t, app, "GET", armoryPath(id), nil, "", 200)
+	if profile, _ := kept["profile"].(map[string]any); kept["state"] != "fresh" || profile["missingDetails"] != 1.0 {
+		t.Fatalf("kept: %v", kept)
+	}
+	builtAt := func() string {
+		rank, err := app.FindFirstRecordByFilter("armory_ranks", "characterId = {:id}", dbx.Params{"id": id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rank.GetString("builtAt")
+	}
+	// Its build is due again in a day, not in 14.
+	if built, _ := time.Parse("2006-01-02 15:04:05.000Z", builtAt()); time.Since(built) < scoutRebuild-25*time.Hour || time.Since(built) > scoutRebuild-23*time.Hour {
+		t.Fatalf("built at %s", builtAt())
+	}
+	setFetched := func(age time.Duration) string {
+		at := ago(age)
+		if _, err := app.DB().NewQuery("UPDATE armory_profiles SET fetchedAt = {:at}").Bind(dbx.Params{"at": at}).Execute(); err != nil {
+			t.Fatal(err)
+		}
+		return ask(t, app, "GET", armoryPath(id), nil, "", 200)["fetchedAt"].(string)
+	}
+	setFetched(50 * time.Minute)
+	if again := ask(t, app, "GET", armoryPath(id), nil, "", 200); again["state"] != "fresh" || stand.lookups.Load() != 1 {
+		t.Fatalf("fetched again before an hour: %v", again)
+	}
+	// After an hour it is fetched again, and now every page of details fails.
+	stand.broken.Store(true)
+	before, built := setFetched(70*time.Minute), builtAt()
+	stateOf(app).armory.wait()
+	failed := ask(t, app, "GET", armoryPath(id), nil, "", 200)
+	profile, _ := failed["profile"].(map[string]any)
+	if stand.lookups.Load() != 2 || failed["state"] != "failed" || failed["lookupError"] != errArmoryAnswer.Error() || failed["error"] != errArmoryAnswer.Error() ||
+		failed["fetchedAt"] != before || profile["missingDetails"] != 1.0 || builtAt() != built {
+		t.Fatalf("after failing details: %v, built at %s", failed, builtAt())
+	}
+}
+
 func TestArmoryLookupsThatFail(t *testing.T) {
 	fastArmory(t)
 	stand := &armoryStand{}
@@ -439,11 +504,19 @@ func TestArmoryLookupsThatFail(t *testing.T) {
 	if next["state"] != "queued" || next["wait"].(float64) < 500 {
 		t.Fatalf("after a refusal the queue waits: %v", next)
 	}
-	w := stateOf(app).armory
-	w.mu.Lock()
-	w.drop()
-	w.mu.Unlock()
-	w.wait()
+	// Pausing the armory under Server controls and resuming it ends the wait: the queue goes on.
+	for _, paused := range []bool{true, false} {
+		if _, err := writeSettings(app, body{"armoryPaused": paused}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if status := armoryStatus(app); status["blockedUntil"] != "" {
+		t.Fatalf("still blocked: %v", status["blockedUntil"])
+	}
+	stateOf(app).armory.wait()
+	if done := ask(t, app, "GET", armoryPath("kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="), nil, "", 200); done["state"] != "fresh" {
+		t.Fatalf("after the wait ended: %v", done)
+	}
 }
 
 // Readers' lookups run side by side, as many as Server controls say (3 until set), and the

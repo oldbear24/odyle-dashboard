@@ -196,6 +196,15 @@ func sendPush(app core.App, sub *core.Record, message pushMessage, ttl time.Dura
 	if err != nil || !pushEndpointAllowed(endpoint) {
 		return errPushGone
 	}
+	// A push service that answered 429 is left alone for as long as it asked (retryAfter,
+	// an hour at most).
+	waits := &stateOf(app).pushWaits
+	if until, ok := waits.Load(endpoint.Host); ok {
+		if left := time.Until(until.(time.Time)); left > 0 {
+			return fmt.Errorf("the push service asked to wait %s more", left.Round(time.Second))
+		}
+		waits.Delete(endpoint.Host)
+	}
 	key, err := vapid(app)
 	if err != nil {
 		return err
@@ -244,12 +253,21 @@ func sendPush(app core.App, sub *core.Record, message pushMessage, ttl time.Dura
 	switch {
 	case response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusGone:
 		return errPushGone
+	case response.StatusCode == http.StatusTooManyRequests:
+		wait := pushWait(response.Header)
+		if wait > 0 {
+			waits.Store(endpoint.Host, time.Now().Add(wait))
+		}
+		return fmt.Errorf("the push service answered 429 and asked to wait %s", wait.Round(time.Second))
 	case response.StatusCode >= 300:
 		return fmt.Errorf("the push service answered %d", response.StatusCode)
 	}
 	_, err = app.DB().NewQuery("UPDATE push_subscriptions SET lastOkAt = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": now(), "id": sub.Id}).Execute()
 	return err
 }
+
+// pushWait is how long a push service's 429 asks to wait (Retry-After, an hour at most).
+func pushWait(header http.Header) time.Duration { return retryAfter(response{header: header}) }
 
 // pushSubject is the contact push services may write to about this server: its application
 // URL when it is https, else the project page.

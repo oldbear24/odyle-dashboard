@@ -1,7 +1,6 @@
 package odyle
 
 import (
-	"errors"
 	"math"
 	"regexp"
 	"strconv"
@@ -58,7 +57,7 @@ var thglMap = regexp.MustCompile(`^(?:[\p{L}\p{N}][\p{L}\p{N} _'’.,:!?&()+/-]{
 func checkMaps(value any) ([]gameMap, error) {
 	raw, ok := value.([]any)
 	if !ok || len(raw) > 500 {
-		return nil, errors.New("Maps must be a list of up to 500 maps.")
+		return nil, badRequest("Maps must be a list of up to 500 maps.")
 	}
 	out, seen := []gameMap{}, map[int64]bool{}
 	for _, item := range raw {
@@ -68,17 +67,17 @@ func checkMaps(value any) ([]gameMap, error) {
 			return nil, err
 		}
 		if seen[id] {
-			return nil, errors.New("List each map id once.")
+			return nil, badRequest("List each map id once.")
 		}
 		seen[id] = true
 		name, _ := entry["name"].(string)
 		thgl, _ := entry["thgl"].(string)
 		name, thgl = collapse(trim(name)), collapse(trim(thgl))
 		if length(name) > 60 {
-			return nil, errors.New("Name each map in up to 60 characters.")
+			return nil, badRequest("Name each map in up to 60 characters.")
 		}
 		if !thglMap.MatchString(thgl) {
-			return nil, errors.New("A TH.GL map is its name as TH.GL lists it, like Altgard, in up to 120 characters.")
+			return nil, badRequest("A TH.GL map is its name as TH.GL lists it, like Altgard, in up to 120 characters.")
 		}
 		out = append(out, linkMap(gameMap{ID: id, Name: name, Thgl: thgl}))
 	}
@@ -89,7 +88,7 @@ func checkMaps(value any) ([]gameMap, error) {
 func coordinate(value any, name string) (float64, error) {
 	f, ok := value.(float64)
 	if !ok || math.IsNaN(f) || math.IsInf(f, 0) || math.Abs(f) > 1000000 {
-		return 0, errors.New(name + " must be a number between -1000000 and 1000000.")
+		return 0, badRequest(name + " must be a number between -1000000 and 1000000.")
 	}
 	return math.Round(f*10) / 10, nil
 }
@@ -121,13 +120,13 @@ func validPlace(b body) (place, error) {
 	if v, ok := b["heading"]; ok && v != nil {
 		h, ok := v.(float64)
 		if !ok || math.IsNaN(h) || h < -360 || h > 360 {
-			return p, errors.New("The heading must be degrees between -360 and 360.")
+			return p, badRequest("The heading must be degrees between -360 and 360.")
 		}
 		h = math.Round(math.Mod(h+720, 360)*10) / 10
 		p.Heading = &h
 	}
 	if p.Source, _ = b.text("source"); !contains(locationSources, p.Source) {
-		return p, errors.New("The source must be load, arrival, flight or effect.")
+		return p, badRequest("The source must be load, arrival, flight or effect.")
 	}
 	return p, nil
 }

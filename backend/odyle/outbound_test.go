@@ -94,6 +94,28 @@ func TestRetryAfter(t *testing.T) {
 	if got := retryAfter(response{header: http.Header{}}); got != 0 {
 		t.Errorf("nothing: %v", got)
 	}
+	// Any answer waits an hour at most, and never less than nothing.
+	for v, want := range map[string]time.Duration{
+		"31536000": maxRetryAfter, "3600": maxRetryAfter, "3599": 3599 * time.Second, "1e30": maxRetryAfter, "1e400": maxRetryAfter, "Inf": maxRetryAfter, "+Inf": maxRetryAfter,
+		"-5": 0, "-Inf": 0, "NaN": 0, "-1e400": 0, "0": 0, "soon": 0,
+		time.Now().Add(400 * 24 * time.Hour).UTC().Format(http.TimeFormat): maxRetryAfter,
+		time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat):           0,
+	} {
+		if got := retryAfter(header(v)); got != want {
+			t.Errorf("Retry-After %q: %v, want %v", v, got, want)
+		}
+	}
+	for body, want := range map[string]time.Duration{`{"retry_after":1e30}`: maxRetryAfter, `{"retry_after":-3}`: 0, `{"retry_after":86400}`: maxRetryAfter} {
+		if got := retryAfter(response{header: http.Header{}, body: []byte(body)}); got != want {
+			t.Errorf("body %s: %v, want %v", body, got, want)
+		}
+	}
+	// A webhook Discord asks to wait a year waits an hour.
+	w := &webhookWaits{}
+	at := time.Now()
+	if wait := w.wait("https://discord.com/api/webhooks/1/x", header("31536000"), at); wait != maxRetryAfter || w.waiting("https://discord.com/api/webhooks/1/x", at.Add(maxRetryAfter+time.Second)) {
+		t.Errorf("a webhook waits %v", wait)
+	}
 }
 
 func TestRemindersWaitWhenDiscordAsks(t *testing.T) {

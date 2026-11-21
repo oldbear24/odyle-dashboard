@@ -48,7 +48,7 @@ var shown = map[string][]string{
 	"invite-create": {"roomId", "role", "expiresIn", "maxUses"}, "invite-revoke": {"roomId", "inviteId"}, "invite-preview": {},
 	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove", "call"}, "discord-webhook": {"roomId", "language", "startPost", "readiness"},
 	"task": {"characterId", "id:taskId", "done", "move", "remove"}, "profile": {"displayName"}, "desktop-code": {}, "forget-device": {"deviceId"}, "sign-out-everywhere": {}, "delete-account": {}, "delete-character": {"characterId"}, "notifications": {}, "push-subscribe": {"language", "device"}, "push-unsubscribe": {}, "push-test": {}, "share-new": {"roomId", "enabled"},
-	"board": {"roomId"}, "room-features": {"roomId"}, "location-sharing": {"enabled"}, "pvp-stats": {"enabled"},
+	"board": {"roomId"}, "room-features": {"roomId"}, "location-sharing": {"enabled"}, "pvp-stats": {"enabled"}, "teammates-sharing": {"enabled"},
 }
 
 // Requests of the Windows app (source "app"); everything else comes from the dashboard

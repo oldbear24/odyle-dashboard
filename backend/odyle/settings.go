@@ -2,7 +2,6 @@ package odyle
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -67,7 +66,7 @@ func defaultClassRoles() []classRole {
 func checkClassRoles(value any) ([]classRole, error) {
 	raw, ok := value.([]any)
 	if !ok || len(raw) > 40 {
-		return nil, errors.New("Class roles must be a list of up to 40 classes.")
+		return nil, badRequest("Class roles must be a list of up to 40 classes.")
 	}
 	out, seen := []classRole{}, map[string]bool{}
 	for _, item := range raw {
@@ -76,13 +75,13 @@ func checkClassRoles(value any) ([]classRole, error) {
 		role, _ := entry["role"].(string)
 		name = collapse(trim(name))
 		if name == "" || length(name) > 40 {
-			return nil, errors.New("Name each class in 1 to 40 characters.")
+			return nil, badRequest("Name each class in 1 to 40 characters.")
 		}
 		if !contains(partyRoles, role) {
-			return nil, errors.New("Give each class a role: tank, healer, support or damage.")
+			return nil, badRequest("Give each class a role: tank, healer, support or damage.")
 		}
 		if seen[strings.ToLower(name)] {
-			return nil, errors.New("List each class once.")
+			return nil, badRequest("List each class once.")
 		}
 		seen[strings.ToLower(name)] = true
 		out = append(out, classRole{Class: name, Role: role})
@@ -111,32 +110,32 @@ func defaultClock() clockRules {
 func clockSettings(value any) (clockRules, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return clockRules{}, errors.New("The Odyle clock must be an object.")
+		return clockRules{}, badRequest("The Odyle clock must be an object.")
 	}
 	var c clockRules
 	if json.Unmarshal(raw, &c) != nil {
-		return clockRules{}, errors.New("The Odyle clock must be an object with tickHours, tick, caps and paused.")
+		return clockRules{}, badRequest("The Odyle clock must be an object with tickHours, tick, caps and paused.")
 	}
 	if len(c.TickHours) == 0 || len(c.TickHours) > 24 {
-		return clockRules{}, errors.New("The regeneration happens at 1 to 24 UTC hours.")
+		return clockRules{}, badRequest("The regeneration happens at 1 to 24 UTC hours.")
 	}
 	seen := map[int64]bool{}
 	for _, h := range c.TickHours {
 		if h < 0 || h > 23 || seen[h] {
-			return clockRules{}, errors.New("Regeneration hours are different whole UTC hours from 0 to 23.")
+			return clockRules{}, badRequest("Regeneration hours are different whole UTC hours from 0 to 23.")
 		}
 		seen[h] = true
 	}
 	slices.Sort(c.TickHours)
 	if c.Tick < 1 || c.Tick > 1000 {
-		return clockRules{}, errors.New("A regeneration tick is 1 to 1000 Odyle.")
+		return clockRules{}, badRequest("A regeneration tick is 1 to 1000 Odyle.")
 	}
 	if len(c.Caps) == 0 || len(c.Caps) > 4 {
-		return clockRules{}, errors.New("The natural pool has 1 to 4 caps.")
+		return clockRules{}, badRequest("The natural pool has 1 to 4 caps.")
 	}
 	for i, cap := range c.Caps {
 		if cap < 1 || cap > 1000000 || i > 0 && cap <= c.Caps[i-1] {
-			return clockRules{}, errors.New("Caps are 1 to 1,000,000 Odyle, each larger than the one before.")
+			return clockRules{}, badRequest("Caps are 1 to 1,000,000 Odyle, each larger than the one before.")
 		}
 	}
 	return c, nil
@@ -198,7 +197,7 @@ func defaultSlots() slotRules { return slotRules{DailySpins: 3, PerCharacter: 1}
 func checkSlots(value any) (slotRules, error) {
 	v, ok := value.(map[string]any)
 	if !ok {
-		return slotRules{}, errors.New("The slot machine rules must be daily spins and spins per character.")
+		return slotRules{}, badRequest("The slot machine rules must be daily spins and spins per character.")
 	}
 	daily, err := integer(v["dailySpins"], "Free spins a day", 0, 20)
 	if err != nil {
@@ -221,7 +220,7 @@ type maintenanceWindow struct {
 func checkMaintenance(value any) (maintenanceWindow, error) {
 	v, ok := value.(map[string]any)
 	if !ok {
-		return maintenanceWindow{}, errors.New("The weekly maintenance must be a day, a start hour and a length.")
+		return maintenanceWindow{}, badRequest("The weekly maintenance must be a day, a start hour and a length.")
 	}
 	day, _ := v["day"].(string)
 	if day == "" {
@@ -230,7 +229,7 @@ func checkMaintenance(value any) (maintenanceWindow, error) {
 	hour, okHour := v["hour"].(float64)
 	hours, okHours := v["hours"].(float64)
 	if !contains(weekDays, day) || !okHour || !okHours || hour != float64(int64(hour)) || hours != float64(int64(hours)) || hour < 0 || hour > 23 || hours < 1 || hours > 12 {
-		return maintenanceWindow{}, errors.New("The weekly maintenance is a day, a start hour from 0 to 23 (UTC) and 1 to 12 hours.")
+		return maintenanceWindow{}, badRequest("The weekly maintenance is a day, a start hour from 0 to 23 (UTC) and 1 to 12 hours.")
 	}
 	return maintenanceWindow{Day: day, Hour: int64(hour), Hours: int64(hours)}, nil
 }
@@ -416,14 +415,14 @@ var windowsVersion = regexp.MustCompile(`^\d{1,4}\.\d{1,4}\.\d{1,4}$`)
 func windowsVersions(value any) ([]string, error) {
 	raw, ok := value.([]any)
 	if !ok || len(raw) > 20 {
-		return nil, errors.New("Held-back Windows versions must be a list of up to 20 versions.")
+		return nil, badRequest("Held-back Windows versions must be a list of up to 20 versions.")
 	}
 	out := []string{}
 	for _, item := range raw {
 		text, _ := item.(string)
 		text = strings.TrimPrefix(trim(text), "v")
 		if !windowsVersion.MatchString(text) {
-			return nil, errors.New("Hold back Windows versions like 0.18.0, one per line.")
+			return nil, badRequest("Hold back Windows versions like 0.18.0, one per line.")
 		}
 		if !contains(out, text) {
 			out = append(out, text)
@@ -442,7 +441,7 @@ func catalogEntry(item any) (dungeonEntry, error) {
 	}
 	v, ok := item.(map[string]any)
 	if !ok {
-		return dungeonEntry{}, errors.New("Dungeons must be a list of names.")
+		return dungeonEntry{}, badRequest("Dungeons must be a list of names.")
 	}
 	d, err := dungeon(v["name"])
 	if err != nil {
@@ -457,7 +456,7 @@ func catalogEntry(item any) (dungeonEntry, error) {
 	if v["partySize"] != nil {
 		size, err := integer(v["partySize"], "Party size", 0, 20)
 		if err != nil || !slices.Contains(partySizes, size) {
-			return dungeonEntry{}, errors.New("Party size must be 4, 5, 10 or 20, or 0 when not set.")
+			return dungeonEntry{}, badRequest("Party size must be 4, 5, 10 or 20, or 0 when not set.")
 		}
 		entry.PartySize = size
 	}
@@ -465,12 +464,12 @@ func catalogEntry(item any) (dungeonEntry, error) {
 		category, ok := v["category"].(string)
 		entry.Category = collapse(trim(category))
 		if !ok || length(entry.Category) > 30 {
-			return dungeonEntry{}, errors.New("A dungeon category is text of up to 30 characters.")
+			return dungeonEntry{}, badRequest("A dungeon category is text of up to 30 characters.")
 		}
 	}
 	if v["unconfirmed"] != nil {
 		if entry.Unconfirmed, ok = v["unconfirmed"].(bool); !ok {
-			return dungeonEntry{}, errors.New("Unconfirmed must be true or false.")
+			return dungeonEntry{}, badRequest("Unconfirmed must be true or false.")
 		}
 	}
 	return entry, nil
@@ -482,7 +481,7 @@ func catalogEntry(item any) (dungeonEntry, error) {
 func catalog(value any, kept []dungeonEntry) ([]dungeonEntry, error) {
 	items, ok := value.([]any)
 	if !ok {
-		return nil, errors.New("Dungeons must be a list of names.")
+		return nil, badRequest("Dungeons must be a list of names.")
 	}
 	seen, out := map[string]bool{}, []dungeonEntry{}
 	for _, item := range items {
@@ -501,7 +500,7 @@ func catalog(value any, kept []dungeonEntry) ([]dungeonEntry, error) {
 		}
 	}
 	if len(out) > 200 {
-		return nil, errors.New("The dungeon list can hold up to 200 names.")
+		return nil, badRequest("The dungeon list can hold up to 200 names.")
 	}
 	return out, nil
 }
@@ -548,7 +547,7 @@ func adapterSettings(value any) (adapterLists, error) {
 	extra, extraOk := v["extra"].([]any)
 	disabled, disabledOk := v["disabled"].([]any)
 	if !ok || !extraOk || !disabledOk {
-		return adapterLists{}, errors.New("Packet adapters must list extra and disabled names.")
+		return adapterLists{}, badRequest("Packet adapters must list extra and disabled names.")
 	}
 	names := func(raw []any) ([]string, error) {
 		out := []string{}
@@ -556,7 +555,7 @@ func adapterSettings(value any) (adapterLists, error) {
 			name, _ := item.(string)
 			name = trim(name)
 			if !adapterName.MatchString(name) {
-				return nil, errors.New("Adapter names use letters, digits, dots, dashes and underscores, up to 80 characters.")
+				return nil, badRequest("Adapter names use letters, digits, dots, dashes and underscores, up to 80 characters.")
 			}
 			if !contains(out, name) {
 				out = append(out, name)
@@ -586,10 +585,10 @@ func adapterSettings(value any) (adapterLists, error) {
 		}
 	}
 	if len(lists.Extra) > 20 {
-		return adapterLists{}, errors.New("Up to 20 extra packet adapters.")
+		return adapterLists{}, badRequest("Up to 20 extra packet adapters.")
 	}
 	if len(accepted(lists)) == 0 {
-		return adapterLists{}, errors.New("Keep at least one packet adapter accepted, or no reading can be saved.")
+		return adapterLists{}, badRequest("Keep at least one packet adapter accepted, or no reading can be saved.")
 	}
 	return lists, nil
 }
@@ -602,7 +601,7 @@ func inactiveDays(value any) (int64, error) {
 		return 0, err
 	}
 	if days > 0 && days < 30 {
-		return 0, errors.New("Delete inactive accounts after 30 days or more, or 0 to keep them.")
+		return 0, badRequest("Delete inactive accounts after 30 days or more, or 0 to keep them.")
 	}
 	return days, nil
 }
@@ -634,6 +633,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 		record = core.NewRecord(collection)
 	}
 	next := readSettings(app)
+	wasPaused := next.ArmoryPaused
 	var err error
 	if b.has("odylePerCube") {
 		if next.OdylePerCube, err = integer(b["odylePerCube"], "Odyle per cube", 1, 1000); err != nil {
@@ -653,7 +653,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	if b.has("weeklyResetDay") {
 		day, _ := b.text("weeklyResetDay")
 		if !contains(weekDays, day) {
-			return settings{}, errors.New("Choose the weekly reset day (sunday to saturday).")
+			return settings{}, badRequest("Choose the weekly reset day (sunday to saturday).")
 		}
 		next.WeeklyResetDay = day
 	}
@@ -693,17 +693,17 @@ func writeSettings(app core.App, b body) (settings, error) {
 	if b.has("announcement") {
 		text, ok := b.text("announcement")
 		if !ok {
-			return settings{}, errors.New("The announcement must be text.")
+			return settings{}, badRequest("The announcement must be text.")
 		}
 		next.Announcement = collapse(trim(text))
 		if length(next.Announcement) > 300 {
-			return settings{}, errors.New("The announcement can be up to 300 characters.")
+			return settings{}, badRequest("The announcement can be up to 300 characters.")
 		}
 	}
 	if b.has("announcementLevel") {
 		level, _ := b.text("announcementLevel")
 		if !contains(levels, level) {
-			return settings{}, errors.New("Choose info or warning for the announcement.")
+			return settings{}, badRequest("Choose info or warning for the announcement.")
 		}
 		next.AnnouncementLevel = level
 	}
@@ -718,7 +718,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 		}
 	}
 	if next.AnnouncementFrom != "" && next.AnnouncementUntil != "" && next.AnnouncementUntil <= next.AnnouncementFrom {
-		return settings{}, errors.New("The announcement must end after it starts.")
+		return settings{}, badRequest("The announcement must end after it starts.")
 	}
 	for _, s := range []struct {
 		key    string
@@ -727,7 +727,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 		if b.has(s.key) {
 			on, ok := b.boolean(s.key)
 			if !ok {
-				return settings{}, errors.New("Switches must be true or false.")
+				return settings{}, badRequest("Switches must be true or false.")
 			}
 			*s.target = on
 		}
@@ -811,6 +811,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 	if b.has("armoryLanes") || b.has("scoutLanes") {
 		stateOf(app).armory.resize(next)
 	}
+	// Pausing the armory and resuming it ends a wait PLAYNC asked for (armory.go), so a
+	// superuser need not wait it out or restart the server.
+	if wasPaused && !next.ArmoryPaused {
+		stateOf(app).armory.unblock()
+	}
 	// Answered caps follow changed caps (membership.go).
 	if b.has("clock") {
 		if err := settleCaps(app, next.Clock.Caps); err != nil {
@@ -890,14 +895,14 @@ func scheduleTime(value any) (string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return "", errors.New("The announcement's start and end must be text, a date and time.")
+		return "", badRequest("The announcement's start and end must be text, a date and time.")
 	}
 	if text = trim(text); text == "" {
 		return "", nil
 	}
 	at, ok := parseDate(text)
 	if !ok || at.UTC().Year() < 2000 || at.UTC().Year() > 2099 {
-		return "", errors.New("Give the announcement's start and end as a date and time, for example 2026-11-05T10:00Z.")
+		return "", badRequest("Give the announcement's start and end as a date and time, for example 2026-11-05T10:00Z.")
 	}
 	return iso(at.UTC().Truncate(time.Minute)), nil
 }
@@ -913,7 +918,9 @@ func announcementSchedule(app core.App) (result, error) {
 	since := s.announcementCheckedAt
 	s.announcementCheckedAt = at
 	s.mu.Unlock()
-	if since.IsZero() || !since.Before(at) {
+	// A clock that went back starts over from a minute ago. Two runs within one tick of a coarse
+	// clock (Windows) see the same time: the second has nothing new to tell.
+	if since.IsZero() || since.After(at) {
 		since = at.Add(-time.Minute)
 	}
 	current := readSettings(app)

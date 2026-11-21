@@ -2,7 +2,6 @@ package odyle
 
 import (
 	"encoding/json"
-	"errors"
 	"regexp"
 	"slices"
 	"strconv"
@@ -66,14 +65,14 @@ var clockTime = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 func checkNotifications(n notificationSettings) (notificationSettings, error) {
 	n.Saved = false
 	if len(n.LeadMinutes) == 0 || len(n.LeadMinutes) > 3 {
-		return n, errors.New("Choose one to three reminder times.")
+		return n, badRequest("Choose one to three reminder times.")
 	}
 	for i, lead := range n.LeadMinutes {
 		if lead < 1 || lead > 1440 {
-			return n, errors.New("Reminders come 1 minute to 24 hours before a run.")
+			return n, badRequest("Reminders come 1 minute to 24 hours before a run.")
 		}
 		if slices.Contains(n.LeadMinutes[:i], lead) {
-			return n, errors.New("Choose different reminder times.")
+			return n, badRequest("Choose different reminder times.")
 		}
 	}
 	n.LeadMinutes = slices.Clone(n.LeadMinutes)
@@ -84,7 +83,7 @@ func checkNotifications(n notificationSettings) (notificationSettings, error) {
 		ticks = *n.CapTicks
 	}
 	if ticks < 0 || ticks > 8 {
-		return n, errors.New("Cap alerts come 0 to 8 ticks before the cap.")
+		return n, badRequest("Cap alerts come 0 to 8 ticks before the cap.")
 	}
 	n.CapTicks = &ticks
 	tasks := n.Kinds.Tasks == nil || *n.Kinds.Tasks
@@ -96,14 +95,14 @@ func checkNotifications(n notificationSettings) (notificationSettings, error) {
 	case q.From == "" && q.To == "":
 		n.Quiet = quietHours{}
 	case q.From == "" || q.To == "":
-		return n, errors.New("Set both ends of the quiet hours, or neither.")
+		return n, badRequest("Set both ends of the quiet hours, or neither.")
 	case !clockTime.MatchString(q.From) || !clockTime.MatchString(q.To):
-		return n, errors.New("Quiet hours are times like 22:00.")
+		return n, badRequest("Quiet hours are times like 22:00.")
 	case q.From == q.To:
-		return n, errors.New("Quiet hours need different start and end times.")
+		return n, badRequest("Quiet hours need different start and end times.")
 	default:
 		if _, err := time.LoadLocation(q.TimeZone); err != nil || q.TimeZone == "" || len(q.TimeZone) > 64 {
-			return n, errors.New("Choose a time zone for the quiet hours.")
+			return n, badRequest("Choose a time zone for the quiet hours.")
 		}
 	}
 	return n, nil
@@ -158,7 +157,7 @@ func notifications(e *core.RequestEvent) error {
 		}
 		var sent notificationSettings
 		if json.Unmarshal(raw, &sent) != nil {
-			return nil, errors.New("Notification settings must be an object of channels, leadMinutes, kinds, capTicks and quiet.")
+			return nil, badRequest("Notification settings must be an object of channels, leadMinutes, kinds, capTicks and quiet.")
 		}
 		checked, err := checkNotifications(sent)
 		if err != nil {

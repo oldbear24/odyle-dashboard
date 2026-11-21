@@ -1,7 +1,6 @@
 package odyle
 
 import (
-	"errors"
 	"math"
 	"regexp"
 	"strconv"
@@ -17,7 +16,7 @@ func text(value any, name string, max int) (string, error) {
 	s, ok := value.(string)
 	s = visible(s)
 	if !ok || trim(s) == "" || length(trim(s)) > max {
-		return "", errors.New(name + " is required (max " + strconv.Itoa(max) + " characters).")
+		return "", badRequest(name + " is required (max " + strconv.Itoa(max) + " characters).")
 	}
 	return trim(s), nil
 }
@@ -27,7 +26,7 @@ const maxSafeInteger = 9007199254740991
 func integer(value any, name string, min, max int64) (int64, error) {
 	f, ok := value.(float64)
 	if !ok || f != math.Trunc(f) || math.IsInf(f, 0) || math.Abs(f) > maxSafeInteger || f < float64(min) || f > float64(max) {
-		return 0, errors.New(name + " must be an integer between " + strconv.FormatInt(min, 10) + " and " + strconv.FormatInt(max, 10) + ".")
+		return 0, badRequest(name + " must be an integer between " + strconv.FormatInt(min, 10) + " and " + strconv.FormatInt(max, 10) + ".")
 	}
 	return int64(f), nil
 }
@@ -40,7 +39,7 @@ type identity struct{ characterName, server, region string }
 func characterIdentity(b body) (identity, error) {
 	region, _ := b.text("region")
 	if !contains(regions, region) {
-		return identity{}, errors.New("Select a Global region.")
+		return identity{}, badRequest("Select a Global region.")
 	}
 	name, err := text(b["characterName"], "Character", 40)
 	if err != nil {
@@ -71,7 +70,7 @@ func dungeon(value any) (dungeonName, error) {
 func task(title any, cadence any) (string, string, error) {
 	c, _ := cadence.(string)
 	if c != "daily" && c != "weekly" {
-		return "", "", errors.New("Choose a daily or weekly task.")
+		return "", "", badRequest("Choose a daily or weekly task.")
 	}
 	t, err := text(title, "Task", 60)
 	if err != nil {
@@ -102,7 +101,7 @@ func note(b body, key string) (string, error) {
 func boardText(value any) (string, error) {
 	s, ok := value.(string)
 	if !ok {
-		return "", errors.New("The board must be text.")
+		return "", badRequest("The board must be text.")
 	}
 	lines, empty := []string{}, 0
 	for _, line := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(visible(s), "\r\n", "\n"), "\r", "\n"), "\n") {
@@ -119,7 +118,7 @@ func boardText(value any) (string, error) {
 	}
 	board := strings.Join(lines, "\n")
 	if length(board) > 2000 {
-		return "", errors.New("The board can be up to 2,000 characters.")
+		return "", badRequest("The board can be up to 2,000 characters.")
 	}
 	return board, nil
 }
@@ -129,10 +128,10 @@ func runStart(value any, now time.Time) (string, error) {
 	s, _ := value.(string)
 	at, ok := parseDate(s)
 	if !ok {
-		return "", errors.New("Choose when the run starts.")
+		return "", badRequest("Choose when the run starts.")
 	}
 	if at.Before(now.Add(-time.Hour)) || at.After(now.Add(60*24*time.Hour)) {
-		return "", errors.New("A run can start from an hour ago up to 60 days ahead.")
+		return "", badRequest("A run can start from an hour ago up to 60 days ahead.")
 	}
 	return at.UTC().Format(isoLayout), nil
 }
@@ -221,31 +220,31 @@ func readingParts(b body, value int64) (map[string]any, string, int64) {
 // validReading checks a reading of the Windows app against its reader session.
 func validReading(b body, sessionId string, sequence int64, adapters []string) (reading, error) {
 	if s, ok := b.text("sessionId"); !ok || s != sessionId {
-		return reading{}, errors.New("Publisher session changed. Reconnect your client.")
+		return reading{}, badRequest("Publisher session changed. Reconnect your client.")
 	}
 	seq, err := integer(b["sequence"], "Sequence", 1, maxSafeInteger)
 	if err != nil {
 		return reading{}, err
 	}
 	if seq <= sequence {
-		return reading{}, errors.New("Outdated reading.")
+		return reading{}, badRequest("Outdated reading.")
 	}
 	if source, _ := b.text("source"); source != "packet" {
-		return reading{}, errors.New("Odyle must come from game packets. Manual readings are disabled.")
+		return reading{}, badRequest("Odyle must come from game packets. Manual readings are disabled.")
 	}
 	parserVersion, err := text(b["parserVersion"], "Packet adapter", 80)
 	if err != nil {
 		return reading{}, err
 	}
 	if !contains(adapters, parserVersion) {
-		return reading{}, errors.New("This packet adapter has not been validated for Global. No reading was saved.")
+		return reading{}, badRequest("This packet adapter has not been validated for Global. No reading was saved.")
 	}
 	if !b.isTrue("confirmed") {
-		return reading{}, errors.New("A verified packet observation is required.")
+		return reading{}, badRequest("A verified packet observation is required.")
 	}
 	region, _ := b.text("region")
 	if !contains(regions, region) {
-		return reading{}, errors.New("Select a Global region.")
+		return reading{}, badRequest("Select a Global region.")
 	}
 	value, err := integer(b["value"], "Odyle", 0, 1000000)
 	if err != nil {

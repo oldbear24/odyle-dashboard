@@ -2,7 +2,6 @@ package odyle
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -122,7 +121,8 @@ func runPush(language string, r *Run, room string, roomId string, lead int64, le
 
 // pushReminders is the odyle-push job: each account going to a planned run that wants run
 // reminders by push gets one at the smallest of its reminder times the run is within, once
-// per start time (room_runs.pushed), and none in its quiet hours.
+// per start time (room_runs.pushed), and none in its quiet hours. A reminder no device took
+// because its push service failed is tried again on the next run, until the run starts.
 func pushReminders(app core.App) (result, error) {
 	at, out := time.Now(), result{}
 	found, err := app.FindRecordsByFilter("room_runs", "startsAt > {:now} && startsAt <= {:until}", "startsAt", 500, 0, dbx.Params{"now": stamp(at), "until": stamp(at.Add(24 * time.Hour))})
@@ -190,13 +190,17 @@ func pushReminders(app core.App) (result, error) {
 			if len(within) == 0 || slices.Contains(pushed, key(slices.Min(within))) {
 				continue
 			}
-			for _, lead := range within {
-				if !slices.Contains(pushed, key(lead)) {
-					pushed = append(pushed, key(lead))
+			// remember marks the reminder done for every lead the run is within.
+			remember := func() {
+				for _, lead := range within {
+					if !slices.Contains(pushed, key(lead)) {
+						pushed = append(pushed, key(lead))
+					}
 				}
+				changed = true
 			}
-			changed = true
 			if n.quietAt(at) {
+				remember()
 				continue
 			}
 			room := ""
@@ -205,10 +209,16 @@ func pushReminders(app core.App) (result, error) {
 			}
 			lead := slices.Min(within)
 			sent, err := pushToAccount(app, user, *n, func(language string) pushMessage { return runPush(language, r, room, r.Room(), lead, left) }, left, true)
+			out.Done += sent
+			// Kept as sent once a device took it, or when none failed (each one gone); else the
+			// next run tries again while the run is still within the lead, so a push service
+			// that failed or asked to wait (429) loses no reminder.
+			if sent > 0 || err == nil {
+				remember()
+			}
 			if err != nil {
 				out.fail("Push for run " + r.Id + " failed: " + message(err))
 			}
-			out.Done += sent
 		}
 		if !changed {
 			continue
@@ -231,7 +241,7 @@ func pushSubscribe(e *core.RequestEvent) error {
 		endpoint, _ := b.text("endpoint")
 		link, err := url.Parse(endpoint)
 		if endpoint == "" || len(endpoint) > 1000 || err != nil || !pushEndpointAllowed(link) {
-			return nil, errors.New("This browser's push service is not supported.")
+			return nil, badRequest("This browser's push service is not supported.")
 		}
 		keys, _ := b["keys"].(map[string]any)
 		p256dh, _ := keys["p256dh"].(string)
@@ -239,7 +249,7 @@ func pushSubscribe(e *core.RequestEvent) error {
 		point, err1 := b64.DecodeString(strings.TrimRight(p256dh, "="))
 		secret, err2 := b64.DecodeString(strings.TrimRight(auth, "="))
 		if err1 != nil || err2 != nil || len(point) != 65 || point[0] != 4 || len(secret) != 16 {
-			return nil, errors.New("The push subscription's keys are not valid.")
+			return nil, badRequest("The push subscription's keys are not valid.")
 		}
 		language, _ := b.text("language")
 		if language != "cs" {

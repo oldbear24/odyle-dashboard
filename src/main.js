@@ -51,7 +51,7 @@ const app = document.querySelector('#app');
 // error shows for a page that is going away.
 const tabStorage = (() => { try { return window.sessionStorage; } catch { return null; } })();
 function gone(error) {
-  if (!reloadOnce(tabStorage, Date.now(), navigator.onLine !== false)) throw Object.assign(new Error('This part of Odyle could not load. Check your connection, then reload the page.'), { cause: error });
+  if (!reloadOnce(tabStorage, Date.now(), navigator.onLine !== false)) throw Object.assign(new Error('This part of Odyle could not load. Check your connection, then reload the page.'), { cause: error, part: true });
   location.reload(); return new Promise(() => { /* the new build takes over */ });
 }
 const lazyPart = load => lazily(load, gone);
@@ -206,7 +206,10 @@ function renderConnection() { document.querySelectorAll('.connection').forEach(e
 function renderReaderStatus() { const el = document.querySelector('.sidebar-foot .reader-button'); if (el) el.outerHTML = readerButton(`${icon('plus')} ${t('Connect reader')}`); document.querySelectorAll('.menu-reader').forEach(item => { item.outerHTML = readerItem(); }); }
 // Wide screens: the sidebar with the room switch, the pages, the reader and the account menu.
 // Phones: a bar at the top (room switch, account menu) and one at the bottom (pages).
+// Every page draws through shell(), which notes the navigation (show) it drew for.
+let drawn = 0, reloadTimer;
 function shell(content, active = 'overview') {
+  drawn = navigation;
   // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
   const message = document.querySelector('#toast.show')?.textContent, reader = pb.authStore.isValid && !demo ? readerButton(`${icon('plus')} ${t('Connect reader')}`) : '';
   const home = cls => `<a href="${link('/')}" class="${cls}" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span class="brand-name">odyle<span class="brand-dot">.</span></span></a>`;
@@ -219,7 +222,7 @@ const standalone = () => navigator.standalone === true || Boolean(window.matchMe
 const embedded = () => inAppBrowser(navigator.userAgent, standalone());
 // What Odyle is and what its reader does, where players decide to use it: the welcome
 // page, the pairing dialog and Reader & privacy.
-const scopeText = () => t("Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic or automates play, and it reads no damage numbers, HP or skills. It reads your character's PvP kills, assists and deaths, with the names of the players in them, only after you turn on PvP stats. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.");
+const scopeText = () => t("Odyle is an unofficial fan project, not affiliated with or endorsed by NCSOFT. The Windows reader only listens to your own game connection: it never reads game memory, changes or sends game traffic or automates play, and it reads no damage numbers, HP or skills. It reads your character's PvP kills, assists and deaths, with the names of the players in them, only after you turn on PvP stats. It also sends the names of the other players in your party and force to Odyle's armory, which looks up their public PLAYNC profiles, until you turn that off under Account & data. NCSOFT's rules ban unauthorized programs, so use Odyle at your own risk.");
 const scopeNote = () => `<p class="scope-note">${icon('shield')}<span>${scopeText()}</span></p>`;
 // The welcome page; an invite link (code) adds its card, filled in from the preview.
 function welcome(code = '') {
@@ -1321,7 +1324,7 @@ async function refreshPage() {
   else if (shown === '/timers') await loadTimers();
   else if (shown === '/achievements') await loadAchievements();
   else if (shown === '/week') await loadWeek();
-  else if (shown?.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch
+  else if (shown === null || shown.startsWith('/armory') || shown === '/changelog' || shown === '/privacy') await pb.health.check(); // nothing of the account to fetch (null: a page that failed to load, pageFailed)
   else {
     const [list, mine] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' })]);
     if (!room) { rooms = list.rooms; roomsKnown = true; characters = mine; readers = list.readers || []; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); noteAchievements(list); }
@@ -1341,6 +1344,7 @@ function renderPage() {
 // Redraws the current page, for example after the language changed.
 function rerender() {
   if (demo) return demoSession();
+  if (shown === null) return show().catch(failure);
   if (shown?.startsWith('/armory')) return armoryRender();
   if (shown === '/changelog') return changelogRender();
   if (shown === '/timers') return timersRender();
@@ -1376,7 +1380,25 @@ function pageTitle(path) {
 async function show(force = false) {
   const path = currentPath();
   if (path === shown && !force) return;
-  shown = path; const ticket = ++navigation;
+  shown = path; const ticket = ++navigation; clearTimeout(reloadTimer);
+  try { await showPage(path, ticket); }
+  catch (error) {
+    // A page that failed before it drew anything (a deploy, a restart, a dropped network)
+    // would leave an empty page, or the previous page with buttons for what was closed.
+    if (ticket !== navigation || drawn === ticket || error?.status === 401) throw error;
+    pageFailed(error);
+  }
+}
+// A page that could not load says why and loads again in ten seconds, or with Try again now.
+function pageFailed(error) {
+  shown = null; drawn = navigation;
+  // A part of the page that stayed gone after an update (gone) says so; other failures without an
+  // answer, or with a server error, are the server's.
+  const why = error?.part || (error?.status >= 400 && error.status < 500) ?t(error.message || 'Request could not be completed.') : t('The Odyle server did not answer.');
+  shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('NOT LOADED')}</div><h1>${t('This page could not be loaded')}<span class="mint">.</span></h1><p class="intro">${esc(why)} ${t('The dashboard tries again in ten seconds.')}</p><button class="button secondary" data-action="reload-page">${t('Try again now')} ${icon('arrow')}</button></main>`);
+  reloadTimer = setTimeout(() => show().catch(failure), 10000);
+}
+async function showPage(path, ticket) {
   // A path that names no page shows as the page it opens.
   if (usesPaths() && current() !== path) visit(path, true);
   retitle(pageTitle(path));
@@ -1608,6 +1630,11 @@ app.addEventListener('submit', async e => {
       account.shareLocation = result.shareLocation; accountRender();
       toast(result.shareLocation ? t('Saved: your rooms see where your characters were last seen.') : t('Saved: location sharing is off, and the saved places are deleted.'));
     }
+    else if (form.id === 'teammates-form') {
+      const result = await send('teammates-sharing', { enabled: data.shareTeammates === 'on' });
+      account.shareTeammates = result.shareTeammates; accountRender();
+      toast(result.shareTeammates ? t('Saved: the Windows app sends your party and force members\' names to the armory.') : t('Saved: the Windows app no longer sends your party and force members\' names.'));
+    }
     else if (form.id === 'pvp-form') {
       const result = await send('pvp-stats', { enabled: data.pvpStats === 'on' });
       account.pvpStats = result.pvpStats; accountRender();
@@ -1786,6 +1813,7 @@ app.addEventListener('click', async e => {
     switch (el.dataset.action) {
       case 'discord': await discordLogin(); break;
       case 'retry': await authenticated(); break;
+      case 'reload-page': await show(); break;
       case 'cancel-task-edit': editingTask = ''; tasksView(); break;
       case 'task-templates': { const scope = taskScope(), name = scopes(taskCharacters).find(s => s.id === scope)?.name || t('Account'); modal(esc(t('Add to {list}', { list: name })), `<p>${t('Tasks of the game the server keeps for everyone. Each is added once; you can rename or remove it later.')}</p>${templatesForm(taskTemplates, tasks, scope)}`); break; }
       case 'discord-off': ask(t('Stop Discord reminders?'), t('Planned runs are no longer posted to your Discord channel. Odyle forgets the webhook URL; to turn reminders on again, paste one from Discord.'), t('Stop reminders'), { action: 'confirm-discord-off' }); break;

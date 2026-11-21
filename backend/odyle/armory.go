@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/url"
 	"os"
 	"regexp"
@@ -46,6 +47,7 @@ const (
 	armoryRetry         = 10 * time.Minute // a failed lookup is not tried again before
 	armoryBlocked       = 10 * time.Minute // PLAYNC refused the server without saying how long
 	armorySearchKeep    = 10 * time.Minute // a search's results are kept this long
+	armoryIncomplete    = time.Hour        // a kept profile missing some details is fetched again when opened after this
 )
 
 // armoryPace is the time between two profile lookups, armoryStep between the pages of one
@@ -103,6 +105,9 @@ type armoryProfile struct {
 	Skills       []armorySkill `json:"skills"`
 	Titles       armoryTitles  `json:"titles"`
 	Boards       []armoryBoard `json:"boards"`
+	// Missing counts the item and board pages that failed when it was read, whose details it
+	// lacks; a profile missing some is fetched again sooner (armoryIncomplete).
+	Missing int `json:"missingDetails,omitempty"`
 }
 
 // A stat: the six primary ones (STR, DEX, INT, CON, AGI, WIS) or a deity's ("Justice",
@@ -280,7 +285,15 @@ func jsonValue(m map[string]any, key string, max int) string {
 	return jsonText(m, key, max)
 }
 
-func whole(v any) int64 { return int64(max(0, number(v))) }
+// whole is a count, level or id PLAYNC sends as a number or as text: 0 for anything negative or
+// not a number ("NaN"), and at most 2^53, past which an int64 would overflow to a negative one.
+func whole(v any) int64 {
+	n := number(v)
+	if math.IsNaN(n) || n <= 0 {
+		return 0
+	}
+	return int64(min(n, 1<<53))
+}
 
 func jsonObject(v any) map[string]any { m, _ := v.(map[string]any); return m }
 
@@ -318,7 +331,10 @@ var deityName = regexp.MustCompile(`^(.*?)\s*\[(.*?)\]$`)
 var errArmoryAnswer = errors.New("PLAYNC answered something else than a character profile.")
 
 // readArmory turns PLAYNC's info and equipment answers into the kept profile, without the
-// items' and boards' details (readItem, readBoard).
+// items' and boards' details (readItem, readBoard); equipment nil reads the info page alone
+// (the scout's check of a character's combat power). An answer without the character's name,
+// or with combat power but no equipped item, is not a profile as PLAYNC lists them (its
+// format changed, or the page failed): errArmoryAnswer, so the kept one stays.
 func readArmory(info, equipment map[string]any) (armoryProfile, error) {
 	profile := jsonObject(info["profile"])
 	p := armoryProfile{Version: armoryVersion, Name: jsonText(profile, "characterName", 40), Level: whole(profile["characterLevel"]), Class: jsonText(profile, "className", 40), Race: jsonText(profile, "raceName", 40),
@@ -348,6 +364,9 @@ func readArmory(info, equipment map[string]any) (armoryProfile, error) {
 		if len(p.Gear) < 40 {
 			p.Gear = append(p.Gear, armoryGear{Slot: jsonText(g, "slotPosName", 20), Name: jsonText(g, "name", 80), Grade: jsonText(g, "grade", 20), Enchant: whole(g["enchantLevel"]), Exceed: whole(g["exceedLevel"]), Icon: iconOf(g, "icon"), id: whole(g["id"]), order: whole(g["slotPos"])})
 		}
+	}
+	if equipment != nil && p.CombatPower > 0 && len(p.Gear) == 0 {
+		return armoryProfile{}, errArmoryAnswer
 	}
 	slices.SortStableFunc(p.Gear, func(a, b armoryGear) int { return int(a.order - b.order) })
 	companions := jsonObject(equipment["petwing"])
@@ -504,13 +523,16 @@ func (b *armoryBoard) detailed() bool { return b.Id > 0 && b.Open > 0 }
 
 // detailArmory asks PLAYNC for the details of each equipped item and, with withBoards, of each
 // board with open nodes, armoryStep apart. A detail PLAYNC does not give leaves its item or board
-// without one; PLAYNC refusing the server ends the lookup.
+// without one, counted in the profile's Missing; more of them than armoryDetailsLost allows is
+// errArmoryAnswer (PLAYNC's pages changed or fail), so the kept profile stays. PLAYNC refusing
+// the server ends the lookup.
 func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack, withBoards bool) error {
 	var refused armoryRefused
 	items, boards := p.detailed()
 	if !withBoards {
 		boards = 0
 	}
+	p.Missing = 0
 	track.begin("items", items, 1)
 	for i := range p.Gear {
 		g := &p.Gear[i]
@@ -524,6 +546,9 @@ func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack, withBoards 
 		}
 		if err == nil {
 			g.Detail = readItem(found)
+		}
+		if g.Detail == nil {
+			p.Missing++
 		}
 		track.tick()
 	}
@@ -541,10 +566,23 @@ func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack, withBoards 
 		if err == nil {
 			readBoard(b, found)
 		}
+		// A board with open nodes lists them.
+		if len(b.Nodes) == 0 {
+			p.Missing++
+		}
 		track.tick()
+	}
+	if p.Missing > armoryDetailsLost(items+boards) {
+		return errArmoryAnswer
 	}
 	return nil
 }
+
+// armoryDetailsLost is how many of a lookup's pages of details may fail before it fails: one,
+// or a quarter of them (5 of the some 20 items and 4 boards of a character at the level cap).
+// One page failing now and then is PLAYNC's; more is a change of its pages or a failure that
+// would keep a profile without most of its details.
+func armoryDetailsLost(pages int) int { return max(1, pages/4) }
 
 // detailed counts the items and boards whose pages a lookup asks for.
 func (p *armoryProfile) detailed() (items, boards int) {
@@ -1180,12 +1218,13 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	out := newObject().set("region", region).set("serverId", serverId).set("characterId", characterId).set("server", server).set("profile", nil).set("partial", false).set("classIcon", "").set("fetchedAt", "").set("error", "")
 	var fetched time.Time
-	outdated, missing := false, false
+	outdated, missing, incomplete := false, false, false
 	if record != nil {
 		fetched = record.GetDateTime("fetchedAt").Time()
 		profile := parseJSON(record.GetString("profile"), "null")
 		if kept, ok := profile.(map[string]any); ok {
 			outdated = number(kept["v"]) < armoryVersion
+			incomplete = number(kept["missingDetails"]) > 0
 		}
 		// A profile that names an image the server no longer keeps (a restore, a change of the
 		// file storage) is fetched again, which keeps its images, as a Refresh would.
@@ -1200,7 +1239,8 @@ func armoryRoute(e *core.RequestEvent) error {
 	}
 	age := time.Since(fetched)
 	state := armoryState{State: "fresh"}
-	if record == nil || age > armoryRefresh || outdated || (missing || e.Request.URL.Query().Get("refresh") == "1") && age > armoryReaderRefresh {
+	// A profile some of whose details PLAYNC did not give is fetched again after an hour.
+	if record == nil || age > armoryRefresh || outdated || incomplete && age > armoryIncomplete || (missing || e.Request.URL.Query().Get("refresh") == "1") && age > armoryReaderRefresh {
 		if readSettings(e.App).ArmoryPaused {
 			state = armoryState{State: "paused"}
 		} else {

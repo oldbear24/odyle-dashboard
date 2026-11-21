@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.66.0 · 2026-11-21
+
+### New
+- **Account & data** has a switch for the names of the other players in your party and force, which Odyle for Windows sends to the armory so it can look up their public PLAYNC profiles. It stays on unless you turn it off; then the server takes no names from your characters, and Odyle for Windows 0.36.0 stops sending them within a minute. The notice on the welcome page, in the pairing dialog and under **Reader & privacy** now says so.
+
+### Fixed
+- A page that fails to load (while the server updates or restarts, or the network drops) now says so, with **Try again now**, and loads by itself ten seconds later. Before, it stayed empty until you reloaded, or kept showing the page before with buttons that no longer worked.
+- A room with Discord reminders 15 and 10 minutes before a run now gets both posts. Before, the 10-minute one never came.
+- A run reminder by push that the push service failed to take is sent again on the next try instead of being lost, and a push service that asks Odyle to slow down is waited for.
+- PLAYNC asking the armory to wait a very long time no longer stops lookups until the server restarts: a wait lasts an hour at most, and resuming the armory under **Server controls** ends it.
+- When PLAYNC's pages change, or many of a character's item pages fail, the armory keeps the profile it had instead of saving an empty one. A profile missing a few item pages is fetched again sooner.
+- An unexpected server failure now says so in words the dashboard translates and is written to the server log, instead of showing internal text as if your request had been wrong.
+
 ## 0.65.0 · 2026-11-20
 
 ### Changed
