@@ -255,7 +255,7 @@ func checkHealth(app core.App) (result, error) {
 		post(key, problems[key])
 	}
 	for _, key := range cleared {
-		post("", clearedText(key))
+		post("", clearedText(app, key))
 	}
 	return out, nil
 }

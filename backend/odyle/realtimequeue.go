@@ -97,8 +97,8 @@ func (s *senders) waiting(id string) int {
 }
 
 // Keys of a collapsed message: lists of notices add up, heartbeats merge, a room's removal
-// stays, characters give way to refresh; anything else (news for everyone, notification
-// settings) is the latest.
+// stands only when the latest message says it, characters give way to refresh; anything else
+// (news for everyone, notification settings) is the latest.
 var (
 	addedUp = map[string]bool{"capAlerts": true, "partyReady": true, "invites": true, "achievements": true}
 	merged  = map[string]bool{"seen": true, "contact": true}
@@ -135,10 +135,17 @@ func collapseQueue(messages []subscriptions.Message) []subscriptions.Message {
 				}
 				into[key] = before
 			case key == "removed":
-				into[key] = into[key] == true || value == true
+				// Below: the latest message decides.
 			default:
 				into[key] = value
 			}
+		}
+		// A removal unsubscribes the client from the room, so news after it means the member was
+		// added again (and subscribed again): only the latest message says whether it is removed.
+		if data["removed"] == true {
+			into["removed"] = true
+		} else {
+			delete(into, "removed")
 		}
 	}
 	out := make([]subscriptions.Message, 0, len(order))

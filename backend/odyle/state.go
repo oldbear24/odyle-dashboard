@@ -36,7 +36,7 @@ type state struct {
 	traffic     *traffic  // has its own lock
 
 	jobs    map[string]*jobRecord // the runs of each job
-	running map[string]uint64     // jobs running now, by the id of their run
+	running map[string]jobRun     // jobs running now: their run's id and start
 	runIds  uint64                // the id of the latest run
 
 	ops opsState // what the operator alerts and the health check watch (alerts.go)
@@ -87,7 +87,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]uint64{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), scout: newArmoryScout(),
+		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]jobRun{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), scout: newArmoryScout(),
 			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence(), health: newHealth()}
 	}).(*state)
 }

@@ -780,6 +780,7 @@ type armoryWork struct {
 	errorAt                 time.Time
 	done                    int
 	failed                  int
+	failing                 int // lookups failed in a row since one worked (alerts.go)
 
 	classesTried time.Time // PLAYNC's classes were last asked for (classes.go learnClassesFor)
 }
@@ -1052,7 +1053,7 @@ func (w *armoryWork) lane(app core.App) {
 		var refused armoryRefused
 		switch {
 		case err == nil:
-			w.done++
+			w.done, w.failing = w.done+1, 0
 			if !j.auto {
 				w.took = (3*w.took + at.Sub(run.startedAt)) / 4
 			}
@@ -1060,6 +1061,7 @@ func (w *armoryWork) lane(app core.App) {
 			w.misses[j.key] = armoryMiss{until: at.Add(armoryMissing), missing: true}
 		default:
 			w.failed++
+			w.failing++
 			w.lastError, w.errorAt = message(err), at
 			w.misses[j.key] = armoryMiss{until: at.Add(armoryRetry), error: message(err)}
 			if errors.As(err, &refused) {

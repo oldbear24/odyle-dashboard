@@ -45,3 +45,13 @@ test('What\'s new lists the versions, this one marked, and the newest Windows ap
   assert.deepEqual([updated('0.9.0', '0.10.0'), updated('earlier', '0.10.0'), updated('0.10.0', '0.10.0'), updated(null, '0.10.0')], [true, true, false, false]);
   assert.match(updatedNote('0.10.0'), /Updated to 0\.10\.0\. <a href="#\/changelog">What's new<\/a>/);
 });
+
+test('only a newer release on the server is news to an open tab, compared by number (#197)', async () => {
+  const { newerRelease } = await import('../src/updatenote.js');
+  // Newer, part by part and numerically (0.10.0 is above 0.9.0).
+  assert.deepEqual([newerRelease('0.68.0', '0.67.0'), newerRelease('0.67.1', '0.67.0'), newerRelease('1.0.0', '0.67.0'), newerRelease('0.10.0', '0.9.0')], [true, true, true, true]);
+  // The same, or a server rolled back to an older release: no note, no reload.
+  assert.deepEqual([newerRelease('0.67.0', '0.67.0'), newerRelease('0.66.0', '0.67.0'), newerRelease('0.9.0', '0.10.0'), newerRelease('0.67.0', '1.0.0')], [false, false, false, false]);
+  // Anything that is no release (a build without one, or this one from the dev server).
+  assert.deepEqual([newerRelease(undefined, '0.67.0'), newerRelease('', '0.67.0'), newerRelease('0.68', '0.67.0'), newerRelease('0.68.0', 'dev')], [false, false, false, false]);
+});

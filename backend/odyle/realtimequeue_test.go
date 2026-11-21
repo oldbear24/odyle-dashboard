@@ -147,13 +147,43 @@ func TestCollapseQueue(t *testing.T) {
 	for _, m := range out {
 		got = append(got, m.Name+" "+string(m.Data))
 	}
+	// The room's news after the removal is from after the member was added again: not removed.
 	want := []string{
 		userTopic + `u {"achievements":["x","y"],"refresh":true,"seen":{"a":"1","b":"2"},"windowsBlocked":["2.0.0"],"windowsUpdate":{"at":"now"}}`,
-		roomTopic + `r {"refresh":true,"removed":true}`,
+		roomTopic + `r {"refresh":true}`,
 		adminTopic + `packets {"packet":2}`,
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("collapsed\n%v\nwant\n%v", got, want)
+	}
+	// Removed, added again and removed once more: the removal stands.
+	again := collapseQueue([]subscriptions.Message{
+		message(roomTopic+"r", map[string]any{"refresh": true, "removed": true}),
+		message(roomTopic+"r", map[string]any{"refresh": true}),
+		message(roomTopic+"r", map[string]any{"refresh": true, "removed": true}),
+	})
+	if len(again) != 1 || string(again[0].Data) != `{"refresh":true,"removed":true}` {
+		t.Fatalf("removed last: %v", again)
+	}
+}
+
+// A slow connection whose queue collapses after its member was removed from a room and added
+// again does not hear that it was removed: it would leave (or hide) a room it is in.
+func TestACollapsedQueueForgetsARemovalUndone(t *testing.T) {
+	message := func(data any) subscriptions.Message {
+		raw, _ := json.Marshal(data)
+		return subscriptions.Message{Name: roomTopic + "r", Data: raw}
+	}
+	out := collapseQueue([]subscriptions.Message{
+		message(map[string]any{"refresh": true, "removed": true}),
+		message(map[string]any{"refresh": true, "characters": []any{"c"}}),
+	})
+	var data map[string]any
+	if len(out) != 1 || json.Unmarshal(out[0].Data, &data) != nil || data["refresh"] != true {
+		t.Fatalf("collapsed %v", out)
+	}
+	if _, removed := data["removed"]; removed {
+		t.Fatalf("a removal undone stayed: %s", out[0].Data)
 	}
 }
 

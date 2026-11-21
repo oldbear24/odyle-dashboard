@@ -2224,3 +2224,21 @@ test('a newer release says so, and a hidden tab without unsaved input loads it (
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
+test('a server rolled back to an older release is no news: no note and no reload (#197)', async () => {
+  const { page, errors, close } = await open(null, '#/armory');
+  try {
+    let asked = 0;
+    await page.route('**/api/odyle/announcement', async route => { asked++; const answer = await (await route.fetch()).json(); await route.fulfill({ json: { ...answer, dashboard: '0.1.0' } }); });
+    await page.reload();
+    await page.locator('#armory-form').waitFor();
+    for (let i = 0; i < 50 && !asked; i++) await delay(100);
+    assert.ok(asked > 0); await delay(300);
+    let loads = 0; page.on('load', () => loads++);
+    await page.evaluate(() => { for (const [name, value] of [['hidden', true], ['visibilityState', 'hidden']]) Object.defineProperty(document, name, { configurable: true, get: () => value }); document.dispatchEvent(new Event('visibilitychange')); });
+    await delay(1500);
+    assert.equal(loads, 0);
+    assert.equal(await page.locator('.update-note.is-newer').count(), 0);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('odyle.reloadedFor')), null);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});

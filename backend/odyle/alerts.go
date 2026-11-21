@@ -19,7 +19,8 @@ import (
 // The odyle-health job (health.go) tells the operator of each problem once when it starts and
 // once when it clears. Besides the readers and the clock it watches:
 //   - backup: the last backup failed, or a scheduled one was not made;
-//   - job:<name>: a background job has ended in an error for brokenFor;
+//   - job:<name>: a background job has ended in an error for brokenFor, or one run of it has gone
+//     on for stuckFor;
 //   - storage: files could not be moved into the S3 storage;
 //   - armory: PLAYNC refused the armory's lookups, or many failed in a row, since one worked;
 //   - push: ODYLE_VAPID_PRIVATE_KEY is not a key, or push messages failed streakAlert times in a row;
@@ -38,6 +39,9 @@ const (
 	// brokenFor is how long a job ends in an error before the operator hears: a job that runs every
 	// minute has failed some 30 times, a daily one once and not since.
 	brokenFor = 30 * time.Minute
+	// stuckFor is how long one run of a job may go on before the operator hears that it is stuck. The
+	// health check stays healthy: the cron still ticks, and a restart is the operator's call.
+	stuckFor = 30 * time.Minute
 	// armoryFailing is how many armory lookups in a row fail before the operator hears.
 	armoryFailing = 10
 	// backupGrace is how long a scheduled backup may take before it counts as not made.
@@ -63,12 +67,10 @@ type opsState struct {
 
 	push, discord streak
 
-	mu             sync.Mutex
-	backupFailure  string // why the last backup failed; empty since one that worked
-	armoryDone     int    // the armory's counters at the last look
-	armoryFailed   int
-	armoryFailures int  // lookups failed since the last one that worked, as far as the looks tell
-	armoryRefused  bool // PLAYNC refused the server since the last lookup that worked
+	mu            sync.Mutex
+	backupFailure string // why the last backup failed; empty since one that worked
+	armoryDone    int    // the armory's lookups that worked, at the last look
+	armoryRefused bool   // PLAYNC refused the server since the last lookup that worked
 
 	checkMu      sync.Mutex
 	checkedAt    time.Time // the health check's last look
@@ -104,11 +106,19 @@ type pushWaiting string
 
 func (w pushWaiting) Error() string { return string(w) }
 
-// notePush counts a push message's outcome: one its push service forgot (the device turned push
-// off) or asked to wait for is neither a success nor a failure of the server's.
+// pushRefused is a push service's answer of 300 or more (but 404, 410 and 429) with its status.
+type pushRefused int
+
+func (r pushRefused) Error() string { return fmt.Sprintf("the push service answered %d", int(r)) }
+
+// notePush counts a push message's outcome, as delivered does Discord's: only the network failing
+// and a push service's 5xx count against the server. One its push service forgot (the device
+// turned push off), asked to wait for, or refused with a 4xx (a bad, outdated or too large
+// subscription's message) is neither a success nor a failure of the server's.
 func (o *opsState) notePush(err error) {
 	var waiting pushWaiting
-	if errors.Is(err, errPushGone) || errors.As(err, &waiting) {
+	var refused pushRefused
+	if errors.Is(err, errPushGone) || errors.As(err, &waiting) || (errors.As(err, &refused) && refused < 500) {
 		return
 	}
 	o.push.note(err)
@@ -192,17 +202,22 @@ func lastDue(schedule string, before time.Time) time.Time {
 	return time.Time{}
 }
 
-// jobProblems are the jobs, by name, that have ended in an error for brokenFor. The odyle-health
-// job is left out (it fails when the alert itself cannot be posted), and so are paused jobs (their
-// runs are skipped).
+// jobProblems are the jobs, by name, whose run has gone on for stuckFor (the lock holds a job until
+// its run ends, so every later run is skipped), or that have ended in an error for brokenFor. For
+// the errors, the odyle-health job is left out (it fails when the alert itself cannot be posted),
+// and so are paused jobs (their runs are skipped).
 func jobProblems(app core.App, at time.Time) map[string]string {
-	s := stateOf(app)
+	s, current := stateOf(app), readSettings(app)
 	out := map[string]string{}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, name := range jobNames {
+		if run, ok := s.running[name]; ok && at.Sub(run.started) >= stuckFor {
+			out[name] = "Odyle alert: the background job " + name + " has been running since " + run.started.UTC().Format("2006-01-02 15:04") + " UTC and looks stuck, so its next runs are skipped. Restart the server to free it; see Odyle → Background jobs."
+			continue
+		}
 		record := s.jobs[name]
-		if name == "odyle-health" || record == nil || record.BrokenSince == "" || record.Skipped == "paused" {
+		if name == "odyle-health" || record == nil || record.BrokenSince == "" || jobPaused(name, record, current) {
 			continue
 		}
 		since, err := time.Parse(isoLayout, record.BrokenSince)
@@ -212,6 +227,12 @@ func jobProblems(app core.App, at time.Time) map[string]string {
 		out[name] = "Odyle alert: the background job " + name + " has ended in an error since " + since.UTC().Format("2006-01-02 15:04") + " UTC: " + plain(record.LastError) + " See Odyle → Background jobs."
 	}
 	return out
+}
+
+// jobPaused: the job is paused under Server controls, or its last run was skipped as paused.
+func jobPaused(name string, record *jobRecord, current settings) bool {
+	pause := jobPauses[name]
+	return (pause != nil && pause(current)) || (record != nil && record.Skipped == "paused")
 }
 
 func storageProblem(app core.App) string {
@@ -225,28 +246,26 @@ func storageProblem(app core.App) string {
 	return fmt.Sprintf("Odyle alert: %d files could not be moved into the S3 storage (%s). They stay on disk and the next start tries again.", move.Failed, plain(move.Error))
 }
 
-// armoryProblem: the armory's counters, compared with the last look, tell how many lookups failed
-// since one worked. Whoever looks (the job, Server status) moves the count on, so it does not
-// depend on how often anyone looks.
+// armoryProblem: the armory counts the lookups failed in a row since one worked (failing). Whether
+// PLAYNC refused it since one worked comes from its done counter, compared with the last look;
+// whoever looks (the job, Server status) moves that on, so it does not depend on how often anyone
+// looks.
 func armoryProblem(app core.App, at time.Time) string {
 	s := stateOf(app)
 	w := s.armory
 	w.mu.Lock()
-	done, failed, blocked, last := w.done, w.failed, w.blocked, w.lastError
+	done, failures, blocked, last := w.done, w.failing, w.blocked, w.lastError
 	w.mu.Unlock()
 	o := &s.ops
 	o.mu.Lock()
 	if done > o.armoryDone {
-		o.armoryFailures, o.armoryRefused = 0, false
-	}
-	if failed > o.armoryFailed {
-		o.armoryFailures += failed - o.armoryFailed
+		o.armoryRefused = false
 	}
 	if blocked.After(at) {
 		o.armoryRefused = true
 	}
-	o.armoryDone, o.armoryFailed = done, failed
-	failures, refused := o.armoryFailures, o.armoryRefused
+	o.armoryDone = done
+	refused := o.armoryRefused
 	o.mu.Unlock()
 	// A paused armory asks nothing of PLAYNC.
 	if readSettings(app).ArmoryPaused {
@@ -286,9 +305,19 @@ func vapidProblem() string {
 	return ""
 }
 
-// clearedText is the message for a problem that cleared.
-func clearedText(key string) string {
+// clearedText is the message for a problem that cleared. A job's alert clears when the job is
+// paused too, which is no sign that it works again.
+func clearedText(app core.App, key string) string {
 	name, detail, _ := strings.Cut(key, ":")
+	if name == "job" {
+		s, current := stateOf(app), readSettings(app)
+		s.mu.Lock()
+		paused := jobPaused(detail, s.jobs[detail], current)
+		s.mu.Unlock()
+		if paused {
+			return "Odyle: the background job " + detail + " is paused, so its alert is cleared; it is told again if it keeps failing once resumed."
+		}
+	}
 	switch name {
 	case "adapter":
 		return "Odyle: cleared, no more readings arrive under the refused adapter " + plain(detail) + "."

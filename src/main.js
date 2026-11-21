@@ -21,7 +21,7 @@ import { forgetPairing, readerList, onlineReader, readerLabel } from './readers.
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder, byPlayer, inGame } from './partyview.js';
 import { dungeonKey, entryOf, cubeCost, dungeonFacts, dungeonField } from './catalog.js';
-import { updated, updatedNote, newerNote } from './updatenote.js';
+import { updated, updatedNote, newerNote, newerRelease } from './updatenote.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
@@ -209,11 +209,14 @@ function renderUpdateNote() {
   const el = document.querySelector('.update-note'), html = updateNote();
   if (el) el.outerHTML = html; else if (html) document.querySelector('.announcement-slot')?.insertAdjacentHTML('afterend', html);
 }
-const ownDashboard = import.meta.env.PROD && !import.meta.env.VITE_POCKETBASE_URL, release = /^\d+\.\d+\.\d+$/;
+const ownDashboard = import.meta.env.PROD && !import.meta.env.VITE_POCKETBASE_URL;
 let releaseOut = '', releaseHidden = '', releaseAt = Date.now();
 function noteRelease(data) {
   const next = data?.dashboard;
-  if (!ownDashboard || !release.test(next || '') || !release.test(appVersion) || next === appVersion || next === releaseOut) return;
+  if (!ownDashboard || next === releaseOut || !next) return;
+  // Only a newer release: a server rolled back to an older one has nothing to offer, and takes
+  // back the note of the one it rolled back from.
+  if (!newerRelease(next, appVersion)) { if (releaseOut) { releaseOut = ''; renderUpdateNote(); } return; }
   releaseOut = next; renderUpdateNote(); announce(t('Odyle {version} is out. Reload the page to get it.', { version: next }));
   reloadWhenIdle();
 }

@@ -270,7 +270,7 @@ func sendPush(app core.App, sub *core.Record, message pushMessage, ttl time.Dura
 		}
 		return pushWaiting(fmt.Sprintf("the push service answered 429 and asked to wait %s", wait.Round(time.Second)))
 	case response.StatusCode >= 300:
-		return fmt.Errorf("the push service answered %d", response.StatusCode)
+		return pushRefused(response.StatusCode)
 	}
 	_, err = app.DB().NewQuery("UPDATE push_subscriptions SET lastOkAt = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": now(), "id": sub.Id}).Execute()
 	return err

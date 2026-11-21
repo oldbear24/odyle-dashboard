@@ -86,6 +86,74 @@ func TestABrokenJobAlertsTheOperator(t *testing.T) {
 	}
 }
 
+// A run that never ends holds its job for good (the lock has no expiry), so the operator hears of
+// it once it has gone on for stuckFor; its end clears that.
+func TestAStuckJobAlertsTheOperator(t *testing.T) {
+	app := newTestApp(t)
+	started, release := make(chan struct{}), make(chan struct{})
+	swapJob(t, "odyle-stats", func(core.App) (result, error) {
+		close(started)
+		<-release
+		return result{Done: 1}, nil
+	})
+	done := make(chan result)
+	go func() { done <- runJob(app, "odyle-stats", false) }()
+	<-started
+	at := time.Now()
+	if got := operatorProblems(app, at)["job:odyle-stats"]; got != "" {
+		t.Fatalf("told at once: %q", got)
+	}
+	got := operatorProblems(app, at.Add(stuckFor+time.Minute))["job:odyle-stats"]
+	if !strings.Contains(got, "odyle-stats has been running since") || !strings.Contains(got, "looks stuck") {
+		t.Fatalf("stuck %q", got)
+	}
+	if out := runJob(app, "odyle-stats", true); out.Skipped != "running" {
+		t.Fatalf("a second run started: %+v", out)
+	}
+	close(release)
+	<-done
+	if got := operatorProblems(app, at.Add(stuckFor+time.Minute))["job:odyle-stats"]; got != "" {
+		t.Fatalf("not cleared: %q", got)
+	}
+}
+
+// Pausing a broken job clears its alert with words that say so, not as if it worked again; a run
+// skipped as paused forgets when the errors began, so once resumed the first failure waits again.
+func TestAPausedJobClearsItsAlertAndStartsAfresh(t *testing.T) {
+	app := newTestApp(t)
+	swapJob(t, "odyle-portraits", func(core.App) (result, error) { return result{}, errors.New("database is locked") })
+	runJob(app, "odyle-portraits", false)
+	later := time.Now().Add(brokenFor + time.Minute)
+	if got := operatorProblems(app, later)["job:odyle-portraits"]; !strings.Contains(got, "has ended in an error since") {
+		t.Fatalf("broken %q", got)
+	}
+	if got := clearedText(app, "job:odyle-portraits"); !strings.Contains(got, "runs without an error again") {
+		t.Fatalf("cleared %q", got)
+	}
+	if _, err := writeSettings(app, body{"portraitsPaused": true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := operatorProblems(app, later)["job:odyle-portraits"]; got != "" {
+		t.Fatalf("paused: %q", got)
+	}
+	if got := clearedText(app, "job:odyle-portraits"); !strings.Contains(got, "is paused") || strings.Contains(got, "without an error") {
+		t.Fatalf("cleared while paused %q", got)
+	}
+	swapJob(t, "odyle-portraits", func(core.App) (result, error) { return result{Skipped: "paused"}, nil })
+	runJob(app, "odyle-portraits", false)
+	if got := jobList(app)[1]; got.Name != "odyle-portraits" || got.BrokenSince != "" {
+		t.Fatalf("still broken since %+v", got)
+	}
+	if _, err := writeSettings(app, body{"portraitsPaused": false}); err != nil {
+		t.Fatal(err)
+	}
+	swapJob(t, "odyle-portraits", func(core.App) (result, error) { return result{}, errors.New("database is locked") })
+	runJob(app, "odyle-portraits", false)
+	if got := operatorProblems(app, time.Now().Add(brokenFor-time.Minute))["job:odyle-portraits"]; got != "" {
+		t.Fatalf("told under the old start: %q", got)
+	}
+}
+
 // Push messages and Discord posts that fail in a row are told once there are streakAlert; one that
 // works clears them. A device that turned push off, or a push service that asks to wait, is neither.
 func TestOutboundFailuresInARowAlertTheOperator(t *testing.T) {
@@ -96,6 +164,10 @@ func TestOutboundFailuresInARowAlertTheOperator(t *testing.T) {
 	}
 	o.notePush(errPushGone)
 	o.notePush(pushWaiting("the push service asked to wait 5s more"))
+	// A subscription the push service refuses (400, 403, 413) is the subscription's matter.
+	o.notePush(pushRefused(http.StatusBadRequest))
+	o.notePush(pushRefused(http.StatusForbidden))
+	o.notePush(pushRefused(http.StatusRequestEntityTooLarge))
 	if problems := operatorProblems(app, time.Now()); problems["push"] != "" {
 		t.Fatalf("told early: %v", problems)
 	}
@@ -107,6 +179,14 @@ func TestOutboundFailuresInARowAlertTheOperator(t *testing.T) {
 	if got := operatorProblems(app, time.Now())["push"]; got != "" {
 		t.Fatalf("not cleared: %q", got)
 	}
+	// A push service failing (5xx) counts like the network.
+	for range streakAlert {
+		o.notePush(pushRefused(http.StatusBadGateway))
+	}
+	if got := operatorProblems(app, time.Now())["push"]; !strings.Contains(got, "the last 5 push messages could not be delivered (the push service answered 502)") {
+		t.Fatalf("push 5xx %q", got)
+	}
+	o.notePush(nil)
 
 	// Discord: its 5xx answers count, a room's own webhook refused (401, 404) does not.
 	owner := newUser(t, app, "Owner")
@@ -148,18 +228,34 @@ func TestArmoryFailuresAlertTheOperatorUntilALookupWorks(t *testing.T) {
 	if got := operatorProblems(app, at)["armory"]; got != "" {
 		t.Fatalf("armory %q", got)
 	}
-	set(func() { w.failed, w.lastError, w.blocked = 1, "PLAYNC answered 403", at.Add(10*time.Minute) })
+	// Lookups as the armory's lanes count them.
+	fail := func(times int, text string) {
+		set(func() {
+			w.failed, w.failing, w.lastError = w.failed+times, w.failing+times, text
+		})
+	}
+	worked := func() { set(func() { w.done, w.failing = w.done+1, 0 }) }
+	fail(1, "PLAYNC answered 403")
+	set(func() { w.blocked = at.Add(10 * time.Minute) })
 	if got := operatorProblems(app, at)["armory"]; !strings.Contains(got, "PLAYNC refused the armory's lookups; the queue waits until") {
 		t.Fatalf("blocked %q", got)
 	}
 	if got := operatorProblems(app, at.Add(11*time.Minute))["armory"]; !strings.Contains(got, "none has worked since") {
 		t.Fatalf("after the wait %q", got)
 	}
-	set(func() { w.done = 1 })
+	worked()
 	if got := operatorProblems(app, at.Add(12*time.Minute))["armory"]; got != "" {
 		t.Fatalf("a lookup worked: %q", got)
 	}
-	set(func() { w.failed, w.lastError = 1+armoryFailing, "PLAYNC answered 500" })
+	// Between two looks: failures, a lookup that worked, and fewer failures than armoryFailing. Only
+	// those after the one that worked are in a row.
+	fail(armoryFailing-2, "PLAYNC answered 500")
+	worked()
+	fail(3, "PLAYNC answered 500")
+	if got := operatorProblems(app, at.Add(13*time.Minute))["armory"]; got != "" {
+		t.Fatalf("failures before a lookup that worked counted: %q", got)
+	}
+	fail(armoryFailing-3, "PLAYNC answered 500")
 	if got := operatorProblems(app, at.Add(13*time.Minute))["armory"]; !strings.Contains(got, "the last 10 armory lookups failed (PLAYNC answered 500)") {
 		t.Fatalf("failing %q", got)
 	}

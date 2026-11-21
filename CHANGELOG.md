@@ -7,7 +7,7 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 ### New
 - An open dashboard tab, or the installed app, tells you when a new version of Odyle is out and offers to reload. A tab in the background reloads by itself, unless you are typing in it.
 - Signing out in one tab signs out every open tab of that browser, and signing in signs them all in.
-- Server operators are told in their alert channel, and see under **Server status**, when a backup failed or a scheduled one was not made, a background job keeps failing, files could not be moved to S3 storage, PLAYNC refuses the armory, or push messages or Discord posts keep failing.
+- Server operators are told in their alert channel, and see under **Server status**, when a backup failed or a scheduled one was not made, a background job keeps failing or gets stuck, files could not be moved to S3 storage, PLAYNC refuses the armory, or push messages or Discord posts keep failing.
 
 ### Changed
 - The dashboard shows up straight away with a loading state instead of a blank page.
