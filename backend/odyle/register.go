@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/hook"
@@ -127,6 +128,8 @@ func Register(app core.App) {
 		}
 		err := e.Next()
 		stateOf(e.App).backups.drop()
+		// A backup that failed is the operator's to hear of (alerts.go).
+		stateOf(e.App).ops.noteBackup(err)
 		return err
 	})
 	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
@@ -151,6 +154,8 @@ func Register(app core.App) {
 		}
 		return e.Next()
 	})
+	dropHistoryInBulk(app)
+	watchServing(app)
 
 	watchSettings(app)
 	watchAudit(app)
@@ -269,4 +274,27 @@ func hardening(e *core.RequestEvent) error {
 		headers.Set("Referrer-Policy", "no-referrer")
 	}
 	return e.Next()
+}
+
+// historyTables are the character's own rows that go with it: its history, places and PvP
+// events. Nothing refers to them and they have no files or hooks (as for purge).
+var historyTables = []string{"character_readings", "character_locations", "character_pvp"}
+
+// dropHistoryInBulk deletes a character's history, places and PvP events with one statement
+// each when the character is deleted, instead of PocketBase's cascade deleting them one record
+// at a time inside the write transaction (20,000 readings took about a second). It runs after
+// PocketBase's own handler (priority 99) has opened the deleting transaction and before the
+// character's row and the other cascades go, so a deletion that fails keeps them.
+func dropHistoryInBulk(app core.App) {
+	app.OnRecordDeleteExecute("characters").Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			for _, table := range historyTables {
+				if _, err := e.App.DB().NewQuery("DELETE FROM {{" + table + "}} WHERE [[character]] = {:id}").Bind(dbx.Params{"id": e.Record.Id}).Execute(); err != nil {
+					return err
+				}
+			}
+			return e.Next()
+		},
+		Priority: 100,
+	})
 }

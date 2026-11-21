@@ -3013,6 +3013,9 @@ func signOutEverywhere(e *core.RequestEvent) error {
 			return nil, err
 		}
 		record.RefreshTokenKey()
+		// The calendar feed's address is a sign-in of its own (calendar.go): it ends too.
+		record.Set("calendarDigest", "")
+		record.Set("calendarSince", "")
 		if err := app.Save(record); err != nil {
 			return nil, err
 		}

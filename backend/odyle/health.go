@@ -152,8 +152,13 @@ func readerHealth(app core.App, at time.Time) (*object, map[string]string) {
 	for key, message := range missed {
 		problems[key] = message
 	}
+	// The server's own problems (alerts.go): backups, jobs, storage, the armory, push and Discord.
+	server := operatorProblems(app, at)
+	for key, message := range server {
+		problems[key] = message
+	}
 	return newObject().set("reporting", reporting).set("connected", connected).set("stuck", stuck).set("statuses", statuses).
-		set("games", builds).set("refusedAdapters", refused).set("clock", clock).set("problems", len(problems)).set("alerts", alertWebhook() != ""), problems
+		set("games", builds).set("refusedAdapters", refused).set("clock", clock).set("problems", len(problems)).set("serverProblems", problemList(server)).set("alerts", alertWebhook() != ""), problems
 }
 
 func buildsNote(games map[string]int) string {
@@ -250,11 +255,7 @@ func checkHealth(app core.App) (result, error) {
 		post(key, problems[key])
 	}
 	for _, key := range cleared {
-		what := "the apps read Odyle again"
-		if len(key) > 8 && key[:8] == "adapter:" {
-			what = "no more readings arrive under the refused adapter " + plain(key[8:])
-		}
-		post("", "Odyle: cleared, "+what+".")
+		post("", clearedText(key))
 	}
 	return out, nil
 }
