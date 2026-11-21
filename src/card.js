@@ -212,7 +212,7 @@ export function formLook(form) {
 export function cardPage(answer, view = {}) {
   const images = view.images || '', p = answer.profile;
   const head = `<header class="card-bar"><a href="${link('/')}" class="brand" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span class="brand-name">odyle<span class="brand-dot">.</span></span></a><a class="text-button card-back" href="${esc(link(profilePath(answer)))}">${icon('arrow')} ${p ? esc(t('{name}\'s profile', { name: p.name })) : t('Back to the profile')}</a></header>`;
-  if (!p) return `<main class="card-page">${head}<section class="card-wait">${view.status || ''}<p>${t('The card is drawn once Odyle has fetched this character from PLAYNC.')}</p></section><div id="toast" role="status" aria-live="polite"></div></main>`;
+  if (!p) return `<main class="card-page">${head}<section class="card-wait">${view.status || ''}<p>${t('The card is drawn once Odyle has fetched this character from PLAYNC.')}</p></section></main>`;
   const look = lookOf(answer, view.look);
   const label = t('Player card of {name}: level {level} {class} on {server}, {power} combat power.', { name: p.name, level: p.level, class: p.class, server: p.server || answer.server, power: number(p.combatPower) });
   return `<main class="card-page design-${look.design}">${head}<h1 class="sr-only">${esc(cardTitle(answer))}</h1>
@@ -222,7 +222,7 @@ export function cardPage(answer, view = {}) {
 <div class="card-actions"><button class="button secondary" data-action="card-flip">${t('Flip card')}</button><button class="button secondary" data-action="card-image">${icon('download')} ${t('Save image')}</button><button class="button secondary" data-copy="${esc(address(cardPath(answer)))}" data-copied="${esc(t('Link copied.'))}">${icon('link')} ${t('Copy link')}</button></div>
 ${answer.card?.mine ? '' : studio(answer, look)}</section>${answer.card?.mine ? studio(answer, look, view.tab) : ''}</div>
 <p class="card-source">${t('Card data from PLAYNC\'s official character pages, as Odyle keeps it.')}</p>
-<div id="toast" role="status" aria-live="polite"></div></main>`;
+</main>`;
 }
 
 // ---------------------------------------------------------------- Motion

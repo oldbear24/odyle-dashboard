@@ -2,15 +2,30 @@
 // dashboard opens without a connection (it then says it cannot reach the server) and
 // shows run reminders and Web Push notifications. The API and the PocketBase dashboard are never cached: Odyle
 // readings are always fetched live.
-const cache = 'odyle-shell-v1';
+// The build stamps its name and its built files on the next line (vite.config.js), so every
+// build is a new worker: it keeps the kept files the build still uses and drops the rest.
+const build = 'dev', built = null;
+const cache = 'odyle-shell-' + build;
 const scope = new URL(self.registration.scope);
 const skipped = path => path.startsWith('api/') || path.startsWith('_/');
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(cache).then(c => c.addAll(['./', 'manifest.webmanifest', 'favicon.svg', 'icon-192.png'])).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('odyle-') && k !== cache).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('odyle-') && k !== cache).map(async k => { await keepBuilt(k); await caches.delete(k); }))).then(() => self.clients.claim()));
 });
+// The built files of an older worker's cache that this build still uses move over, so a
+// release downloads only what changed.
+async function keepBuilt(name) {
+  if (!built) return;
+  const old = await caches.open(name), fresh = await caches.open(cache);
+  for (const request of await old.keys()) {
+    const path = new URL(request.url).pathname.slice(scope.pathname.length);
+    if (!built.includes(path)) continue;
+    const response = await old.match(request);
+    if (response) await fresh.put(request, response);
+  }
+}
 self.addEventListener('fetch', event => {
   const request = event.request, url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;

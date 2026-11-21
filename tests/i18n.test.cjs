@@ -41,3 +41,13 @@ test('the browser language is detected, chosen languages are kept and plurals fo
     assert.equal(await useLanguage('xx'), 'en');
   } finally { await useLanguage('en'); }
 });
+test('English dates follow the browser\'s English, else British English', async () => {
+  const { englishLocale, useEnglishLocale, useLanguage, locale } = await i18n();
+  assert.equal(englishLocale(['en-US', 'en']), 'en-US'); assert.equal(englishLocale(['cs-CZ', 'en-AU']), 'en-AU');
+  assert.equal(englishLocale(['cs-CZ', 'en']), 'en-GB'); assert.equal(englishLocale(['de-DE']), 'en-GB'); assert.equal(englishLocale([]), 'en-GB'); assert.equal(englishLocale(['en-*bad']), 'en-GB');
+  try {
+    useEnglishLocale(['en-US']); assert.equal(locale(), 'en-US');
+    await useLanguage('cs'); assert.equal(locale(), 'cs-CZ');
+  } finally { useEnglishLocale([]); await useLanguage('en'); }
+  assert.equal(locale(), 'en-GB');
+});

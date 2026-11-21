@@ -4,7 +4,7 @@ const rules = { 'no-unused-vars': ['error', { ignoreRestSiblings: true, argsIgno
 export default [
   { ignores: ['dist/', 'backend/web/dist/', '.runtime/', 'backend/pb_data/', 'node_modules/'] },
   { ...js.configs.recommended, rules: { ...js.configs.recommended.rules, ...rules } },
-  { files: ['src/**/*.js'], languageOptions: { globals: { ...globals.browser, __APP_VERSION__: 'readonly' } } },
+  { files: ['src/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
   { files: ['tests/**', 'scripts/**', 'vite.config.js', 'eslint.config.js'], languageOptions: { globals: globals.node } },
   { files: ['public/sw.js'], languageOptions: { globals: globals.serviceworker } },
   // Browser checks also hand functions to the page (page.evaluate, addInitScript).

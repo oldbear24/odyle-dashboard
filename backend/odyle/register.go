@@ -226,8 +226,15 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/robots.txt", robotsRoute)
 	se.Router.GET("/sitemap.xml", sitemapRoute)
 	// Public: the message superusers set under Server controls, for the dashboard (signed in or not).
+	// Open dashboards ask every minute, so the answer also names the release this backend was
+	// built as ("dashboard", left out by a build without one): a tab of an older release offers
+	// to load the new one, or loads it while hidden (#197).
 	se.Router.GET("/api/odyle/announcement", timed("announcement", func(e *core.RequestEvent) error {
-		return e.JSON(200, map[string]any{"announcement": announcement(readSettings(e.App))})
+		answer := map[string]any{"announcement": announcement(readSettings(e.App))}
+		if Version != "" {
+			answer["dashboard"] = Version
+		}
+		return e.JSON(200, answer)
 	}))
 	// Superuser dashboard → Odyle: connected Windows apps, live requests, server status,
 	// background jobs and the server-wide settings with what a retention period would
