@@ -44,7 +44,8 @@ type state struct {
 
 	serverBook atomic.Pointer[serverBook] // the Global servers (servers.go), nil until read
 
-	webhooks webhookWaits // has its own lock
+	webhooks  webhookWaits // has its own lock
+	pushWaits sync.Map     // push service host → when the wait it asked for ends (push.go)
 
 	backups     backupList // has its own lock
 	backupSetup string     // why ODYLE_BACKUP_S3_* did not apply (backups.go)

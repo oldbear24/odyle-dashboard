@@ -233,6 +233,15 @@ func (w *armoryWork) refusedUntil() time.Time {
 	return w.blocked
 }
 
+// unblock lets the armory's queue and the scout ask PLAYNC again at once (Server controls:
+// the armory resumed after a pause).
+func (w *armoryWork) unblock() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.blocked = time.Time{}
+	w.nudge()
+}
+
 // refuse stops the armory's queue (and the scout) for as long as PLAYNC asked, and at least
 // armoryBlocked.
 func (w *armoryWork) refuse(r armoryRefused) {
@@ -544,7 +553,7 @@ func checkRank(app core.App, hit scoutHit) error {
 	if err != nil {
 		return err
 	}
-	p, err := readArmory(info, map[string]any{})
+	p, err := readArmory(info, nil)
 	if err != nil {
 		return err
 	}

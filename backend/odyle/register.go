@@ -33,7 +33,7 @@ var accountActions = []action{
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
 	{"slots", slots}, {"slot-spin", slotSpin}, {"slot-equip", slotEquip}, {"calendar", calendarFeed}, {"room-features", roomFeaturesSetting},
 	{"location", location}, {"location-sharing", locationSharing}, {"card", cardChoice}, {"game-group", group},
-	{"achievements", achievementsRoute}, {"pvp-stats", pvpSetting},
+	{"achievements", achievementsRoute}, {"pvp-stats", pvpSetting}, {"teammates-sharing", teammatesSharing},
 }
 
 // Public like pairing: a paired Windows app signs in, or forgets its pairing, with its

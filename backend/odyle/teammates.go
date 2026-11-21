@@ -14,6 +14,8 @@ import (
 // character's server, once in rankKeep, and keeps only what PLAYNC's public pages list of the
 // character it finds (scout.go). The names live in server memory only until the scout searched
 // for them: never with the character or the account, and the packet list shows none (monitor.go).
+// An account can turn this off (users.teammatesOff, POST /api/odyle/teammates-sharing): its apps
+// are told so and its names are not queued. It is on until turned off.
 
 // teammatesLimit is how many names one request carries at most: a force's other members.
 const teammatesLimit = 48
@@ -31,8 +33,9 @@ func acceptedTeammateAdapters(app core.App) []string {
 }
 
 // teammates hands the scout the names of the players in a party or force with a character of the
-// account. It answers how many it queued: none while the armory is paused, and none of a name the
-// scout searched for lately or waits to. It keeps nothing in the database.
+// account. It answers whether the account shares them and how many it queued: none while the
+// armory is paused or the account turned this off, and none of a name the scout searched for
+// lately or waits to. It keeps nothing in the database.
 func teammates(e *core.RequestEvent) error {
 	return run(e, func() error {
 		b, err := requestBody(e)
@@ -70,10 +73,37 @@ func teammates(e *core.RequestEvent) error {
 				names = append(names, scoutName{name: name, server: c.GetString("server"), region: c.GetString("region")})
 			}
 		}
+		if !shareTeammates(e.Auth) {
+			return e.JSON(200, map[string]any{"shared": false})
+		}
 		queued := 0
 		if !readSettings(app).ArmoryPaused {
 			queued = stateOf(app).scout.enqueue(e.Auth.Id, names)
 		}
-		return e.JSON(200, map[string]any{"queued": queued, "serverNow": now()})
+		return e.JSON(200, map[string]any{"shared": true, "queued": queued, "serverNow": now()})
+	})
+}
+
+// shareTeammates is whether the account's apps send its party and force members' names: on
+// until the account turns it off.
+func shareTeammates(user *core.Record) bool { return !user.GetBool("teammatesOff") }
+
+// teammatesSharing turns sending party and force members' names on or off for the account (POST
+// /api/odyle/teammates-sharing). Its apps learn it from their session and heartbeat answers.
+func teammatesSharing(e *core.RequestEvent) error {
+	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+		enabled, ok := b.boolean("enabled")
+		if !ok {
+			return nil, badRequest("Switches must be true or false.")
+		}
+		account, err := app.FindRecordById("users", user.Id)
+		if err != nil {
+			return nil, err
+		}
+		account.Set("teammatesOff", !enabled)
+		if err := app.Save(account); err != nil {
+			return nil, err
+		}
+		return map[string]any{"shareTeammates": enabled}, nil
 	})
 }

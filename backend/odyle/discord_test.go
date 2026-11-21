@@ -170,6 +170,66 @@ func TestDiscordLeadsComeOnceEachAndCloseOnesTogether(t *testing.T) {
 	}
 }
 
+// Every pair of lead choices, and some triples, gets each of its posts once, whenever in its
+// minute the job runs; a run planned late gets the next lead only when it was planned well
+// before it.
+func TestDiscordEveryLeadOfARoomGetsItsPost(t *testing.T) {
+	app := newTestApp(t)
+	collection, _ := app.FindCollectionByNameOrId("party_rooms")
+	runs, _ := app.FindCollectionByNameOrId("room_runs")
+	posts, _ := app.FindCollectionByNameOrId("discord_posts")
+	start := time.Now().Add(3 * time.Hour).UTC().Truncate(time.Second)
+	room := viewOf[Room](core.NewRecord(collection))
+	run := viewOf[Run](core.NewRecord(runs))
+	run.Set("startsAt", start.Format(isoLayout))
+	// remind runs the job every minute from planned before the start to the start, phase into
+	// each minute, and answers the leads it posted for.
+	remind := func(leads []int64, planned, phase time.Duration) []int64 {
+		room.Set("discordLeads", leads)
+		posted, got := []*core.Record{}, []int64{}
+		for before := planned; before > 0; before -= time.Minute {
+			at := start.Add(-before + phase)
+			if lead, due := dueLead(room, run, posted, at); due {
+				p := core.NewRecord(posts)
+				p.Set("startsAt", start.Format(isoLayout))
+				p.Set("postedAt", at.Format(isoLayout))
+				posted, got = append(posted, p), append(got, lead)
+			}
+		}
+		return got
+	}
+	sets := [][]int64{{60, 15, 5}, {120, 30, 10}, {30, 10, 5}, {120, 60, 30}, {15, 10, 5}}
+	for i, a := range discordLeadChoices {
+		for _, b := range discordLeadChoices[:i] {
+			sets = append(sets, []int64{a, b})
+		}
+	}
+	for _, leads := range sets {
+		for _, phase := range []time.Duration{0, 30 * time.Second, 59 * time.Second} {
+			if got := remind(leads, time.Duration(leads[0]+10)*time.Minute, phase); fmt.Sprint(got) != fmt.Sprint(leads) {
+				t.Errorf("leads %v, the job %v into its minute: posted for %v", leads, phase, got)
+			}
+		}
+	}
+	for _, c := range []struct {
+		leads   []int64
+		planned time.Duration
+		want    string
+	}{
+		{[]int64{60, 15}, 20 * time.Minute, "[60]"},
+		{[]int64{60, 15}, 30 * time.Minute, "[60 15]"},
+		{[]int64{15, 10}, 12 * time.Minute, "[15]"},
+		{[]int64{15, 10}, 14 * time.Minute, "[15 10]"},
+		{[]int64{120, 30, 10}, 40 * time.Minute, "[120 10]"}, // 40 is within half of 30 again
+		{[]int64{120, 30, 10}, 50 * time.Minute, "[120 30 10]"},
+		{[]int64{120, 30, 10}, 12 * time.Minute, "[30]"},
+	} {
+		if got := remind(c.leads, c.planned, 0); fmt.Sprint(got) != c.want {
+			t.Errorf("leads %v planned %v ahead: posted for %v, want %s", c.leads, c.planned, got, c.want)
+		}
+	}
+}
+
 func TestDiscordRemindersLinkBackAndUpdateInPlace(t *testing.T) {
 	app := newTestApp(t)
 	hook := newDiscordStand(t)

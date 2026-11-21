@@ -152,3 +152,72 @@ func FuzzBody(f *testing.F) {
 		}
 	})
 }
+
+// armoryDocSamples are the JSON answers docs/armory.md shows, their "…" left out, or as they
+// are when they still do not parse: the info page first, then the equipment page.
+func armoryDocSamples(f *testing.F) [][]byte {
+	raw, err := os.ReadFile("../../docs/armory.md")
+	if err != nil {
+		f.Fatal(err)
+	}
+	out := [][]byte{}
+	for _, block := range regexp.MustCompile("(?s)```json\\r?\\n(.*?)```").FindAllStringSubmatch(string(raw), -1) {
+		sample := regexp.MustCompile(`\[\s*…\s*\]`).ReplaceAllString(block[1], "[]")
+		sample = regexp.MustCompile(`\{\s*…\s*\}`).ReplaceAllString(sample, "{}")
+		sample = regexp.MustCompile(`,\s*…\s*\}`).ReplaceAllString(sample, " }")
+		if !json.Valid([]byte(sample)) {
+			sample = block[1]
+		}
+		out = append(out, []byte(sample))
+	}
+	if len(out) < 2 {
+		f.Fatalf("docs/armory.md shows %d answers", len(out))
+	}
+	return out
+}
+
+// readArmory takes any answer: it never panics, and a profile it reads has the character's name,
+// stays within its limits and, with combat power and an equipment page, has gear. Anything else
+// is errArmoryAnswer, so the kept profile stays.
+func FuzzReadArmory(f *testing.F) {
+	samples := armoryDocSamples(f)
+	info, _ := json.Marshal(officialInfo("Hero"))
+	equipment, _ := json.Marshal(officialEquipment())
+	f.Add(samples[0], samples[1])
+	f.Add(info, equipment)
+	f.Add(info, []byte(`{"equipment":{"equipments":[]}}`))
+	f.Add(info, []byte("null"))
+	f.Add([]byte(`{"profile":{"characterName":"Ka","combatPower":0}}`), []byte(`{}`))
+	f.Add([]byte(`{"profile":{"characterName":"<b></b>","combatPower":1e300,"characterLevel":-4}}`), []byte(`{"equipment":{"equipmentList":[{"name":"x","slotPos":1e19}]}}`))
+	f.Add([]byte(`{"profile":{"characterName":"Ka","combatPower":1e300,"characterLevel":"NaN","pcId":"-1e400"}}`), []byte(`{"equipment":{"equipmentList":[{"name":"x","id":1e300}]}}`))
+	f.Fuzz(func(t *testing.T, infoRaw, equipmentRaw []byte) {
+		var info, equipment map[string]any
+		if json.Unmarshal(infoRaw, &info) != nil {
+			return
+		}
+		// An equipment page that is not an object stands for none (the scout's check).
+		if json.Unmarshal(equipmentRaw, &equipment) != nil {
+			equipment = nil
+		}
+		p, err := readArmory(info, equipment)
+		if err != nil {
+			if err != errArmoryAnswer {
+				t.Fatalf("error %v", err)
+			}
+			return
+		}
+		if p.Name == "" || length(p.Name) > 40 || p.Version != armoryVersion || p.Level < 0 || p.CombatPower < 0 || p.ItemLevel < 0 {
+			t.Fatalf("profile %+v", p)
+		}
+		if p.Stats == nil || p.Gear == nil || p.Skins == nil || p.Skills == nil || p.Boards == nil || p.Titles.Equipped == nil ||
+			len(p.Stats) > 40 || len(p.Gear) > 42 || len(p.Skins) > 21 || len(p.Skills) > 80 || len(p.Boards) > 10 || len(p.Titles.Equipped) > 6 {
+			t.Fatalf("lists of %+v", p)
+		}
+		if equipment != nil && p.CombatPower > 0 && len(p.Gear) == 0 {
+			t.Fatalf("combat power %d without gear", p.CombatPower)
+		}
+		if _, err := json.Marshal(p); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

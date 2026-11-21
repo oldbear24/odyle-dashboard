@@ -1,8 +1,6 @@
 package odyle
 
 import (
-	"errors"
-
 	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
@@ -39,7 +37,7 @@ func membershipAnswer(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
 		answer, ok := b.text("membership")
 		if !ok || !contains(membershipAnswers, answer) {
-			return nil, errors.New("Answer yes, no, or leave the membership open.")
+			return nil, badRequest("Answer yes, no, or leave the membership open.")
 		}
 		record, err := app.FindRecordById("users", user.Id)
 		if err != nil {

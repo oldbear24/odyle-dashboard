@@ -45,6 +45,12 @@ func unauthorized(message string) error { return apis.NewUnauthorizedError(messa
 // unavailable answers 503: superusers switched the part off for now (Server controls).
 func unavailable(message string) error { return apis.NewApiError(503, message, nil) }
 
+// serverError answers 500 for a failure of the server's own (run), in PocketBase's words, which
+// the dashboard translates.
+func serverError() error {
+	return apis.NewInternalServerError("Something went wrong while processing your request.", nil)
+}
+
 // apiStatus is the status of an error meant for the client (400, 401, 403, 404, 429, 503), or 0.
 func apiStatus(err error) int {
 	var apiErr *router.ApiError
@@ -199,7 +205,8 @@ func (b body) text(key string) (string, bool) { v, ok := b[key].(string); return
 func requestBody(e *core.RequestEvent) (body, error) {
 	info, err := e.RequestInfo()
 	if err != nil {
-		return nil, err
+		// A body that is not JSON, or too large: the client's (400, as it always answered).
+		return nil, badRequest(message(err))
 	}
 	if info.Body == nil {
 		return body{}, nil
