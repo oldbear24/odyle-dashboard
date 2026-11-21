@@ -1,19 +1,29 @@
 # Keeps the pinned GitHub Actions, npm packages, the backend's Go modules (PocketBase
-# among them) and the Docker base images current.
+# among them) and the Docker base images current. Each ecosystem's minor and patch updates
+# of a week arrive as one pull request; a major update still gets its own.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    groups:
+      npm:
+        update-types: [minor, patch]
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    groups:
+      docker:
+        update-types: [minor, patch]
     # The web build uses Node's long-term support releases (even majors) only.
     ignore:
       - dependency-name: node
@@ -22,3 +32,6 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    groups:
+      gomod:
+        update-types: [minor, patch]
