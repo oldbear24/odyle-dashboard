@@ -20,8 +20,14 @@ type state struct {
 	changes   *outbox        // realtime news, delivered at once
 	sightings *outbox        // heartbeats for realtime, delivered every two seconds
 	presence  *presence      // heartbeats not written yet
+	admins    adminListeners // connections on a superusers' topic (realtimequeue.go)
 	health    *health        // what each reader last reported (health.go)
 	pushes    sync.WaitGroup // Run now pushes on their way (inviteToRun)
+
+	realtimeAddresses addressCounts // open realtime connections per client address (realtimequeue.go)
+	classes           classCache    // game_classes, kept until it changes (classes.go)
+	weekSpends        weekSpends    // what each character spent this week, for the rooms' week (weekly.go)
+	places            placeNews     // characters in flight whose rooms hear of their places in a while (location.go)
 
 	settings settingsCache // has its own lock
 
@@ -30,7 +36,10 @@ type state struct {
 	traffic     *traffic  // has its own lock
 
 	jobs    map[string]*jobRecord // the runs of each job
-	running map[string]time.Time  // jobs running now, since
+	running map[string]jobRun     // jobs running now: their run's id and start
+	runIds  uint64                // the id of the latest run
+
+	ops opsState // what the operator alerts and the health check watch (alerts.go)
 
 	vacuums   map[string]*vacuumRecord // the last vacuum of each database (vacuum.go)
 	vacuuming string                   // the database a vacuum runs on now
@@ -78,7 +87,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]time.Time{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), scout: newArmoryScout(),
+		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]jobRun{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), scout: newArmoryScout(),
 			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence(), health: newHealth()}
 	}).(*state)
 }

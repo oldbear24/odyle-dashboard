@@ -2,6 +2,26 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.67.0 · 2026-11-21
+
+### New
+- An open dashboard tab, or the installed app, tells you when a new version of Odyle is out and offers to reload. A tab in the background reloads by itself, unless you are typing in it.
+- Signing out in one tab signs out every open tab of that browser, and signing in signs them all in.
+- Server operators are told in their alert channel, and see under **Server status**, when a backup failed or a scheduled one was not made, a background job keeps failing or gets stuck, files could not be moved to S3 storage, PLAYNC refuses the armory, or push messages or Discord posts keep failing.
+
+### Changed
+- The dashboard shows up straight away with a loading state instead of a blank page.
+- Updates download only what changed, and the offline copy drops the files it no longer needs.
+- Keyboard focus stays where you were after **Going**, **Can't**, **Need it too**, **Remove me** or **Hide**. Screen readers no longer read messages again on every update, and they hear when the connection drops.
+- Date pickers match the dark look, phones no longer zoom into form fields, and character initials use the right font. The installed app gets a proper Android icon and shortcuts to Tasks, Timers and Armory. Small print is easier to read, and English dates follow your browser's English.
+- The rooms list, open rooms, the armory's top players, the scout and the **Upgrade** comparison load much faster on busy servers. While a character flies, its rooms see its position every few seconds, and always its last one.
+- For server operators: the health check fails only when the data disk cannot be written or scheduled jobs have stopped, a job that runs over 10 minutes no longer starts a second time, and one address can hold at most 200 live connections (`ODYLE_REALTIME_PER_ADDRESS`). The dashboard is built with Node 26, with updated dependencies.
+
+### Fixed
+- Room cards keep their "+15 in …" countdown and cap warnings up to date.
+- **Sign out everywhere** also turns off the address of your private calendar feed.
+- Deleting a character no longer holds up the server.
+
 ## 0.66.0 · 2026-11-21
 
 ### New

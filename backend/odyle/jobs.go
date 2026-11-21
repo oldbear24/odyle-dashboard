@@ -42,21 +42,33 @@ type jobRecord struct {
 	Skipped       string `json:"skipped"`
 	LastFailureAt string `json:"lastFailureAt,omitempty"`
 	LastError     string `json:"lastError,omitempty"`
+	// BrokenSince is when the job's runs began to end in an error (an error the job returned or a
+	// panic, not the failed items of a run that did its work); empty once a run ends without one.
+	// The odyle-health job tells the operator of a job broken for brokenFor (alerts.go).
+	BrokenSince string `json:"brokenSince,omitempty"`
 }
 
 type job struct {
 	schedule string
 	manual   bool
-	pause    func(settings) bool
 	work     func(core.App) (result, error)
 }
 
 var jobNames = []string{"odyle-expiry", "odyle-portraits", "odyle-reminders", "odyle-retention", "odyle-old-characters", "odyle-stats", "odyle-health", "odyle-release", "odyle-cap-alerts", "odyle-push", "odyle-party-ready", "odyle-armory", "odyle-armory-scout", "odyle-announcement"}
 
+// jobPauses are the jobs Server controls can pause, with the setting that pauses each. They sit
+// apart from jobs because the odyle-health job's alerts read them (jobPaused), and jobs names that
+// job: one map would refer to itself.
+var jobPauses = map[string]func(settings) bool{
+	"odyle-portraits":    func(s settings) bool { return s.PortraitsPaused },
+	"odyle-reminders":    func(s settings) bool { return s.RemindersPaused },
+	"odyle-armory-scout": func(s settings) bool { return s.ArmoryPaused },
+}
+
 var jobs = map[string]job{
 	"odyle-expiry":         {schedule: "*/5 * * * *", manual: true, work: cleanup},
-	"odyle-portraits":      {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.PortraitsPaused }, work: refreshPortraits},
-	"odyle-reminders":      {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.RemindersPaused }, work: remindRuns},
+	"odyle-portraits":      {schedule: "* * * * *", manual: true, work: refreshPortraits},
+	"odyle-reminders":      {schedule: "* * * * *", manual: true, work: remindRuns},
 	"odyle-retention":      {schedule: "17 3 * * *", manual: false, work: retention},
 	"odyle-old-characters": {schedule: "29 3 * * *", manual: true, work: oldCharacters},
 	"odyle-stats":          {schedule: "55 23 * * *", manual: true, work: recordStats},
@@ -66,7 +78,7 @@ var jobs = map[string]job{
 	"odyle-push":           {schedule: "* * * * *", manual: true, work: pushReminders},
 	"odyle-party-ready":    {schedule: "* * * * *", manual: true, work: partyReady},
 	"odyle-armory":         {schedule: "41 4 * * *", manual: true, work: armoryNight},
-	"odyle-armory-scout":   {schedule: "* * * * *", manual: true, pause: func(s settings) bool { return s.ArmoryPaused }, work: scoutArmory},
+	"odyle-armory-scout":   {schedule: "* * * * *", manual: true, work: scoutArmory},
 	"odyle-announcement":   {schedule: "* * * * *", manual: true, work: announcementSchedule},
 }
 
@@ -83,26 +95,39 @@ func nextDaily(schedule string, at time.Time) time.Time {
 	return next
 }
 
+// jobRun is a job's run going on now: its id, which lifts the lock, and when it started, which
+// tells a run that never ends (jobProblems).
+type jobRun struct {
+	id      uint64
+	started time.Time
+}
+
 // runJob runs one job and records it. A job still running (a manual start during its
-// scheduled run, or the other way round) is not started twice; a lock older than ten
-// minutes is ignored.
+// scheduled run, or the other way round) is not started twice, however long it runs: the
+// lock carries the run's id and only that run lifts it. (It expired after ten minutes once,
+// and a longer run then ran twice, the first one's end lifting the second one's lock.) A run
+// that hangs therefore holds the job for good; the operator hears of it after stuckFor.
 func runJob(app core.App, name string, manual bool) result {
 	j, s := jobs[name], stateOf(app)
+	started := time.Now()
 	s.mu.Lock()
-	if since, ok := s.running[name]; ok && time.Since(since) < 10*time.Minute {
+	if _, ok := s.running[name]; ok {
 		s.mu.Unlock()
 		return result{Skipped: "running"}
 	}
-	s.running[name] = time.Now()
+	s.runIds++
+	id := s.runIds
+	s.running[name] = jobRun{id: id, started: started}
 	s.mu.Unlock()
 
-	started := time.Now()
-	out := work(app, name, j)
+	out, broke := work(app, name, j)
 	ms := time.Since(started).Milliseconds()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.running, name)
+	if s.running[name].id == id {
+		delete(s.running, name)
+	}
 	next := jobRecord{}
 	if last := s.jobs[name]; last != nil {
 		next = *last
@@ -120,24 +145,31 @@ func runJob(app core.App, name string, manual bool) result {
 			next.LastError = "Failed without a message."
 		}
 	}
+	// A paused job starts afresh: once resumed, its first failure waits brokenFor again.
+	switch {
+	case broke && next.BrokenSince == "":
+		next.BrokenSince = at
+	case !broke && (out.Skipped == "" || out.Skipped == "paused"):
+		next.BrokenSince = ""
+	}
 	s.jobs[name] = &next
 	return out
 }
 
-// work runs the job's function; an error or a panic is a failed run.
-func work(app core.App, name string, j job) (out result) {
+// work runs the job's function; an error or a panic is a failed run, and broke.
+func work(app core.App, name string, j job) (out result, broke bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			out = result{Failed: 1, Error: fmt.Sprint(r)}
+			out, broke = result{Failed: 1, Error: fmt.Sprint(r)}, true
 			warn(app, "Odyle job failed", "job", name, "error", fmt.Sprint(r))
 		}
 	}()
 	out, err := j.work(app)
 	if err != nil {
 		warn(app, "Odyle job failed", "job", name, "error", message(err))
-		return result{Failed: 1, Error: message(err)}
+		return result{Failed: 1, Error: message(err)}, true
 	}
-	return out
+	return out, false
 }
 
 // jobEntry is a job on the Background jobs page: its runs (none before the first) and
@@ -157,7 +189,7 @@ func jobList(app core.App) []jobEntry {
 	out := make([]jobEntry, len(jobNames))
 	for i, name := range jobNames {
 		j, state := jobs[name], "active"
-		if j.pause != nil && j.pause(current) {
+		if pause := jobPauses[name]; pause != nil && pause(current) {
 			state = "paused"
 		} else if name == "odyle-retention" && current.InactiveAccountDays == 0 {
 			state = "off"
@@ -170,6 +202,10 @@ func jobList(app core.App) []jobEntry {
 
 func scheduleJobs(app core.App) {
 	for _, name := range jobNames {
-		app.Cron().MustAdd(name, jobs[name].schedule, func() { runJob(app, name, false) })
+		app.Cron().MustAdd(name, jobs[name].schedule, func() {
+			// The health check fails when the cron stops ticking (alerts.go).
+			stateOf(app).ops.cronAt.Store(sinceStart(time.Now()))
+			runJob(app, name, false)
+		})
 	}
 }

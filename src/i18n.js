@@ -19,7 +19,18 @@ export async function useLanguage(code) {
   current = next; return current;
 }
 export const language = () => current;
-export const locale = () => languages.find(l => l.code === current).locale;
+// English dates and times follow the browser's English (en-US: month first, 12-hour clock),
+// else British English (#200). main.js passes the browser's languages once.
+export function englishLocale(preferred = []) {
+  for (const tag of preferred) {
+    if (!/^en(-|$)/i.test(String(tag))) continue;
+    try { const [supported] = Intl.DateTimeFormat.supportedLocalesOf([String(tag)]); if (supported && supported.toLowerCase() !== 'en') return supported; } catch { /* not a language tag */ }
+  }
+  return 'en-GB';
+}
+let english = 'en-GB';
+export function useEnglishLocale(preferred) { english = englishLocale(preferred); }
+export const locale = () => current === 'en' ? english : languages.find(l => l.code === current).locale;
 const fill = (text, params) => params ? text.replace(/\{(\w+)\}/g, (match, name) => name in params ? String(params[name]) : match) : text;
 export function t(text, params) {
   const found = dictionaries[current]?.[text];

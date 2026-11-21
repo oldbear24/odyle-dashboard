@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/hook"
@@ -89,7 +90,11 @@ func Register(app core.App) {
 
 	// Realtime topics and their news (realtime.go), heartbeats (presence.go).
 	watchSubscriptions(app)
+	watchRealtimeConnections(app)
 	watchChanges(app)
+	watchGameClasses(app)
+	watchWeekSpends(app)
+	watchPlaces(app)
 	watchPresence(app)
 	watchHealth(app)
 	watchDevices(app)
@@ -127,6 +132,8 @@ func Register(app core.App) {
 		}
 		err := e.Next()
 		stateOf(e.App).backups.drop()
+		// A backup that failed is the operator's to hear of (alerts.go).
+		stateOf(e.App).ops.noteBackup(err)
 		return err
 	})
 	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
@@ -151,6 +158,8 @@ func Register(app core.App) {
 		}
 		return e.Next()
 	})
+	dropHistoryInBulk(app)
+	watchServing(app)
 
 	watchSettings(app)
 	watchAudit(app)
@@ -217,8 +226,15 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/robots.txt", robotsRoute)
 	se.Router.GET("/sitemap.xml", sitemapRoute)
 	// Public: the message superusers set under Server controls, for the dashboard (signed in or not).
+	// Open dashboards ask every minute, so the answer also names the release this backend was
+	// built as ("dashboard", left out by a build without one): a tab of an older release offers
+	// to load the new one, or loads it while hidden (#197).
 	se.Router.GET("/api/odyle/announcement", timed("announcement", func(e *core.RequestEvent) error {
-		return e.JSON(200, map[string]any{"announcement": announcement(readSettings(e.App))})
+		answer := map[string]any{"announcement": announcement(readSettings(e.App))}
+		if Version != "" {
+			answer["dashboard"] = Version
+		}
+		return e.JSON(200, answer)
 	}))
 	// Superuser dashboard → Odyle: connected Windows apps, live requests, server status,
 	// background jobs and the server-wide settings with what a retention period would
@@ -269,4 +285,29 @@ func hardening(e *core.RequestEvent) error {
 		headers.Set("Referrer-Policy", "no-referrer")
 	}
 	return e.Next()
+}
+
+// historyTables are the character's own rows that go with it: its history, places and PvP
+// events. Nothing refers to them and they have no files or hooks (as for purge).
+var historyTables = []string{"character_readings", "character_locations", "character_pvp"}
+
+// dropHistoryInBulk deletes a character's history, places and PvP events with one statement
+// each when the character is deleted, instead of PocketBase's cascade deleting them one record
+// at a time inside the write transaction (20,000 readings took about a second). It runs after
+// PocketBase's own handler (priority 99) has opened the deleting transaction and before the
+// character's row and the other cascades go, so a deletion that fails keeps them.
+func dropHistoryInBulk(app core.App) {
+	app.OnRecordDeleteExecute("characters").Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			for _, table := range historyTables {
+				if _, err := e.App.DB().NewQuery("DELETE FROM {{" + table + "}} WHERE [[character]] = {:id}").Bind(dbx.Params{"id": e.Record.Id}).Execute(); err != nil {
+					return err
+				}
+			}
+			// The readings went without their record hooks, so the rooms' week (weekly.go) forgets them here.
+			forgetWeekSpends(e.App, e.Record.Id)
+			return e.Next()
+		},
+		Priority: 100,
+	})
 }

@@ -1375,9 +1375,11 @@ test('an open room checks no health while live, waits while hidden and draws its
     assert.deepEqual(asked.filter(p => p !== 'reconnect'), ['/api/odyle/snapshot']);
     // The page's own change shows from the route's answer, even while snapshots fail.
     await page.route('**/api/odyle/snapshot/**', route => route.abort());
-    await page.locator('[data-wish="Fire Temple"][data-wanted="true"]').click();
+    // From the keyboard: the redraw keeps the focus on the dungeon's button, now Remove me (#199).
+    await page.locator('[data-wish="Fire Temple"][data-wanted="true"]').focus(); await page.keyboard.press('Enter');
     await page.locator('[data-wish="Fire Temple"][data-wanted="false"]').waitFor();
     assert.match(await page.locator('.wishlist .wish-row').first().innerText(), /2 members need it/);
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.wish), 'Fire Temple');
     await page.unroute('**/api/odyle/snapshot/**');
     // An answer that arrives after leaving the room is not drawn over the next page.
     let answered; const answer = new Promise(r => { answered = r; });
@@ -2171,5 +2173,72 @@ test('superusers search, open and export packets and read the server status', as
     assert.ok(await rows.count() >= 1);
     assert.ok((await rows.allInnerTexts()).every(text => /report rejected/.test(text)));
     assert.deepEqual(errors.filter(e => !/extensions|favicon/.test(e)), []);
+  } finally { await close(); }
+});
+test('signing out in one tab signs out the others, and signing in signs them in (#198)', async () => {
+  const user = await account('Two tabs');
+  const { page, errors, close } = await open(user);
+  try {
+    await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
+    const other = await page.context().newPage(), otherErrors = [];
+    other.on('pageerror', error => otherErrors.push(error.message));
+    await other.goto(url + '/#/'); await other.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
+    await navigate(page, 'logout');
+    await page.locator('[data-action="discord"]').waitFor();
+    await other.locator('[data-action="discord"]').waitFor({ timeout: 5000 });
+    await toast(other).filter({ hasText: 'You signed out in another tab.' }).waitFor();
+    assert.equal(await other.locator('.personal-characters').count(), 0);
+    // A sign-in in the first tab (as the SDK stores it) reaches the other one.
+    await page.evaluate(session => localStorage.setItem('odyle.account', session), JSON.stringify({ token: user.token, record: user.record }));
+    await other.getByRole('heading', { name: 'Rooms & characters.' }).waitFor({ timeout: 5000 });
+    assert.deepEqual(errors, []); assert.deepEqual(otherErrors, []);
+  } finally { await close(); }
+});
+test('a newer release says so, and a hidden tab without unsaved input loads it (#197)', async () => {
+  const { page, errors, close } = await open(null, '#/armory');
+  try {
+    // The backend names the release it runs with the announcement; this one is newer.
+    await page.route('**/api/odyle/announcement', async route => { const answer = await (await route.fetch()).json(); await route.fulfill({ json: { ...answer, dashboard: '99.0.0' } }); });
+    await page.reload();
+    const note = page.locator('.update-note.is-newer');
+    assert.match(await note.locator('p').innerText(), /^Odyle 99\.0\.0 is out\. Reload to update$/);
+    await page.waitForFunction(() => document.querySelector('#live-polite').textContent === 'Odyle 99.0.0 is out. Reload the page to get it.');
+    const visibility = hidden => page.evaluate(h => { for (const [name, value] of [['hidden', h], ['visibilityState', h ? 'hidden' : 'visible']]) Object.defineProperty(document, name, { configurable: true, get: () => value }); document.dispatchEvent(new Event('visibilitychange')); }, hidden);
+    // A half-typed search keeps the tab as it is.
+    await page.locator('#armory-form [name=name]').fill('Half typed');
+    let loads = 0; page.on('load', () => loads++);
+    await visibility(true); await delay(1500);
+    assert.equal(loads, 0);
+    await visibility(false);
+    await page.locator('#armory-form [name=name]').fill('');
+    await Promise.all([page.waitForEvent('load'), visibility(true).catch(() => { /* the page went away mid-call */ })]);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('odyle.reloadedFor')), '99.0.0');
+    // Once per release: hidden again, the reloaded tab stays.
+    await note.waitFor(); loads = 0;
+    await visibility(true); await delay(1500);
+    assert.equal(loads, 0);
+    // Hiding the note keeps it hidden.
+    await visibility(false);
+    await note.locator('.close-button').click();
+    await note.waitFor({ state: 'detached' });
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+test('a server rolled back to an older release is no news: no note and no reload (#197)', async () => {
+  const { page, errors, close } = await open(null, '#/armory');
+  try {
+    let asked = 0;
+    await page.route('**/api/odyle/announcement', async route => { asked++; const answer = await (await route.fetch()).json(); await route.fulfill({ json: { ...answer, dashboard: '0.1.0' } }); });
+    await page.reload();
+    await page.locator('#armory-form').waitFor();
+    for (let i = 0; i < 50 && !asked; i++) await delay(100);
+    assert.ok(asked > 0); await delay(300);
+    let loads = 0; page.on('load', () => loads++);
+    await page.evaluate(() => { for (const [name, value] of [['hidden', true], ['visibilityState', 'hidden']]) Object.defineProperty(document, name, { configurable: true, get: () => value }); document.dispatchEvent(new Event('visibilitychange')); });
+    await delay(1500);
+    assert.equal(loads, 0);
+    assert.equal(await page.locator('.update-note.is-newer').count(), 0);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('odyle.reloadedFor')), null);
+    assert.deepEqual(errors, []);
   } finally { await close(); }
 });

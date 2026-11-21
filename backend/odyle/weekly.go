@@ -3,6 +3,7 @@ package odyle
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -66,10 +67,8 @@ func roomWeekOf(app core.App, rules settings, members []*Member, cost int64, at 
 		return nil, nil
 	}
 	since := weekStart(at, rules.DailyResetHour, rules.WeeklyResetDay)
-	params := dbx.Params{"since": stamp(since)}
-	query := "SELECT COALESCE(SUM(CASE WHEN kind = 'spend' THEN ABS(delta) WHEN kind IN ('regen', 'item') THEN 0 WHEN previous > value THEN previous - value ELSE 0 END), 0) FROM (SELECT kind, delta, value, LAG(value) OVER (PARTITION BY character ORDER BY created) AS previous FROM character_readings WHERE " + inCharacters(shared, params) + " AND created >= {:since})"
-	var spent int64
-	if err := app.DB().NewQuery(query).Bind(params).Row(&spent); err != nil {
+	spent, err := weekSpent(app, shared, stamp(since))
+	if err != nil {
 		return nil, err
 	}
 	cubes := int64(0)
@@ -77,6 +76,104 @@ func roomWeekOf(app core.App, rules settings, members []*Member, cost int64, at 
 		cubes = spent / cost
 	}
 	return map[string]any{"since": stamp(since), "spent": spent, "cubes": cubes}, nil
+}
+
+// weekSpentQuery is what each character spent since {:since}: the sum over a room is the sum of
+// its characters', as the changes are compared within each character's own readings.
+const weekSpentQuery = "SELECT character, COALESCE(SUM(CASE WHEN kind = 'spend' THEN ABS(delta) WHEN kind IN ('regen', 'item') THEN 0 WHEN previous > value THEN previous - value ELSE 0 END), 0) AS spent FROM (SELECT character, kind, delta, value, LAG(value) OVER (PARTITION BY character ORDER BY created) AS previous FROM character_readings WHERE %s AND created >= {:since}) GROUP BY character"
+
+// weekSpent is what the characters spent since the week's start, from what each character spent
+// as kept (weekSpends) and the characters not kept read now. Every open room fetches its
+// snapshot again on each change, so a room's line would otherwise read the week's readings of
+// all its characters each time.
+func weekSpent(app core.App, characters []string, since string) (int64, error) {
+	w := &stateOf(app).weekSpends
+	keep := !app.IsTransactional()
+	total, missing := int64(0), []string{}
+	w.mu.Lock()
+	gen := w.gen
+	for _, id := range characters {
+		if kept, ok := w.kept[id]; ok && keep && kept.since == since {
+			total += kept.spent
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	w.mu.Unlock()
+	if len(missing) == 0 {
+		return total, nil
+	}
+	params := dbx.Params{"since": since}
+	rows := []struct {
+		Character string `db:"character"`
+		Spent     int64  `db:"spent"`
+	}{}
+	if err := app.DB().NewQuery(fmt.Sprintf(weekSpentQuery, inCharacters(missing, params))).Bind(params).All(&rows); err != nil {
+		return 0, err
+	}
+	read := make(map[string]int64, len(missing))
+	for _, id := range missing {
+		read[id] = 0 // no reading since the week's start
+	}
+	for _, r := range rows {
+		read[r.Character] = r.Spent
+		total += r.Spent
+	}
+	if keep {
+		w.mu.Lock()
+		if w.gen == gen {
+			if w.kept == nil || len(w.kept) > weekSpendsKept {
+				w.kept = map[string]weekSpend{}
+			}
+			for id, spent := range read {
+				w.kept[id] = weekSpend{since: since, spent: spent}
+			}
+		}
+		w.mu.Unlock()
+	}
+	return total, nil
+}
+
+// weekSpends keeps what each character spent since the week's start until a reading of it is
+// added, changed or deleted (watchWeekSpends) or readings are deleted in bulk (forgetWeekSpends).
+// A read that a change overtook is not kept.
+type weekSpends struct {
+	mu   sync.Mutex
+	gen  uint64
+	kept map[string]weekSpend // character id → what it spent since
+}
+
+type weekSpend struct {
+	since string
+	spent int64
+}
+
+// weekSpendsKept bounds the characters kept; past it they are read again.
+const weekSpendsKept = 50000
+
+// forgetWeekSpends forgets what the characters spent (all of them when none is named).
+func forgetWeekSpends(app core.App, characters ...string) {
+	w := &stateOf(app).weekSpends
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.gen++
+	if len(characters) == 0 {
+		w.kept = nil
+	}
+	for _, id := range characters {
+		delete(w.kept, id)
+	}
+}
+
+// watchWeekSpends forgets what a character spent when one of its readings changes.
+func watchWeekSpends(app core.App) {
+	forget := func(e *core.RecordEvent) error {
+		forgetWeekSpends(e.App, e.Record.GetString("character"))
+		return e.Next()
+	}
+	app.OnRecordAfterCreateSuccess("character_readings").BindFunc(forget)
+	app.OnRecordAfterUpdateSuccess("character_readings").BindFunc(forget)
+	app.OnRecordAfterDeleteSuccess("character_readings").BindFunc(forget)
 }
 
 // runSpendWindow is how long before its start a run's spend counts: a party may take the cube

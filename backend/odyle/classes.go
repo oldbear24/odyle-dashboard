@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -90,8 +91,12 @@ func learnClasses(app core.App) error {
 			kept[icon] = keepClassIcon(app, icon)
 		}
 		if kept[icon] {
-			if _, err := app.DB().NewQuery("UPDATE game_classes SET icon = {:icon} WHERE pcId = {:id} AND icon != {:icon}").Bind(dbx.Params{"icon": icon, "id": id}).Execute(); err != nil {
+			res, err := app.DB().NewQuery("UPDATE game_classes SET icon = {:icon} WHERE pcId = {:id} AND icon != {:icon}").Bind(dbx.Params{"icon": icon, "id": id}).Execute()
+			if err != nil {
 				return err
+			}
+			if n, _ := res.RowsAffected(); n > 0 {
+				forgetClasses(app)
 			}
 		}
 	}
@@ -125,29 +130,90 @@ type gameClass struct {
 	Icon string `db:"icon"`
 }
 
-// gameClasses are the classes the server knows, by class id.
+// gameClasses are the classes the server knows, by class id. Snapshots, rooms and armory pages
+// ask on every request and the classes change a few times a year, so they are kept in memory
+// (classCache) until game_classes changes. Callers only read the map.
 func gameClasses(app core.App) map[int64]gameClass {
-	rows := []gameClass{}
-	out := map[int64]gameClass{}
-	if err := app.DB().NewQuery("SELECT pcId, name, icon FROM game_classes").All(&rows); err != nil {
-		return out
-	}
-	for _, r := range rows {
-		out[r.Id] = r
-	}
-	return out
+	return knownClasses(app).byId
 }
 
 // classIcons names each class's emblem by the class's name, for the classes the server
-// keeps one of: { "Chanter": "class_icon_chanter.png" }.
+// keeps one of: { "Chanter": "class_icon_chanter.png" }. Callers only read the map.
 func classIcons(app core.App) map[string]string {
-	out := map[string]string{}
-	for _, c := range gameClasses(app) {
-		if c.Icon != "" {
-			out[c.Name] = c.Icon
+	return knownClasses(app).icons
+}
+
+// classCache keeps the classes read from game_classes until it changes: its record hooks and
+// the emblems' UPDATE forget them (forgetClasses). A read that a change overtook is not kept.
+type classCache struct {
+	mu   sync.Mutex
+	gen  uint64
+	kept *classSet
+}
+
+type classSet struct {
+	byId  map[int64]gameClass
+	icons map[string]string
+}
+
+func knownClasses(app core.App) *classSet {
+	if app.IsTransactional() {
+		set, _ := readClasses(app)
+		return set
+	}
+	c := &stateOf(app).classes
+	c.mu.Lock()
+	kept, gen := c.kept, c.gen
+	c.mu.Unlock()
+	if kept != nil {
+		return kept
+	}
+	set, err := readClasses(app)
+	if err == nil {
+		c.mu.Lock()
+		if c.gen == gen {
+			c.kept = set
+		}
+		c.mu.Unlock()
+	}
+	return set
+}
+
+func readClasses(app core.App) (*classSet, error) {
+	rows := []gameClass{}
+	set := &classSet{byId: map[int64]gameClass{}, icons: map[string]string{}}
+	if err := app.DB().NewQuery("SELECT pcId, name, icon FROM game_classes").All(&rows); err != nil {
+		return set, err
+	}
+	for _, r := range rows {
+		set.byId[r.Id] = r
+	}
+	for _, r := range set.byId {
+		if r.Icon != "" {
+			set.icons[r.Name] = r.Icon
 		}
 	}
-	return out
+	return set, nil
+}
+
+// forgetClasses drops the kept classes after game_classes changed.
+func forgetClasses(app core.App) {
+	c := &stateOf(app).classes
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.gen++
+	c.kept = nil
+}
+
+// watchGameClasses forgets the kept classes whenever a class record changes, whoever changes it.
+func watchGameClasses(app core.App) {
+	forget := func(e *core.RecordEvent) error {
+		forgetClasses(e.App)
+		return e.Next()
+	}
+	app.OnRecordAfterCreateSuccess("game_classes").BindFunc(forget)
+	app.OnRecordAfterUpdateSuccess("game_classes").BindFunc(forget)
+	app.OnRecordAfterDeleteSuccess("game_classes").BindFunc(forget)
 }
 
 // setOfficial keeps a search hit on the character (not saved here), with the class name already

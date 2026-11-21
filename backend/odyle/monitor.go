@@ -98,12 +98,15 @@ func packets(app core.App) []*object {
 	return append([]*object{}, s.packets...)
 }
 
+// broadcast sends a packet to the superusers watching the Server monitor, when any do.
 func broadcast(app core.App, packet *object) {
+	listeners := stateOf(app).admins.listening(packetTopic)
+	if len(listeners) == 0 {
+		return
+	}
 	message := map[string]any{"packet": packet}
-	for _, client := range app.SubscriptionsBroker().Clients() {
-		if client.HasSubscription(packetTopic) {
-			post(client, packetTopic, message)
-		}
+	for _, client := range listeners {
+		post(client, packetTopic, message)
 	}
 }
 

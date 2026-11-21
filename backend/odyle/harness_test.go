@@ -48,9 +48,20 @@ func migratedDataDir() (string, error) {
 // that need the database or the hooks.
 func newTestApp(t testing.TB) *tests.TestApp {
 	t.Helper()
-	// Nothing in the tests may reach GitHub; tests of the release lookup set their own feed.
-	if os.Getenv("ODYLE_WINDOWS_RELEASE_URL") == "" {
-		t.Setenv("ODYLE_WINDOWS_RELEASE_URL", "http://127.0.0.1:9/releases/latest")
+	// Nothing in the tests may reach GitHub or PLAYNC: a saved character starts a portrait lookup
+	// in the background whether or not the test pauses portraits. Port 9 (discard) refuses at
+	// once. Tests of the release lookup, the armory and the portraits set their own servers.
+	for name, link := range map[string]string{
+		"ODYLE_WINDOWS_RELEASE_URL": "http://127.0.0.1:9/releases/latest",
+		"PLAYNC_SEARCH_URL":         "http://127.0.0.1:9/search",
+		"PLAYNC_ARMORY_URL":         "http://127.0.0.1:9",
+		"PLAYNC_IMAGE_URL":          "http://127.0.0.1:9",
+		"PLAYNC_ASSETS_URL":         "http://127.0.0.1:9/assets/",
+		"PLAYNC_CLASS_ICONS_URL":    "http://127.0.0.1:9/class/",
+	} {
+		if os.Getenv(name) == "" {
+			t.Setenv(name, link)
+		}
 	}
 	dir, err := migratedDataDir()
 	if err != nil {

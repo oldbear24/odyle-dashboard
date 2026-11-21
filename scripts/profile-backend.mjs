@@ -1,9 +1,9 @@
-// Records the CPU profile the backend is built with (profile-guided optimisation: go build
-// uses backend/default.pgo). It runs the test build (npm run backend:build) on a temporary
-// database under a busy server's traffic in fast motion: Windows readers sending heartbeats
-// and readings, and open dashboards that follow their rooms over realtime and fetch
-// snapshots when a room changes. 30 seconds of it are recorded through the superuser
-// profile route. Refresh the profile after larger backend changes:
+// Measures the backend under a busy server's traffic, for diagnosis: it runs the test build
+// (npm run backend:build) on a temporary database under that traffic in fast motion: Windows
+// readers sending heartbeats and readings, and open dashboards that follow their rooms over
+// realtime and fetch snapshots when a room changes. It prints the requests per second served
+// and writes 30 seconds of CPU profile, taken through the superuser profile route, for
+// go tool pprof. Builds use no profile-guided optimisation (#187), so the profile is only read.
 //
 //   npm run backend:build && npm run backend:profile -- [output] [test build]
 import { spawn } from 'node:child_process';
@@ -12,13 +12,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-const output = resolve(process.argv[2] || 'backend/default.pgo');
+const output = resolve(process.argv[2] || join('.runtime', 'backend.pprof'));
 const binary = resolve(process.argv[3] || join('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'));
 const seconds = 30, readerCount = 40, roomCount = 8, dashboardCount = 24, workerCount = 16;
 const url = 'http://127.0.0.1:18095';
 const directory = await mkdtemp(join(tmpdir(), 'odyle-profile-'));
 // Outside services are unreachable: lookups fail at once and nothing leaves the machine.
-const child = spawn(binary, ['serve', '--http=127.0.0.1:18095', '--dir=' + join(directory, 'data')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', PLAYNC_ARMORY_URL: 'http://127.0.0.1:9', PLAYNC_IMAGE_URL: 'http://127.0.0.1:9', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: 'http://127.0.0.1:9' } });
+const child = spawn(binary, ['serve', '--http=127.0.0.1:18095', '--dir=' + join(directory, 'data')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: 'http://127.0.0.1:9/search', PLAYNC_ARMORY_URL: 'http://127.0.0.1:9', PLAYNC_IMAGE_URL: 'http://127.0.0.1:9', PLAYNC_ASSETS_URL: 'http://127.0.0.1:9/assets/', PLAYNC_CLASS_ICONS_URL: 'http://127.0.0.1:9/class/', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: 'http://127.0.0.1:9' } });
 const send = async (path, body, token, method = body === undefined ? 'GET' : 'POST') => {
   const res = await fetch(url + path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: token } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => null);

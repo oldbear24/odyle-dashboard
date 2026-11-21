@@ -7,7 +7,7 @@ import { connectionLink } from './connection.js';
 import { windowsApp } from './release.js';
 import { defaults as resetDefaults, isDone, nextReset, remaining, dayName, resetHour, scopes, inScope, left, templatesForm, periodStart } from './tasks.js';
 import { icon } from './icons.js';
-import { t, tn, detect, useLanguage, language, locale } from './i18n.js';
+import { t, tn, detect, useLanguage, useEnglishLocale, language, locale } from './i18n.js';
 import { joinCode, rememberInvites, rememberInvite, forgetInvite, forgetInvites, forgetAllInvites, inviteLanding, joinedMessage } from './invites.js';
 import { placeButton } from './placeline.js';
 import { pvpButton } from './pvpline.js';
@@ -21,7 +21,7 @@ import { forgetPairing, readerList, onlineReader, readerLabel } from './readers.
 import { party as partyOf, explain, character as readinessOf } from './readiness.js';
 import { partySummary, statusReason, readyOrder, byPlayer, inGame } from './partyview.js';
 import { dungeonKey, entryOf, cubeCost, dungeonFacts, dungeonField } from './catalog.js';
-import { updated, updatedNote } from './updatenote.js';
+import { updated, updatedNote, newerNote, newerRelease } from './updatenote.js';
 import { usesPaths, link, address, current, linked, visit, adoptHash, bare, retitle } from './routes.js';
 import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
@@ -30,6 +30,9 @@ import { lazily, reloadOnce } from './lazy.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
+// The page preloads the Latin files of both fonts (vite.config.js); Czech also needs Latin Extended.
+import dmSansLatinExt from '@fontsource-variable/dm-sans/files/dm-sans-latin-ext-wght-normal.woff2?url';
+import manropeLatinExt from '@fontsource-variable/manrope/files/manrope-latin-ext-wght-normal.woff2?url';
 import './style.css';
 import './accounts.css';
 import './features.css';
@@ -45,6 +48,17 @@ pb.autoClearAuthStore(false);
 const storage = (() => { try { const s = window.localStorage; s.getItem('odyle.probe'); return s; } catch { return { getItem: () => null, setItem() {}, removeItem() {} }; } })();
 const languageKey = 'odyle.language';
 const app = document.querySelector('#app');
+// The messages that screen readers read out live outside #app, which pages draw anew (#199):
+// the toast, and a polite and an urgent region that say what really changed (an announcement,
+// a new release, the connection), so a redraw never reads anything out again.
+function liveRegion(id, attributes, className = '') {
+  const el = document.createElement('div'); el.id = id; el.className = className;
+  for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, value);
+  document.body.append(el); return el;
+}
+const toastBox = liveRegion('toast', { role: 'status', 'aria-live': 'polite' }), politeRegion = liveRegion('live-polite', { 'aria-live': 'polite' }, 'sr-only'), urgentRegion = liveRegion('live-urgent', { role: 'alert' }, 'sr-only');
+toastBox.addEventListener('click', () => toastBox.classList.remove('show'));
+function announce(text, urgent = false) { const el = urgent ? urgentRegion : politeRegion; el.textContent = ''; setTimeout(() => { el.textContent = text; }, 100); }
 // Pages, dialogs and actions that not every visit uses load the first time they are needed, and
 // the rest while the browser is idle once the first page is drawn (lazy.js, prefetchParts). A
 // part gone with a deploy loads the new build (reloadOnce); meanwhile its caller waits, so no
@@ -65,7 +79,8 @@ const timersPart = lazyPart(() => import('./parts/timers.js')), achievementsPart
 // browser is idle, unless it asks to save data.
 function prefetchParts() {
   if (navigator.connection?.saveData || /2g/.test(navigator.connection?.effectiveType || '')) return;
-  const queue = [whatsnewPart, timersPart, achievementsPart, weekPart, armoryPart, cardPart, historyPart, placesPart, pvpPart, accountPart, invitesPart, pairingPart, discordPart, runToolsPart, helpPart, privacyPart, demoPart, slotsPart, cardImagePart];
+  // What's new (it holds the whole changelog, which grows with every release) and the privacy notice come last.
+  const queue = [timersPart, achievementsPart, weekPart, armoryPart, cardPart, historyPart, placesPart, pvpPart, accountPart, invitesPart, pairingPart, discordPart, runToolsPart, helpPart, demoPart, slotsPart, cardImagePart, whatsnewPart, privacyPart];
   const idle = next => (window.requestIdleCallback ? requestIdleCallback(next, { timeout: 5000 }) : setTimeout(next, 500));
   const next = () => queue.shift()?.prefetch().then(() => idle(next));
   idle(next);
@@ -182,26 +197,70 @@ document.addEventListener('keydown', event => {
 // After an update the dashboard says so once (whatsnew.js). A browser that never had the
 // dashboard open starts at this version; one that did, but from before What's new, hears of it.
 const seenKey = 'odyle.seenVersion';
-try { if (!storage.getItem(seenKey)) storage.setItem(seenKey, storage.getItem('odyle.location') || storage.getItem('odyle.account') ? 'earlier' : __APP_VERSION__); } catch { /* storage blocked */ }
-const updateNote = () => shown !== '/changelog' && updated(storage.getItem(seenKey), __APP_VERSION__) ? updatedNote(__APP_VERSION__) : '';
-function seenVersion() { try { storage.setItem(seenKey, __APP_VERSION__); } catch { /* storage blocked */ } document.querySelector('.update-note')?.remove(); }
+// This build's version, from the page (vite.config.js), so the built files keep their names across releases (#185).
+const appVersion = document.querySelector('meta[name="odyle-version"]')?.content || 'dev';
+try { if (!storage.getItem(seenKey)) storage.setItem(seenKey, storage.getItem('odyle.location') || storage.getItem('odyle.account') ? 'earlier' : appVersion); } catch { /* storage blocked */ }
+// A newer release on the server (#197) takes the note's place: the announcement names the
+// release the backend runs. Only where the backend serves this dashboard; a dashboard on a
+// separate host (VITE_POCKETBASE_URL) has releases of its own.
+const updateNote = () => releaseOut && releaseOut !== releaseHidden ? newerNote(releaseOut) : shown !== '/changelog' && updated(storage.getItem(seenKey), appVersion) ? updatedNote(appVersion) : '';
+function seenVersion() { try { storage.setItem(seenKey, appVersion); } catch { /* storage blocked */ } renderUpdateNote(); }
+function renderUpdateNote() {
+  const el = document.querySelector('.update-note'), html = updateNote();
+  if (el) el.outerHTML = html; else if (html) document.querySelector('.announcement-slot')?.insertAdjacentHTML('afterend', html);
+}
+const ownDashboard = import.meta.env.PROD && !import.meta.env.VITE_POCKETBASE_URL;
+let releaseOut = '', releaseHidden = '', releaseAt = Date.now();
+function noteRelease(data) {
+  const next = data?.dashboard;
+  if (!ownDashboard || next === releaseOut || !next) return;
+  // Only a newer release: a server rolled back to an older one has nothing to offer, and takes
+  // back the note of the one it rolled back from.
+  if (!newerRelease(next, appVersion)) { if (releaseOut) { releaseOut = ''; renderUpdateNote(); } return; }
+  releaseOut = next; renderUpdateNote(); announce(t('Odyle {version} is out. Reload the page to get it.', { version: next }));
+  reloadWhenIdle();
+}
+// A hidden tab loads the new release by itself, unless a form holds unsaved input or a dialog
+// is open; once per release and tab, so a server that keeps answering the same never loops.
+const reloadedKey = 'odyle.reloadedFor';
+function reloadWhenIdle() {
+  if (!releaseOut || !document.hidden || busy || drafted() || document.querySelector('#modal')?.open) return;
+  try { if (tabStorage?.getItem(reloadedKey) === releaseOut) return; tabStorage?.setItem(reloadedKey, releaseOut); } catch { return; }
+  location.reload();
+}
+// The announcement is asked every minute at most for the release, also on pages whose own
+// answers carry the announcement and in hidden tabs.
+async function checkRelease() { if (ownDashboard && Date.now() - releaseAt >= 60000) await loadAnnouncement(true); }
 function announcementBar() {
   if (!announcement || storage.getItem(hiddenAnnouncementKey) === announcement.text) return '<div class="announcement-slot"></div>';
   const warning = announcement.level === 'warning';
-  return `<div class="announcement-slot"><div class="announcement ${warning ? 'warning' : 'info'}" role="${warning ? 'alert' : 'status'}">${icon(warning ? 'alert' : 'info')}<p>${esc(announcement.text)}</p><button class="close-button" data-action="hide-announcement" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button></div></div>`;
+  return `<div class="announcement-slot"><div class="announcement ${warning ? 'warning' : 'info'}">${icon(warning ? 'alert' : 'info')}<p>${esc(announcement.text)}</p><button class="close-button" data-action="hide-announcement" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button></div></div>`;
 }
 function renderAnnouncement() { const el = document.querySelector('.announcement-slot'); if (el) el.outerHTML = announcementBar(); }
 async function loadAnnouncement(force = false) {
   if (!force && Date.now() - announcementAt < 60000) return;
-  announcementAt = Date.now();
-  showAnnouncement((await pb.send('/api/odyle/announcement')).announcement || null);
+  announcementAt = releaseAt = Date.now();
+  const answer = await pb.send('/api/odyle/announcement');
+  showAnnouncement(answer.announcement || null); noteRelease(answer);
   // Signed out nothing else asks the server; its answer shows it is reachable.
   if (!online && !pb.authStore.isValid) { online = true; renderConnection(); }
 }
 function announced(data) { if (data && 'announcement' in data) { announcementAt = Date.now(); showAnnouncement(data.announcement || null); } }
-function showAnnouncement(next) { if (JSON.stringify(next) !== JSON.stringify(announcement)) { announcement = next; renderAnnouncement(); } }
+// A new announcement is read out once (the bar itself is no live region, as pages redraw it).
+function showAnnouncement(next) {
+  if (JSON.stringify(next) === JSON.stringify(announcement)) return;
+  announcement = next; renderAnnouncement();
+  if (next?.text && storage.getItem(hiddenAnnouncementKey) !== next.text) announce(next.text, next.level === 'warning');
+}
 // The connection state follows every refresh, not only full redraws.
-function renderConnection() { document.querySelectorAll('.connection').forEach(el => { el.classList.toggle('connected', online || demo); el.innerHTML = connectionLabel(); }); }
+// A lost connection, and its return, are read out (#199).
+let saidOnline = null;
+function renderConnection() {
+  document.querySelectorAll('.connection').forEach(el => { el.classList.toggle('connected', online || demo); el.innerHTML = connectionLabel(); });
+  if (demo || saidOnline === online) return;
+  if (saidOnline !== null || !online) announce(online ? t('Connected to the Odyle server again.') : t('The connection to the Odyle server was lost. The dashboard keeps trying.'), !online);
+  saidOnline = online;
+}
 // The reader in the sidebar: the PC that reads for the account, or the way to connect one.
 function renderReaderStatus() { const el = document.querySelector('.sidebar-foot .reader-button'); if (el) el.outerHTML = readerButton(`${icon('plus')} ${t('Connect reader')}`); document.querySelectorAll('.menu-reader').forEach(item => { item.outerHTML = readerItem(); }); }
 // Wide screens: the sidebar with the room switch, the pages, the reader and the account menu.
@@ -210,11 +269,9 @@ function renderReaderStatus() { const el = document.querySelector('.sidebar-foot
 let drawn = 0, reloadTimer;
 function shell(content, active = 'overview') {
   drawn = navigation;
-  // A message shown right before a redraw (saved, signed out everywhere…) stays on screen.
-  const message = document.querySelector('#toast.show')?.textContent, reader = pb.authStore.isValid && !demo ? readerButton(`${icon('plus')} ${t('Connect reader')}`) : '';
+  const reader = pb.authStore.isValid && !demo ? readerButton(`${icon('plus')} ${t('Connect reader')}`) : '';
   const home = cls => `<a href="${link('/')}" class="${cls}" aria-label="${esc(t('Odyle home'))}"><span class="brand-symbol">${icon('diamond')}</span><span class="brand-name">odyle<span class="brand-dot">.</span></span></a>`;
-  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar">${home('brand')}${roomSwitch()}<nav aria-label="${esc(t('Pages'))}">${pages().map(([action, name, label]) => navItem(action, active, name, label)).join('')}</nav><div class="sidebar-foot">${reader}${accountMenu()}</div></aside><header class="topbar">${home('brand brand-mini')}${roomSwitch()}${accountMenu()}</header><div class="main">${announcementBar()}${updateNote()}${content}<footer><span>Odyle <a class="version-link" href="${link('/changelog')}" title="${esc(t('What\'s new'))}">${esc(__APP_VERSION__)}</a></span><span>${t('Unofficial fan project')} · <a class="footer-link" href="${link('/privacy')}">${t('Privacy')}</a></span></footer></div>${bottomNav(active)}<div id="toast" role="status" aria-live="polite"></div><dialog id="modal" aria-labelledby="modal-title"></dialog>`;
-  if (message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); }
+  app.innerHTML = `<button class="skip-link" data-action="skip">${t('Skip to content')}</button><aside class="sidebar">${home('brand')}${roomSwitch()}<nav aria-label="${esc(t('Pages'))}">${pages().map(([action, name, label]) => navItem(action, active, name, label)).join('')}</nav><div class="sidebar-foot">${reader}${accountMenu()}</div></aside><header class="topbar">${home('brand brand-mini')}${roomSwitch()}${accountMenu()}</header><div class="main">${announcementBar()}${updateNote()}${content}<footer><span>Odyle <a class="version-link" href="${link('/changelog')}" title="${esc(t('What\'s new'))}">${esc(appVersion)}</a></span><span>${t('Unofficial fan project')} · <a class="footer-link" href="${link('/privacy')}">${t('Privacy')}</a></span></footer></div>${bottomNav(active)}<dialog id="modal" aria-labelledby="modal-title"></dialog>`;
 }
 // Browsers built into other apps often cannot finish the Discord sign-in (signin.js); an
 // installed web app looks like one but is not.
@@ -269,7 +326,12 @@ async function loadWindowsRelease() {
 }
 function appLink(className, text = t('Windows app')) {
   const app = windowsApp(windowsRelease);
-  return `<a class="${className}" href="${esc(app.url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('Latest release of the Odyle Windows app on GitHub'))}">${icon('download')} ${text}${app.version ? ` ${esc(app.version)}` : ''}</a>`;
+  return `<a class="${className} app-link" href="${esc(app.url)}" target="_blank" rel="noopener noreferrer" title="${esc(t('Latest release of the Odyle Windows app on GitHub'))}">${icon('download')} ${text}<span class="app-version">${app.version ? ` ${esc(app.version)}` : ''}</span></a>`;
+}
+// The release came after the page was drawn: its links lead to it now.
+function renderAppLinks() {
+  const app = windowsApp(windowsRelease);
+  document.querySelectorAll('a.app-link').forEach(a => { a.href = app.url; a.querySelector('.app-version').textContent = app.version ? ' ' + app.version : ''; });
 }
 // One row per saved character, one switch per room: the account's whole sharing
 // setup in one place. Viewer rooms cannot see shared characters.
@@ -316,21 +378,29 @@ let rendered = '', renderedLibrary = '';
 const stable = list => list.map(({ lastSeenAt, updated, characters, ...rest }) => ({ ...rest, characters: characters?.map(({ lastSeenAt: _seen, updated: _updated, ...c }) => c) }));
 // Hook responses list record fields in a different order each time; sort keys so identical data compares equal.
 const canonical = value => JSON.stringify(value, (key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
-function signature() { const now = Date.now() + serverOffset; return canonical([room, stable(members), board, wishlist, runs, dungeons, catalog, flattened().map(c => status(c, now)), readerNow()?.name ?? null]); }
+// The Odyle clock of a character as its card shows it, without the time left to the next tick
+// (updateAges keeps that current): what changes at a tick, and the cap flag (#199).
+function clockState(c, now) { const clock = clockOf(c, now, clockRules); return clock && [clock.total, clock.next, clock.full, clock.fills.map(f => f.at), capLevel(clock, now)]; }
+function signature() { const now = Date.now() + serverOffset, party = flattened(); return canonical([room, stable(members), board, wishlist, runs, dungeons, catalog, party.map(c => status(c, now)), party.map(c => clockState(c, now)), clockRules, readerNow()?.name ?? null]); }
 function updateAges() {
   const now = Date.now() + serverOffset;
   document.querySelectorAll('[data-age]').forEach(el => { el.textContent = age(el.dataset.age, now); });
   document.querySelectorAll('[data-starts]').forEach(el => { el.textContent = startsIn(timestamp(el.dataset.starts), now); });
+  // The cards' clock lines: "+15 in 2h 5m" counts down in place.
+  const clocks = document.querySelectorAll('[data-clock]'), list = clocks.length ? (room ? flattened() : characters) : [];
+  clocks.forEach(el => { const c = list.find(x => x.id === el.dataset.clock), clock = c && clockOf(c, now, clockRules); if (clock) el.textContent = clockLine(clock, now, 'fresh' in el.dataset); });
 }
 function renderDashboard() { if (signature() === rendered) updateAges(); else dashboard(); }
-function librarySignature() { const now = Date.now() + serverOffset; return canonical([stable([{ characters }]), characters.map(c => status({ ...c, sharing: true }, now)), rooms.map(r => [r.id, r.name, r.role, r.cost, r.sharedCharacters]), readerNow()?.name ?? null]); }
-function renderSharing() { const el = document.querySelector('.share-matrix'); if (el) el.innerHTML = sharingMatrix(); }
+function librarySignature() { const now = Date.now() + serverOffset; return canonical([stable([{ characters }]), characters.map(c => status({ ...c, sharing: true }, now)), characters.map(c => clockState(c, now)), clockRules, rooms.map(r => [r.id, r.name, r.role, r.cost, r.sharedCharacters]), readerNow()?.name ?? null]); }
+function renderSharing() { const el = document.querySelector('.share-matrix'); if (el) keepingDrafts(() => { el.innerHTML = sharingMatrix(); }); }
 // Redraws the rooms, the saved characters and the sharing list without touching the room forms.
 function renderLibrary() {
   const grid = document.querySelector('.personal-characters .member-grid'), list = document.querySelector('.room-section .room-list'); if (!grid || !list) return;
-  renderedLibrary = librarySignature(); list.innerHTML = roomItems(); grid.innerHTML = characterCards();
-  const button = document.querySelector('.personal-characters .reader-button'); if (button) button.outerHTML = readerButton(`${icon('plus')} ${t('Connect reader')}`);
-  document.querySelector('.room-section h2 span').textContent = rooms.length; document.querySelector('.personal-characters h2 span').textContent = characters.length; renderSharing();
+  keepingDrafts(() => {
+    renderedLibrary = librarySignature(); list.innerHTML = roomItems(); grid.innerHTML = characterCards();
+    const button = document.querySelector('.personal-characters .reader-button'); if (button) button.outerHTML = readerButton(`${icon('plus')} ${t('Connect reader')}`);
+    document.querySelector('.room-section h2 span').textContent = rooms.length; document.querySelector('.personal-characters h2 span').textContent = characters.length; renderSharing();
+  });
 }
 // Accounts with a live character in this room, for the dots on the wishlist and runs.
 function liveUsers(now) { return new Set(partyOf(flattened(), now, room?.cost || perCube).live.map(c => c.user)); }
@@ -382,18 +452,41 @@ function plannedRuns(now) {
     readiness: r => runReadiness(r, entries, now, costOf(r), clockRules), costOf, maintenance, start: clockRules.paused ? null : earliestClaim(players, now, cost, clockRules),
     roles: classRoles, called: runs.some(r => r.called && timestamp(r.startsAt) > now - callWait) });
 }
+// The form fields the user changed: a half-typed entry, a picked dungeon, a ticked box.
+const ticked = i => i.type === 'checkbox' || i.type === 'radio';
+const changedField = i => ticked(i) ? i.checked !== i.defaultChecked : i.options ? i.selectedIndex !== [...i.options].reduce((at, o, n) => o.defaultSelected ? n : at, 0) : Boolean(i.value) && i.value !== i.defaultValue;
+const formFields = () => [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name], form[id] textarea[name]')];
+// Whether a form on the page holds unsaved input (a new release waits for it, #197).
+const drafted = () => formFields().some(changedField);
+// The control that had the focus, as selectors that find it after a redraw (#199): its id, else
+// its tag with its data-* attributes, then with fewer of them (Going becomes Can't go), else a
+// link by its address. A button disabled while its request ran lost the focus to the page, so
+// the button pressed with the focus on it (pressed, set by each click) stands in for it.
+let pressed = null;
+function focusKeys() {
+  const active = document.activeElement, el = active && active !== document.body ? active : pressed?.isConnected ? pressed : null;
+  if (!el || !app.contains(el) || el.closest('#modal')) return [];
+  if (el.id) return ['#' + CSS.escape(el.id)];
+  const tag = el.tagName.toLowerCase(), data = [...el.attributes].filter(a => a.name.startsWith('data-')).map(a => `[${a.name}="${CSS.escape(a.value)}"]`);
+  if (data.length) return data.map((_, n) => tag + data.slice(0, data.length - n).join(''));
+  return el.getAttribute('href') ? [`${tag}[href="${CSS.escape(el.getAttribute('href'))}"]`] : [];
+}
 // Full redraws keep a half-typed form entry, a picked dungeon (wishlist, run, task forms) or a
-// changed checkbox, and the focus; what the user did not change shows what the redraw brings.
+// changed checkbox, the focus and where tables were scrolled to; what the user did not change
+// shows what the redraw brings.
 function keepingDrafts(render) {
-  const ticked = i => i.type === 'checkbox' || i.type === 'radio';
-  const changed = i => ticked(i) ? i.checked !== i.defaultChecked : Boolean(i.value) && i.value !== (i.defaultValue ?? '');
-  const drafts = [...document.querySelectorAll('form[id] input[name]:not([type=hidden]), form[id] select[name]')].filter(i => changed(i) || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]` + (ticked(i) ? `[value="${CSS.escape(i.value)}"]` : ''), ticked: ticked(i), checked: i.checked, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
+  const focused = focusKeys(), scrolled = [...app.querySelectorAll('.table-scroll')].map(el => [el.scrollLeft, el.scrollTop]);
+  const drafts = formFields().filter(i => changedField(i) || i === document.activeElement).map(i => ({ selector: `#${i.form.id} [name="${i.name}"]` + (ticked(i) ? `[value="${CSS.escape(i.value)}"]` : ''), ticked: ticked(i), checked: i.checked, value: i.value, focused: i === document.activeElement, start: i.selectionStart, end: i.selectionEnd }));
   render();
   for (const d of drafts) {
     const input = document.querySelector(d.selector); if (!input || (input.options && ![...input.options].some(o => o.value === d.value))) continue;
     if (d.ticked) input.checked = d.checked; else input.value = d.value;
     if (d.focused) { input.focus(); if (input.setSelectionRange && d.start !== null) try { input.setSelectionRange(d.start, d.end); } catch { /* inputs without a text selection */ } }
   }
+  const tables = app.querySelectorAll('.table-scroll');
+  if (tables.length === scrolled.length) tables.forEach((el, i) => { [el.scrollLeft, el.scrollTop] = scrolled[i]; });
+  if (document.activeElement && document.activeElement !== document.body) return;
+  for (const selector of focused) { const el = app.querySelector(selector); if (el && !el.disabled) { el.focus({ preventScroll: true }); break; } }
 }
 // Personal daily and weekly checklists. A task counts as done while it was checked
 // after the current reset (07:00 UTC and Wednesday by default; the server names
@@ -612,7 +705,7 @@ async function privacyShow(ticket) { await privacyPart(); if (ticket === navigat
 function changelogRender() {
   const news = whatsnewPart.loaded(); if (!news) return;
   const app = windowsApp(windowsRelease);
-  shell(news.whatsNew(news.changelog, __APP_VERSION__, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog');
+  shell(news.whatsNew(news.changelog, appVersion, app.version ? { ...app, changes: windowsRelease?.latest?.changes || [] } : null), 'changelog');
 }
 async function changelogPage(ticket) {
   await whatsnewPart(); if (ticket !== navigation) return;
@@ -728,7 +821,7 @@ function seenWeek(from) { try { storage.setItem(weekSeenKey, new Date(timestamp(
 function weekReadyNote() {
   const start = lastWeekStart(), key = new Date(start).toISOString().slice(0, 10);
   if (!characters.some(c => c.lastReadingAt && timestamp(c.lastReadingAt) >= start) || storage.getItem(weekSeenKey) === key) return '';
-  return `<div class="week-ready" role="status">${icon('chart')}<p><strong>${t('Your week in Odyle is ready')}</strong><span>${esc(weekDates(start, start + 7 * 86400000))} · ${t('Cubes, regeneration, what was lost at the cap and a picture to share.')}</span></p><div class="week-ready-actions"><button class="button primary" data-action="week-ready">${t('See your week')} ${icon('arrow')}</button><button class="text-button" data-action="week-later" data-week="${key}">${t('Not now')}</button></div></div>`;
+  return `<div class="week-ready">${icon('chart')}<p><strong>${t('Your week in Odyle is ready')}</strong><span>${esc(weekDates(start, start + 7 * 86400000))} · ${t('Cubes, regeneration, what was lost at the cap and a picture to share.')}</span></p><div class="week-ready-actions"><button class="button primary" data-action="week-ready">${t('See your week')} ${icon('arrow')}</button><button class="text-button" data-action="week-later" data-week="${key}">${t('Not now')}</button></div></div>`;
 }
 const saveBlob = (blob, name) => { const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
 async function weekPicture() {
@@ -774,6 +867,8 @@ const accountSignature = () => canonical([account?.account, account?.characters,
 function accountRender() { const page = accountPart.loaded(); if (!page || !account) return; renderedAccount = accountSignature(); keepingDrafts(() => shell(page.accountView({ ...account, notifications: account.notifications || defaultNotifications, reminders: reminderState(), push: { state: pushHere, devices: account.push?.devices || [] }, now: Date.now() + serverOffset, calendarLink }), 'account')); }
 // The calendar feed's address, shown once after it was made (#35).
 let calendarLink = '';
+// News for the account page that came while a dialog was open (ownNews).
+let accountMissed = false;
 async function refreshAccount() {
   const data = await pb.send('/api/odyle/account');
   if (shown !== '/account') return;
@@ -853,14 +948,14 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
   return `<article class="member-card ${ready ? 'is-ready' : ''} ${state === 'offline' ? 'is-offline' : ''} ${c.main ? 'is-main' : ''} ${level ? `cap-${level}` : ''}"><div class="row-id">${portrait(c, index)}<div class="card-id"><div class="member-name"><span class="name-text">${esc(c.characterName || c.displayName)}</span>${c.main ? `<span class="main-label" title="${esc(t('Main character of {name}', { name: c.displayName }))}">${icon('star')}<span class="main-word">${t('Main')}</span></span>` : ''}</div><div class="member-meta"${classOf(c) ? ` title="${esc(t('Class and level from PLAYNC, checked daily'))}"` : ''}>${demo ? '' : classBadge(armoryImages(), classIcons[c.className], c.className)}${meta}</div>${place}</div></div>`
     + `<div class="row-state"><span class="status ${state}"><i></i>${labels[state]}</span>${c.characterName && !fresh ? `<span class="status-why">${esc(statusReason(c, now))}</span>` : ''}</div>`
     + `<div class="row-energy"><div class="energy"><strong>${known ? c.value.toLocaleString(locale()) : '—'}</strong><span>${t('Odyle')}</span></div><div class="energy-track"><i style="width:${known ? Math.min(100, c.value / (cost * 8) * 100) : 0}%"></i></div>${known && c.parts ? `<div class="energy-split">${esc(t('natural {base} · items {bonus}', { base: c.parts.base.toLocaleString(locale()), bonus: c.parts.bonus.toLocaleString(locale()) }))}</div>` : ''}<div class="row-changed">${locked ? t('No Odyle yet · it unlocks at level 22') : changed}</div></div>`
-    + `<div class="row-clock">${flag ? `<span class="cap-flag" title="${esc(flag[1])}">${icon('alert')}${esc(flag[0])}</span>` : ''}${clock ? `<div class="energy-clock">${esc(clockLine(clock, now, fresh))}</div>` : ''}${self && capMismatch(c) ? `<div class="energy-clock cap-mismatch">${esc(t('Its natural pool held {max}, more than {cap}: has the membership started? Account & data → Membership.', { max: c.naturalMax.toLocaleString(locale()), cap: c.answeredCap.toLocaleString(locale()) }))}</div>` : ''}</div>`
+    + `<div class="row-clock">${flag ? `<span class="cap-flag" title="${esc(flag[1])}">${icon('alert')}${esc(flag[0])}</span>` : ''}${clock ? `<div class="energy-clock" data-clock="${esc(c.id)}"${fresh ? ' data-fresh' : ''}>${esc(clockLine(clock, now, fresh))}</div>` : ''}${self && capMismatch(c) ? `<div class="energy-clock cap-mismatch">${esc(t('Its natural pool held {max}, more than {cap}: has the membership started? Account & data → Membership.', { max: c.naturalMax.toLocaleString(locale()), cap: c.answeredCap.toLocaleString(locale()) }))}</div>` : ''}</div>`
     + `<div class="row-cubes cube-line">${known ? `<span><strong>${cubes}</strong> ${esc(tn(cubes, 'cube', 'cubes'))}</span>` : `<span>${locked ? t('No Odyle yet') : t('No confirmed reading')}</span>`}<span class="readiness ${ready ? 'ready' : ''}">${ready ? t('Ready') : fresh ? t('Low energy') : known ? t('last saved') : ''}</span>${counts}</div>`
     + `<div class="card-actions">${armory}${history}${action}</div></article>`;
 }
 // The star on a saved character in the library: marks it as the account's main, or clears the mark.
 const mainToggle = c => `<button class="icon-only main-toggle" data-main-character="${esc(c.id)}" data-name="${esc(c.characterName)}" data-main="${!c.main}" aria-pressed="${Boolean(c.main)}" title="${esc(c.main ? t('{name} is your main character. Click to unmark it.', { name: c.characterName }) : t('Make {name} your main character', { name: c.characterName }))}">${icon('star')}<span class="sr-only">${t('Main character')}</span></button>`;
 let toastTimer;
-function toast(message) { const el = document.querySelector('#toast'); if (!el) return; el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 6000); }
+function toast(message) { const el = toastBox; el.textContent = message; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 6000); }
 // A failed form also says why inside the form, next to what has to change, for screen
 // readers (role=alert) and for anyone who missed the toast.
 function formError(form, message) { form.querySelector('.form-error')?.remove(); form.insertAdjacentHTML('beforeend', `<p class="form-error" role="alert">${esc(message)}</p>`); }
@@ -1217,7 +1312,9 @@ function later() { if (!document.hidden) return false; lastPulse = 0; return tru
 async function leaveRoomTopic() { const stops = roomTopics; roomTopics = []; for (const stop of stops) await stop().catch(() => { /* already gone */ }); }
 async function library(ticket) {
   await leaveRoomTopic(); clearRoom();
-  const [list, mine, ahead] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), pb.send('/api/odyle/upcoming?days=14', { requestKey: 'next-runs' }).catch(() => null), loadWindowsRelease()]);
+  // The Windows app's newest release does not hold the page back: its links show GitHub's latest-release page until it comes (#186).
+  loadWindowsRelease().then(() => { if (ticket === navigation) renderAppLinks(); });
+  const [list, mine, ahead] = await Promise.all([pb.send('/api/odyle/rooms'), pb.collection('characters').getFullList({ sort: 'created' }), pb.send('/api/odyle/upcoming?days=14', { requestKey: 'next-runs' }).catch(() => null)]);
   if (ticket !== navigation) return;
   nextRunsList = ahead?.runs || [];
   rooms = list.rooms; perCube = list.odylePerCube || perCube; clockRules = list.clock || clockRules; gameMaps = list.maps || gameMaps; classIcons = list.classIcons || classIcons; keptDays = list.kept || keptDays; notificationsSeen = list.notifications || notificationsSeen; notificationsSeen = list.notifications || notificationsSeen; characters = mine; readers = list.readers || []; online = true; if (list.serverNow) serverOffset = Date.parse(list.serverNow) - Date.now(); announced(list); libraryView(); renderedLibrary = librarySignature();
@@ -1289,7 +1386,7 @@ async function ownNews(data) {
     // News for everyone: a changed announcement shows at once, and a new Windows release
     // refreshes the download links and says so.
     announced(data);
-    if (data.release?.version) { windowsReleaseAt = 0; await loadWindowsRelease(); toast(t('Odyle for Windows {version} is out. Running apps update themselves.', { version: data.release.version })); }
+    if (data.release?.version) { windowsReleaseAt = 0; await loadWindowsRelease(); renderAppLinks(); toast(t('Odyle for Windows {version} is out. Running apps update themselves.', { version: data.release.version })); }
     // The open room hears of its own changes on its topic.
     // On My rooms & characters, a character saved meanwhile (by the reader) is offered to the rooms
     // that do not show it yet, after fetching again: rooms that share new characters have it now.
@@ -1304,7 +1401,8 @@ async function ownNews(data) {
     if (Array.isArray(data.invites)) await showInvites(data.invites);
     if (Array.isArray(data.achievements) && data.achievements.length) await reachedAchievements(data.achievements);
     // Notification settings saved in another tab or app.
-    if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) accountRender(); } }
+    // An open dialog (a typed confirmation) stays; the page is drawn again once it closes (#199).
+    if (data.notifications) { upcomingAt = 0; notificationsSeen = data.notifications; if (account) { account.notifications = data.notifications; if (shown === '/account' && !later()) { if (document.querySelector('#modal')?.open) accountMissed = true; else accountRender(); } } }
     if (data.contact) {
       applyContact(data.contact, account?.apps); applyContact(data.contact, readers);
       // A reader started since the room was fetched: the snapshot names its PC (other pages hear of it as news).
@@ -1461,16 +1559,32 @@ function failure(error) { if (error?.status === 401 && pb.authStore.token) retur
 // Only a refused token ends the sign-in. An unreachable server (a deploy, a restart,
 // a network drop) keeps it: the page says so and tries again by itself.
 let retryTimer;
-async function authenticated() {
-  clearTimeout(retryTimer);
-  try { await pb.collection('users').authRefresh(); }
-  catch (error) { return [401, 403].includes(error?.status) ? logout() : unreachable(); }
-  renewedAt = Date.now(); online = true;
-  // A visit without a page in its URL resumes the last page of this browser.
-  if (bare()) visit(remembered().path || '/', true);
-  clearInterval(timer); lastPulse = lastCheck = Date.now();
-  timer = setInterval(tick, 5000);
-  await show(true).catch(failure);
+// The account this tab runs as once its sign-in was renewed, and whether that is under way (#198).
+let signedInAs = '', signingIn = false;
+// The sign-in renewed: null, or the error that refused it.
+const renewal = () => pb.collection('users').authRefresh().then(() => null, error => error);
+// The page draws at once (#186): its frame from the sign-in this browser keeps, with a loading
+// state, then its data, fetched while the sign-in is renewed (renewing, when it already started).
+async function authenticated(renewing = null) {
+  clearTimeout(retryTimer); signingIn = true;
+  try {
+    // A visit without a page in its URL resumes the last page of this browser.
+    if (bare()) visit(remembered().path || '/', true);
+    if (!app.childElementCount) loadingShell();
+    renewing ||= renewal();
+    const page = show(true).then(() => null, error => error), ticket = navigation, refused = await renewing;
+    if (refused) {
+      // The page's own answers go nowhere: a newer navigation leaves them behind.
+      navigation++; shown = null; clearTimeout(reloadTimer);
+      return [401, 403].includes(refused?.status) ? logout() : unreachable();
+    }
+    renewedAt = Date.now(); online = true; signedInAs = pb.authStore.record?.id || '';
+    clearInterval(timer); lastPulse = lastCheck = Date.now();
+    timer = setInterval(tick, 5000);
+    // A page refused with the token from before the renewal loads again with the new one.
+    const trouble = await page;
+    if (trouble?.status === 401 && ticket === navigation) await show(true).catch(failure); else if (trouble) failure(trouble);
+  } finally { signingIn = false; }
   if (!roomsKnown) loadRoomList().catch(() => { /* the switch lists the rooms with the next library visit */ });
   // Rooms and snapshots carry the announcement; other pages fetch it.
   loadAnnouncement().catch(() => { /* the next minute tries again */ });
@@ -1501,10 +1615,15 @@ async function tick() {
   finally { renderConnection(); }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
+  if (document.hidden) return reloadWhenIdle();
   if (timer) tick();
   if (pairing?.missed) { pairing.missed = false; checkPairing(); }
 });
+// The frame of the page and a loading state, before any answer came (#186).
+function loadingShell() {
+  const path = currentPath(), active = path.startsWith('/room/') ? 'overview' : path.startsWith('/armory') ? 'armory' : { '/': 'library', '/tasks': 'tasks', '/week': 'week', '/achievements': 'achievements', '/timers': 'timers', '/account': 'account' }[path] || '';
+  shell(`<main class="dashboard loading-page" aria-busy="true"><p class="loading-note" role="status"><span class="loading-spinner" aria-hidden="true"></span>${t('Loading your page…')}</p><div class="loading-lines" aria-hidden="true"><i></i><i></i><i></i><i></i></div></main>`, active);
+}
 function unreachable() {
   clearInterval(timer); timer = 0; online = false;
   shell(`<main class="welcome"><div class="eyebrow"><span class="tiny-diamond"></span> ${t('STILL SIGNED IN')}</div><h1>${t('The Odyle server is out of reach')}<span class="mint">.</span></h1><p class="intro">${t('Your sign-in is kept. The dashboard tries again every ten seconds and opens your page as soon as the server answers.')}</p><button class="button secondary" data-action="retry">${t('Try again now')} ${icon('arrow')}</button></main>`);
@@ -1546,7 +1665,7 @@ async function discordLogin() {
 }
 async function logout() {
   // Invite codes stay usable for up to a week and pairing codes for five minutes; a shared computer must not keep them.
-  await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); stopPairing(); pb.authStore.clear(); forget(); forgetAllInvites(storage); forgetPairing(storage); clearRoom(); rooms = []; roomsKnown = false; characters = []; readers = []; tasks = []; account = null; online = false;
+  signedInAs = ''; await leaveRoomTopic(); await unwatchOwnTopic(); clearInterval(timer); timer = 0; clearTimeout(retryTimer); stopPairing(); pb.authStore.clear(); forget(); forgetAllInvites(storage); forgetPairing(storage); clearRoom(); rooms = []; roomsKnown = false; characters = []; readers = []; tasks = []; account = null; online = false;
   // The account's achievements and week stay with it, not with the next one signing in here.
   achievementsData = null; achievementsNew = 0; weekData = null; weekBack = null;
   await go('/', true);
@@ -1660,7 +1779,7 @@ app.addEventListener('submit', async e => {
   finally { busy = false; if (button.isConnected) button.disabled = false; }
 });
 app.addEventListener('click', async e => {
-  const el = e.target.closest('button, .brand'); if (!el) return;
+  const el = e.target.closest('button, .brand'); pressed = el && el === document.activeElement ? el : null; if (!el) return;
   try {
     if (el.matches('.brand')) { e.preventDefault(); return await go('/'); }
     if (el.dataset.room) return await go('/room/' + el.dataset.room);
@@ -1867,6 +1986,8 @@ app.addEventListener('click', async e => {
       case 'add-all': { const id = room.id, result = await send('sharing', { roomId: id, enabled: true }); changedRoom(id, () => applyShared(me(), result.sharedCharacters)); break; }
       case 'desktop': await desktopDialog(true); break;
       case 'hide-update-note': seenVersion(); break;
+      case 'hide-release-note': releaseHidden = releaseOut; renderUpdateNote(); break;
+      case 'reload-release': location.reload(); break;
       case 'skip': { const main = document.querySelector('.main main'); if (main) { main.setAttribute('tabindex', '-1'); main.focus(); } break; }
       case 'hide-announcement': storage.setItem(hiddenAnnouncementKey, announcement?.text || ''); renderAnnouncement(); break;
       case 'help': modal(t('Saved characters, fresh readings'), (await helpPart()).helpBody({ historyDays: keptDays.historyDays, scope: scopeText() })); break;
@@ -1874,7 +1995,7 @@ app.addEventListener('click', async e => {
       case 'close-room': ask(esc(t('Close {room}?', { room: room.name })), t('This deletes the room with its wishlist and planned runs for every member. Characters stay on their accounts. It cannot be undone.'), t('Close room for everyone'), { action: 'confirm-close' }); break;
       case 'confirm-leave': case 'confirm-close': { const id = room.id, closing = el.dataset.action === 'confirm-close'; await send(closing ? 'close' : 'leave', { roomId: id }); closeModal(); forget(id); if (closing) forgetInvites(storage, id); await go('/'); toast(closing ? t('Room closed. Your saved characters are retained.') : t('You left the room. Your saved characters are retained.')); break; }
       case 'export': download(JSON.stringify(await pb.send('/api/odyle/export'), null, 2), `odyle-data-${new Date().toISOString().slice(0, 10)}.json`, 'application/json'); break;
-      case 'sign-out-everywhere': ask(t('Sign out everywhere?'), t('Every other browser and every paired Windows app loses access and must sign in or pair again. This browser stays signed in.'), t('Sign out everywhere'), { action: 'confirm-sign-out-everywhere' }); break;
+      case 'sign-out-everywhere': ask(t('Sign out everywhere?'), t('Every other browser and every paired Windows app loses access and must sign in or pair again. Your calendar link stops working, so you will need a new one. This browser stays signed in.'), t('Sign out everywhere'), { action: 'confirm-sign-out-everywhere' }); break;
       // The new token ends every realtime sign-in of the account, this browser's too: subscribe again with it.
       case 'confirm-sign-out-everywhere': { const data = await send('sign-out-everywhere'); pb.authStore.save(data.token, data.record); forgetPairing(storage); closeModal(); toast(t('Signed out everywhere else. Pair your Windows app again to keep reading.')); await unwatchOwnTopic(); await show(true); break; }
       case 'delete-account': modal(t('Delete your account?'), `<p>${t('Your characters, their history, your memberships, wishlist entries and tasks are deleted for good. Rooms you own pass to their longest-standing player, or close if there is none. Download your data first if you want to keep it.')}</p><label>${esc(t('Type {name} to confirm', { name: pb.authStore.record.displayName }))}<input id="delete-confirm" autocomplete="off"></label><button class="button danger" data-action="confirm-delete-account">${t('Delete account for good')}</button><button class="button secondary" data-action="close-dialog">${t('Keep it')}</button>`); break;
@@ -2014,12 +2135,22 @@ app.addEventListener('change', async e => {
   try { applyTasks(await send('task', { id, done })); tasksView(); document.querySelector(`input[data-task="${id}"]`)?.focus(); }
   catch (error) { el.checked = !done; el.disabled = false; failure(error); }
 });
-app.addEventListener('click', e => { if (e.target.closest('#toast')) e.target.closest('#toast').classList.remove('show'); });
-window.addEventListener('storage', e => { if (e.key === bookmarksKey && shown?.startsWith('/armory') && document.activeElement?.name !== 'name') armoryRender(); });
+// Bookmarks changed in another tab redraw the armory page, but neither the card page (its own page) nor an open dialog (#199).
+window.addEventListener('storage', e => { if (e.key === bookmarksKey && shown?.startsWith('/armory') && document.activeElement?.name !== 'name' && !document.querySelector('.card-page, #modal[open]')) armoryRender(); });
 app.addEventListener('focusin', e => { if (e.target.matches?.('.link-field')) e.target.select(); });
+// Signing out or in another tab of this browser (#198). The SDK's auth store has already taken
+// the change from localStorage (its own storage listener came first); its onChange also fires for
+// this tab's renewals and sign-ins, so the storage event, which only other tabs cause, decides.
+window.addEventListener('storage', e => {
+  if (e.key !== 'odyle.account' && e.key !== null) return;
+  const user = pb.authStore.isValid ? pb.authStore.record?.id || '' : '';
+  if (!user) { if (signedInAs || timer) logout().then(() => toast(t('You signed out in another tab.')), failure); return; }
+  if (signedInAs && signedInAs !== user) return location.reload(); // another account took over
+  if (!signedInAs && !timer && !signingIn) authenticated().catch(failure);
+});
 // A closed dialog may have held back room changes (rename, roles); draw them now. A closed
 // pairing dialog stops following its link.
-app.addEventListener('close', e => { if (e.target.id !== 'modal') return; stopPairing(); if (room && !demo) renderDashboard(); }, true);
+app.addEventListener('close', e => { if (e.target.id !== 'modal') return; stopPairing(); if (room && !demo) renderDashboard(); if (accountMissed && shown === '/account') { accountMissed = false; accountRender(); } }, true);
 // A picture that fails to load (removed meanwhile, server unreachable) uncovers the initials.
 app.addEventListener('error', e => { if (e.target.matches?.('.portrait img')) e.target.closest('.portrait-photo').remove(); }, true);
 // An armory image the backend does not keep (yet) leaves its frame empty.
@@ -2029,9 +2160,16 @@ app.addEventListener('error', e => { if (e.target.matches?.('img.armory-img')) {
 // shows run reminders; development builds go without it.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => { /* runs without offline files */ });
 adoptHash();
-useLanguage(detect(storage.getItem(languageKey), navigator.languages || [navigator.language])).catch(() => useLanguage('en')).then(() => {
+const startLanguage = detect(storage.getItem(languageKey), navigator.languages || [navigator.language]);
+useEnglishLocale(navigator.languages || [navigator.language]);
+if (startLanguage === 'cs') for (const href of [dmSansLatinExt, manropeLatinExt]) document.head.append(Object.assign(document.createElement('link'), { rel: 'preload', as: 'font', type: 'font/woff2', href, crossOrigin: '' }));
+// A kept sign-in is renewed while the dictionary loads (#186).
+const renewing = pb.authStore.isValid ? renewal() : null;
+useLanguage(startLanguage).catch(() => useLanguage('en')).then(() => {
   document.documentElement.lang = language(); retitle(pageTitle(currentPath()));
-  if (pb.authStore.isValid) return authenticated().catch(failure);
+  if (pb.authStore.isValid) return authenticated(renewing).catch(failure);
   loadAnnouncement(true).catch(() => { /* an older backend or no connection: no banner */ });
   return show().catch(failure);
 }).then(prefetchParts);
+// Whether a newer release is out, every minute at most, signed in or not (checkRelease).
+setInterval(() => checkRelease().catch(() => { /* the next minute tries again */ }), 15000);

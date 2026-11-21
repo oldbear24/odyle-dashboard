@@ -170,3 +170,14 @@ dialog .place-main .place-note{margin:8px 0 0}
 .achievement-toast-sign{font-size:20px}
 @media(max-width:900px){#achievement-toast{top:64px;right:16px;left:16px;max-width:none}}
 @media(prefers-reduced-motion:reduce){#achievement-toast{transition:none}}
+/* The first paint (#186): the page's frame with a loading state while its data comes */
+.loading-note{display:flex;align-items:center;gap:10px;margin:6px 0 18px;font-size:13px;color:var(--muted)}.loading-spinner{width:16px;height:16px;flex-shrink:0;border:2px solid #2f4236;border-top-color:var(--mint);border-radius:50%;animation:loading-spin .9s linear infinite}
+.loading-lines{display:grid;gap:10px}.loading-lines i{display:block;height:64px;border-radius:10px;background:linear-gradient(90deg,#151d19 0%,#1d2822 50%,#151d19 100%);background-size:200% 100%;animation:loading-shimmer 1.6s ease-in-out infinite}.loading-lines i:first-child{width:min(420px,70%);height:34px}
+@keyframes loading-spin{to{transform:rotate(360deg)}}@keyframes loading-shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){.loading-spinner,.loading-lines i{animation:none}}
+/* Without JavaScript the page says what it needs (index.html) */
+.noscript{max-width:560px;margin:15vh auto 0;padding:0 20px;font-size:15px;line-height:1.6;color:#cfdcd3}.noscript strong{display:block;margin-bottom:6px;font-family:'Manrope Variable','Manrope',sans-serif;font-size:22px;color:#eaf1ed}
+/* Body copy reads at 12 px or more (#200): sentences and notes, not the dense rows, badges and labels */
+.info-panel>p,.setup-card p,.welcome-note,.heading p,.share-note,.wish-note,.wish-empty,.scope-note,dialog .scope-note,.signin-tip,.discord-card .signin-help,.discord-card small,.last-known-note,.run-warning,dialog .history-about,dialog .place-note{font-size:12px}
+/* Phones (the layout with the bar at the bottom): fields at 16 px, below which iOS Safari zooms into each one it focuses (#200) */
+@media(max-width:900px){input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{font-size:16px!important}}

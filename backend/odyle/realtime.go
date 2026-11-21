@@ -167,14 +167,14 @@ func (o *outbox) deliver(app core.App) {
 	if len(rooms)+len(users) == 0 {
 		return
 	}
-	clients := app.SubscriptionsBroker().Clients()
+	index := indexClients(app.SubscriptionsBroker().Clients())
 	for id, n := range rooms {
-		if err := deliverRoom(app, clients, id, n); err != nil {
+		if err := deliverRoom(app, index, id, n); err != nil {
 			warn(app, "Odyle realtime delivery failed", "room", id, "error", err.Error())
 		}
 	}
 	for id, n := range users {
-		deliverUser(clients, id, n)
+		deliverUser(index, id, n)
 	}
 }
 
@@ -187,26 +187,24 @@ func clientAccount(c subscriptions.Client) string {
 	return auth.Id
 }
 
-// post sends a message without waiting for the client to take it.
+// post sends a message without waiting for the client to take it: it waits in the
+// connection's queue, which hands messages over in order (realtimequeue.go).
 func post(c subscriptions.Client, topic string, data any) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return
 	}
-	go func() {
-		defer func() { recover() }() // the client went away meanwhile
-		c.Send(subscriptions.Message{Name: topic, Data: raw})
-	}()
+	outgoing.push(c, subscriptions.Message{Name: topic, Data: raw})
 }
 
 func iso(at time.Time) string { return at.UTC().Format(isoLayout) }
 
-func deliverRoom(app core.App, clients map[string]subscriptions.Client, id string, n *roomNews) error {
+func deliverRoom(app core.App, index clientIndex, id string, n *roomNews) error {
 	topic, presence := roomTopic+id, presenceTopic+id
-	var listeners []subscriptions.Client
-	for _, c := range clients {
-		if c.HasSubscription(topic) || c.HasSubscription(presence) {
-			listeners = append(listeners, c)
+	listeners := index[topic]
+	for _, c := range index[presence] {
+		if !c.HasSubscription(topic) {
+			listeners = append(slices.Clip(listeners), c)
 		}
 	}
 	if len(listeners) == 0 {
@@ -271,7 +269,7 @@ func deliverRoom(app core.App, clients map[string]subscriptions.Client, id strin
 	return nil
 }
 
-func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews) {
+func deliverUser(index clientIndex, id string, n *userNews) {
 	topic := userTopic + id
 	message := map[string]any{}
 	if n.refresh {
@@ -313,8 +311,8 @@ func deliverUser(clients map[string]subscriptions.Client, id string, n *userNews
 	if len(message) == 0 {
 		return
 	}
-	for _, c := range clients {
-		if c.HasSubscription(topic) && clientAccount(c) == id {
+	for _, c := range index[topic] {
+		if clientAccount(c) == id {
 			post(c, topic, message)
 		}
 	}
@@ -355,16 +353,25 @@ func notifyUsers(app core.App, userIds ...string) {
 // characterChanged sends a changed character to its owner and to every room the owner
 // is in; each member hears of it only if they may see it.
 func characterChanged(app core.App, c *Character) {
-	owner, copy := c.User(), viewOf[Character](c.Clone())
+	tellCharacter(app, c, true, true)
+}
+
+// tellCharacter sends a character to every room its owner is in, to its owner, or both.
+func tellCharacter(app core.App, c *Character, rooms, owner bool) {
+	account, copy := c.User(), viewOf[Character](c.Clone())
 	present(app, copy)
-	roomIds, err := roomsFor(app, owner)
-	if err != nil {
-		warn(app, "Odyle realtime delivery failed", "character", c.Id, "error", err.Error())
+	if rooms {
+		roomIds, err := roomsFor(app, account)
+		if err != nil {
+			warn(app, "Odyle realtime delivery failed", "character", c.Id, "error", err.Error())
+		}
+		for _, id := range unique(roomIds) {
+			changes(app).room(app, id, func(n *roomNews) { n.characters[copy.Id] = copy })
+		}
 	}
-	for _, id := range unique(roomIds) {
-		changes(app).room(app, id, func(n *roomNews) { n.characters[copy.Id] = copy })
+	if owner {
+		changes(app).user(app, account, func(n *userNews) { n.characters[copy.Id] = copy })
 	}
-	changes(app).user(app, owner, func(n *userNews) { n.characters[copy.Id] = copy })
 }
 
 // characterFields are the fields of a character clients show; a change to any other
@@ -476,6 +483,9 @@ func watchSubscriptions(app core.App) {
 		}
 		if err := e.Next(); err != nil {
 			return err
+		}
+		if slices.ContainsFunc(e.Subscriptions, func(topic string) bool { return strings.HasPrefix(topic, adminTopic) }) {
+			stateOf(e.App).admins.add(e.Client)
 		}
 		if own != "" {
 			replayUpdate(e.App, e.Client, own)

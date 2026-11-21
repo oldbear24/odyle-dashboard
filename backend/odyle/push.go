@@ -83,12 +83,9 @@ func vapid(app core.App) (*vapidKey, error) {
 	}
 	var private *ecdsa.PrivateKey
 	if raw != "" {
-		scalar, err := b64.DecodeString(strings.TrimRight(raw, "="))
-		if err != nil {
-			return nil, errors.New("the VAPID key is not base64url")
-		}
-		if private, err = ecdsa.ParseRawPrivateKey(elliptic.P256(), scalar); err != nil {
-			return nil, fmt.Errorf("the VAPID key is not a P-256 private key: %w", err)
+		var err error
+		if private, err = parseVapid(raw); err != nil {
+			return nil, err
 		}
 	} else {
 		var err error
@@ -109,6 +106,19 @@ func vapid(app core.App) (*vapidKey, error) {
 	}
 	vapidOnce.key = &vapidKey{private: private, public: public}
 	return vapidOnce.key, nil
+}
+
+// parseVapid reads a VAPID private key: a P-256 scalar, base64url.
+func parseVapid(raw string) (*ecdsa.PrivateKey, error) {
+	scalar, err := b64.DecodeString(strings.TrimRight(raw, "="))
+	if err != nil {
+		return nil, errors.New("the VAPID key is not base64url")
+	}
+	private, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), scalar)
+	if err != nil {
+		return nil, fmt.Errorf("the VAPID key is not a P-256 private key: %w", err)
+	}
+	return private, nil
 }
 
 // vapidHeader is the Authorization header for an endpoint: a JWT (ES256) for the push
@@ -201,7 +211,7 @@ func sendPush(app core.App, sub *core.Record, message pushMessage, ttl time.Dura
 	waits := &stateOf(app).pushWaits
 	if until, ok := waits.Load(endpoint.Host); ok {
 		if left := time.Until(until.(time.Time)); left > 0 {
-			return fmt.Errorf("the push service asked to wait %s more", left.Round(time.Second))
+			return pushWaiting(fmt.Sprintf("the push service asked to wait %s more", left.Round(time.Second)))
 		}
 		waits.Delete(endpoint.Host)
 	}
@@ -258,9 +268,9 @@ func sendPush(app core.App, sub *core.Record, message pushMessage, ttl time.Dura
 		if wait > 0 {
 			waits.Store(endpoint.Host, time.Now().Add(wait))
 		}
-		return fmt.Errorf("the push service answered 429 and asked to wait %s", wait.Round(time.Second))
+		return pushWaiting(fmt.Sprintf("the push service answered 429 and asked to wait %s", wait.Round(time.Second)))
 	case response.StatusCode >= 300:
-		return fmt.Errorf("the push service answered %d", response.StatusCode)
+		return pushRefused(response.StatusCode)
 	}
 	_, err = app.DB().NewQuery("UPDATE push_subscriptions SET lastOkAt = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": now(), "id": sub.Id}).Execute()
 	return err
@@ -291,7 +301,9 @@ func pushToAccount(app core.App, user string, n notificationSettings, write func
 	}
 	sent, failed := 0, error(nil)
 	for _, sub := range subs {
-		switch err := sendPush(app, sub, write(sub.GetString("language")), ttl, urgent); {
+		err := sendPush(app, sub, write(sub.GetString("language")), ttl, urgent)
+		stateOf(app).ops.notePush(err)
+		switch {
 		case errors.Is(err, errPushGone):
 			if err := app.Delete(sub); err != nil {
 				failed = err

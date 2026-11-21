@@ -110,6 +110,7 @@ func TestTheArmoryNamesTheClassesItReads(t *testing.T) {
 	if _, err := app.DB().NewQuery("DELETE FROM game_classes WHERE pcId = 36").Execute(); err != nil {
 		t.Fatal(err)
 	}
+	forgetClasses(app)
 	id := saved(t, app, "characters", map[string]any{"user": user.Id, "characterName": "Unnamed", "server": "Lumiel", "region": "GLOBAL_EU", "classId": 36}).Id
 	ask(t, app, "GET", armoryPath("kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="), nil, "", 200)
 	stateOf(app).armory.wait()

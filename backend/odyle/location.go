@@ -4,6 +4,7 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -159,9 +160,13 @@ func location(e *core.RequestEvent) error {
 		at := time.Now()
 		p.At = stamp(at)
 		c.Set("location", p)
-		if err := app.Save(c); err != nil {
+		// Only the place, about once a second while flying: a whole save would write every
+		// field of the copy read here (and run its hooks), which a reading saved meanwhile
+		// would lose. Rooms and the owner hear of it from placeChanged instead.
+		if _, err := app.DB().NewQuery("UPDATE characters SET location = {:location} WHERE id = {:id}").Bind(dbx.Params{"location": c.GetString("location"), "id": c.Id}).Execute(); err != nil {
 			return nil, err
 		}
+		placeChanged(app, c, p.Source)
 		last, err := app.FindRecordsByFilter("character_locations", "character = {:id}", "-created", 1, 0, dbx.Params{"id": c.Id})
 		if err != nil {
 			return nil, err
@@ -188,8 +193,86 @@ func location(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
-		// Rooms and the owner hear of the place with the character (realtime.go).
 		return map[string]any{"shared": true, "serverNow": now()}, nil
+	})
+}
+
+// placeNewsGap is how often the rooms hear of a character's places while it flies (flight and
+// effect places come about once a second): the first place at once, then the latest one
+// placeNewsGap after the last they heard of, as long as new ones come. A load or an arrival
+// reaches them at once. The owner hears of every place at once, and any other change of the
+// character reaches everyone at once as before (realtime.go).
+var placeNewsGap = 3 * time.Second
+
+// placeNews keeps, per character in flight, whether a place came since its rooms last heard.
+type placeNews struct {
+	mu      sync.Mutex
+	waiting map[string]bool // character id → a place came since; present while its gap runs
+	closed  bool            // the app is shutting down
+	running sync.WaitGroup  // gaps ending now
+}
+
+// placeChanged tells the owner and the rooms of a character's new place (written past the
+// record hooks), once the transaction commits.
+func placeChanged(app core.App, c *Character, source string) {
+	urgent := source != "flight" && source != "effect"
+	afterCommit(app, func(root core.App) {
+		tellCharacter(root, c, false, true)
+		w := &stateOf(root).places
+		w.mu.Lock()
+		if w.closed {
+			w.mu.Unlock()
+			return
+		}
+		if w.waiting == nil {
+			w.waiting = map[string]bool{}
+		}
+		_, gap := w.waiting[c.Id]
+		if gap && !urgent {
+			w.waiting[c.Id] = true
+			w.mu.Unlock()
+			return
+		}
+		w.waiting[c.Id] = false
+		if !gap {
+			time.AfterFunc(placeNewsGap, func() { w.gapEnded(root, c.Id) })
+		}
+		w.mu.Unlock()
+		tellCharacter(root, c, true, false)
+	})
+}
+
+// gapEnded tells the rooms of the character as it is now when a place came during the gap, and
+// starts another gap; else the next place reaches them at once.
+func (w *placeNews) gapEnded(app core.App, id string) {
+	w.mu.Lock()
+	place, ok := w.waiting[id]
+	if w.closed || !ok || !place {
+		delete(w.waiting, id)
+		w.mu.Unlock()
+		return
+	}
+	w.waiting[id] = false
+	w.running.Add(1)
+	w.mu.Unlock()
+	defer w.running.Done()
+	time.AfterFunc(placeNewsGap, func() { w.gapEnded(app, id) })
+	record, err := app.FindRecordById("characters", id)
+	if err != nil {
+		return // deleted meanwhile; its rooms heard of that
+	}
+	tellCharacter(app, viewOf[Character](record), true, false)
+}
+
+// watchPlaces stops the gaps when the app shuts down.
+func watchPlaces(app core.App) {
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		w := &stateOf(e.App).places
+		w.mu.Lock()
+		w.closed = true
+		w.mu.Unlock()
+		w.running.Wait()
+		return e.Next()
 	})
 }
 

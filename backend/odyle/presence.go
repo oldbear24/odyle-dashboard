@@ -215,6 +215,11 @@ func watchPresence(app core.App) {
 		if err := presenceOf(e.App).write(e.App); err != nil {
 			warn(e.App, "Odyle could not write heartbeats", "error", err.Error())
 		}
+		// Run now pushes on their way get a moment to arrive (and to drop a subscription their
+		// push service forgot) before the database closes.
+		if !drain(&stateOf(e.App).pushes, pushesDrain) {
+			warn(e.App, "Odyle stopped before every push message was sent")
+		}
 		return e.Next()
 	})
 	app.OnRecordEnrich("characters").BindFunc(func(e *core.RecordEnrichEvent) error {

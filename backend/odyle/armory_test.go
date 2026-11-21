@@ -500,6 +500,16 @@ func TestArmoryLookupsThatFail(t *testing.T) {
 	if status["failed"] != 1 || status["blockedUntil"] == "" || status["lastError"] != "PLAYNC refused the lookup for now." {
 		t.Fatalf("status: %v", status)
 	}
+	// The failures in a row since a lookup worked, for the operator alert (alerts.go).
+	failing := func() int {
+		w := stateOf(app).armory
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.failing
+	}
+	if got := failing(); got != 1 {
+		t.Fatalf("failing %d", got)
+	}
 	next := ask(t, app, "GET", armoryPath("kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="), nil, "", 200)
 	if next["state"] != "queued" || next["wait"].(float64) < 500 {
 		t.Fatalf("after a refusal the queue waits: %v", next)
@@ -516,6 +526,9 @@ func TestArmoryLookupsThatFail(t *testing.T) {
 	stateOf(app).armory.wait()
 	if done := ask(t, app, "GET", armoryPath("kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="), nil, "", 200); done["state"] != "fresh" {
 		t.Fatalf("after the wait ended: %v", done)
+	}
+	if got := failing(); got != 0 {
+		t.Fatalf("a lookup worked, yet failing %d", got)
 	}
 }
 

@@ -439,6 +439,7 @@ func delivered(app core.App, room *Room, link string, res response, fail failer,
 	status := res.status
 	switch {
 	case status >= 200 && status < 300:
+		stateOf(app).ops.discord.note(nil)
 		noteDelivery(app, room.Id, func(s *deliveryStatus) { s.OkAt, s.Error, s.ErrorAt = now(), "", "" })
 		return true, nil
 	case status == http.StatusTooManyRequests:
@@ -464,6 +465,11 @@ func delivered(app core.App, room *Room, link string, res response, fail failer,
 		notify(app, []string{room.Id})
 		fail("Dropped the Discord webhook of room "+room.Id+": Discord answered "+strconv.Itoa(status), "Odyle dropped a Discord webhook that Discord no longer knows", "room", room.Id, "status", status)
 	default:
+		// Discord failing (5xx) is the operator's to hear of (alerts.go); a room's own webhook
+		// refused is its owner's.
+		if status >= 500 {
+			stateOf(app).ops.discord.note(fmt.Errorf("Discord answered %d", status))
+		}
 		noteDelivery(app, room.Id, func(s *deliveryStatus) { s.Error, s.ErrorAt = "Discord answered "+strconv.Itoa(status)+".", now() })
 		fail(what+" failed: Discord answered "+strconv.Itoa(status), "Odyle Discord post failed", "room", room.Id, "status", status)
 	}
@@ -695,6 +701,7 @@ func postRun(app core.App, r *Run, lead int64, fail failer) (bool, error) {
 	}
 	if err != nil {
 		forget()
+		stateOf(app).ops.discord.note(err)
 		noteDelivery(app, room.Id, func(s *deliveryStatus) { s.Error, s.ErrorAt = "Discord could not be reached.", now() })
 		return false, err
 	}
@@ -755,6 +762,7 @@ func editPost(app core.App, post *core.Record, fail failer) (bool, error) {
 	}
 	res, err := editWebhook(link, post.GetString("messageId"), reminder(p, room.DiscordLanguage()))
 	if err != nil {
+		stateOf(app).ops.discord.note(err)
 		return false, err
 	}
 	if res.status == http.StatusNotFound && discordCode(res) == unknownMessage {

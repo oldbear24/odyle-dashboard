@@ -31,12 +31,14 @@ jobs:
           fetch-depth: 0 # main and the release tags, for the version check
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
       # A change to what ships bumps package.json's version (CLAUDE.md, Versioning).
       - name: Version bump
         if: ${{ !inputs.release }}
         run: node scripts/version.mjs check ${{ github.event.pull_request.base.sha }}
+      - name: Node version (.node-version, Dockerfile, engines)
+        run: node scripts/check-node-version.mjs
       - run: npm ci
       - run: npm run lint
       - run: npm test
@@ -117,7 +119,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

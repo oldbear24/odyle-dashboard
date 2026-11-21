@@ -15,13 +15,16 @@ func TestCheckHealth(t *testing.T) {
 			return
 		}
 		w.WriteHeader(status)
+		if status != http.StatusOK {
+			_, _ = w.Write([]byte(`{"code":503,"message":"The server cannot write to its data folder.","data":{}}`))
+		}
 	}))
 	defer server.Close()
 	if err := checkHealth(server.URL + "/api/health"); err != nil {
 		t.Fatalf("a healthy server: %v", err)
 	}
 	status = http.StatusServiceUnavailable
-	if err := checkHealth(server.URL + "/api/health"); err == nil || !strings.Contains(err.Error(), "503") {
+	if err := checkHealth(server.URL + "/api/health"); err == nil || !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "data folder") {
 		t.Fatalf("an unhealthy server: %v", err)
 	}
 	server.Close()
