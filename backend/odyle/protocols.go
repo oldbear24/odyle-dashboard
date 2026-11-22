@@ -12,14 +12,14 @@ package odyle
 // it. Once apps have moved on, superusers switch the older one off under Server
 // controls, and a later backend release drops it from this list.
 //
-// global-reference-v1: Global (Steam) stream decoder — length-prefixed frames,
-// transport flag, LZ4 blocks, 0B61 stat snapshot and 0C61 stat update for
-// field 1. Checked live on EU/Lumiel (startup read 0 + 390 = 390).
-//
-// global-reference-v2: the same stream, with every 0B61/0C61 stat record read by one
-// parser pinned to Odyle's resource id 60000001, so records without a bonus or base
-// part are read and other counters are never taken for Odyle.
-var verifiedAdapters = []string{"global-reference-v1", "global-reference-v2"}
+// global-reference-v2: the Global (Steam) stream decoder — length-prefixed frames,
+// transport flag, LZ4 blocks, 0B61 stat snapshots and 0C61 stat updates — with every
+// stat record read by one parser pinned to Odyle's resource id 60000001, so records
+// without a bonus or base part are read and other counters are never taken for Odyle.
+// Its predecessor global-reference-v1 read field 1 of those records; Windows apps have
+// sent v2 since 2026-10-16, and 1.0.0 stopped accepting v1 (readings saved under it keep
+// their adapter in the history).
+var verifiedAdapters = []string{"global-reference-v2"}
 
 // The location adapters (location.go), listed and switched off the same way.
 //

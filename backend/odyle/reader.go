@@ -239,24 +239,15 @@ func sameCharacter(app core.App, userId string, data identity) ([]*Character, er
 	return charactersWhere(app, "user = {:user} && serverId = 0 && region = {:region} && server = {:server} && characterName = {:name}", dbx.Params{"user": userId, "region": data.region, "server": data.server, "name": data.characterName})
 }
 
-// Adapters of the Windows releases from before the reader pause. Those apps take any
-// 5xx answer to a reading for a lost connection and open a new session for it every 20
-// seconds, so while readers are paused their readings are refused with 400 instead,
-// which makes them wait a minute before sending again.
-var pauseUnawareAdapters = []string{"global-reference-v1"}
-
 // report saves a reading of the Windows app. While superusers pause packet readers
-// (Server controls) every reading is refused with 503; apps that know the switch stop
-// capturing until it is off, older ones keep sending and are refused (400, above).
+// (Server controls) every reading is refused with 503, and apps stop capturing until it
+// is off.
 func report(e *core.RequestEvent) error {
 	if ok, wait := allowReading(e.App, e.Auth.Id, time.Now()); !ok {
 		return tooManyReadings(e, wait)
 	}
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		if readSettings(app).ReaderPaused {
-			if slices.Contains(pauseUnawareAdapters, b.str("parserVersion")) {
-				return nil, badRequest("Packet readers are paused by the server operators.")
-			}
 			return nil, unavailable("Packet readers are paused by the server operators.")
 		}
 		session, err := ownSession(app, user.Id, b.str("sessionId"))

@@ -1338,10 +1338,6 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     const paused = await action('report', held, member);
     assert.equal(paused.status, 503);
     assert.equal(paused.data.message, 'Packet readers are paused by the server operators.');
-    // Apps released before the switch (adapter global-reference-v1) get a 400, so they wait instead of reconnecting.
-    const older = await action('report', { ...held, parserVersion: 'global-reference-v1' }, member);
-    assert.equal(older.status, 400);
-    assert.equal(older.data.message, 'Packet readers are paused by the server operators.');
     assert.equal((await settings({ readerPaused: false })).status, 200);
     assert.equal((await action('heartbeat', { sessionId: reader.sessionId }, member)).data.readerPaused, false);
     assert.equal((await action('report', held, member)).status, 200);
