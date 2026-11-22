@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { armoryRoute, armoryTarget, armoryTabs } from '../../src/armorylinks.js';
 import { designOf, finishOf, cardPath, signatureSkills, bestGrade, cardPage, orientation as o, dragTurn, lookOf, cardSkills, cardStats, cardLine, defaultOptions, cardAura, cardAuras, cardDesigns, cardFinishes, studioTabs } from '../../src/card.js';
@@ -174,8 +175,8 @@ test('the look picker keeps its choices under tabs', async () => {
 });
 
 test('every design, finish and option the backend offers has its own words', async () => {
-  const card = await import('../src/card.js');
-  const offer = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '../backend/odyle/data/cards.json'), 'utf8'));
+  const card = await import('../../src/card.js');
+  const offer = JSON.parse(readFileSync(new URL('../../backend/odyle/data/cards.json', import.meta.url), 'utf8'));
   const lists = { designs: card.cardDesigns(), finishes: card.cardFinishes(), layouts: card.cardLayouts(), stats: card.cardStatSets(), lines: card.cardLines(), auras: card.cardAuras(), accents: card.cardAccents(), frames: card.cardFrames(), nameStyles: card.cardNameStyles() };
   for (const [name, list] of Object.entries(lists)) {
     assert.deepEqual(list.map(([key]) => key), offer[name], name);
