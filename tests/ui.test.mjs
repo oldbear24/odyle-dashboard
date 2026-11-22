@@ -2317,8 +2317,10 @@ test('timers, achievements and your week: open game rules, milestones with their
     await page.locator('.timer-card').first().waitFor();
     assert.ok((await page.locator('.timer-card').count()) >= 3);
     const before = await page.locator('.timer-value').first().innerText();
-    await delay(1300);
-    assert.notEqual(await page.locator('.timer-value').first().innerText(), before);
+    // The countdown ticks by itself; a busy CI machine may take longer than a second to show it.
+    await page.waitForFunction(was => document.querySelector('.timer-value')?.innerText !== was, before, {
+      timeout: 5000,
+    });
     assert.equal(await page.locator('.tick-strip li').count(), 8);
     assert.ok(await page.locator('.timers-cta [data-action="discord"]').isVisible());
     await shot(page, 'timers');
