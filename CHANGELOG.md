@@ -2,6 +2,21 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.0.0 · 2026-11-22
+
+### Changed
+- Odyle 1.0.0 supports **Odyle for Windows 0.37.0 and newer**. Apps update by themselves, so yours almost certainly is. What the server still kept for older apps and older dashboards is gone.
+- If your Windows app was paired before October 2026 and never got its lasting pairing, it can no longer connect: it says the PC is no longer paired. Copy a new connection link from the dashboard (**Pair Windows app**) and paste it in the app; your characters, rooms and history stay.
+- Odyle values are taken only from the Windows app of a paired PC, never from a browser.
+- For server operators: **a server older than 0.62.0 updates to 0.67.1 first**, lets it finish moving the armory's old images and profiles, then updates to 1.0.0. A server with data those releases have not moved yet does not start and its log says what to do; nothing is changed until then (see the runbook, "Upgrading to 1.0.0").
+- For server operators: readings only come from the adapter `global-reference-v2`, rooms no longer keep an Odyle per cube of their own (they show the server's), the dungeon catalog is saved and answered only as `catalog`, and the routes kept for old clients (`POST /api/odyle/invites`, `desktop-device`) answer 404. The API contract lists every change.
+
+### New
+- For server operators: when it signs a Windows app in and in every heartbeat, the server names its release (`serverVersion`), so the app knows which Odyle it talks to.
+
+### Fixed
+- Characters PLAYNC no longer lists, or that dropped out of the armory's top players, no longer come back into them a minute later.
+
 ## 0.67.1 · 2026-11-22
 
 ### Changed
