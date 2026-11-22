@@ -841,3 +841,110 @@ func watchRunPosts(app core.App) {
 		return e.Next()
 	})
 }
+
+// configureDiscord enables Discord sign-in from DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET.
+func configureDiscord(app core.App) error {
+	clientId, clientSecret := os.Getenv("DISCORD_CLIENT_ID"), os.Getenv("DISCORD_CLIENT_SECRET")
+	if clientId == "" || clientSecret == "" {
+		return nil
+	}
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		return err
+	}
+	users.OAuth2.Enabled, users.OAuth2.Providers = true, []core.OAuth2ProviderConfig{{Name: "discord", ClientId: clientId, ClientSecret: clientSecret}}
+	return app.Save(users)
+}
+
+// discordWebhook lets the room owner connect a Discord channel webhook ({ roomId,
+// webhook, language }) or disconnects it (an empty webhook), and choose when runs are posted
+// ({ leads: one to three of 5, 10, 15, 30, 60 and 120 minutes, startPost }, with a webhook or
+// alone). A test post proves the webhook before it is saved and gives its name in Discord; it
+// runs outside a transaction because it waits on Discord. No response carries the URL.
+func discordWebhook(e *core.RequestEvent) error {
+	return run(e, func() error {
+		b, err := requestBody(e)
+		if err != nil {
+			return err
+		}
+		room, err := manager(e.App, e.Auth.Id, b.str("roomId"))
+		if err != nil {
+			return err
+		}
+		// Everything is checked, and Discord asked, before the room is written: the changes
+		// are then made to a fresh copy in one transaction, so a rename, a room setting or a
+		// delivery noted while Discord answered is kept.
+		var leads []int64
+		if b.has("leads") {
+			if leads, err = checkLeads(b["leads"]); err != nil {
+				return err
+			}
+		}
+		start, setStart := b.boolean("startPost")
+		ready, setReady := b.boolean("readiness")
+		// The posts' language alone (#50): later posts use it, and the room's posts still showing
+		// a run are edited into it.
+		language, setLanguage := "", !b.has("webhook") && b.has("language")
+		if setLanguage {
+			language, _ = b.text("language")
+			if language != "en" && language != "cs" {
+				return badRequest("Choose English or Czech for the Discord posts.")
+			}
+		}
+		url, name := "", ""
+		if b.has("webhook") {
+			if url, err = webhook(b["webhook"]); err != nil {
+				return err
+			}
+			language = "en"
+			if l, _ := b.text("language"); l == "cs" {
+				language = "cs"
+			}
+			if url != "" {
+				if name, err = connectWebhook(url, room.Name(), language); err != nil {
+					return err
+				}
+			}
+		}
+		relabel := false
+		if err := e.App.RunInTransaction(func(tx core.App) error {
+			if room, err = manager(tx, e.Auth.Id, room.Id); err != nil {
+				return err
+			}
+			if b.has("leads") {
+				room.Set("discordLeads", leads)
+			}
+			if setStart {
+				room.Set("discordStartPost", start)
+			}
+			if setReady {
+				room.Set("discordReadiness", ready)
+			}
+			if setLanguage {
+				relabel = room.DiscordWebhook() != "" && language != room.DiscordLanguage()
+				room.Set("discordLanguage", language)
+			}
+			if b.has("webhook") {
+				if url != "" {
+					// A new webhook starts with a clean record.
+					room.Set("discordStatus", deliveryStatus{OkAt: now()})
+				}
+				room.SetDiscord(url, language)
+				room.Set("discordName", name)
+			}
+			return tx.Save(room)
+		}); err != nil {
+			return err
+		}
+		if relabel {
+			if _, err := e.App.DB().NewQuery("UPDATE discord_posts SET " + markDirty + " WHERE room = {:room} AND messageId != '' AND ended = ''").Bind(dbx.Params{"room": room.Id, "marked": stamp(time.Now())}).Execute(); err != nil {
+				warn(e.App, "Odyle could not mark Discord posts for an edit", "room", room.Id, "error", err.Error())
+			}
+		}
+		notify(e.App, []string{room.Id})
+		if room.DiscordWebhook() != "" {
+			_ = e.App.RunInTransaction(func(tx core.App) error { achieved(tx, e.Auth.Id, nil, true); return nil })
+		}
+		return e.JSON(200, map[string]any{"room": roomJSON(room, odylePerCube(e.App))})
+	})
+}
