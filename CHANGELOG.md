@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 0.67.1 · 2026-11-22
+
+### Changed
+- The welcome page, the armory and the timers load about 40 % less code before they show, so they open faster, most of all on phones.
+- The Czech notice about what Odyle for Windows reads now speaks to you informally, like the rest of the dashboard and the Windows app.
+- For server operators: the texts of Discord posts and push messages, the TH.GL map names and the player card's options now ship as data files, so a new language or map is one file to change.
+
+### Fixed
+- The armory no longer shows a number from PLAYNC hundreds of digits long, and an item icon that arrives broken is no longer kept.
+- A request with a field left out no longer saves the word "undefined" or "null" in its place.
+
 ## 0.67.0 · 2026-11-21
 
 ### New

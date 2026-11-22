@@ -80,7 +80,7 @@ function wishlistSection(now) {
   return `<section class="party-section wishlist"><div class="section-heading"><h2>${t('Dungeon wishlist')} <span>${wishlist.length}</span></h2><span class="refresh-label">${t('Most wanted first')}</span></div><div class="wish-panel">${form}${rows ? `<div class="wish-list">${rows}</div>` : `<p class="wish-empty">${t('Nothing on the wishlist yet. Add the dungeons you still need so the party can plan its next run.')}</p>`}</div></section>`;
 }
 // Run now: a call starts its run in about ten minutes, and the server takes one call per room
-// every half hour (backend accounts.go callLead, callGap); the form waits as long.
+// every half hour (backend runs.go callLead, callGap); the form waits as long.
 const callLead = 10 * 60000, callWait = 21 * 60000;
 // Run now asks first: who the call tells (runready.js callable, as the server counts them).
 function callDialog(form, data) {
