@@ -271,7 +271,7 @@ func fixtures(se *core.ServeEvent) {
 		return save(e.App, "characters", map[string]any{"user": b["user"], "characterName": "Legacy", "server": "EU", "region": "GLOBAL_EU", "value": 123, "confirmed": true, "valid": true, "source": "manual", "lastReadingAt": "2026-10-12 12:00:00.000Z"})
 	})
 	fixture(se, "legacy-room", func(e *core.RequestEvent, b body) (any, error) {
-		room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Legacy room", "cost": 40})
+		room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Legacy room"})
 		if err != nil {
 			return nil, err
 		}

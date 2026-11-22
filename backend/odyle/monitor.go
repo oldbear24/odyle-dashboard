@@ -45,7 +45,7 @@ var shown = map[string][]string{
 	// The dashboard
 	"create": {"name"}, "join": {}, "rename": {"roomId", "name"}, "leave": {"roomId"}, "close": {"roomId"}, "revoke": {"roomId", "memberId"}, "role": {"roomId", "memberId", "role"}, "transfer": {"roomId", "memberId"},
 	"invite-create": {"roomId", "role", "expiresIn", "maxUses"}, "invite-revoke": {"roomId", "inviteId"}, "invite-preview": {},
-	"sharing": {"roomId", "characterId", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove", "call"}, "discord-webhook": {"roomId", "language", "startPost", "readiness"},
+	"sharing": {"roomId", "characterId", "characterIds", "enabled"}, "wishlist": {"roomId", "dungeon", "wanted", "everyone"}, "plan": {"roomId", "id:runId", "dungeon", "startsAt", "going", "character", "done", "again", "remove", "call"}, "discord-webhook": {"roomId", "language", "startPost", "readiness"},
 	"task": {"characterId", "id:taskId", "done", "move", "remove"}, "profile": {"displayName"}, "desktop-code": {}, "forget-device": {"deviceId"}, "sign-out-everywhere": {}, "delete-account": {}, "delete-character": {"characterId"}, "notifications": {}, "push-subscribe": {"language", "device"}, "push-unsubscribe": {}, "push-test": {}, "share-new": {"roomId", "enabled"},
 	"board": {"roomId"}, "room-features": {"roomId"}, "location-sharing": {"enabled"}, "pvp-stats": {"enabled"}, "teammates-sharing": {"enabled"},
 }
