@@ -5,7 +5,7 @@ import { localInput } from './runs.js';
 import { dungeonKey as key } from './catalog.js';
 // Checks the wishlist and run forms make before sending, so a mistake shows in the form
 // at once instead of after a round trip. Each answers the server's own message, or ''.
-// The server checks everything again (backend validation.go and accounts.go); these
+// The server checks everything again (backend validation.go and the route files); these
 // spare a request, they decide nothing.
 const hour = 3600000, day = 86400000;
 // A dungeon name is required; with a dungeon catalog it must be listed, unless it names

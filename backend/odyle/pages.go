@@ -25,9 +25,6 @@ import (
 
 const armorySite = "Odyle Armory"
 
-// Search regions in PLAYNC's codes, by name.
-var regionTitles = map[string]string{"nae": "North America East", "naw": "North America West", "eu": "Europe", "la": "South America", "as": "Asia"}
-
 // The profile tabs (src/armory.js armoryTabs) as titles name them; the player card
 // (/card, cards.go) is a page of its own.
 var tabTitles = map[string]string{"skills": "skills", "daevanion": "Daevanion boards", "titles": "titles", "appearance": "appearance", "upgrade": "upgrades"}
@@ -75,11 +72,11 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	if len(parts) == 5 {
 		tab = parts[4]
 	}
-	server := armoryServer(app, region, serverId)
+	server := serversOf(app).inRegion(region, serverId)
 	if _, known := tabTitles[tab]; server == "" || !armoryIds.MatchString(characterId) || tab != "" && tab != "card" && !known {
 		return web.Page{Missing: true}
 	}
-	waiting := web.Page{Title: "A character on " + server + " · " + armorySite, Description: "An AION 2 Global character on " + server + " (" + regionTitles[region] + "), as PLAYNC's official character pages list it.", Private: true}
+	waiting := web.Page{Title: "A character on " + server + " · " + armorySite, Description: "An AION 2 Global character on " + server + " (" + regionOfCode(region).title + "), as PLAYNC's official character pages list it.", Private: true}
 	record, err := keptProfile(app, serverId, characterId)
 	if err != nil || record == nil {
 		return waiting
@@ -93,7 +90,7 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	}
 	race := strings.TrimSuffix(p.Race, "s")
 	who := strings.TrimSpace(fmt.Sprintf("level %d %s %s", p.Level, race, p.Class))
-	where := server + " (" + regionTitles[region] + ")"
+	where := server + " (" + regionOfCode(region).title + ")"
 	if p.Legion != "" {
 		where += ", legion " + p.Legion
 	}
@@ -250,7 +247,7 @@ func sitemapRoute(e *core.RequestEvent) error {
 		return err
 	}
 	for _, k := range kept {
-		if armoryServer(e.App, k.Region, k.ServerId) == "" || !armoryIds.MatchString(k.CharacterId) {
+		if serversOf(e.App).inRegion(k.Region, k.ServerId) == "" || !armoryIds.MatchString(k.CharacterId) {
 			continue
 		}
 		entry := sitemapEntry{Loc: fmt.Sprintf("%s/armory/%s/%d/%s", base, k.Region, k.ServerId, k.CharacterId)}

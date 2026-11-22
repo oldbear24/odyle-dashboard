@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -277,7 +278,7 @@ func TestCharactersAreFoundByServerId(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		setOfficial(app, record, officialHit{id: "-", region: "naw", serverId: 1000 + 200 + index(elyos, record.Server()) + 1})
+		setOfficial(app, record, officialHit{id: "-", region: "naw", serverId: 1000 + 200 + slices.Index(elyos, record.Server()) + 1})
 		if err := app.Save(record); err != nil {
 			t.Fatal(err)
 		}

@@ -26,7 +26,7 @@ import (
 //     a class's top rankLimit whose gear is unknown or scoutRebuild old, as many as its lanes
 //     (scoutLanes under Server controls) have free, each lane one every scoutBuildGap at most,
 //     passing over the characters whose gear is read already or whose lookup failed lately: the
-//     armory's queue runs them beside the readers' (armory.go), reading the info and equipment
+//     armory's queue runs them beside the readers' (armoryqueue.go), reading the info and equipment
 //     pages and each item's page as a lookup does, and keeps each as its build in armory_ranks
 //     (ranks.go), with the icons but no portrait and no profile;
 //   - a character the last search page listed (by id and name): its info page, for its combat
@@ -661,7 +661,7 @@ func (s *armoryScout) search(app core.App) (bool, error) {
 	s.mu.Lock()
 	page := 1 + scoutPick(max(1, s.pages[key]))
 	s.mu.Unlock()
-	region := serverRegionCodes[digit]
+	region := regionOfDigit(digit).code
 	query := "keyword=" + letter + "&pcId=" + url.QueryEscape(strings.Join(classes[class], ",")) + "&serverId=" + strconv.Itoa(server.Id) + "&region=" + region +
 		"&localeInfo=en-US&page=" + strconv.Itoa(page) + "&size=" + strconv.Itoa(scoutPageSize) + "&sort=level"
 	res, err := send(call{method: "GET", url: searchURL() + "?" + query, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 1 << 20})

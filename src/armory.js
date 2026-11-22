@@ -113,7 +113,7 @@ export function lookupLine(answer, now) {
   }
 }
 export const waiting = answer => ['queued', 'fetching', 'busy'].includes(answer.state);
-// The step the running lookup is at (backend/odyle/armory.go armoryProgress).
+// The step the running lookup is at (backend/odyle/armoryqueue.go armoryProgress).
 function progressLine(progress) {
   const { step, done = 0, total = 0 } = progress || {}, of = { done: number(done), total: number(total) };
   if (step === 'images' && total) return t('Downloading icons · {done} of {total}', of);

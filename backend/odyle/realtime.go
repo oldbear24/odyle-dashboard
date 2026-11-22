@@ -221,7 +221,7 @@ func deliverRoom(app core.App, index clientIndex, id string, n *roomNews) error 
 	exports := map[string]map[string]any{}
 	for characterId, c := range n.characters {
 		j := c.PublicExport()
-		j["shared"] = contains(shares[c.User()], characterId)
+		j["shared"] = slices.Contains(shares[c.User()], characterId)
 		exports[characterId] = j
 	}
 	for _, c := range listeners {
@@ -238,7 +238,9 @@ func deliverRoom(app core.App, index clientIndex, id string, n *roomNews) error 
 			}
 			continue
 		}
-		visible := func(owner, characterId string) bool { return owner == viewer || contains(shares[owner], characterId) }
+		visible := func(owner, characterId string) bool {
+			return owner == viewer || slices.Contains(shares[owner], characterId)
+		}
 		if c.HasSubscription(topic) {
 			if n.refresh {
 				post(c, topic, map[string]any{"refresh": true})

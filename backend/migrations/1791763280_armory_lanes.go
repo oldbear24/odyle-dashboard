@@ -2,7 +2,7 @@ package migrations
 
 import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
-// The armory's queue runs several lookups at once (backend/odyle/armory.go): armoryLanes readers'
+// The armory's queue runs several lookups at once (backend/odyle/armoryqueue.go): armoryLanes readers'
 // lookups (1 to 10, 3 until a superuser sets another number under Server controls) and, beside
 // them, scoutLanes of the scout's (0 to 5, 1; 0 lets the scout read no gear).
 func init() {

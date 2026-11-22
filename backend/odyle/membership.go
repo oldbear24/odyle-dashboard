@@ -1,6 +1,8 @@
 package odyle
 
 import (
+	"slices"
+
 	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
@@ -36,7 +38,7 @@ func answeredCap(membership string, caps []int64) int64 {
 func membershipAnswer(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
 		answer, ok := b.text("membership")
-		if !ok || !contains(membershipAnswers, answer) {
+		if !ok || !slices.Contains(membershipAnswers, answer) {
 			return nil, badRequest("Answer yes, no, or leave the membership open.")
 		}
 		record, err := app.FindRecordById("users", user.Id)

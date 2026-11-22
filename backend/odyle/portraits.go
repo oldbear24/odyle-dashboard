@@ -27,14 +27,7 @@ import (
 // race * 1000 + region * 100 + list index + 1, with the names in servers.go. Saved characters
 // keep only the server name and region, so the id is rebuilt here. NA has two search regions
 // (East 1xx, West 2xx): GLOBAL_NAW is West, and GLOBAL_NA tries East, then West, since NA
-// characters saved before the split may be either.
-
-type searchRegion struct {
-	digit int
-	code  string
-}
-
-var searchRegions = map[string][]searchRegion{"GLOBAL_NA": {{1, "nae"}, {2, "naw"}}, "GLOBAL_NAW": {{2, "naw"}}, "GLOBAL_EU": {{3, "eu"}}, "GLOBAL_SA": {{4, "la"}}, "GLOBAL_ASIA": {{5, "as"}}}
+// characters saved before the split may be either (regions.go searchRegions).
 
 func searchURL() string {
 	if v := os.Getenv("PLAYNC_SEARCH_URL"); v != "" {
@@ -58,15 +51,6 @@ const portraitLimit = 512 << 10
 type search struct {
 	serverId int
 	region   string
-}
-
-func index(names []string, name string) int {
-	for i, n := range names {
-		if n == name {
-			return i
-		}
-	}
-	return -1
 }
 
 var tags = regexp.MustCompile(`<[^>]*>`)
@@ -130,7 +114,7 @@ func searchServer(name string, s search) (officialHit, error) {
 		}
 		switch {
 		case res.status == 403 || res.status == 429:
-			// The armory's queue and its scout wait for as long as PLAYNC asks (armory.go).
+			// The armory's queue and its scout wait for as long as PLAYNC asks (armoryqueue.go).
 			return officialHit{}, armoryRefused{wait: retryAfter(res)}
 		case res.status != 200:
 			return officialHit{}, errors.New("The official character search is unavailable (" + strconv.Itoa(res.status) + ").")

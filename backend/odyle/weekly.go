@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +49,7 @@ func sharedIn(app core.App, members []*Member) []string {
 	out := []string{}
 	for _, m := range members {
 		for _, c := range m.Shared(app) {
-			if !contains(out, c) {
+			if !slices.Contains(out, c) {
 				out = append(out, c)
 			}
 		}

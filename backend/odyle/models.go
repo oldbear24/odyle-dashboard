@@ -250,7 +250,7 @@ func (m *Member) JSON(app core.App) map[string]any {
 
 // Shares reports whether the membership shares the character in its room.
 func (m *Member) Shares(app core.App, character string) bool {
-	return contains(m.Shared(app), character)
+	return slices.Contains(m.Shared(app), character)
 }
 
 // Room is a party room (party_rooms).

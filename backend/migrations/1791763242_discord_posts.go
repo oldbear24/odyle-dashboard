@@ -7,7 +7,7 @@ import "ganigeorgiev.com/pocketbase/pocketbase/core"
 // (discordLeads, minutes; empty: 15) and a post when a run starts (discordStartPost), and keep
 // the webhook's name in Discord (discordName) and how its last delivery went (discordStatus).
 // discord_posts keeps each reminder Discord took, with its message id, so the backend edits
-// it after a change and marks it when the run is cancelled or done (backend/odyle/discord.go);
+// it after a change and marks it when the run is cancelled or done (backend/odyle/discordjob.go);
 // rows go two days after their post. Only the backend reads them.
 func init() {
 	register("1791763242_discord_posts.go", func(app core.App) error {
