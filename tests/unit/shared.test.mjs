@@ -4,7 +4,7 @@ import { number, escape } from '../../src/model.js';
 import { periodChoices, periodSwitch } from '../../src/pager.js';
 import { templatesForm } from '../../src/tasks.js';
 
-test('number() shows counts in the reader\'s language and anything else as 0', () => {
+test("number() shows counts in the reader's language and anything else as 0", () => {
   assert.equal(number(1234), (1234).toLocaleString('en-GB'));
   assert.equal(number('56'), '56');
   for (const value of [undefined, null, '', 'x', NaN]) assert.equal(number(value), '0');

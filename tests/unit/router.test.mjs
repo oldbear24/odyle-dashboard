@@ -7,8 +7,42 @@ import { useLanguage } from '../../src/i18n.js';
 const profile = profilePath({ region: 'eu', serverId: 2304, characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm' });
 
 test('pageOf names the pages the dashboard has and nothing else', () => {
-  for (const path of ['/', '/room/abc123', '/join/ABCD-EFGH-2345', '/demo', '/tasks', '/account', '/changelog', '/privacy', '/slots', '/timers', '/achievements', '/week', '/armory', '/armory/top', profile, profile + '/card', findPath('GLOBAL_EU', 'Lumiel', 'Ka')]) assert.equal(pageOf(path), path, path);
-  for (const path of ['', '/rooms', '/room/', '/room/a-b', '/room/' + 'a'.repeat(41), '/join/abc', '/tasks/', '/TASKS', '/armory/', '/x', 'tasks', '/account?x=1', '/demo#x']) assert.equal(pageOf(path), '', path);
+  for (const path of [
+    '/',
+    '/room/abc123',
+    '/join/ABCD-EFGH-2345',
+    '/demo',
+    '/tasks',
+    '/account',
+    '/changelog',
+    '/privacy',
+    '/slots',
+    '/timers',
+    '/achievements',
+    '/week',
+    '/armory',
+    '/armory/top',
+    profile,
+    profile + '/card',
+    findPath('GLOBAL_EU', 'Lumiel', 'Ka'),
+  ])
+    assert.equal(pageOf(path), path, path);
+  for (const path of [
+    '',
+    '/rooms',
+    '/room/',
+    '/room/a-b',
+    '/room/' + 'a'.repeat(41),
+    '/join/abc',
+    '/tasks/',
+    '/TASKS',
+    '/armory/',
+    '/x',
+    'tasks',
+    '/account?x=1',
+    '/demo#x',
+  ])
+    assert.equal(pageOf(path), '', path);
 });
 
 test('pageTitle gives each page the title the backend gives it', async () => {
@@ -24,15 +58,25 @@ test('pageTitle gives each page the title the backend gives it', async () => {
   try {
     await useLanguage('cs');
     assert.notEqual(pageTitle('/privacy'), 'Privacy · Odyle');
-  } finally { await useLanguage('en'); }
+  } finally {
+    await useLanguage('en');
+  }
 });
 
 test('pageNav lights up the page a loading page belongs to', () => {
   assert.equal(pageNav('/room/abc'), 'overview');
   assert.equal(pageNav('/armory'), 'armory');
   assert.equal(pageNav(profile), 'armory');
-  assert.deepEqual(['/', '/tasks', '/week', '/achievements', '/timers', '/account'].map(pageNav), ['library', 'tasks', 'week', 'achievements', 'timers', 'account']);
-  for (const path of ['/demo', '/changelog', '/privacy', '/slots', '/join/ABCD-EFGH']) assert.equal(pageNav(path), '', path);
+  assert.deepEqual(['/', '/tasks', '/week', '/achievements', '/timers', '/account'].map(pageNav), [
+    'library',
+    'tasks',
+    'week',
+    'achievements',
+    'timers',
+    'account',
+  ]);
+  for (const path of ['/demo', '/changelog', '/privacy', '/slots', '/join/ABCD-EFGH'])
+    assert.equal(pageNav(path), '', path);
 });
 
 test('without a page that says so, pages keep hash routes', () => {

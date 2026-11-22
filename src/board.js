@@ -11,12 +11,16 @@ export const boardLimit = 2000;
 // that ends a sentence stays out of the link, and so does a closing bracket the address did
 // not open.
 export function linked(text) {
-  let out = '', last = 0;
+  let out = '',
+    last = 0;
   for (const m of String(text ?? '').matchAll(/https?:\/\/[^\s<>"'`]+/g)) {
     let url = m[0].replace(/[.,;:!?*]+$/, '');
-    while (/[)\]}]$/.test(url) && count(url, url.at(-1)) > count(url, { ')': '(', ']': '[', '}': '{' }[url.at(-1)])) url = url.slice(0, -1).replace(/[.,;:!?*]+$/, '');
+    while (/[)\]}]$/.test(url) && count(url, url.at(-1)) > count(url, { ')': '(', ']': '[', '}': '{' }[url.at(-1)]))
+      url = url.slice(0, -1).replace(/[.,;:!?*]+$/, '');
     if (!/^https?:\/\/[^/?#]/.test(url)) continue;
-    out += esc(m.input.slice(last, m.index)) + `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`;
+    out +=
+      esc(m.input.slice(last, m.index)) +
+      `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>`;
     last = m.index + url.length;
   }
   return out + esc(String(text ?? '').slice(last));
@@ -32,7 +36,8 @@ export function boardSection(board, { canEdit = false, name = () => '', now = Da
     if (!canEdit) return '';
     return `<section class="board-card empty" aria-label="${esc(t('Information board'))}"><div class="board-head">${heading}<button class="button secondary" data-action="edit-board">${t('Write')}</button></div><p class="board-note">${t('Pin what every member should know: the week’s plan, the rules, a Discord link. Only the leader and the officers can change it.')}</p></section>`;
   }
-  const by = board.by ? name(board.by) : '', when = board.at ? `<span data-age="${esc(board.at)}">${esc(age(board.at, now))}</span>` : '';
+  const by = board.by ? name(board.by) : '',
+    when = board.at ? `<span data-age="${esc(board.at)}">${esc(age(board.at, now))}</span>` : '';
   const meta = [by ? esc(t('Last edit: {name}', { name: by })) : '', when].filter(Boolean).join(' · ');
   return `<section class="board-card" aria-label="${esc(t('Information board'))}"><div class="board-head">${heading}${meta ? `<small class="board-meta">${meta}</small>` : ''}${canEdit ? `<button class="text-button board-edit" data-action="edit-board">${t('Edit')}</button>` : ''}</div><div class="board-text">${linked(board.text)}</div></section>`;
 }

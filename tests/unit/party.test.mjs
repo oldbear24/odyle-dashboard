@@ -6,37 +6,114 @@ import { explain } from '../../src/readiness.js';
 // The room's party explained (#27): readiness.js explain() and src/partyview.js.
 const now = Date.parse('2026-10-15T12:00:00Z');
 const ago = seconds => new Date(now - seconds * 1000).toISOString();
-const live = (id, user, name, value, extra = {}) => ({ id, user, displayName: user, role: 'reporter', characterName: name, value, confirmed: true, valid: true, source: 'packet', sharing: true, lastSeenAt: ago(5), lastReadingAt: ago(600), ...extra });
+const live = (id, user, name, value, extra = {}) => ({
+  id,
+  user,
+  displayName: user,
+  role: 'reporter',
+  characterName: name,
+  value,
+  confirmed: true,
+  valid: true,
+  source: 'packet',
+  sharing: true,
+  lastSeenAt: ago(5),
+  lastReadingAt: ago(600),
+  ...extra,
+});
 const entries = [
-  live('a1', 'Anna', 'Ayla', 265, { role: 'owner' }), live('a2', 'Anna', 'AylaAlt', 300, { lastSeenAt: ago(7200) }),
-  live('b1', 'Bram', 'Bram', 95), live('k1', 'Kaelen', 'Kael', 45),
+  live('a1', 'Anna', 'Ayla', 265, { role: 'owner' }),
+  live('a2', 'Anna', 'AylaAlt', 300, { lastSeenAt: ago(7200) }),
+  live('b1', 'Bram', 'Bram', 95),
+  live('k1', 'Kaelen', 'Kael', 45),
   live('n1', 'Nyx', 'Nyx', 135, { lastSeenAt: ago(3 * 3600), lastReadingAt: ago(3 * 86400) }),
-  { id: '', user: 'Aren', displayName: 'Aren', role: 'reporter', characterName: '', confirmed: false, lastReadingAt: '', source: 'packet', sharing: true },
-  { id: '', user: 'Vee', displayName: 'Vee', role: 'viewer', characterName: '', confirmed: false, lastReadingAt: '', source: 'packet', sharing: true },
+  {
+    id: '',
+    user: 'Aren',
+    displayName: 'Aren',
+    role: 'reporter',
+    characterName: '',
+    confirmed: false,
+    lastReadingAt: '',
+    source: 'packet',
+    sharing: true,
+  },
+  {
+    id: '',
+    user: 'Vee',
+    displayName: 'Vee',
+    role: 'viewer',
+    characterName: '',
+    confirmed: false,
+    lastReadingAt: '',
+    source: 'packet',
+    sharing: true,
+  },
 ];
 test('the party says who counts, who holds it back, who is missing and what was last known', async () => {
   const x = explain(entries, now, 40);
   assert.deepEqual([...x.counted], ['a1', 'b1', 'k1']);
   assert.deepEqual([x.lowest.id, x.cubes, x.members], ['k1', 1, 5]);
-  assert.deepEqual(x.spread, [{ cubes: 6, players: 1 }, { cubes: 2, players: 1 }, { cubes: 1, players: 1 }]);
-  assert.deepEqual(x.missing, [{ user: 'Nyx', displayName: 'Nyx', shared: true, lastSeenAt: ago(3 * 3600) }, { user: 'Aren', displayName: 'Aren', shared: false, lastSeenAt: '' }]);
+  assert.deepEqual(x.spread, [
+    { cubes: 6, players: 1 },
+    { cubes: 2, players: 1 },
+    { cubes: 1, players: 1 },
+  ]);
+  assert.deepEqual(x.missing, [
+    { user: 'Nyx', displayName: 'Nyx', shared: true, lastSeenAt: ago(3 * 3600) },
+    { user: 'Aren', displayName: 'Aren', shared: false, lastSeenAt: '' },
+  ]);
   // Nearest to counting first, whatever order the room lists its members in.
-  assert.deepEqual(explain([...entries].reverse(), now, 40).missing.map(m => m.user), ['Nyx', 'Aren']);
+  assert.deepEqual(
+    explain([...entries].reverse(), now, 40).missing.map(m => m.user),
+    ['Nyx', 'Aren'],
+  );
   // Every player's best saved value, the alt included; never part of the live numbers.
-  assert.deepEqual({ ...x.lastKnown, lowest: x.lastKnown.lowest.id }, { lowest: 'k1', value: 45, cubes: 1, players: 4, of: 5, newest: ago(600), oldest: ago(3 * 86400) });
+  assert.deepEqual(
+    { ...x.lastKnown, lowest: x.lastKnown.lowest.id },
+    { lowest: 'k1', value: 45, cubes: 1, players: 4, of: 5, newest: ago(600), oldest: ago(3 * 86400) },
+  );
   // A projected value (the Odyle clock) replaces the saved one.
-  assert.equal(explain(entries, now, 40, c => c.id === 'k1' ? 100 : c.value).lastKnown.lowest.id, 'b1');
+  assert.equal(explain(entries, now, 40, c => (c.id === 'k1' ? 100 : c.value)).lastKnown.lowest.id, 'b1');
   // Everyone live: nothing to add.
-  const all = explain(entries.filter(c => ['Anna', 'Bram'].includes(c.user)), now, 40);
+  const all = explain(
+    entries.filter(c => ['Anna', 'Bram'].includes(c.user)),
+    now,
+    40,
+  );
   assert.deepEqual([all.missing, all.lastKnown], [[], null]);
   // Missing players without a saved value add nothing to the live numbers.
-  assert.equal(explain(entries.filter(c => c.user !== 'Nyx'), now, 40).lastKnown, null);
+  assert.equal(
+    explain(
+      entries.filter(c => c.user !== 'Nyx'),
+      now,
+      40,
+    ).lastKnown,
+    null,
+  );
 });
 test('the summary gives the numbers, then reads like a sentence, in English and Czech, and cards say why they are not live', async () => {
   await useLanguage('en');
-  const html = partySummary(explain(entries, now, 40), now), text = html.replace(/<[^>]+>/g, '\n').split('\n').filter(Boolean);
+  const html = partySummary(explain(entries, now, 40), now),
+    text = html
+      .replace(/<[^>]+>/g, '\n')
+      .split('\n')
+      .filter(Boolean);
   assert.deepEqual(text, [
-    'Party cubes', '1', 'the lowest player decides', 'Ready now', '3', '/ 5', 'characters with a cube of Odyle', 'Live', '3', '/ 5', 'players in game', 'Lowest', '45', 'Kaelen · Kael',
+    'Party cubes',
+    '1',
+    'the lowest player decides',
+    'Ready now',
+    '3',
+    '/ 5',
+    'characters with a cube of Odyle',
+    'Live',
+    '3',
+    '/ 5',
+    'players in game',
+    'Lowest',
+    '45',
+    'Kaelen · Kael',
     'Kaelen · Kael is the bottleneck · 1 player can do 6 cubes, 1 player can do 2 cubes, 1 player can do 1 cube',
     // Players with a row say since when on it; the others say why here, and every reason is in the tooltip.
     'Not counted: Nyx, Aren (no character shared)',
@@ -44,43 +121,123 @@ test('the summary gives the numbers, then reads like a sentence, in English and 
     'Not live: it does not count toward the party cubes.',
   ]);
   assert.match(html, /title="Nyx: last in game 3h ago\nAren: no character shared"/);
-  assert.match(partySummary(explain(entries, now, 40), now, { estimated: true }), /Last known, estimated with the Odyle clock: /);
+  assert.match(
+    partySummary(explain(entries, now, 40), now, { estimated: true }),
+    /Last known, estimated with the Odyle clock: /,
+  );
   assert.equal(statusReason(entries[0], now), '');
   assert.equal(statusReason(entries[4], now), 'Last in game 3h ago');
-  assert.equal(statusReason({ ...entries[2], valid: false }, now), 'The reading ended: the game closed or another character was picked');
+  assert.equal(
+    statusReason({ ...entries[2], valid: false }, now),
+    'The reading ended: the game closed or another character was picked',
+  );
   assert.equal(statusReason({ ...entries[2], lastSeenAt: ago(60) }, now), 'The reader has not been heard from for 60s');
   assert.equal(statusReason({ ...entries[2], confirmed: false }, now), 'No confirmed reading yet');
   // Closest to ready first, the room's order within each group: never ranked by value.
-  assert.deepEqual(readyOrder(entries.filter(c => c.characterName), now, 40).map(c => c.id), ['a1', 'b1', 'k1', 'a2', 'n1']);
+  assert.deepEqual(
+    readyOrder(
+      entries.filter(c => c.characterName),
+      now,
+      40,
+    ).map(c => c.id),
+    ['a1', 'b1', 'k1', 'a2', 'n1'],
+  );
   // By the account that owns them: each player's characters together, players closest to ready first.
-  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40)).map(g => g.map(c => c.id)), [['a1', 'a2'], ['b1'], ['k1'], ['n1']]);
+  assert.deepEqual(
+    byPlayer(
+      readyOrder(
+        entries.filter(c => c.characterName),
+        now,
+        40,
+      ),
+    ).map(g => g.map(c => c.id)),
+    [['a1', 'a2'], ['b1'], ['k1'], ['n1']],
+  );
   // The signed-in player's own characters come first, the others keep their order.
-  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40), 'Kaelen').map(g => g.map(c => c.id)), [['k1'], ['a1', 'a2'], ['b1'], ['n1']]);
-  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName), now, 40), 'Vee').map(g => g[0].user), ['Anna', 'Bram', 'Kaelen', 'Nyx']);
+  assert.deepEqual(
+    byPlayer(
+      readyOrder(
+        entries.filter(c => c.characterName),
+        now,
+        40,
+      ),
+      'Kaelen',
+    ).map(g => g.map(c => c.id)),
+    [['k1'], ['a1', 'a2'], ['b1'], ['n1']],
+  );
+  assert.deepEqual(
+    byPlayer(
+      readyOrder(
+        entries.filter(c => c.characterName),
+        now,
+        40,
+      ),
+      'Vee',
+    ).map(g => g[0].user),
+    ['Anna', 'Bram', 'Kaelen', 'Nyx'],
+  );
   assert.deepEqual(byPlayer([]), []);
   // A player's main character leads their group; the groups keep their order.
-  assert.deepEqual(byPlayer(readyOrder(entries.filter(c => c.characterName).map(c => c.id === 'a2' ? { ...c, main: true } : c), now, 40)).map(g => g.map(c => c.id)), [['a2', 'a1'], ['b1'], ['k1'], ['n1']]);
+  assert.deepEqual(
+    byPlayer(
+      readyOrder(
+        entries.filter(c => c.characterName).map(c => (c.id === 'a2' ? { ...c, main: true } : c)),
+        now,
+        40,
+      ),
+    ).map(g => g.map(c => c.id)),
+    [['a2', 'a1'], ['b1'], ['k1'], ['n1']],
+  );
   await useLanguage('cs');
   assert.match(partySummary(explain(entries, now, 40), now), /Kaelen · Kael brzdí partu/);
   await useLanguage('en');
 });
 test('players in one party or one force in the game stand together in a band', async () => {
   const p = (user, gameGroup, extra = {}) => [live(user[0], user, user, 100, { gameGroup, ...extra })];
-  const shape = items => items.map(i => i.force ? { force: i.force, parts: shape(i.parts) } : i.party ? { party: i.party, players: i.players.map(g => g[0].user) } : i.player[0].user);
+  const shape = items =>
+    items.map(i =>
+      i.force
+        ? { force: i.force, parts: shape(i.parts) }
+        : i.party
+          ? { party: i.party, players: i.players.map(g => g[0].user) }
+          : i.player[0].user,
+    );
   // Two players of one party, a third of the same force in another party, one outside both.
-  const room = [p('Anna', { party: 'p1', force: 'f1' }), p('Bram'), p('Cleo', { party: 'p1', force: 'f1' }), p('Dax', { party: 'p2', force: 'f1' })];
-  assert.deepEqual(shape(inGame(room, now)), [{ force: 'f1', parts: [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Dax'] }, 'Bram']);
+  const room = [
+    p('Anna', { party: 'p1', force: 'f1' }),
+    p('Bram'),
+    p('Cleo', { party: 'p1', force: 'f1' }),
+    p('Dax', { party: 'p2', force: 'f1' }),
+  ];
+  assert.deepEqual(shape(inGame(room, now)), [
+    { force: 'f1', parts: [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Dax'] },
+    'Bram',
+  ]);
   // A band takes the place of its first player.
-  assert.deepEqual(shape(inGame([room[1], room[3], room[0], room[2]], now)), ['Bram', { force: 'f1', parts: ['Dax', { party: 'p1', players: ['Anna', 'Cleo'] }] }]);
+  assert.deepEqual(shape(inGame([room[1], room[3], room[0], room[2]], now)), [
+    'Bram',
+    { force: 'f1', parts: ['Dax', { party: 'p1', players: ['Anna', 'Cleo'] }] },
+  ]);
   // A force whose players all share one party is that party; one player alone makes no band.
   assert.deepEqual(shape(inGame(room.slice(0, 3), now)), [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Bram']);
   assert.deepEqual(shape(inGame([room[0], room[1]], now)), ['Anna', 'Bram']);
   // A party without a force yet takes the force one of its players reported.
-  assert.deepEqual(shape(inGame([p('Anna', { party: 'p1' }), p('Cleo', { party: 'p1', force: 'f1' }), p('Dax', { force: 'f1' })], now)), [{ force: 'f1', parts: [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Dax'] }]);
+  assert.deepEqual(
+    shape(
+      inGame([p('Anna', { party: 'p1' }), p('Cleo', { party: 'p1', force: 'f1' }), p('Dax', { force: 'f1' })], now),
+    ),
+    [{ force: 'f1', parts: [{ party: 'p1', players: ['Anna', 'Cleo'] }, 'Dax'] }],
+  );
   // Only live characters count: an old group says nothing about now.
-  assert.deepEqual(shape(inGame([room[0], p('Cleo', { party: 'p1' }, { lastSeenAt: ago(7200) })], now)), ['Anna', 'Cleo']);
+  assert.deepEqual(shape(inGame([room[0], p('Cleo', { party: 'p1' }, { lastSeenAt: ago(7200) })], now)), [
+    'Anna',
+    'Cleo',
+  ]);
   assert.deepEqual(shape(inGame([room[0], p('Cleo', { party: 'p1' }, { valid: false })], now)), ['Anna', 'Cleo']);
   // A player's live character speaks for them, whichever of their characters comes first.
-  assert.deepEqual(shape(inGame([room[0], [live('c2', 'Cleo', 'Alt', 0, { lastSeenAt: ago(7200) }), ...room[2]]], now)), [{ party: 'p1', players: ['Anna', 'Cleo'] }]);
+  assert.deepEqual(
+    shape(inGame([room[0], [live('c2', 'Cleo', 'Alt', 0, { lastSeenAt: ago(7200) }), ...room[2]]], now)),
+    [{ party: 'p1', players: ['Anna', 'Cleo'] }],
+  );
   assert.deepEqual(inGame([], now), []);
 });

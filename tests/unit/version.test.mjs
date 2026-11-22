@@ -12,32 +12,65 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const changelog = version => `# Changelog\n\n## ${version} · 2026-11-01\n\n### Fixed\n- Something works again.\n`;
 const made = [];
-after(() => { for (const dir of made) rmSync(dir, { recursive: true, force: true, maxRetries: 3 }); });
-const manifest = (version, extra = {}) => JSON.stringify({ name: 'x', version, type: 'module', scripts: { build: 'vite build', test: 'node --test a', lint: 'eslint .' }, dependencies: { pocketbase: '^0.29.0' }, devDependencies: { vite: '^8.0.0', playwright: '1.0.0' }, ...extra }, null, 2);
+after(() => {
+  for (const dir of made) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+});
+const manifest = (version, extra = {}) =>
+  JSON.stringify(
+    {
+      name: 'x',
+      version,
+      type: 'module',
+      scripts: { build: 'vite build', test: 'node --test a', lint: 'eslint .' },
+      dependencies: { pocketbase: '^0.29.0' },
+      devDependencies: { vite: '^8.0.0', playwright: '1.0.0' },
+      ...extra,
+    },
+    null,
+    2,
+  );
 
 // A repository whose first commit is the base (version 0.1.0, described and released unless
 // tags say otherwise) and a branch off it.
 function repo({ version = '0.1.0', tags = ['v' + version] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'odyle-version-'));
   made.push(dir);
-  const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const write = (path, text) => { mkdirSync(dirname(join(dir, path)), { recursive: true }); writeFileSync(join(dir, path), text); };
+  const git = (...args) =>
+    execFileSync(
+      'git',
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.test', '-c', 'commit.gpgsign=false', ...args],
+      { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim();
+  const write = (path, text) => {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  };
   git('init', '-q', '-b', 'main');
-  mkdirSync(join(dir, 'scripts')); mkdirSync(join(dir, 'src'));
+  mkdirSync(join(dir, 'scripts'));
+  mkdirSync(join(dir, 'src'));
   copyFileSync(join(root, 'scripts', 'version.mjs'), join(dir, 'scripts', 'version.mjs'));
   copyFileSync(join(root, 'src', 'changelog.js'), join(dir, 'src', 'changelog.js'));
   write('package.json', manifest(version));
   write('CHANGELOG.md', changelog(version));
   write('src/main.js', 'export {};\n');
-  git('add', '-A'); git('commit', '-q', '-m', 'base');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
   const base = git('rev-parse', 'HEAD');
   for (const tag of tags) git('tag', tag);
   git('checkout', '-q', '-b', 'work');
   const run = (...args) => {
-    const done = spawnSync(process.execPath, ['scripts/version.mjs', ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: '' } });
+    const done = spawnSync(process.execPath, ['scripts/version.mjs', ...args], {
+      cwd: dir,
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_OUTPUT: '' },
+    });
     return { status: done.status, out: done.stdout, err: done.stderr };
   };
-  const commit = (files = {}) => { for (const [path, text] of Object.entries(files)) write(path, text); git('add', '-A'); git('commit', '-q', '-m', 'change'); };
+  const commit = (files = {}) => {
+    for (const [path, text] of Object.entries(files)) write(path, text);
+    git('add', '-A');
+    git('commit', '-q', '-m', 'change');
+  };
   return { dir, git, write, run, commit, base, check: () => run('check', base), release: () => run('release') };
 }
 
@@ -46,7 +79,10 @@ test('a change that ships needs a higher version, described in the changelog', (
   r.commit({ 'src/main.js': 'export const a = 1;\n' });
   const unchanged = r.check();
   assert.equal(unchanged.status, 1);
-  assert.match(unchanged.err, /::error::1 shipped file\(s\) changed \(src\/main\.js\) but the version is still 0\.1\.0/);
+  assert.match(
+    unchanged.err,
+    /::error::1 shipped file\(s\) changed \(src\/main\.js\) but the version is still 0\.1\.0/,
+  );
   // Bumped, but nothing tells players.
   r.commit({ 'package.json': manifest('0.2.0') });
   const noNotes = r.check();
@@ -58,9 +94,13 @@ test('a change that ships needs a higher version, described in the changelog', (
   assert.match(ok.out, /Version 0\.1\.0 → 0\.2\.0 for 1 shipped file\(s\)/);
 });
 
-test('a version lower than the base\'s, or one that is not MAJOR.MINOR.PATCH, fails', () => {
+test("a version lower than the base's, or one that is not MAJOR.MINOR.PATCH, fails", () => {
   const r = repo({ version: '0.5.0' });
-  r.commit({ 'src/main.js': 'export const a = 1;\n', 'package.json': manifest('0.4.9'), 'CHANGELOG.md': changelog('0.4.9') });
+  r.commit({
+    'src/main.js': 'export const a = 1;\n',
+    'package.json': manifest('0.4.9'),
+    'CHANGELOG.md': changelog('0.4.9'),
+  });
   assert.equal(r.check().status, 1);
   r.commit({ 'package.json': manifest('1.2') });
   const odd = r.check();
@@ -71,29 +111,77 @@ test('a version lower than the base\'s, or one that is not MAJOR.MINOR.PATCH, fa
 test('documentation, tests, CI, scripts and lint settings ship nothing', () => {
   const r = repo();
   r.commit({
-    'docs/api.md': 'x', 'README.md': 'x', 'tests/unit/a.test.mjs': 'x', 'tests/ui.test.mjs': 'x', '.github/workflows/checks.yml': 'x', 'scripts/other.mjs': 'x',
-    'backend/odyle/accounts_test.go': 'x', 'backend/odyle/testing.go': 'x', 'backend/odyle/push_testing.go': 'x', 'eslint.config.js': 'x', 'compose.yaml': 'x', '.gitignore': 'x', 'LICENSE.md': 'x', '.vscode/settings.json': 'x', '.env.example': 'x',
+    'docs/api.md': 'x',
+    'README.md': 'x',
+    'tests/unit/a.test.mjs': 'x',
+    'tests/ui.test.mjs': 'x',
+    '.github/workflows/checks.yml': 'x',
+    'scripts/other.mjs': 'x',
+    'backend/odyle/accounts_test.go': 'x',
+    'backend/odyle/testing.go': 'x',
+    'backend/odyle/push_testing.go': 'x',
+    'eslint.config.js': 'x',
+    'compose.yaml': 'x',
+    '.gitignore': 'x',
+    'LICENSE.md': 'x',
+    '.vscode/settings.json': 'x',
+    '.env.example': 'x',
   });
   const done = r.check();
   assert.equal(done.status, 0, done.err);
   assert.match(done.out, /Nothing that ships changed; the version stays 0\.1\.0\./);
   // The docs the dashboard shows, and the rest of the backend, do ship.
-  for (const file of ['docs/privacy.md', 'backend/odyle/accounts.go', 'backend/odyle/testing.go.bak', 'public/sw.js', 'index.html']) {
+  for (const file of [
+    'docs/privacy.md',
+    'backend/odyle/accounts.go',
+    'backend/odyle/testing.go.bak',
+    'public/sw.js',
+    'index.html',
+  ]) {
     const s = repo();
     s.commit({ [file]: 'x' });
     assert.equal(s.check().status, 1, file);
   }
 });
 
-test('package.json ships only through the runtime dependencies, the build tool and the build\'s scripts', () => {
-  const nothing = { 'package.json': manifest('0.1.1'), };
+test("package.json ships only through the runtime dependencies, the build tool and the build's scripts", () => {
+  const nothing = { 'package.json': manifest('0.1.1') };
   const cases = [
     ['only the version', nothing, 0],
-    ['a test tool', { 'package.json': manifest('0.1.0', { devDependencies: { vite: '^8.0.0', playwright: '2.0.0' } }) }, 0],
-    ['the test script', { 'package.json': manifest('0.1.0', { scripts: { build: 'vite build', test: 'node --test "tests/unit/*.test.mjs"', 'test:ui': 'x', lint: 'eslint . --max-warnings 0' } }) }, 0],
+    [
+      'a test tool',
+      { 'package.json': manifest('0.1.0', { devDependencies: { vite: '^8.0.0', playwright: '2.0.0' } }) },
+      0,
+    ],
+    [
+      'the test script',
+      {
+        'package.json': manifest('0.1.0', {
+          scripts: {
+            build: 'vite build',
+            test: 'node --test "tests/unit/*.test.mjs"',
+            'test:ui': 'x',
+            lint: 'eslint . --max-warnings 0',
+          },
+        }),
+      },
+      0,
+    ],
     ['a runtime dependency', { 'package.json': manifest('0.1.0', { dependencies: { pocketbase: '^0.30.0' } }) }, 1],
-    ['the build tool', { 'package.json': manifest('0.1.0', { devDependencies: { vite: '^9.0.0', playwright: '1.0.0' } }) }, 1],
-    ['the build script', { 'package.json': manifest('0.1.0', { scripts: { build: 'vite build --mode x', test: 'node --test a', lint: 'eslint .' } }) }, 1],
+    [
+      'the build tool',
+      { 'package.json': manifest('0.1.0', { devDependencies: { vite: '^9.0.0', playwright: '1.0.0' } }) },
+      1,
+    ],
+    [
+      'the build script',
+      {
+        'package.json': manifest('0.1.0', {
+          scripts: { build: 'vite build --mode x', test: 'node --test a', lint: 'eslint .' },
+        }),
+      },
+      1,
+    ],
   ];
   for (const [name, files, status] of cases) {
     const r = repo();
@@ -128,7 +216,10 @@ test('a release is made for shipped changes under a new version above every earl
   same.commit({ 'src/main.js': 'export const a = 1;\n' });
   const stale = same.release();
   assert.equal(stale.status, 1);
-  assert.match(stale.err, /v0\.1\.0 is already released and 1 shipped file\(s\) changed since the latest release v0\.1\.0 \(src\/main\.js\)/);
+  assert.match(
+    stale.err,
+    /v0\.1\.0 is already released and 1 shipped file\(s\) changed since the latest release v0\.1\.0 \(src\/main\.js\)/,
+  );
   // A new version.
   same.commit({ 'package.json': manifest('0.1.1'), 'CHANGELOG.md': changelog('0.1.1') });
   const fresh = same.release();

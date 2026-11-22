@@ -9,11 +9,23 @@
 // it without failing. A load that fails is tried again the next time; the caller of the part
 // gets what gone makes of the error.
 export function lazily(load, gone = error => Promise.reject(error)) {
-  let loading = null, module = null;
-  const fetch = () => loading ??= load().then(m => (module = m), error => { loading = null; throw error; });
+  let loading = null,
+    module = null;
+  const fetch = () =>
+    (loading ??= load().then(
+      m => (module = m),
+      error => {
+        loading = null;
+        throw error;
+      },
+    ));
   const part = () => fetch().catch(gone);
   part.loaded = () => module;
-  part.prefetch = () => fetch().then(() => true, () => false);
+  part.prefetch = () =>
+    fetch().then(
+      () => true,
+      () => false,
+    );
   return part;
 }
 
@@ -28,5 +40,7 @@ export function reloadOnce(store, now, online = true) {
     if (now - (Number(store.getItem(reloadKey)) || 0) < 60000) return false;
     store.setItem(reloadKey, String(now));
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }

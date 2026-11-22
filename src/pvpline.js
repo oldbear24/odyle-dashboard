@@ -8,7 +8,14 @@ import { icon } from './icons.js';
 export function pvpButton(c) {
   const p = c.pvp;
   if (!p || !c.id) return '';
-  const kills = Number(p.kills) || 0, assists = Number(p.assists) || 0, deaths = Number(p.deaths) || 0;
-  const title = t('PvP of {name}: kills {kills} · assists {assists} · deaths {deaths}', { name: c.characterName, kills: number(kills), assists: number(assists), deaths: number(deaths) });
+  const kills = Number(p.kills) || 0,
+    assists = Number(p.assists) || 0,
+    deaths = Number(p.deaths) || 0;
+  const title = t('PvP of {name}: kills {kills} · assists {assists} · deaths {deaths}', {
+    name: c.characterName,
+    kills: number(kills),
+    assists: number(assists),
+    deaths: number(deaths),
+  });
   return `<button class="place-line pvp-line" type="button" data-pvp="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(title)}">${icon('swords')}<span class="pvp-count">${esc(tn(kills, '{n} kill', '{n} kills'))}</span><span class="place-age">${esc(tn(deaths, '{n} death', '{n} deaths'))}</span></button>`;
 }

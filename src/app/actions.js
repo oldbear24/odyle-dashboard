@@ -10,8 +10,16 @@
 // - onChange({ key: handler }): a changed control with that data-* attribute.
 // Handlers get the element and the event; what they return is awaited.
 
-const data = new Map(), actions = new Map(), submits = new Map(), changes = new Map();
-const add = (map, table, entry = run => run) => { for (const [key, run] of Object.entries(table)) { if (map.has(key)) throw new Error(`${key} is handled twice`); map.set(key, entry(run)); } };
+const data = new Map(),
+  actions = new Map(),
+  submits = new Map(),
+  changes = new Map();
+const add = (map, table, entry = run => run) => {
+  for (const [key, run] of Object.entries(table)) {
+    if (map.has(key)) throw new Error(`${key} is handled twice`);
+    map.set(key, entry(run));
+  }
+};
 
 export const onData = (table, present = false) => add(data, table, run => ({ run, present }));
 export const onAction = table => add(actions, table);

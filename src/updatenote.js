@@ -18,9 +18,10 @@ export function newerRelease(server, current) {
   const i = a.findIndex((n, k) => n !== b[k]);
   return i >= 0 && a[i] > b[i];
 }
-const hide = action => `<button class="close-button" data-action="${action}" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button>`;
+const hide = action =>
+  `<button class="close-button" data-action="${action}" aria-label="${esc(t('Hide this message'))}" title="${esc(t('Hide this message'))}">×</button>`;
 export function updatedNote(current) {
-  return `<div class="update-note">${icon('info')}<p>${esc(t('Updated to {version}.', { version: current }))} <a href="${link('/changelog')}">${t('What\'s new')}</a></p>${hide('hide-update-note')}</div>`;
+  return `<div class="update-note">${icon('info')}<p>${esc(t('Updated to {version}.', { version: current }))} <a href="${link('/changelog')}">${t("What's new")}</a></p>${hide('hide-update-note')}</div>`;
 }
 export function newerNote(version) {
   return `<div class="update-note is-newer">${icon('info')}<p>${esc(t('Odyle {version} is out.', { version }))} <button class="note-action" data-action="reload-release">${t('Reload to update')}</button></p>${hide('hide-release-note')}</div>`;

@@ -7,20 +7,64 @@ import { localInput, bounds } from './runs.js';
 
 // An iCalendar file of one run with a reminder 15 minutes ahead, for "Add to calendar".
 // Times are UTC; calendars show them in local time. The run lasts an hour by default.
-const ics = text => String(text || '').replace(/[\\;,]/g, m => '\\' + m).replace(/\r?\n/g, '\\n');
-const utc = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+const ics = text =>
+  String(text || '')
+    .replace(/[\\;,]/g, m => '\\' + m)
+    .replace(/\r?\n/g, '\\n');
+const utc = ms =>
+  new Date(ms)
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '');
 // Lines longer than 75 octets continue on the next line after a space (RFC 5545).
 function fold(line) {
-  const out = []; let current = '', size = 0;
-  for (const char of line) { const bytes = new TextEncoder().encode(char).length; if (size + bytes > (out.length ? 74 : 75)) { out.push(current); current = ''; size = 0; } current += char; size += bytes; }
+  const out = [];
+  let current = '',
+    size = 0;
+  for (const char of line) {
+    const bytes = new TextEncoder().encode(char).length;
+    if (size + bytes > (out.length ? 74 : 75)) {
+      out.push(current);
+      current = '';
+      size = 0;
+    }
+    current += char;
+    size += bytes;
+  }
   return [...out, current].join('\r\n ');
 }
 function calendarEvent({ id, dungeon, startsAt, note }, { room, going = [], now }) {
-  const start = timestamp(startsAt), summary = room ? `${dungeon} · ${room}` : dungeon, details = [note, going.length ? t('Going: {names}', { names: going.join(', ') }) : ''].filter(Boolean).join('\n');
-  return ['BEGIN:VEVENT', `UID:${id}@odyle`, `DTSTAMP:${utc(now)}`, `DTSTART:${utc(start)}`, `DTEND:${utc(start + 3600000)}`, `SUMMARY:${ics(summary)}`, ...(details ? [`DESCRIPTION:${ics(details)}`] : []),
-    'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${ics(summary)}`, 'TRIGGER:-PT15M', 'END:VALARM', 'END:VEVENT'];
+  const start = timestamp(startsAt),
+    summary = room ? `${dungeon} · ${room}` : dungeon,
+    details = [note, going.length ? t('Going: {names}', { names: going.join(', ') }) : ''].filter(Boolean).join('\n');
+  return [
+    'BEGIN:VEVENT',
+    `UID:${id}@odyle`,
+    `DTSTAMP:${utc(now)}`,
+    `DTSTART:${utc(start)}`,
+    `DTEND:${utc(start + 3600000)}`,
+    `SUMMARY:${ics(summary)}`,
+    ...(details ? [`DESCRIPTION:${ics(details)}`] : []),
+    'BEGIN:VALARM',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${ics(summary)}`,
+    'TRIGGER:-PT15M',
+    'END:VALARM',
+    'END:VEVENT',
+  ];
 }
-const calendar = events => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Odyle//Party dashboard//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events.flat(), 'END:VCALENDAR'].map(fold).join('\r\n') + '\r\n';
+const calendar = events =>
+  [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Odyle//Party dashboard//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    ...events.flat(),
+    'END:VCALENDAR',
+  ]
+    .map(fold)
+    .join('\r\n') + '\r\n';
 export function calendarFile(run, { room, going, now }) {
   return calendar([calendarEvent(run, { room, going, now })]);
 }

@@ -7,13 +7,25 @@ export const groupTitles = ['New', 'Changed', 'Fixed'];
 
 // The versions, newest first as written: [{ version, date, groups: [{ title, items }] }].
 export function parseChangelog(text) {
-  const out = []; let entry = null, group = null;
+  const out = [];
+  let entry = null,
+    group = null;
   for (const raw of String(text).split(/\r?\n/)) {
-    const line = raw.trimEnd(), version = line.match(heading);
-    if (version) { entry = { version: version[1], date: version[2] || '', groups: [] }; group = null; out.push(entry); continue; }
+    const line = raw.trimEnd(),
+      version = line.match(heading);
+    if (version) {
+      entry = { version: version[1], date: version[2] || '', groups: [] };
+      group = null;
+      out.push(entry);
+      continue;
+    }
     if (!entry) continue;
     const title = line.match(/^### (.+)$/);
-    if (title) { group = { title: title[1].trim(), items: [] }; entry.groups.push(group); continue; }
+    if (title) {
+      group = { title: title[1].trim(), items: [] };
+      entry.groups.push(group);
+      continue;
+    }
     const item = line.match(/^- (.+)$/);
     if (item && group) group.items.push(item[1].trim());
     else if (/^\s+\S/.test(line) && group?.items.length) group.items[group.items.length - 1] += ' ' + line.trim();
@@ -27,8 +39,10 @@ export const entryOf = (entries, version) => entries.find(e => e.version === ver
 // exist, hold at least one entry, and use only New, Changed and Fixed.
 export function changelogProblem(text, version) {
   const entry = entryOf(parseChangelog(text), version);
-  if (!entry) return `CHANGELOG.md has no section for ${version}. Add "## ${version} · <date>" with what changed, for players (AGENTS.md, Versioning).`;
-  if (!entry.groups.length) return `CHANGELOG.md's section for ${version} lists nothing. Add "### New", "### Changed" or "### Fixed" with "- " entries.`;
+  if (!entry)
+    return `CHANGELOG.md has no section for ${version}. Add "## ${version} · <date>" with what changed, for players (AGENTS.md, Versioning).`;
+  if (!entry.groups.length)
+    return `CHANGELOG.md's section for ${version} lists nothing. Add "### New", "### Changed" or "### Fixed" with "- " entries.`;
   const odd = entry.groups.find(g => !groupTitles.includes(g.title));
   return odd ? `CHANGELOG.md's section for ${version} has a group "${odd.title}"; use New, Changed or Fixed.` : '';
 }
@@ -36,5 +50,9 @@ export function changelogProblem(text, version) {
 // A version's entries as release notes, between markers the backend reads them back from
 // (the Windows app's releases, for What's new).
 export function releaseNotes(entry) {
-  return ['<!-- changes -->', ...entry.groups.flatMap(g => ['### ' + g.title, ...g.items.map(i => '- ' + i), '']), '<!-- /changes -->'].join('\n');
+  return [
+    '<!-- changes -->',
+    ...entry.groups.flatMap(g => ['### ' + g.title, ...g.items.map(i => '- ' + i), '']),
+    '<!-- /changes -->',
+  ].join('\n');
 }

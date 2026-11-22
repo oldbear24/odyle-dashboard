@@ -5,10 +5,12 @@
 
 // A search region as PLAYNC names it (GLOBAL_NA is North America East, GLOBAL_NAW West) and a
 // server name, as parts of a pattern.
-export const regionSource = 'GLOBAL_(?:NAW?|EU|SA|ASIA)', serverSource = '[A-Za-z]{2,20}';
+export const regionSource = 'GLOBAL_(?:NAW?|EU|SA|ASIA)',
+  serverSource = '[A-Za-z]{2,20}';
 // A profile's region as the armory's paths name it.
 export const profileRegionSource = '(?:nae|naw|eu|la|as)';
-const regionName = new RegExp(`^${regionSource}$`), serverName = new RegExp(`^${serverSource}$`);
+const regionName = new RegExp(`^${regionSource}$`),
+  serverName = new RegExp(`^${serverSource}$`);
 export const isRegion = region => regionName.test(region || '');
 export const isServer = server => serverName.test(server || '');
 // Whether the armory can look a player up by name: the game said their server and region.

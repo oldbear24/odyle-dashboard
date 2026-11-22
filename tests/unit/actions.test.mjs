@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { onData, onAction, onSubmit, onChange, clickHandler, submitHandler, changeHandler } from '../../src/app/actions.js';
+import {
+  onData,
+  onAction,
+  onSubmit,
+  onChange,
+  clickHandler,
+  submitHandler,
+  changeHandler,
+} from '../../src/app/actions.js';
 
 // A button as the dispatch sees it: its data-* attributes (dataset) and nothing else.
 const button = dataset => ({ dataset });

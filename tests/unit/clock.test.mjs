@@ -1,14 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ticksAfter, capsOf, tickOf, defaultClock, clockOf, clockLine, capMismatch, capLevel } from '../../src/clock.js';
+import {
+  ticksAfter,
+  capsOf,
+  tickOf,
+  defaultClock,
+  clockOf,
+  clockLine,
+  capMismatch,
+  capLevel,
+} from '../../src/clock.js';
 import { useLanguage } from '../../src/i18n.js';
 // The Odyle clock (src/clock.js): ticks at fixed UTC hours, the caps a character may have
 // from its fullest natural pool, and the line cards show.
 const at = text => Date.parse(text);
 test('ticks come at the UTC hours and a character counts under the caps it fits', async () => {
-  assert.deepEqual(ticksAfter(at('2026-10-14T22:30:00Z'), at('2026-10-15T05:00:00Z'), defaultClock.tickHours).map(ms => new Date(ms).toISOString()), ['2026-10-15T01:00:00.000Z', '2026-10-15T04:00:00.000Z']);
+  assert.deepEqual(
+    ticksAfter(at('2026-10-14T22:30:00Z'), at('2026-10-15T05:00:00Z'), defaultClock.tickHours).map(ms =>
+      new Date(ms).toISOString(),
+    ),
+    ['2026-10-15T01:00:00.000Z', '2026-10-15T04:00:00.000Z'],
+  );
   // A tick at the reading's own hour has already happened.
-  assert.deepEqual(ticksAfter(at('2026-10-15T04:00:00Z'), at('2026-10-15T07:00:00Z'), defaultClock.tickHours), [at('2026-10-15T07:00:00Z')]);
+  assert.deepEqual(ticksAfter(at('2026-10-15T04:00:00Z'), at('2026-10-15T07:00:00Z'), defaultClock.tickHours), [
+    at('2026-10-15T07:00:00Z'),
+  ]);
   assert.deepEqual(capsOf({}, defaultClock), [560, 840]);
   assert.deepEqual(capsOf({ naturalMax: 560 }, defaultClock), [560, 840]);
   assert.deepEqual(capsOf({ naturalMax: 600 }, defaultClock), [840]);
@@ -18,17 +34,40 @@ test('ticks come at the UTC hours and a character counts under the caps it fits'
 });
 test('the clock projects the natural pool from the last reading and says when it is full', async () => {
   await useLanguage('en');
-  const c = { parts: { base: 500, bonus: 300 }, lastReadingAt: '2026-10-14 22:30:00.000Z', naturalMax: 600 }, now = at('2026-10-15T05:00:00Z');
+  const c = { parts: { base: 500, bonus: 300 }, lastReadingAt: '2026-10-14 22:30:00.000Z', naturalMax: 600 },
+    now = at('2026-10-15T05:00:00Z');
   const iso = list => list.map(f => ({ ...f, at: new Date(f.at).toISOString() }));
   const projected = clockOf(c, now, defaultClock);
-  assert.deepEqual({ ...projected, next: new Date(projected.next).toISOString(), fills: iso(projected.fills) },
-    { base: 530, total: 830, cap: 840, tick: 15, next: '2026-10-15T07:00:00.000Z', fills: [{ cap: 840, at: '2026-10-17T19:00:00.000Z' }], full: false, settled: true, projected: true });
+  assert.deepEqual(
+    { ...projected, next: new Date(projected.next).toISOString(), fills: iso(projected.fills) },
+    {
+      base: 530,
+      total: 830,
+      cap: 840,
+      tick: 15,
+      next: '2026-10-15T07:00:00.000Z',
+      fills: [{ cap: 840, at: '2026-10-17T19:00:00.000Z' }],
+      full: false,
+      settled: true,
+      projected: true,
+    },
+  );
   assert.match(clockLine(projected, now, false), /^≈830 now if unspent · \+15 in 2h 0m · full ≈ [^/]+$/);
   // A character being read right now shows its own value, not an estimate.
   assert.match(clockLine(projected, now, true), /^\+15 in 2h 0m · full ≈ /);
   // Until its pool held more than 560 the cap is open: the estimate stops at 560 and both caps get a time.
   const open = clockOf({ ...c, naturalMax: 500 }, now, defaultClock);
-  assert.deepEqual([open.cap, open.settled, iso(open.fills).map(f => [f.cap, f.at])], [560, false, [[560, '2026-10-15T10:00:00.000Z'], [840, '2026-10-17T19:00:00.000Z']]]);
+  assert.deepEqual(
+    [open.cap, open.settled, iso(open.fills).map(f => [f.cap, f.at])],
+    [
+      560,
+      false,
+      [
+        [560, '2026-10-15T10:00:00.000Z'],
+        [840, '2026-10-17T19:00:00.000Z'],
+      ],
+    ],
+  );
   assert.match(clockLine(open, now, true), /^\+15 in 2h 0m · full ≈ .+ at 560 \/ .+ at 840$/);
   const reached = clockOf({ ...c, naturalMax: 500, lastReadingAt: '2026-10-13 00:30:00.000Z' }, now, defaultClock);
   assert.deepEqual([reached.base, reached.full], [560, true]);
@@ -51,7 +90,8 @@ test('a membership answer settles the cap, and readings that contradict it are f
   assert.deepEqual(capsOf({ answeredCap: 560 }, defaultClock), [560]);
   assert.deepEqual(capsOf({ answeredCap: 840, naturalMax: 300 }, defaultClock), [840]);
   assert.deepEqual(capsOf({ answeredCap: 0, naturalMax: 300 }, defaultClock), [560, 840]);
-  const now = at('2026-10-15T05:00:00Z'), c = { parts: { base: 500, bonus: 0 }, lastReadingAt: '2026-10-15 04:30:00.000Z', naturalMax: 500 };
+  const now = at('2026-10-15T05:00:00Z'),
+    c = { parts: { base: 500, bonus: 0 }, lastReadingAt: '2026-10-15 04:30:00.000Z', naturalMax: 500 };
   // Without the membership the pool is full at 560, said without hedging.
   const without = clockOf({ ...c, answeredCap: 560 }, now, defaultClock);
   assert.deepEqual([without.cap, without.settled, without.fills.map(f => f.cap)], [560, true, [560]]);
@@ -66,7 +106,8 @@ test('a membership answer settles the cap, and readings that contradict it are f
   assert.equal(capMismatch({ answeredCap: 840, naturalMax: 300 }), false);
 });
 test('a card turns orange two days before the natural pool is full and red within the hour', async () => {
-  const now = at('2026-10-15T05:30:00Z'), c = { parts: { base: 500, bonus: 0 }, lastReadingAt: '2026-10-15 05:00:00.000Z', answeredCap: 560 };
+  const now = at('2026-10-15T05:30:00Z'),
+    c = { parts: { base: 500, bonus: 0 }, lastReadingAt: '2026-10-15 05:00:00.000Z', answeredCap: 560 };
   // 60 to go, four ticks: full at 13:00, seven and a half hours away.
   assert.equal(capLevel(clockOf(c, now, defaultClock), now), 'soon');
   // The next tick at 07:00 fills it: red from 06:00.
@@ -80,6 +121,9 @@ test('a card turns orange two days before the natural pool is full and red withi
   // With the membership the same pool is far from its cap.
   assert.equal(capLevel(clockOf({ ...c, answeredCap: 840 }, now, defaultClock), now), '');
   // While the cap is open it goes by the smallest one.
-  assert.equal(capLevel(clockOf({ ...c, answeredCap: 0, parts: { base: 560, bonus: 0 } }, now, defaultClock), now), 'full');
+  assert.equal(
+    capLevel(clockOf({ ...c, answeredCap: 0, parts: { base: 560, bonus: 0 } }, now, defaultClock), now),
+    'full',
+  );
   assert.equal(capLevel(null, now), '');
 });

@@ -9,22 +9,55 @@ function browser({ paths, base, href, hash = '' }) {
   const calls = [];
   const url = new URL(href);
   const where = {
-    get href() { return url.href; }, get pathname() { return url.pathname; }, get search() { return url.search; },
-    get hash() { return url.hash; }, set hash(value) { url.hash = value; calls.push(['hash', value]); },
+    get href() {
+      return url.href;
+    },
+    get pathname() {
+      return url.pathname;
+    },
+    get search() {
+      return url.search;
+    },
+    get hash() {
+      return url.hash;
+    },
+    set hash(value) {
+      url.hash = value;
+      calls.push(['hash', value]);
+    },
   };
   if (hash) url.hash = hash;
-  globalThis.document = { baseURI: base, title: '', querySelector: selector => (paths && selector === 'meta[name="odyle-routes"]' ? { content: 'paths' } : null) };
+  globalThis.document = {
+    baseURI: base,
+    title: '',
+    querySelector: selector => (paths && selector === 'meta[name="odyle-routes"]' ? { content: 'paths' } : null),
+  };
   globalThis.location = where;
   globalThis.history = {
-    pushState: (_, __, target) => { calls.push(['push', target]); url.href = new URL(target, base).href; },
-    replaceState: (_, __, target) => { calls.push(['replace', target]); url.href = new URL(target, url.href).href; },
+    pushState: (_, __, target) => {
+      calls.push(['push', target]);
+      url.href = new URL(target, base).href;
+    },
+    replaceState: (_, __, target) => {
+      calls.push(['replace', target]);
+      url.href = new URL(target, url.href).href;
+    },
   };
-  return { calls, go: target => { url.href = new URL(target, base).href; } };
+  return {
+    calls,
+    go: target => {
+      url.href = new URL(target, base).href;
+    },
+  };
 }
 const routes = async () => import(`../../src/routes.js?copy=${copies++}`);
 
 test('without paths, pages are hash routes any static host serves', async () => {
-  const page = browser({ paths: false, base: 'https://static.test/odyle/', href: 'https://static.test/odyle/?utm=1#/armory/eu/1/x' });
+  const page = browser({
+    paths: false,
+    base: 'https://static.test/odyle/',
+    href: 'https://static.test/odyle/?utm=1#/armory/eu/1/x',
+  });
   const { usesPaths, link, address, current, linked, visit, adoptHash, bare } = await routes();
   assert.equal(usesPaths(), false);
   assert.equal(link('/tasks'), '#/tasks');
@@ -46,8 +79,12 @@ test('without paths, pages are hash routes any static host serves', async () => 
   assert.equal(bare(), true);
 });
 
-test('with paths, links are relative to the dashboard\'s base and invite codes stay in the fragment', async () => {
-  const page = browser({ paths: true, base: 'https://odyle.test/', href: 'https://odyle.test/armory/eu/2304/abc?tab=gear' });
+test("with paths, links are relative to the dashboard's base and invite codes stay in the fragment", async () => {
+  const page = browser({
+    paths: true,
+    base: 'https://odyle.test/',
+    href: 'https://odyle.test/armory/eu/2304/abc?tab=gear',
+  });
   const { usesPaths, link, address, current, visit, adoptHash, bare } = await routes();
   assert.equal(usesPaths(), true);
   assert.equal(link('/tasks'), './tasks');
@@ -91,16 +128,23 @@ test('served under a folder, pages are named from the folder on', async () => {
   assert.equal(linked('https://host.test/elsewhere/week'), '');
   assert.equal(linked('https://other.test/odyle/week'), '');
   assert.equal(linked('mailto:someone@example.test'), '');
-  assert.equal(linked('https://host.test/odyle/week#section'), '', 'a fragment is the page\'s own');
+  assert.equal(linked('https://host.test/odyle/week#section'), '', "a fragment is the page's own");
   assert.equal(linked('https://host.test/odyle/#/join/CODE'), '/join/CODE');
   assert.equal(linked('http://[bad'), '', 'an address that is no address leads nowhere');
 });
 
-test('the tab\'s title follows the page and is written only when it changes', async () => {
+test("the tab's title follows the page and is written only when it changes", async () => {
   browser({ paths: false, base: 'https://static.test/', href: 'https://static.test/' });
   const { retitle } = await routes();
-  let writes = 0, title = 'Odyle';
-  Object.defineProperty(globalThis.document, 'title', { get: () => title, set: value => { writes++; title = value; } });
+  let writes = 0,
+    title = 'Odyle';
+  Object.defineProperty(globalThis.document, 'title', {
+    get: () => title,
+    set: value => {
+      writes++;
+      title = value;
+    },
+  });
   retitle('Odyle');
   assert.equal(writes, 0);
   retitle('Tasks · Odyle');

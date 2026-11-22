@@ -3,7 +3,8 @@
 import PocketBase, { LocalAuthStore } from 'pocketbase';
 import { state } from './state.js';
 
-export const backend = import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8090' : window.location.origin);
+export const backend =
+  import.meta.env.VITE_POCKETBASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8090' : window.location.origin);
 // Persisted in localStorage: the sign-in is shared by every tab of this browser and survives restarts.
 export const pb = new PocketBase(backend, new LocalAuthStore('odyle.account'));
 pb.autoCancellation(false);
@@ -12,7 +13,8 @@ pb.autoClearAuthStore(false);
 
 export async function send(action, body = {}) {
   const data = await pb.send('/api/odyle/' + action, { method: 'POST', body });
-  if (data.serverNow) state.serverOffset = Date.parse(data.serverNow) - Date.now(); return data;
+  if (data.serverNow) state.serverOffset = Date.parse(data.serverNow) - Date.now();
+  return data;
 }
 
 export const me = () => state.members.find(m => m.user === pb.authStore.record?.id);

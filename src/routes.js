@@ -11,7 +11,9 @@ import { armoryRoute, armoryTarget, armoryTitle, topTitle } from './armorylinks.
 let marked = null;
 // Whether pages have paths here.
 export function usesPaths() {
-  if (marked === null) marked = typeof document !== 'undefined' && document.querySelector('meta[name="odyle-routes"]')?.content === 'paths';
+  if (marked === null)
+    marked =
+      typeof document !== 'undefined' && document.querySelector('meta[name="odyle-routes"]')?.content === 'paths';
   return marked;
 }
 const kept = path => path.startsWith('/join/');
@@ -24,7 +26,13 @@ export function link(path) {
 }
 // The full address of a page, to copy or post elsewhere.
 export function address(path) {
-  if (!usesPaths()) { if (typeof location === 'undefined') return '#' + path; const url = new URL(location.href); url.search = ''; url.hash = path; return url.href; }
+  if (!usesPaths()) {
+    if (typeof location === 'undefined') return '#' + path;
+    const url = new URL(location.href);
+    url.search = '';
+    url.hash = path;
+    return url.href;
+  }
   return new URL(link(path), rootURL()).href;
 }
 // The page the address bar names: its path (or an invite's fragment), or its fragment.
@@ -38,7 +46,11 @@ export function current() {
 export function linked(href) {
   if (!usesPaths()) return '';
   let url;
-  try { url = new URL(href, document.baseURI); } catch { return ''; }
+  try {
+    url = new URL(href, document.baseURI);
+  } catch {
+    return '';
+  }
   const root = rootURL();
   if (url.origin !== root.origin || !url.pathname.startsWith(root.pathname)) return '';
   if (kept(url.hash.slice(1))) return url.hash.slice(1);
@@ -49,7 +61,8 @@ export function linked(href) {
 export function visit(path, replace = false) {
   if (!usesPaths()) {
     if (location.hash === '#' + path) return;
-    if (replace) history.replaceState(null, '', '#' + path); else location.hash = path;
+    if (replace) history.replaceState(null, '', '#' + path);
+    else location.hash = path;
     return;
   }
   const target = new URL(link(path), document.baseURI).href;
@@ -62,21 +75,52 @@ export function adoptHash() {
   return true;
 }
 // Whether this visit names no page, so the dashboard may resume the last one.
-export const bare = () => usesPaths() ? current() === '/' && !location.hash : !/^#\//.test(location.hash);
+export const bare = () => (usesPaths() ? current() === '/' && !location.hash : !/^#\//.test(location.hash));
 
 // Each page's title in the tab, and for search engines that run the page: the same names
 // the backend gives it (backend/odyle/pages.go), in the reader's language.
-export function retitle(title) { if (typeof document !== 'undefined' && document.title !== title) document.title = title; }
+export function retitle(title) {
+  if (typeof document !== 'undefined' && document.title !== title) document.title = title;
+}
 
 // The page a route names, or '' for none: / (welcome or your rooms), /room/<id>, /join/<code>
 // (an invite link), the pages by name and the armory's pages.
-const pageRoute = /^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots|timers|achievements|week)?)$/;
-export function pageOf(route) { if (armoryRoute.test(route)) return route; const match = route.match(pageRoute); return match ? match[1] : ''; }
+const pageRoute =
+  /^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots|timers|achievements|week)?)$/;
+export function pageOf(route) {
+  if (armoryRoute.test(route)) return route;
+  const match = route.match(pageRoute);
+  return match ? match[1] : '';
+}
 // The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
 // armory names its profiles once they are fetched, so they keep the title shown (shownTitle).
 export function pageTitle(path, shownTitle = '') {
-  if (path.startsWith('/armory')) { const target = armoryTarget(path); return target.top ? topTitle(target.top.class) : target.profile || target.card ? shownTitle : armoryTitle(null); }
-  return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle'), '/timers': t('AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle'), '/achievements': t('Achievements · Odyle'), '/week': t('Your week in Odyle') }[path] || t('Odyle — Party command');
+  if (path.startsWith('/armory')) {
+    const target = armoryTarget(path);
+    return target.top ? topTitle(target.top.class) : target.profile || target.card ? shownTitle : armoryTitle(null);
+  }
+  return (
+    {
+      '/changelog': t("What's new in Odyle"),
+      '/privacy': t('Privacy · Odyle'),
+      '/demo': t('Demo party room · Odyle'),
+      '/timers': t('AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle'),
+      '/achievements': t('Achievements · Odyle'),
+      '/week': t('Your week in Odyle'),
+    }[path] || t('Odyle — Party command')
+  );
 }
 // The navigation item a page lights up while it loads ('' for none).
-export const pageNav = path => path.startsWith('/room/') ? 'overview' : path.startsWith('/armory') ? 'armory' : { '/': 'library', '/tasks': 'tasks', '/week': 'week', '/achievements': 'achievements', '/timers': 'timers', '/account': 'account' }[path] || '';
+export const pageNav = path =>
+  path.startsWith('/room/')
+    ? 'overview'
+    : path.startsWith('/armory')
+      ? 'armory'
+      : {
+          '/': 'library',
+          '/tasks': 'tasks',
+          '/week': 'week',
+          '/achievements': 'achievements',
+          '/timers': 'timers',
+          '/account': 'account',
+        }[path] || '';

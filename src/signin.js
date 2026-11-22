@@ -10,12 +10,23 @@
 // but is no in-app browser. Apps that open links in the system's own browser view
 // (Discord does on some phones) cannot be told apart; the help under the sign-in button
 // covers them.
-const marks = /FBAN|FBAV|FB_IAB|FBIOS|Instagram|\bLine\/|MicroMessenger|Snapchat|BytedanceWebview|musical_ly|TikTok|\b[Dd]iscord\//;
-const webView = /; ?wv\)/, webViewBrowsers = /\bDuckDuckGo\//;
+const marks =
+  /FBAN|FBAV|FB_IAB|FBIOS|Instagram|\bLine\/|MicroMessenger|Snapchat|BytedanceWebview|musical_ly|TikTok|\b[Dd]iscord\//;
+const webView = /; ?wv\)/,
+  webViewBrowsers = /\bDuckDuckGo\//;
 export function inAppBrowser(userAgent = '', standalone = false) {
   if (marks.test(userAgent) || (webView.test(userAgent) && !webViewBrowsers.test(userAgent))) return true;
-  return !standalone && /\b(iPhone|iPad|iPod)\b/.test(userAgent) && /AppleWebKit/.test(userAgent) && !/Safari\//.test(userAgent);
+  return (
+    !standalone &&
+    /\b(iPhone|iPad|iPod)\b/.test(userAgent) &&
+    /AppleWebKit/.test(userAgent) &&
+    !/Safari\//.test(userAgent)
+  );
 }
 // The link to open elsewhere: this page with its route, so an invite link (#/join/<code>)
 // still joins after signing in there, without a query an app may have added.
-export function signInLink(page) { const url = new URL(page); url.search = ''; return url.href; }
+export function signInLink(page) {
+  const url = new URL(page);
+  url.search = '';
+  return url.href;
+}

@@ -9,8 +9,10 @@ import { timestamp } from './model.js';
 export function applyRoomCharacters(members, changed) {
   let complete = true;
   for (const c of changed) {
-    const list = members.find(m => m.user === c.user)?.characters, at = list ? list.findIndex(x => x.id === c.id) : -1;
-    if (at < 0) complete = false; else list[at] = { ...list[at], ...c };
+    const list = members.find(m => m.user === c.user)?.characters,
+      at = list ? list.findIndex(x => x.id === c.id) : -1;
+    if (at < 0) complete = false;
+    else list[at] = { ...list[at], ...c };
   }
   return complete;
 }
@@ -19,23 +21,26 @@ export function applyCharacters(list, changed) {
   let complete = true;
   for (const c of changed) {
     const at = list.findIndex(x => x.id === c.id);
-    if (at < 0) complete = false; else list[at] = { ...list[at], ...c };
+    if (at < 0) complete = false;
+    else list[at] = { ...list[at], ...c };
   }
   return complete;
 }
 // Heartbeats, { <character id>: lastSeenAt }, into every list given; an older one never
 // replaces a later time.
 export function applySeen(seen, ...lists) {
-  for (const list of lists) for (const c of list || []) {
-    const at = seen[c.id];
-    if (at && !(timestamp(c.lastSeenAt) >= timestamp(at))) c.lastSeenAt = at;
-  }
+  for (const list of lists)
+    for (const c of list || []) {
+      const at = seen[c.id];
+      if (at && !(timestamp(c.lastSeenAt) >= timestamp(at))) c.lastSeenAt = at;
+    }
 }
 // The sharing route's answer, { sharedCharacters }, into the account's own membership:
 // which of its characters the room sees (it always lists all of them, each with shared).
 export function applyShared(member, shared) {
   if (!member) return;
-  member.sharedCharacters = shared; member.sharing = shared.length > 0;
+  member.sharedCharacters = shared;
+  member.sharing = shared.length > 0;
   for (const c of member.characters || []) c.shared = shared.includes(c.id);
 }
 // The role route's answer, { membership }, into another member: its role and the
@@ -45,7 +50,12 @@ export function applyMembership(members, membership) {
   const m = members.find(x => x.id === membership?.id);
   if (!m) return false;
   const shared = membership.sharedCharacters || [];
-  Object.assign(m, { role: membership.role, sharedCharacters: shared, sharing: shared.length > 0, characters: (m.characters || []).filter(c => shared.includes(c.id)) });
+  Object.assign(m, {
+    role: membership.role,
+    sharedCharacters: shared,
+    sharing: shared.length > 0,
+    characters: (m.characters || []).filter(c => shared.includes(c.id)),
+  });
   return true;
 }
 // Reader sessions in contact, { <session id>: time }, into the account page's apps.
