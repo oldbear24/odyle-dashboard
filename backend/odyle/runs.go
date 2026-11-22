@@ -212,7 +212,7 @@ func callable(app core.App, roomId, caller string, start time.Time, cost int64) 
 // and cancelling: its planner or the room owner). Owners and players plan and join;
 // viewers read. A room whose owner turned planned runs off has none.
 func plan(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		m, err := membership(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -234,7 +234,6 @@ func plan(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, p.roomId)
 		runs, err := runsOf(app, p.roomId, nil)
 		if err != nil {
 			return nil, err

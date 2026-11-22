@@ -3,6 +3,7 @@ package odyle
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -97,4 +98,92 @@ func TestChangedComparesStoredValues(t *testing.T) {
 	if visiblyChanged(c) {
 		t.Fatal("a field clients do not show counted")
 	}
+}
+
+// Routes that no longer list the rooms they changed (affected) still have every member told:
+// the record hooks of room_members, party_rooms, room_runs and characters (realtime.go) refresh
+// the room on every success, also when a save changes nothing.
+func TestRecordHooksRefreshTheRoomsRoutesChange(t *testing.T) {
+	app := newTestApp(t)
+	lead, mate, watcher, newcomer, other := newUser(t, app, "Lead"), newUser(t, app, "Mate"), newUser(t, app, "Watcher"), newUser(t, app, "Newcomer"), newUser(t, app, "Other")
+	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Raid", "cost": 40})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
+	mates := saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
+	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": watcher.Id, "role": "viewer"})
+	kai := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Kai", "server": "Lumiel", "region": "GLOBAL_EU"})
+	started := saved(t, app, "room_runs", map[string]any{"room": room.Id, "plannedBy": mates.Id, "dungeon": "Fire Temple", "startsAt": stamp(time.Now().Add(-time.Hour)), "attendees": []string{mates.Id}})
+	owner, mine := tokenOf(t, lead), tokenOf(t, mate)
+	deliver(app)
+	watching := listen(t, app, watcher, roomTopic+room.Id)
+	in := `"roomId":"` + room.Id + `"`
+	told := func(step string) {
+		t.Helper()
+		deliver(app)
+		refreshed := false
+		for {
+			_, data, ok := watching.next()
+			if !ok {
+				break
+			}
+			refreshed = refreshed || data["refresh"] == true
+		}
+		if !refreshed {
+			t.Fatalf("%s: the room was not refreshed", step)
+		}
+	}
+	post := func(auth map[string]string, route, rest string) map[string]any {
+		t.Helper()
+		return ask(t, app, http.MethodPost, "/api/odyle/"+route, auth, `{`+in+rest+`}`, 200)
+	}
+
+	post(mine, "share-new", `,"enabled":true`)
+	told("share-new")
+	post(owner, "board", `,"text":"Fire Temple at eight"`)
+	told("board")
+	post(owner, "room-features", `,"features":{"wishlist":true}`)
+	told("room features, unchanged")
+	post(owner, "rename", `,"name":"Raid"`)
+	told("rename, unchanged")
+	post(owner, "role", `,"memberId":"`+mates.Id+`","role":"reporter"`)
+	told("role, unchanged")
+
+	// Every verb of plan.
+	planned := post(owner, "plan", `,"dungeon":"Fire Temple","startsAt":"`+time.Now().Add(2*time.Hour).UTC().Format(time.RFC3339)+`"`)
+	told("plan a run")
+	runId := ""
+	for _, r := range planned["runs"].([]any) {
+		if r.(map[string]any)["id"] != started.Id {
+			runId = r.(map[string]any)["id"].(string)
+		}
+	}
+	run := `,"id":"` + runId + `"`
+	post(mine, "plan", run+`,"going":true`)
+	told("going")
+	post(mine, "plan", run+`,"going":true`)
+	told("going again, unchanged")
+	post(mine, "plan", run+`,"cant":false`)
+	told("can't taken back")
+	post(owner, "plan", run+`,"note":""`)
+	told("a change, unchanged")
+	post(owner, "plan", run+`,"again":true`)
+	told("again")
+	post(owner, "plan", run+`,"remove":true`)
+	told("remove")
+	post(mine, "plan", `,"id":"`+started.Id+`","done":true`)
+	told("done")
+
+	post(mine, "delete-character", `,"characterId":"`+kai.Id+`"`)
+	told("delete a character")
+
+	code := post(owner, "invite-create", `,"role":"reporter"`)["invite"].(map[string]any)["code"].(string)
+	ask(t, app, http.MethodPost, "/api/odyle/join", tokenOf(t, newcomer), `{"code":"`+code+`"}`, 200)
+	told("join")
+	post(tokenOf(t, newcomer), "leave", ``)
+	told("leave")
+	joined := ask(t, app, http.MethodPost, "/api/odyle/join", tokenOf(t, other), `{"code":"`+code+`"}`, 200)
+	told("join again")
+	post(owner, "revoke", `,"memberId":"`+joined["membership"].(map[string]any)["id"].(string)+`"`)
+	told("revoke")
+	post(owner, "transfer", `,"memberId":"`+mates.Id+`"`)
+	told("transfer")
 }

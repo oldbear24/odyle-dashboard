@@ -312,18 +312,14 @@ func deleteAccount(e *core.RequestEvent) error {
 }
 
 // deleteCharacter deletes one character with its history and portrait; rooms stop
-// listing it. A reader that sees it in game again saves it as a new character.
+// listing it. A reader that sees it in game again saves it as a new character. Its delete hook
+// refreshes the owner's rooms (realtime.go).
 func deleteCharacter(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		c, err := ownCharacter(app, user.Id, b.str("characterId"))
 		if err != nil {
 			return nil, err
 		}
-		roomIds, err := roomsFor(app, user.Id)
-		if err != nil {
-			return nil, err
-		}
-		*affected = append(*affected, roomIds...)
 		return nil, app.Delete(c)
 	})
 }

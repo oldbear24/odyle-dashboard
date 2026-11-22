@@ -129,7 +129,7 @@ func shareNew(app core.App, c *Character) error {
 
 // POST /api/odyle/share-new turns shareNew on or off for one of the account's rooms.
 func shareNewSetting(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		m, err := membership(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -145,7 +145,6 @@ func shareNewSetting(e *core.RequestEvent) error {
 		if err := app.Save(m); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, m.Room())
 		return map[string]any{"shareNew": enabled}, nil
 	})
 }

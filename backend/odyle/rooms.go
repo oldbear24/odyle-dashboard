@@ -50,7 +50,7 @@ func create(e *core.RequestEvent) error {
 }
 
 func join(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		typed, err := text(b["code"], "Invite code", 20)
 		if err != nil {
 			return nil, err
@@ -94,7 +94,6 @@ func join(e *core.RequestEvent) error {
 		if err := app.Save(invitation); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, room.Id)
 		// Achievements: the link's maker brought a player in, and this account is in a room.
 		if maker := invitation.CreatedBy(); maker != user.Id {
 			achieved(app, maker, adding(map[string]int64{"invited": 1}), false)
@@ -297,7 +296,7 @@ func memberUsers(members []*Member) map[string]string {
 }
 
 func leave(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		m, err := membership(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -305,7 +304,6 @@ func leave(e *core.RequestEvent) error {
 		if m.Role() == "owner" {
 			return nil, badRequest("Use close to delete an owned room. Characters are retained.")
 		}
-		*affected = append(*affected, m.Room())
 		return nil, app.Delete(m)
 	})
 }
@@ -322,7 +320,7 @@ func closeRoom(e *core.RequestEvent) error {
 }
 
 func revoke(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -334,7 +332,6 @@ func revoke(e *core.RequestEvent) error {
 		if err := app.Delete(target); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, room.Id)
 		return nil, nil
 	})
 }
@@ -343,7 +340,7 @@ func revoke(e *core.RequestEvent) error {
 // viewer, or hand the room over. Viewers cannot share, so a member made viewer stops
 // sharing characters here. The previous owner stays as a player and can then leave.
 func rename(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -356,13 +353,12 @@ func rename(e *core.RequestEvent) error {
 		if err := app.Save(room); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, room.Id)
 		return map[string]any{"room": roomJSON(room, odylePerCube(app))}, nil
 	})
 }
 
 func role(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -385,13 +381,12 @@ func role(e *core.RequestEvent) error {
 				return nil, err
 			}
 		}
-		*affected = append(*affected, room.Id)
 		return map[string]any{"membership": target.JSON(app)}, nil
 	})
 }
 
 func transfer(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -416,7 +411,6 @@ func transfer(e *core.RequestEvent) error {
 		if err := app.Save(room); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, room.Id)
 		return map[string]any{"room": roomJSON(room, odylePerCube(app))}, nil
 	})
 }
