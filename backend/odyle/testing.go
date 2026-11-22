@@ -9,6 +9,9 @@ package odyle
 // production build: there is no password login, test sign-in or Discord bypass.
 
 import (
+	"fmt"
+	"net"
+	"os"
 	"strconv"
 	"time"
 
@@ -29,8 +32,35 @@ var verifiedTeammateAdapters = []string{"test-teammates-v1"}
 
 // The armory asks the PLAYNC stand-in of the tests without its pauses between lookups.
 func init() {
-	testFixtures = fixtures
+	// The Server status page and the dashboard's version check name this build as what it is.
+	Version = "test"
+	testFixtures = guarded
 	armoryPace, armoryStep, armorySearchGap = 300*time.Millisecond, 10*time.Millisecond, 50*time.Millisecond
+}
+
+// loopbackOnly refuses a listen address another machine can reach: the test build signs anybody
+// in as a superuser (/__test__/superuser) and must never face a network.
+func loopbackOnly(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("the test build cannot read its listen address %q: %w", addr, err)
+	}
+	if ip := net.ParseIP(host); host == "localhost" || ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("the test build serves unauthenticated /__test__ routes and listens only on a loopback address (127.0.0.1 or localhost), not %q", addr)
+}
+
+// guarded is the test build's start: a banner, a refusal of an address other machines reach, then
+// the fixtures.
+func guarded(se *core.ServeEvent) {
+	if err := loopbackOnly(se.Server.Addr); err != nil {
+		fmt.Fprintln(os.Stderr, "odyle-test: "+err.Error())
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stderr, "odyle-test: THE DISPOSABLE TEST BUILD (build tag odyletest). Its /__test__ routes sign in without a password; it is for the tests only, never for a server.")
+	warn(se.App, "This is the disposable test build: it has unauthenticated /__test__ routes and must never serve players")
+	fixtures(se)
 }
 
 func fixture(se *core.ServeEvent, path string, handle func(e *core.RequestEvent, b body) (any, error)) {
