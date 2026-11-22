@@ -2,7 +2,7 @@ import { t, tn, locale } from './i18n.js';
 import { escape as esc, timestamp, changedAt } from './model.js';
 import { periodStart, defaults as resetDefaults } from './tasks.js';
 import { capsOf, tickOf, ticksAfter } from './clock.js';
-import { pageOf, pager, fillers } from './pager.js';
+import { pageOf, pager, fillers, periodChoices, periodSwitch as switchOf } from './pager.js';
 // Odyle history of one character: a step line (a value holds until the next change)
 // from its first change in the chosen period (30 days unless the reader picks another,
 // up to as long as the server keeps it) to now, over a 10% wash. One series, so the dialog
@@ -34,12 +34,9 @@ export function historyChart(readings, { now, cost, days = 30 }) {
 }
 // The periods the dialog offers: a week, 30 and 90 days and a year, up to and with how long
 // the server keeps the history (the last one, which may be none of those).
-export const periods = keep => [...[7, 30, 90, 365].filter(days => days < keep), keep];
+export const periods = keep => periodChoices([7, 30, 90, 365], keep);
 export const periodName = days => days % 365 === 0 ? tn(days / 365, '{n} year', '{n} years') : tn(days, '{n} day', '{n} days');
-export function periodSwitch(days, keep) {
-  const choices = periods(keep);
-  return choices.length > 1 ? `<div class="segmented" role="group" aria-label="${esc(t('Period'))}">${choices.map(d => `<button type="button" data-history-days="${d}" aria-pressed="${d === days}">${esc(periodName(d))}</button>`).join('')}</div>` : '';
-}
+export const periodSwitch = (days, keep) => switchOf(periods(keep), days, 'data-history-days', periodName);
 // The changes of an answer that lists each one (no hourlyBefore), newest first, each with
 // how much it moved the value from the change before it: what the server's pages carry.
 export const changesOf = readings => readings.map((r, i) => ({ ...r, change: i ? r.value - readings[i - 1].value : null })).reverse();

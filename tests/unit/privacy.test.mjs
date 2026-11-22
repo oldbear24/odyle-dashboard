@@ -21,7 +21,7 @@ test('the notice renders as text with code, bold and safe links', async () => {
 
 test('the notice names every key the dashboard keeps in the browser', () => {
   const src = join(here, '..', '..', 'src'), used = new Set();
-  for (const name of readdirSync(src).filter(n => n.endsWith('.js')))
+  for (const name of readdirSync(src, { recursive: true }).filter(n => n.endsWith('.js')))
     for (const m of readFileSync(join(src, name), 'utf8').matchAll(/'(odyle\.[a-zA-Z.]+)'/g)) used.add(m[1]);
   // Realtime topics and the storage probe are not stored.
   const stored = [...used].filter(key => !/^odyle\.(room|user|presence|admin)\.?$/.test(key) && !key.endsWith('.') && key !== 'odyle.probe');

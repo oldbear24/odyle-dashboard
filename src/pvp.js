@@ -1,7 +1,8 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, changedAt, age, regionLabel, timestamp } from './model.js';
-import { pageOf, pager, fillers } from './pager.js';
+import { escape as esc, changedAt, age, regionLabel, timestamp, number } from './model.js';
+import { pageOf, pager, fillers, periodChoices, periodSwitch as switchOf } from './pager.js';
 import { findPath } from './armorylinks.js';
+import { findable } from './regions.js';
 import { link } from './routes.js';
 
 // PvP stats (opt-in): a character's kills, assists and deaths against other players, as its
@@ -11,24 +12,19 @@ import { link } from './routes.js';
 // whose kills it assisted and the latest events, a page at a time. Its owner and the rooms the
 // character is shared in see it. The row's button that opens it is pvpline.js.
 
-const number = n => (Number(n) || 0).toLocaleString(locale());
 // Kills for each death, to two places; with no death yet the kills themselves.
 export const ratio = ({ kills = 0, deaths = 0 } = {}) => kills / Math.max(1, deaths);
 const ratioText = totals => ratio(totals).toLocaleString(locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // The periods the dialog offers: a week, 30 days and as long as the server keeps the events.
-export const periods = keep => [...[7, 30].filter(days => days < keep), keep];
+export const periods = keep => periodChoices([7, 30], keep);
 const periodName = days => tn(days, '{n} day', '{n} days');
-export function periodSwitch(days, keep) {
-  const choices = periods(keep);
-  return choices.length > 1 ? `<div class="segmented" role="group" aria-label="${esc(t('Period'))}">${choices.map(d => `<button type="button" data-pvp-days="${d}" aria-pressed="${d === days}">${esc(periodName(d))}</button>`).join('')}</div>` : '';
-}
+export const periodSwitch = (days, keep) => switchOf(periods(keep), days, 'data-pvp-days', periodName);
 
 // A player as the game named them: the name, linked to the armory's lookup when the game said
 // their server, and the server with its region under it.
-const serverName = /^[A-Za-z]{2,20}$/, regionName = /^GLOBAL_(NAW?|EU|SA|ASIA)$/;
 export function playerCell(p) {
-  const known = serverName.test(p.server || '') && regionName.test(p.region || '');
+  const known = findable(p);
   const where = known ? `<small>${esc(p.server)} ${esc(regionLabel(p.region))}</small>` : '';
   const name = known ? `<a href="${esc(link(findPath(p.region, p.server, p.name)))}" title="${esc(t('Look up {name} in the armory', { name: p.name }))}">${esc(p.name)}</a>` : esc(p.name);
   return `<span class="pvp-player">${name}${where}</span>`;

@@ -1,7 +1,7 @@
 // What's new (#/changelog, #74): the dashboard's changelog (CHANGELOG.md, bundled with the build,
 // read by changelog.js) and what the newest Windows app release changed (from its release
 // notes, which the backend keeps with the release: `changes`). It loads with the page
-// (main.js); the note after an update is updatenote.js.
+// (app/pages.js); the note after an update is updatenote.js.
 import { t, locale } from './i18n.js';
 import { escape as esc } from './model.js';
 import { icon } from './icons.js';

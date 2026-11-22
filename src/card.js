@@ -141,7 +141,7 @@ const sparks = (n, style) => Array.from({ length: n }, (_, i) => `<i style="${st
 // A plane behind each face, the back's turned with it.
 const planes = kind => `<b class="tcg-plane ${kind}"></b><b class="tcg-plane ${kind} is-back"></b>`;
 // A ring around the card, tilted back by tilt and rolled by roll degrees, turning once in t seconds.
-const ring = (kind, size, tilt, roll, t, at = 50) => `<b class="tcg-ring ${kind}" style="--w:${size}cqw;--tilt:${tilt}deg;--roll:${roll}deg;--t:${t}s;--at:${at}%"><b></b></b>`;
+const ring = (kind, size, tilt, roll, spin, at = 50) => `<b class="tcg-ring ${kind}" style="--w:${size}cqw;--tilt:${tilt}deg;--roll:${roll}deg;--t:${spin}s;--at:${at}%"><b></b></b>`;
 // A wing of feathers of light, its shoulder on the left: long flight feathers along the arm
 // and shorter ones over them (card.css mirrors it for the left wing).
 const wing = (() => {
@@ -243,12 +243,12 @@ export const orientation = {
   // a after b: b first, then a in the screen's frame.
   times([ax, ay, az, aw], [bx, by, bz, bw]) { return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz]; },
   unit(q) { const length = Math.hypot(...q) || 1; return q.map(v => v / length); },
-  // From a toward b by t (0 to 1), the short way round.
-  toward(a, b, t) {
+  // From a toward b by share (0 to 1), the short way round.
+  toward(a, b, share) {
     let dot = a.reduce((sum, v, i) => sum + v * b[i], 0);
     if (dot < 0) { b = b.map(v => -v); dot = -dot; }
-    if (dot > 0.9995) return orientation.unit(a.map((v, i) => v + (b[i] - v) * t));
-    const angle = Math.acos(dot), s = Math.sin(angle), wa = Math.sin((1 - t) * angle) / s, wb = Math.sin(t * angle) / s;
+    if (dot > 0.9995) return orientation.unit(a.map((v, i) => v + (b[i] - v) * share));
+    const angle = Math.acos(dot), s = Math.sin(angle), wa = Math.sin((1 - share) * angle) / s, wb = Math.sin(share * angle) / s;
     return a.map((v, i) => v * wa + b[i] * wb);
   },
   // Where the front faces: its normal (z toward the viewer).

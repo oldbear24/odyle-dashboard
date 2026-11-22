@@ -8,9 +8,9 @@
 // only, so they need no account. Images (the game's icons, the character's portrait) come
 // from the Odyle server only (backend/odyle/armoryimages.go). Its paths, the titles of its pages
 // and the class emblems are in armorylinks.js, which the rest of the dashboard uses without
-// loading this module: it loads with the armory's first page (main.js).
-import { t, tn, locale } from './i18n.js';
-import { age, escape as esc } from './model.js';
+// loading this module: it loads with the armory's first page (app/armory.js).
+import { t, tn } from './i18n.js';
+import { age, escape as esc, number } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { armoryRoute, profilePath, topPath, imageUrl, classBadge } from './armorylinks.js';
@@ -23,14 +23,13 @@ const regionLabel = region => regionNames()[searchRegions[region]] || '';
 // The character's page on PLAYNC's own site.
 export const playncPage = answer => `https://aion2.plaync.com/en-us/characters/${encodeURIComponent(answer.serverId)}/${encodeURIComponent(answer.characterId)}?region=${encodeURIComponent(answer.region)}`;
 
-const number = value => Number(value || 0).toLocaleString(locale());
 const percent = (part, whole) => whole ? Math.min(100, Math.round(part / whole * 100)) : 0;
 
 const picture = (base, name, kind = '') => { const src = imageUrl(base, name); return src ? `<img class="armory-img ${kind}" src="${esc(src)}" alt="" loading="lazy" decoding="async" draggable="false">` : ''; };
 const initials = name => [...String(name || '?')].slice(0, 2).join('').toUpperCase();
 
 // Bookmarks: characters this browser keeps in a list, newest first, each with the numbers of
-// its profile as last opened here. main.js keeps them in localStorage (odyle.armory.bookmarks).
+// its profile as last opened here. app/armory.js keeps them in localStorage (odyle.armory.bookmarks).
 export const bookmarkLimit = 50;
 export const bookmarkKey = c => `${c.region}/${c.serverId}/${c.characterId}`;
 // Saved bookmarks as far as they still make sense; anything else in storage is left out.
@@ -123,8 +122,8 @@ function progressLine(progress) {
 }
 // Where the lookup stands, with its progress bar while it runs and Refresh when it may.
 export function lookupStatus(answer, now, refreshable) {
-  const busy = waiting(answer), progress = answer.state === 'fetching' && answer.progress, percent = Math.min(100, Math.max(0, Number(progress?.percent) || 0));
-  const bar = progress ? `<span class="armory-track armory-progress" role="progressbar" aria-label="${esc(t('Lookup progress'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></span>` : '';
+  const busy = waiting(answer), progress = answer.state === 'fetching' && answer.progress, filled = Math.min(100, Math.max(0, Number(progress?.percent) || 0));
+  const bar = progress ? `<span class="armory-track armory-progress" role="progressbar" aria-label="${esc(t('Lookup progress'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${filled}"><i style="width:${filled}%"></i></span>` : '';
   return `<div class="armory-status ${busy ? 'is-waiting' : answer.state === 'failed' ? 'is-failed' : ''}" role="status">${busy ? '<span class="armory-spinner" aria-hidden="true"></span>' : icon('info')}<span>${esc(lookupLine(answer, now))}${bar}</span>${refreshable ? `<button class="button secondary" data-action="armory-refresh">${t('Refresh')}</button>` : ''}</div>`;
 }
 
@@ -262,7 +261,7 @@ function appearanceTab(p, images) {
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '±') + number(Math.abs(n));
 const stateNames = () => ({ big: t('Big upgrade'), some: t('Worth an upgrade'), small: t('Small upgrade'), even: t('On par') });
 // A rolled stat's value: a share ("13%") or a number.
-const rolledText = (value, percent) => number(value) + (percent ? '%' : '');
+const rolledText = (value, inPercent) => number(value) + (inPercent ? '%' : '');
 // What a piece of gear is behind the strongest by, in words.
 function upgradeReasons(row, sample) {
   const g = row.item, d = g?.detail, ref = row.ref, gaps = row.gaps;

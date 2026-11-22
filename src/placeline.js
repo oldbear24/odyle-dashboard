@@ -1,5 +1,5 @@
 // Where a character was last seen, on its row (placeButton): the map's name and how long ago.
-// The dialog it opens is places.js, which loads with it (main.js).
+// The dialog it opens is places.js, which loads with it (app/dialogs.js).
 import { t } from './i18n.js';
 import { escape as esc, age } from './model.js';
 import { icon } from './icons.js';

@@ -1,4 +1,4 @@
-// Reader & privacy in the account menu (main.js): what Odyle does with characters, rooms, the
+// Reader & privacy in the account menu (app/shell.js): what Odyle does with characters, rooms, the
 // checklist and the Windows app, how long it keeps a character's history (historyDays, as the
 // server keeps it) and what the reader never does (scope, as the welcome page says it). It
 // loads with the dialog.

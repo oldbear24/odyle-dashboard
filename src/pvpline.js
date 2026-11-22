@@ -1,11 +1,9 @@
 // A character's PvP counts on its row (pvpButton), while its player has PvP stats on: kills and
 // deaths, with the assists in its tooltip. The dialog it opens is pvp.js, which loads with it
-// (main.js).
-import { t, tn, locale } from './i18n.js';
-import { escape as esc } from './model.js';
+// (app/dialogs.js).
+import { t, tn } from './i18n.js';
+import { escape as esc, number } from './model.js';
 import { icon } from './icons.js';
-
-const number = n => (Number(n) || 0).toLocaleString(locale());
 
 export function pvpButton(c) {
   const p = c.pvp;

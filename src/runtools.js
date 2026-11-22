@@ -1,4 +1,4 @@
-// What a room does with a planned run now and then, loaded the first time (main.js): the form
+// What a room does with a planned run now and then, loaded the first time (app/room.js): the form
 // that changes it and calendar files of one run or of every run you go to.
 import { t } from './i18n.js';
 import { escape as esc, timestamp } from './model.js';

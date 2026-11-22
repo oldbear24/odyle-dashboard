@@ -10,7 +10,8 @@ import cs from '../../src/locales/cs.js';
 const literal = "(?:'((?:[^'\\\\]|\\\\.)*)'|\"((?:[^\"\\\\]|\\\\.)*)\"|`((?:[^`$\\\\]|\\\\.)*)`)";
 const unescape = text => text.replace(/\\(['"`])/g, '$1');
 const value = (m, at) => unescape(m[at] ?? m[at + 1] ?? m[at + 2]);
-function sources(directory, ending, keep = () => true) { return readdirSync(directory).filter(name => name.endsWith(ending) && keep(name)).map(name => readFileSync(join(directory, name), 'utf8')); }
+// Recursive: the dashboard's feature modules live in src/app.
+function sources(directory, ending, keep = () => true) { return readdirSync(directory, { recursive: true }).filter(name => name.endsWith(ending) && keep(name)).map(name => readFileSync(join(directory, name), 'utf8')); }
 test('every dashboard text and backend message has a Czech translation', async () => {
   const missing = [];
   for (const source of sources('src', '.js')) {
