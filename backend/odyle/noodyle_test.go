@@ -15,7 +15,7 @@ func TestACharacterWithoutOdyleIsMarkedUntilItsFirstReading(t *testing.T) {
 		t.Fatal(err)
 	}
 	player, other := newUser(t, app, "Newcomer"), newUser(t, app, "Other")
-	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
+	desk, session := pairedReader(t, app, player)
 	fresh := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Sprout", "server": "Lumiel", "region": "GLOBAL_EU"})
 	read := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Veteran", "server": "Lumiel", "region": "GLOBAL_EU", "value": 90, "confirmed": true, "lastReadingAt": "2026-10-17 10:00:00.000Z"})
 	raw, err := player.NewAuthToken()
@@ -34,7 +34,7 @@ func TestACharacterWithoutOdyleIsMarkedUntilItsFirstReading(t *testing.T) {
 		{Name: "a character not read yet is marked", Method: http.MethodPost, URL: "/api/odyle/no-odyle", Headers: auth, Body: strings.NewReader(`{"characterId":"` + fresh.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"odyleLocked":true`}},
 		{Name: "a character with a reading has Odyle", Method: http.MethodPost, URL: "/api/odyle/no-odyle", Headers: auth, Body: strings.NewReader(`{"characterId":"` + read.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"odyleLocked":false`}},
 		{Name: "an unknown character", Method: http.MethodPost, URL: "/api/odyle/no-odyle", Headers: auth, Body: strings.NewReader(`{"characterId":"missingchar0000"}`), ExpectedStatus: 404, ExpectedContent: []string{"This character no longer exists."}},
-		{Name: "its first reading clears the mark", Method: http.MethodPost, URL: "/api/odyle/report", Headers: auth, Body: strings.NewReader(reading), ExpectedStatus: 200, ExpectedContent: []string{`"odyleLocked":false`, `"value":15`}},
+		{Name: "its first reading clears the mark", Method: http.MethodPost, URL: "/api/odyle/report", Headers: desk, Body: strings.NewReader(reading), ExpectedStatus: 200, ExpectedContent: []string{`"odyleLocked":false`, `"value":15`}},
 	} {
 		s.TestAppFactory, s.DisableTestAppCleanup = reuse, true
 		s.Test(t)

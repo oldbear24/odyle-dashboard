@@ -329,7 +329,7 @@ async function loadRoom() {
     roomAgain = true;
     return;
   } // older than a change drawn meanwhile
-  const dungeons = snapshot.dungeons || [];
+  const catalog = snapshot.catalog || [];
   Object.assign(state, {
     room: snapshot.room,
     remindersPaused: Boolean(snapshot.remindersPaused),
@@ -344,8 +344,8 @@ async function loadRoom() {
     members: snapshot.members,
     wishlist: snapshot.wishlist || [],
     runs: snapshot.runs || [],
-    dungeons,
-    catalog: snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })),
+    dungeons: catalog.map(d => d.name),
+    catalog,
     readers: snapshot.readers || state.readers,
     serverOffset: Date.parse(snapshot.serverNow) - Date.now(),
     online: true,
@@ -897,7 +897,10 @@ onAction({
   },
   'add-all': async () => {
     const id = state.room.id,
-      result = await send('sharing', { roomId: id, enabled: true });
+      characterIds = mine()
+        .filter(c => !c.shared)
+        .map(c => c.id),
+      result = await send('sharing', { roomId: id, characterIds, enabled: true });
     changedRoom(id, () => applyShared(me(), result.sharedCharacters));
   },
   'leave-room': () =>

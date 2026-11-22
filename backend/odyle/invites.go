@@ -96,8 +96,7 @@ func joinable(app core.App, userId string) error {
 	return nil
 }
 
-// roomInvites makes a player and a viewer link with the default lifetime: for a new room,
-// and for dashboards from before links were made one by one (invites).
+// roomInvites makes a player and a viewer link with the default lifetime, for a new room.
 func roomInvites(app core.App, room *Room, userId string) ([]any, error) {
 	reporter, err := invite(app, room, userId, inviteOptions{role: "reporter", lifetime: defaultInviteLifetime})
 	if err != nil {
@@ -115,31 +114,6 @@ var codeSeparators = regexp.MustCompile(`[\s\x{a0}\x{1680}\x{2000}-\x{200a}\x{20
 // normalizeCode drops spaces and dashes of a typed code and upper-cases it.
 func normalizeCode(code string) string {
 	return strings.ToUpper(codeSeparators.ReplaceAllString(code, ""))
-}
-
-// invites replaces every link of the room with a new player and viewer link, for
-// dashboards from before links were made and revoked one by one.
-func invites(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		room, err := manager(app, user.Id, b.str("roomId"))
-		if err != nil {
-			return nil, err
-		}
-		old, err := list(app, "room_invites", "room = {:room}", dbx.Params{"room": room.Id})
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range old {
-			if err := app.Delete(r); err != nil {
-				return nil, err
-			}
-		}
-		fresh, err := roomInvites(app, room, user.Id)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"invites": fresh}, nil
-	})
 }
 
 // inviteCreate makes one invite link for the owner: a role (player by default), a

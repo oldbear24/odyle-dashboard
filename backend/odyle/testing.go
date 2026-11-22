@@ -124,6 +124,20 @@ func fixtures(se *core.ServeEvent) {
 		token, err := user.NewAuthToken()
 		return map[string]any{"token": token, "record": user}, err
 	})
+	// A PC paired with the account as the pair route pairs it, without that route's rate limit:
+	// the app's token, its account and its device key. The reader routes take only a paired PC.
+	fixture(se, "paired-app", func(e *core.RequestEvent, b body) (any, error) {
+		user, err := e.App.FindRecordById("users", b.str("user"))
+		if err != nil {
+			return nil, err
+		}
+		key, device, err := newDevice(e.App, user.Id, deviceName(b["name"]))
+		if err != nil {
+			return nil, err
+		}
+		token, err := appToken(user, device)
+		return map[string]any{"token": token, "record": user, "deviceKey": key}, err
+	})
 	// An operator signed in to the PocketBase dashboard, with the given password if any.
 	fixture(se, "superuser", func(e *core.RequestEvent, b body) (any, error) {
 		su, err := e.App.FindAuthRecordByEmail(core.CollectionNameSuperusers, "operator@test.invalid")
@@ -236,7 +250,7 @@ func fixtures(se *core.ServeEvent) {
 			role = b.str("role")
 		}
 		for i := 0; i < count(b["count"]); i++ {
-			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i), "cost": 40})
+			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i)})
 			if err != nil {
 				return nil, err
 			}
@@ -257,12 +271,22 @@ func fixtures(se *core.ServeEvent) {
 		return save(e.App, "characters", map[string]any{"user": b["user"], "characterName": "Legacy", "server": "EU", "region": "GLOBAL_EU", "value": 123, "confirmed": true, "valid": true, "source": "manual", "lastReadingAt": "2026-10-12 12:00:00.000Z"})
 	})
 	fixture(se, "legacy-room", func(e *core.RequestEvent, b body) (any, error) {
-		room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Legacy room", "cost": 40})
+		room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Legacy room"})
 		if err != nil {
 			return nil, err
 		}
 		_, err = save(e.App, "room_members", map[string]any{"room": room.Id, "user": b["user"], "role": "owner", "sharing": true})
 		return room, err
+	})
+	// Invite links made before links had a maker, a label or a use limit: a player and a viewer
+	// link, as dashboards of that time made them.
+	fixture(se, "legacy-invites", func(e *core.RequestEvent, b body) (any, error) {
+		room, err := findAs[Room](e.App, "party_rooms", b.str("room"))
+		if err != nil {
+			return nil, err
+		}
+		invites, err := roomInvites(e.App, room, b.str("user"))
+		return map[string]any{"invites": invites}, err
 	})
 	// A dungeon catalog of plain names, as saved before catalog entries.
 	fixture(se, "legacy-catalog", func(e *core.RequestEvent, b body) (any, error) {

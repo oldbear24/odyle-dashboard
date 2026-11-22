@@ -67,8 +67,9 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           tests=$(grep -ho '^func Test[A-Za-z0-9_]*' odyle/*_test.go | cut -c6- | grep -v '^TestMain$' | sort -u | awk -v shard="$SHARD" '(NR - 1) % 3 == shard - 1' | paste -sd '|')
-          go test -race -run "^(${tests})\$" ./odyle
-          if [ "$SHARD" = 1 ]; then go test -race $(go list ./... | grep -v '/odyle$'); fi
+          # The migrations package alone runs close to go test's default 10-minute limit under -race.
+          go test -race -timeout 25m -run "^(${tests})\$" ./odyle
+          if [ "$SHARD" = 1 ]; then go test -race -timeout 25m $(go list ./... | grep -v '/odyle$'); fi
 
   go-fuzz:
     name: "Go: fuzzing"

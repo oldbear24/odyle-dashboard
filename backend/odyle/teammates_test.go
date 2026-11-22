@@ -98,18 +98,14 @@ func TestAccountsTurnSendingTeammatesOff(t *testing.T) {
 	player := newUser(t, app, "Leader")
 	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
 	c := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Scout", "server": "Lumiel", "region": "GLOBAL_EU"})
-	raw, err := player.NewAuthToken()
-	if err != nil {
-		t.Fatal(err)
-	}
-	auth := map[string]string{"Authorization": raw}
+	auth, key, _ := pairedPC(t, app, player)
 	names := func(list string) string {
 		return `{"sessionId":"` + session.Id + `","characterId":"` + c.Id + `","adapter":"global-teammates-v1","names":` + list + `}`
 	}
 	says := func(want bool) {
 		t.Helper()
 		beat := ask(t, app, http.MethodPost, "/api/odyle/heartbeat", auth, `{"sessionId":"`+session.Id+`"}`, 200)
-		fresh := ask(t, app, http.MethodPost, "/api/odyle/session", auth, `{}`, 200)
+		fresh := ask(t, app, http.MethodPost, "/api/odyle/session", auth, `{"deviceKey":"`+key+`"}`, 200)
 		account := ask(t, app, http.MethodGet, "/api/odyle/account", auth, "", 200)
 		if beat["shareTeammates"] != want || fresh["shareTeammates"] != want || account["shareTeammates"] != want {
 			t.Fatalf("want %v: heartbeat %v, session %v, account %v", want, beat["shareTeammates"], fresh["shareTeammates"], account["shareTeammates"])

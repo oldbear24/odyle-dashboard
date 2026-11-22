@@ -142,13 +142,12 @@ func (c settingChange) list() bool {
 }
 
 // flatten turns settings into their values by path, as the API writes them: objects one
-// level deep (clock.tick), lists whole. `dungeons` is left out, the catalog's names again.
+// level deep (clock.tick), lists whole.
 func flatten(s settings) map[string]any {
 	top := map[string]any{}
 	if raw, err := json.Marshal(s); err != nil || json.Unmarshal(raw, &top) != nil {
 		return map[string]any{}
 	}
-	delete(top, "dungeons")
 	out := map[string]any{}
 	for key, value := range top {
 		if inner, ok := value.(map[string]any); ok {

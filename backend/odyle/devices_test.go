@@ -5,13 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/security"
 )
 
 // A paired app's token names its PC and works only while the PC is paired: forgetting the PC
-// under Account & data cuts it off at once, it cannot mint itself a new device key, and it can
-// still pair again with a new code. The browser that forgot it stays signed in.
+// under Account & data cuts it off at once, and it can still pair again with a new code. The browser that forgot it stays signed in.
 func TestForgettingAPCCutsItsTokenOff(t *testing.T) {
 	app := newTestApp(t)
 	player := newUser(t, app, "Pairer")
@@ -31,9 +29,6 @@ func TestForgettingAPCCutsItsTokenOff(t *testing.T) {
 		t.Fatalf("the app token lasts until %v", time.Unix(int64(exp), 0))
 	}
 	ask(t, app, "GET", "/api/odyle/rooms", desk, "", 200)
-	if got := ask(t, app, "POST", "/api/odyle/desktop-device", desk, `{}`, 403); got["message"] != "This PC is already paired." {
-		t.Fatalf("a paired app minted a key: %v", got)
-	}
 	// Signing in with the device key gives a token bound to the same PC.
 	signedIn := ask(t, app, "POST", "/api/odyle/desktop-sign-in", desk, `{"deviceKey":"`+key+`"}`, 200)
 	again, _ := security.ParseUnverifiedJWT(signedIn["token"].(string))
@@ -45,7 +40,6 @@ func TestForgettingAPCCutsItsTokenOff(t *testing.T) {
 	ask(t, app, "GET", "/api/odyle/rooms", desk, "", 401)
 	ask(t, app, "GET", "/api/odyle/export", desk, "", 401)
 	ask(t, app, "GET", "/api/odyle/rooms", map[string]string{"Authorization": signedIn["token"].(string)}, "", 401)
-	ask(t, app, "POST", "/api/odyle/desktop-device", desk, `{}`, 401)
 	if got := ask(t, app, "POST", "/api/odyle/desktop-sign-in", desk, `{"deviceKey":"`+key+`"}`, 401); got["message"] != "This PC is no longer paired with an account." {
 		t.Fatalf("sign-in after forgetting: %v", got)
 	}
@@ -53,8 +47,10 @@ func TestForgettingAPCCutsItsTokenOff(t *testing.T) {
 	// The forgotten PC pairs again with a new code, sending its old token as apps do.
 	desk, _ = pairOnce(desk)
 	ask(t, app, "GET", "/api/odyle/rooms", desk, "", 200)
-	// A browser's token is not bound to a PC and may still give an old app its key.
-	ask(t, app, "POST", "/api/odyle/desktop-device", browser, `{}`, 200)
+	// Nobody mints a device key with a token any more (1.0.0): the route that gave apps paired
+	// before device keys theirs is gone, for a browser and a paired app alike.
+	ask(t, app, "POST", "/api/odyle/desktop-device", browser, `{}`, 404)
+	ask(t, app, "POST", "/api/odyle/desktop-device", desk, `{}`, 404)
 }
 
 // The expiry job ends pairings no app signed in with for half a year.
@@ -77,22 +73,40 @@ func TestUnusedPairingsEnd(t *testing.T) {
 	}
 }
 
-// An account keeps a few reader sessions opened without a device key; older ones end.
-func TestKeylessReaderSessionsAreCapped(t *testing.T) {
+// The reader routes take only a paired PC (1.0.0): a session needs the PC's device key, and
+// readings and character saves come only with the token of the PC that opened the session. An
+// app paired before device keys (its token a browser's) is told with a 401 to pair again.
+func TestReaderRoutesTakeOnlyAPairedPC(t *testing.T) {
 	app := newTestApp(t)
-	player := newUser(t, app, "Flooder")
-	auth := tokenOf(t, player)
-	first := ask(t, app, "POST", "/api/odyle/session", auth, `{}`, 200)["sessionId"].(string)
-	for i := 0; i < keylessSessions+5; i++ {
-		ask(t, app, "POST", "/api/odyle/session", auth, `{}`, 200)
+	player := newUser(t, app, "Reader")
+	browser := tokenOf(t, player)
+	desk, other := pairWith(t, app, browser, "DESK"), pairWith(t, app, browser, "LAPTOP")
+	for _, auth := range []map[string]string{browser, desk.auth} {
+		if got := ask(t, app, "POST", "/api/odyle/session", auth, `{}`, 401); got["message"] != pairAgain {
+			t.Fatalf("a session without a device key: %v", got)
+		}
 	}
-	var open int
-	if err := app.DB().NewQuery("SELECT COUNT(*) FROM publisher_sessions WHERE user = {:user}").Bind(dbx.Params{"user": player.Id}).Row(&open); err != nil || open != keylessSessions {
-		t.Fatalf("%d sessions open (%v)", open, err)
+	ask(t, app, "POST", "/api/odyle/session", desk.auth, `{"deviceKey":"unknown"}`, 401)
+	session := ask(t, app, "POST", "/api/odyle/session", desk.auth, `{"deviceKey":"`+desk.key+`"}`, 200)["sessionId"].(string)
+	reading := func(sequence int) string {
+		return `{"sessionId":"` + session + `","sequence":` + strings.Repeat("1", sequence) + `,"value":15,"characterName":"Hero","server":"Lumiel","region":"GLOBAL_EU","source":"packet","parserVersion":"` + acceptedAdapters(app)[0] + `","confirmed":true}`
 	}
-	if _, err := app.FindRecordById("publisher_sessions", first); err == nil {
-		t.Fatal("the oldest session stays open")
+	// Another token, the browser's or another PC's of the same account, sends nothing in its name.
+	for _, auth := range []map[string]string{browser, other.auth} {
+		if got := ask(t, app, "POST", "/api/odyle/report", auth, reading(1), 401); got["message"] != pairAgain {
+			t.Fatalf("a reading with another token: %v", got)
+		}
 	}
+	ask(t, app, "POST", "/api/odyle/report", desk.auth, reading(1), 200)
+	// A session from before 1.0.0 without a PC takes no reading, even from a paired app.
+	keyless := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
+	ask(t, app, "POST", "/api/odyle/report", desk.auth, strings.Replace(reading(2), session, keyless.Id, 1), 401)
+	// Character saves likewise.
+	character := `{"characterName":"Alt","server":"Lumiel","region":"GLOBAL_EU"}`
+	if got := ask(t, app, "POST", "/api/odyle/character", browser, character, 401); got["message"] != pairAgain {
+		t.Fatalf("a character saved by a browser: %v", got)
+	}
+	ask(t, app, "POST", "/api/odyle/character", desk.auth, character, 200)
 }
 
 // An account's readings have a budget per minute.
@@ -120,10 +134,10 @@ func TestReadingsHaveAPerAccountBudget(t *testing.T) {
 func TestOnlyOwnReadingsNameAdapters(t *testing.T) {
 	app := newTestApp(t)
 	player := newUser(t, app, "Prankster")
-	auth := tokenOf(t, player)
+	auth, key, _ := pairedPC(t, app, player)
 	ask(t, app, "POST", "/api/odyle/report", auth, `{"sessionId":"nope","sequence":1,"value":1,"parserVersion":"https://example.invalid/click"}`, 403)
 	ask(t, app, "POST", "/api/odyle/report", auth, `{"sessionId":"nope","sequence":1,"value":1,"parserVersion":"plausible-v9"}`, 403)
-	session := ask(t, app, "POST", "/api/odyle/session", auth, `{}`, 200)["sessionId"].(string)
+	session := ask(t, app, "POST", "/api/odyle/session", auth, `{"deviceKey":"`+key+`"}`, 200)["sessionId"].(string)
 	ask(t, app, "POST", "/api/odyle/report", auth, `{"sessionId":"`+session+`","sequence":1,"value":1,"characterName":"Hero","server":"Lumiel","region":"GLOBAL_EU","parserVersion":"has spaces"}`, 400)
 	if seen := seenAdapters(app); len(seen) != 0 {
 		t.Fatalf("seen %v", seen)

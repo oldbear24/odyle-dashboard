@@ -392,11 +392,7 @@ func (r *Run) Invited() []string { return stringSlice(r.Record, "invited") }
 // SetStart moves the run; Discord announces it again (remindRuns).
 func (r *Run) SetStart(startsAt string) {
 	r.Set("startsAt", startsAt)
-	r.Set("remindedAt", "")
 }
-
-// Reminded notes that Discord announced the run.
-func (r *Run) Reminded() { r.Set("remindedAt", now()) }
 
 // Picks maps a membership to the character it brings to the run.
 func (r *Run) Picks() map[string]string {

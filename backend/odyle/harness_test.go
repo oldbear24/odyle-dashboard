@@ -72,8 +72,8 @@ func newTestApp(t testing.TB) *tests.TestApp {
 		t.Fatal(err)
 	}
 	Register(app)
-	// Every request of a test serves, which would start moving files into S3 storage and importing
-	// old armory images in the background; tests run them themselves.
+	// Every request of a test serves, which would start moving files into S3 storage in the
+	// background; tests run it themselves.
 	stateOf(app).byHand.Store(true)
 	// PocketBase starts its cron when the app serves, and every request of a test serves, so
 	// the jobs ran whenever a minute began, even while a test tore its app down (a data race
@@ -119,6 +119,29 @@ func saved(t testing.TB, app core.App, collection string, values map[string]any)
 		t.Fatal(err)
 	}
 	return record
+}
+
+// pairedReader pairs a PC with the account and opens a reader session for it, as the reader
+// routes take them since 1.0.0: the PC's app token (for /report and /character) and the session.
+func pairedReader(t testing.TB, app core.App, user *core.Record) (map[string]string, *core.Record) {
+	t.Helper()
+	auth, _, device := pairedPC(t, app, user)
+	session := saved(t, app, "publisher_sessions", map[string]any{"user": user.Id, "device": device.Id, "expiresAt": expiry(86400)})
+	return auth, session
+}
+
+// pairedPC pairs a PC with the account: its app token, its device key and its pairing.
+func pairedPC(t testing.TB, app core.App, user *core.Record) (map[string]string, string, *Device) {
+	t.Helper()
+	key, device, err := newDevice(app, user.Id, "TEST-PC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := appToken(user, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string]string{"Authorization": token}, key, device
 }
 
 // share shares the characters in the membership's room (room_shares).

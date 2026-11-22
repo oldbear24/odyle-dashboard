@@ -36,6 +36,7 @@ func TestPvpStatsAreOptInAndForgottenWhenTurnedOff(t *testing.T) {
 	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
 	theirSession := saved(t, app, "publisher_sessions", map[string]any{"user": other.Id, "expiresAt": expiry(86400)})
 	c := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Hero", "server": "Lumiel", "region": "GLOBAL_EU"})
+	_, key, _ := pairedPC(t, app, player)
 	hidden := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Alt", "server": "Lumiel", "region": "GLOBAL_EU"})
 	room := saved(t, app, "party_rooms", map[string]any{"owner": player.Id, "name": "Raid", "cost": 40})
 	sharingMember(t, app, map[string]any{"room": room.Id, "user": player.Id, "role": "owner"}, c.Id)
@@ -70,7 +71,7 @@ func TestPvpStatsAreOptInAndForgottenWhenTurnedOff(t *testing.T) {
 		tests.ApiScenario{Name: "the switch takes true or false", Method: http.MethodPost, URL: "/api/odyle/pvp-stats", Headers: auth, Body: strings.NewReader(`{"enabled":1}`), ExpectedStatus: 400, ExpectedContent: []string{"PvP stats must be true or false."}},
 		tests.ApiScenario{Name: "the owner turns it on", Method: http.MethodPost, URL: "/api/odyle/pvp-stats", Headers: auth, Body: strings.NewReader(`{"enabled":true}`), ExpectedStatus: 200, ExpectedContent: []string{`"pvpStats":true`}},
 		tests.ApiScenario{Name: "the heartbeat says it is on", Method: http.MethodPost, URL: "/api/odyle/heartbeat", Headers: auth, Body: strings.NewReader(`{"sessionId":"` + session.Id + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"pvpStats":true`}},
-		tests.ApiScenario{Name: "a new session says it is on", Method: http.MethodPost, URL: "/api/odyle/session", Headers: auth, Body: strings.NewReader(`{}`), ExpectedStatus: 200, ExpectedContent: []string{`"pvpStats":true`}},
+		tests.ApiScenario{Name: "a new session says it is on", Method: http.MethodPost, URL: "/api/odyle/session", Headers: auth, Body: strings.NewReader(`{"deviceKey":"` + key + `"}`), ExpectedStatus: 200, ExpectedContent: []string{`"pvpStats":true`}},
 		tests.ApiScenario{Name: "the account answer says it is on", Method: http.MethodGet, URL: "/api/odyle/account", Headers: auth, ExpectedStatus: 200, ExpectedContent: []string{`"pvpStats":true`, `"pvpDays":90`}},
 		post("another account's character", theirs, send(theirSession.Id, c.Id, kill), 403, "This character belongs to another account."),
 		post("an unknown adapter", auth, strings.NewReader(`{"sessionId":"`+session.Id+`","characterId":"`+c.Id+`","adapter":"global-pvp-v0","events":[`+kill+`]}`), 400, "This PvP adapter is not accepted."),

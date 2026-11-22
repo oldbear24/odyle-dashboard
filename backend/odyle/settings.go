@@ -234,17 +234,6 @@ func checkMaintenance(value any) (maintenanceWindow, error) {
 	return maintenanceWindow{Day: day, Hour: int64(hour), Hours: int64(hours)}, nil
 }
 
-// The superuser settings answer lists the catalog's entries as `catalog` and keeps
-// `dungeons` the list of names it always was, which admin pages opened before catalog
-// entries still read and send back (writeSettings).
-func (s settings) MarshalJSON() ([]byte, error) {
-	type entries settings
-	return json.Marshal(struct {
-		entries
-		Names []string `json:"dungeons"`
-	}{entries(s), dungeonNames(s.Dungeons)})
-}
-
 func defaultSettings() settings {
 	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, PvpDays: defaultPvpDays, ArmoryLanes: defaultArmoryLanes, ScoutLanes: defaultScoutLanes, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
 }
@@ -476,9 +465,9 @@ func catalogEntry(item any) (dungeonEntry, error) {
 }
 
 // catalog checks a dungeon catalog to save, up to 200 dungeons. A dungeon listed twice,
-// regardless of case and spacing, keeps its first entry and spelling. A name alone takes
-// the details `kept` holds for that dungeon (none: it costs Odyle per cube).
-func catalog(value any, kept []dungeonEntry) ([]dungeonEntry, error) {
+// regardless of case and spacing, keeps its first entry and spelling. A name alone has no
+// details: it costs Odyle per cube.
+func catalog(value any) ([]dungeonEntry, error) {
 	items, ok := value.([]any)
 	if !ok {
 		return nil, badRequest("Dungeons must be a list of names.")
@@ -488,11 +477,6 @@ func catalog(value any, kept []dungeonEntry) ([]dungeonEntry, error) {
 		entry, err := catalogEntry(item)
 		if err != nil {
 			return nil, err
-		}
-		if _, named := item.(string); named {
-			if at := slices.IndexFunc(kept, func(k dungeonEntry) bool { return strings.EqualFold(k.Name, entry.Name) }); at >= 0 {
-				entry = dungeonEntry{Name: entry.Name, Cost: kept[at].Cost, PartySize: kept[at].PartySize, Category: kept[at].Category, Unconfirmed: kept[at].Unconfirmed}
-			}
 		}
 		if key := strings.ToLower(entry.Name); !seen[key] {
 			seen[key] = true
@@ -515,15 +499,6 @@ func storedCatalog(value any) []dungeonEntry {
 		if entry, err := catalogEntry(item); err == nil {
 			out = append(out, entry)
 		}
-	}
-	return out
-}
-
-// dungeonNames are the names of the catalog, the snapshot's `dungeons`.
-func dungeonNames(entries []dungeonEntry) []string {
-	out := make([]string, len(entries))
-	for i, entry := range entries {
-		out[i] = entry.Name
 	}
 	return out
 }
@@ -683,15 +658,13 @@ func writeSettings(app core.App, b body) (settings, error) {
 			return settings{}, err
 		}
 	}
-	// `catalog` saves the entries as given. `dungeons`, which admin pages from before catalog
-	// entries send with every save of their game settings, is a list of names: each keeps
-	// the details saved for that dungeon, so such a page never wipes the costs.
+	// `catalog` saves the entries as given. `dungeons`, the names admin pages from before
+	// catalog entries sent, is refused since 1.0.0 rather than ignored.
+	if b.has("dungeons") {
+		return settings{}, badRequest("Send the dungeon catalog as catalog.")
+	}
 	if b.has("catalog") {
-		if next.Dungeons, err = catalog(b["catalog"], nil); err != nil {
-			return settings{}, err
-		}
-	} else if b.has("dungeons") {
-		if next.Dungeons, err = catalog(b["dungeons"], next.Dungeons); err != nil {
+		if next.Dungeons, err = catalog(b["catalog"]); err != nil {
 			return settings{}, err
 		}
 	}

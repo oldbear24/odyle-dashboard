@@ -413,10 +413,13 @@ export default {
   'Only character name, server and region may be saved here.': 'Tady lze uložit jen jméno postavy, server a region.',
   'Viewers cannot share characters with this room.': 'Diváci nemohou s touto místností sdílet postavy.',
   'Sharing must be true or false.': 'Sdílení musí být true nebo false.',
+  'Choose the characters to share.': 'Vyber postavy, které chceš sdílet.',
   'Use close to delete an owned room. Characters are retained.': 'Vlastní místnost smažeš zavřením. Postavy zůstanou.',
   'Pairing code is invalid or expired.': 'Párovací kód je neplatný nebo vypršel.',
   'This PC is no longer paired with an account.': 'Tento počítač už není spárovaný s žádným účtem.',
-  'This PC is already paired.': 'Tento počítač už je spárovaný.',
+  "This PC's pairing is from an older Odyle and no longer works. Pair it again: copy a new connection link from the dashboard.":
+    'Spárování tohoto počítače pochází ze starší verze Odyle a už nefunguje. Spáruj ho znovu: zkopíruj z dashboardu nový odkaz pro připojení.',
+  'Send the dungeon catalog as catalog.': 'Katalog dungeonů pošli jako catalog.',
   'Too many readings from this account. Odyle tries again in a minute.':
     'Z tohoto účtu přichází příliš mnoho údajů. Odyle to zkusí znovu za minutu.',
   'This run is no longer planned.': 'Tento run už není naplánovaný.',

@@ -85,28 +85,6 @@ func TestArmoryLookupsKeepTheTopPlayers(t *testing.T) {
 	}
 }
 
-// The profiles kept before 0.62.0 join the top players from what they hold, hidden ones hidden.
-func TestKeptProfilesJoinTheTopPlayers(t *testing.T) {
-	app := newTestApp(t)
-	for i, hidden := range []bool{false, true} {
-		saved(t, app, "armory_profiles", map[string]any{"region": "eu", "serverId": 2304, "characterId": fmt.Sprintf("AAAAAAAAAAAAAAAAAAAAAAA%d", i), "fetchedAt": ago(time.Hour), "viewedAt": ago(time.Hour), "hidden": hidden,
-			"profile": map[string]any{"v": armoryVersion, "name": fmt.Sprintf("Kept%d", i), "class": "Cleric", "level": 45, "combatPower": 5000 + i, "portrait": "portrait-x.jpg", "gear": []any{map[string]any{"slot": "MainHand", "name": "Mace"}}}})
-	}
-	saved(t, app, "armory_profiles", map[string]any{"region": "eu", "serverId": 2304, "characterId": "NotFetchedYetAAAAAAAAAA", "viewedAt": ago(time.Hour)})
-	if n, err := rankKeptProfiles(app, 10); err != nil || n != 2 {
-		t.Fatalf("ranked %d (%v)", n, err)
-	}
-	if row, ok := rankAt(t, app, "AAAAAAAAAAAAAAAAAAAAAAA0"); !ok || row.Name != "Kept0" || row.CombatPower != 5000 || row.Portrait != "portrait-x.jpg" || row.BuiltAt == "" || row.Hidden {
-		t.Fatalf("kept %+v", row)
-	}
-	if row, _ := rankAt(t, app, "AAAAAAAAAAAAAAAAAAAAAAA1"); !row.Hidden {
-		t.Fatal("a hidden profile is ranked")
-	}
-	if n, err := rankKeptProfiles(app, 10); err != nil || n != 0 {
-		t.Fatalf("ranked again: %d (%v)", n, err)
-	}
-}
-
 // The top players page lists the classes in their class ids' order with how many characters of
 // each the armory knows, and the strongest of the class asked for, hidden ones left out.
 func TestTopPlayersByClass(t *testing.T) {

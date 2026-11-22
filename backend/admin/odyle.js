@@ -132,8 +132,6 @@ function describe(p) {
       return named('PC paired', p.name);
     case 'desktop-sign-in':
       return named('Paired PC signed in', p.name);
-    case 'desktop-device':
-      return named('Device key for an older pairing', p.name);
     case 'unpair':
       return 'PC disconnected its pairing';
     case 'create':
@@ -146,8 +144,6 @@ function describe(p) {
       return 'Left ' + room(p);
     case 'close':
       return 'Closed ' + room(p);
-    case 'invites':
-      return 'New invites for ' + room(p);
     case 'invite-create':
       return 'New ' + (p.role === 'viewer' ? 'viewer' : 'player') + ' invite link for ' + room(p);
     case 'invite-revoke':
@@ -2394,7 +2390,7 @@ const jobInfo = {
     schedule: () => 'Every minute',
     unit: 'PLAYNC pages read',
     about:
-      "PLAYNC lists no rankings for Global, so this builds the armory's top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then the characters Odyle's accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC's character search (random servers, classes and letters); while no reader waits, the gear of the strongest top-500 characters not read for 14 days, each of the scout's lanes one every 3 minutes at most, so they read at once. Profiles kept before 0.62.0 join first, without asking PLAYNC. Paused with the armory, and while PLAYNC refuses the server.",
+      "PLAYNC lists no rankings for Global, so this builds the armory's top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then the characters Odyle's accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC's character search (random servers, classes and letters); while no reader waits, the gear of the strongest top-500 characters not read for 14 days, each of the scout's lanes one every 3 minutes at most, so they read at once. Paused with the armory, and while PLAYNC refuses the server.",
   },
   'odyle-release': {
     label: 'Release check',

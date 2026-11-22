@@ -144,28 +144,12 @@ func pair(e *core.RequestEvent) error {
 				return err
 			}
 			achieved(app, user.Id, nil, true)
-			result = map[string]any{"token": token, "record": user, "deviceKey": key}
+			result = withServerVersion(map[string]any{"token": token, "record": user, "deviceKey": key})
 			return nil
 		}); err != nil {
 			return err
 		}
 		return e.JSON(200, result)
-	})
-}
-
-// desktopDevice gives a device key to an app paired before keys existed; it asks with
-// its still-valid token. An app that has a key holds a token bound to it (devices.go),
-// which cannot mint another: a forgotten PC must not pair itself again.
-func desktopDevice(e *core.RequestEvent) error {
-	if requestDevice(e) != "" {
-		return forbidden("This PC is already paired.")
-	}
-	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		key, _, err := newDevice(app, user.Id, deviceName(b["name"]))
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"deviceKey": key}, nil
 	})
 }
 
@@ -201,7 +185,7 @@ func desktopSignIn(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"token": token, "record": user})
+		return e.JSON(200, withServerVersion(map[string]any{"token": token, "record": user}))
 	})
 }
 

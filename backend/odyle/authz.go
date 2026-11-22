@@ -157,9 +157,9 @@ func ownSession(app core.App, userId, id string) (*ReaderSession, error) {
 	return session, nil
 }
 
-// Odyle per cube is one server-wide value (odyle_settings, edited by superusers).
-// Rooms keep their legacy cost field, but every response reports the setting. A dungeon
-// of the catalog can cost its own amount (dungeonEntry), which only snapshots carry.
+// Odyle per cube is one server-wide value (odyle_settings, edited by superusers); a room's
+// `cost` reports it (rooms kept a value of their own until 1.0.0). A dungeon of the catalog can
+// cost its own amount (dungeonEntry), which only snapshots carry.
 func odylePerCube(app core.App) int64 { return readSettings(app).OdylePerCube }
 
 // The Discord webhook is a hidden field, so the public export never carries it; members

@@ -279,7 +279,7 @@ func TestArmoryKeepsItsImagesInTheS3Storage(t *testing.T) {
 	ask(t, app, "GET", armoryPath(id), nil, "", 200)
 	stateOf(app).armory.wait()
 	// Six images of the profile and the emblems of the Chanter and the Spiritmaster.
-	if kept := f.keys(images.Id + "/"); len(kept) != 8 || countOf(t, app, armoryImagesCollection) != 8 || exists(imageDir(app)) {
+	if kept := f.keys(images.Id + "/"); len(kept) != 8 || countOf(t, app, armoryImagesCollection) != 8 {
 		t.Fatalf("the bucket holds %v", kept)
 	}
 	body, _ := fetch(t, app, "/api/odyle/armory-images/ICON_CL_SKILL_001.png", 200)
@@ -381,69 +381,6 @@ func TestTheImageRouteForgetsImagesItsStorageLost(t *testing.T) {
 	}
 	if imageKept(app, "Icon_Lost.png") {
 		t.Fatal("a record whose file is gone was kept")
-	}
-}
-
-// The images kept before 0.61.0 become records: those in pb_data/armory_images, and those under
-// armory_images/ in the S3 storage, each deleted where it was. Until then the image route serves
-// them from there, and profiles are not fetched again for them.
-func TestImagesKeptBeforeBecomeRecords(t *testing.T) {
-	app := newTestApp(t)
-	dir := imageDir(app)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	icon, photo := pngOf(t, 64), pngOf(t, 80)
-	for name, content := range map[string][]byte{"Icon_Disk.png": icon, "portrait-disk.png": photo, ".download-1": []byte("cut off")} {
-		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// Not imported yet: served from the folder while the import runs, and no profile waits for it.
-	stateOf(app).importing.Store(true)
-	if body, _ := fetch(t, app, "/api/odyle/armory-images/Icon_Disk.png", 200); !bytes.Equal(body, icon) {
-		t.Fatal("an image kept before was not served from the folder")
-	}
-	if imagesMissing(app, `{"gear":[{"icon":"Icon_Disk.png"}]}`) {
-		t.Fatal("a profile is fetched again for an image being imported")
-	}
-	stateOf(app).importing.Store(false)
-	fetch(t, app, "/api/odyle/armory-images/Icon_Disk.png", 404)
-
-	imported, failed, failure := importLegacyImages(app)
-	if imported != 2 || failed != 0 || failure != "" || exists(dir) {
-		t.Fatalf("imported %d, failed %d (%s); folder left: %v", imported, failed, failure, exists(dir))
-	}
-	if body, _ := fetch(t, app, "/api/odyle/armory-images/Icon_Disk.png", 200); !bytes.Equal(body, icon) {
-		t.Fatal("the imported icon is not served")
-	}
-	if record, err := app.FindFirstRecordByData(armoryImagesCollection, "name", "portrait-disk.png"); err != nil || record.GetInt("size") != len(photo) {
-		t.Fatalf("the imported portrait: %v", err)
-	}
-
-	// In the S3 storage: one image only there, and one a record holds already.
-	f := newFakeS3(t)
-	f.useStorage(t, app)
-	keptImage(t, app, "Icon_Kept.png", icon)
-	f.mu.Lock()
-	f.objects[legacyKey("Icon_Bucket.png")] = fakeObject{body: icon, contentType: "image/png", at: time.Now()}
-	f.objects[legacyKey("Icon_Kept.png")] = fakeObject{body: icon, contentType: "image/png", at: time.Now()}
-	f.mu.Unlock()
-	stateOf(app).importing.Store(true)
-	if body, _ := fetch(t, app, "/api/odyle/armory-images/Icon_Bucket.png", 200); !bytes.Equal(body, icon) {
-		t.Fatal("an image kept before was not served from the bucket")
-	}
-	stateOf(app).importing.Store(false)
-	imported, failed, failure = importLegacyImages(app)
-	if imported != 1 || failed != 0 || failure != "" || len(f.keys(armoryImagesDir+"/")) != 0 {
-		t.Fatalf("imported %d, failed %d (%s); left %v", imported, failed, failure, f.keys(armoryImagesDir+"/"))
-	}
-	record, err := app.FindFirstRecordByData(armoryImagesCollection, "name", "Icon_Bucket.png")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if o, ok := f.object(fileKey(record, "file")); !ok || !bytes.Equal(o.body, icon) {
-		t.Fatal("the imported image's file is not in the bucket")
 	}
 }
 

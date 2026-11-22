@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
@@ -15,11 +14,6 @@ import (
 // row of history. An app sends a reading when a value it reads changes, a few a minute at
 // most, so the budget only stops a runaway or hand-made client.
 const readingsPerMinute = 120
-
-// Reader sessions opened without a device key (apps paired before device keys, or a
-// hand-made client) an account keeps open at most; the oldest end. A paired PC replaces its
-// own session, so these only stop a flood the expiry job could not keep up with.
-const keylessSessions = 5
 
 // readingWindow counts an account's readings in the current minute.
 type readingWindow struct {
@@ -49,19 +43,4 @@ func allowReading(app core.App, userId string, at time.Time) (bool, time.Duratio
 func tooManyReadings(e *core.RequestEvent, wait time.Duration) error {
 	e.Response.Header().Set("Retry-After", strconv.Itoa(max(1, int(wait.Seconds()+0.999))))
 	return apis.NewTooManyRequestsError("Too many readings from this account. Odyle tries again in a minute.", nil)
-}
-
-// endExtraSessions ends the keyless reader sessions of an account beyond the newest
-// keylessSessions.
-func endExtraSessions(app core.App, userId string) error {
-	found, err := app.FindRecordsByFilter("publisher_sessions", "user = {:user} && device = ''", "-created,-id", 500, keylessSessions, dbx.Params{"user": userId})
-	if err != nil {
-		return err
-	}
-	for _, s := range views[ReaderSession](found) {
-		if err := endSession(app, s); err != nil {
-			return err
-		}
-	}
-	return nil
 }

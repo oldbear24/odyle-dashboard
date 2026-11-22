@@ -28,7 +28,32 @@ let child,
   plaync,
   playncUrl;
 const shots = process.env.ODYLE_UI_SHOTS;
+// Since 1.0.0 the reader routes take only a paired PC: /session its device key, /report and
+// /character its app token. A test that reads for an account sends them through a PC paired with
+// it (one per account token, made by the test build's fixture); requests that name a key or come
+// with an app's token already are sent as they are. tests/integration.test.mjs checks the rule.
+const readerApps = new Map();
+async function readerApp(auth) {
+  if (!readerApps.has(auth.token)) {
+    const res = await fetch(url + '/__test__/paired-app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: auth.record.id }),
+    });
+    assert.equal(res.status, 200);
+    readerApps.set(auth.token, await res.json());
+  }
+  return readerApps.get(auth.token);
+}
 async function request(path, body, auth, method = 'POST') {
+  if (auth?.record && ['/api/odyle/session', '/api/odyle/report', '/api/odyle/character'].includes(path)) {
+    if (path === '/api/odyle/session' && body?.deviceKey) return send(path, body, auth, method);
+    const app = await readerApp(auth);
+    return send(path, path === '/api/odyle/session' ? { deviceKey: app.deviceKey, ...body } : body, app, method);
+  }
+  return send(path, body, auth, method);
+}
+async function send(path, body, auth, method) {
   const res = await fetch(url + path, {
     method,
     headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) },
@@ -887,7 +912,7 @@ test('with a dungeon catalog rooms pick dungeons from it and show what a cube co
     'Fire Temple',
     { name: 'Abyssal Forge: Ludra', cost: 80, partySize: 10, category: 'Sanctuary' },
   ];
-  assert.equal((await request('/api/odyle/admin/settings', { dungeons: catalog }, operator)).status, 200);
+  assert.equal((await request('/api/odyle/admin/settings', { catalog }, operator)).status, 200);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.locator('.room-page h1').waitFor();
@@ -936,14 +961,14 @@ test('with a dungeon catalog rooms pick dungeons from it and show what a cube co
     );
     await shot(page, 'room-catalog');
     // Without a catalog the forms take any name again.
-    assert.equal((await request('/api/odyle/admin/settings', { dungeons: [] }, operator)).status, 200);
+    assert.equal((await request('/api/odyle/admin/settings', { catalog: [] }, operator)).status, 200);
     await page.reload();
     await page.locator('#wish-form input[name=dungeon][list=wish-suggestions]').waitFor();
     assert.equal(await page.locator('.dungeon-facts').count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     await close();
-    await request('/api/odyle/admin/settings', { dungeons: [] }, operator);
+    await request('/api/odyle/admin/settings', { catalog: [] }, operator);
   }
 });
 
@@ -2334,6 +2359,9 @@ test('timers, achievements and your week: open game rules, milestones with their
       player,
     )
   ).data.character;
+  // The room, the paired PC and the first reading are counted before the page opens, so the spend
+  // below is the only news the page hears (otherwise it races the page's own first look).
+  assert.equal((await request('/api/odyle/achievements', undefined, player, 'GET')).status, 200);
   const { page, errors, close } = await open(player, '#/');
   try {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
@@ -2653,7 +2681,7 @@ test('each character keeps its own checklist, filled from the Global list, and t
 
 test('the account page lists paired PCs, removes one and signs out everywhere', async () => {
   const user = await account('PC owner');
-  const key = (await request('/api/odyle/desktop-device', { name: 'GAMING-PC' }, user)).data.deviceKey;
+  const key = (await request('/__test__/paired-app', { user: user.record.id, name: 'GAMING-PC' })).data.deviceKey;
   const { page, errors, close } = await open(user, '#/account');
   try {
     await page.locator('.device-row', { hasText: 'GAMING-PC' }).waitFor();
@@ -3539,7 +3567,7 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     await request(
       '/api/odyle/admin/settings',
       {
-        dungeons: [],
+        catalog: [],
         inactiveAccountDays: 0,
         historyDays: 30,
         locationDays: 30,
@@ -4110,6 +4138,7 @@ test('a failed page load and a refused action show their messages as text', asyn
     await page.evaluate(() => {
       location.hash = '#/week';
     });
+    await page.locator('.week-page').waitFor();
     await page.evaluate(id => {
       location.hash = '#/room/' + id;
     }, roomId);

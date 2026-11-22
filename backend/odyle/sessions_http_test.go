@@ -169,7 +169,6 @@ func TestSigningOutEverywhereEndsEverySignIn(t *testing.T) {
 	for _, p := range []pairing{desk, laptop} {
 		ask(t, app, "POST", "/api/odyle/session", p.auth, `{"deviceKey":"`+p.key+`"}`, 200)
 	}
-	ask(t, app, "POST", "/api/odyle/session", browser, `{}`, 200)
 	spare := ask(t, app, "POST", "/api/odyle/desktop-code", browser, `{}`, 200)["code"].(string)
 	ask(t, app, "POST", "/api/odyle/session", bystanderDesk.auth, `{"deviceKey":"`+bystanderDesk.key+`"}`, 200)
 
@@ -218,7 +217,7 @@ func TestDeletingTheAccountNeedsConfirmationAndTakesItsDataAlong(t *testing.T) {
 	saved(t, app, "character_readings", map[string]any{"character": character.Id, "value": 5})
 	saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "Kept", "server": "Lumiel", "region": "GLOBAL_EU"})
 	desk := pairWith(t, app, browser, "DESK")
-	ask(t, app, "POST", "/api/odyle/session", desk.auth, `{}`, 200)
+	ask(t, app, "POST", "/api/odyle/session", desk.auth, `{"deviceKey":"`+desk.key+`"}`, 200)
 
 	// Without the confirmation nothing happens.
 	for _, body := range []string{`{}`, `{"confirm":false}`, `{"confirm":"yes"}`} {

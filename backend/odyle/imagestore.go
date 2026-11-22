@@ -3,10 +3,6 @@ package odyle
 import (
 	"context"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -24,8 +20,9 @@ import (
 // /api/odyle/armory-images/<name> (armoryImageRoute).
 //
 // Before 0.61.0 they were files of their own, in pb_data/armory_images or under armory_images/ in
-// the S3 storage. importLegacyImages turns those into records once the server serves; until it
-// is done, the image route serves one not imported yet from where it was.
+// the S3 storage, which 0.61.0 to 0.67.1 turned into records once the server served. 1.0.0 no
+// longer reads them there: a server whose folder still holds some does not start (the migration
+// 1791763286_upgrade_floor.go).
 
 const armoryImagesCollection = "armory_images"
 
@@ -122,161 +119,4 @@ func openBucket(config core.S3Config, timeout time.Duration) (bucket *filesystem
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	bucket.SetContext(ctx)
 	return bucket, func() { cancel(); _ = bucket.Close() }, nil
-}
-
-// legacyKey is where an image kept before 0.61.0 is in the S3 storage.
-func legacyKey(name string) string { return armoryImagesDir + "/" + name }
-
-// legacyImage reads an image kept before 0.61.0 from where it was: pb_data/armory_images, or
-// armory_images/ in the S3 storage while it is on.
-func legacyImage(app core.App, name string) (io.ReadSeekCloser, time.Time, error) {
-	if file, err := os.Open(filepath.Join(imageDir(app), name)); err == nil {
-		info, err := file.Stat()
-		if err != nil {
-			file.Close()
-			return nil, time.Time{}, err
-		}
-		return file, info.ModTime(), nil
-	}
-	config := app.Settings().S3
-	if !config.Enabled {
-		return nil, time.Time{}, fs.ErrNotExist
-	}
-	bucket, done, err := openBucket(config, bucketTimeouts.read)
-	if err != nil {
-		return nil, time.Time{}, err
-	}
-	r, err := bucket.GetReader(legacyKey(name))
-	if err != nil {
-		done()
-		return nil, time.Time{}, err
-	}
-	return storedReader{r, done}, r.ModTime(), nil
-}
-
-// startImport imports the images kept before 0.61.0 in the background (importLegacyImages), when
-// the server serves and there may be some: the old folder is there, or the S3 storage is on.
-func startImport(app core.App) {
-	s := stateOf(app)
-	if s.root != nil {
-		app = s.root
-	}
-	if s.byHand.Load() || !exists(imageDir(app)) && !app.Settings().S3.Enabled || !s.importing.CompareAndSwap(false, true) {
-		return
-	}
-	go func() {
-		defer s.importing.Store(false)
-		imported, failed, failure := importLegacyImages(app)
-		switch {
-		case failed > 0:
-			warn(app, "Odyle could not import every armory image kept before 0.61.0; the rest stays where it was until the next start", "imported", imported, "failed", failed, "error", failure)
-		case imported > 0:
-			info(app, "Odyle imported the armory images kept before 0.61.0", "images", imported)
-		}
-	}()
-}
-
-// importLegacyImages turns the images kept before 0.61.0 into records of armory_images: those in
-// pb_data/armory_images, then, while the S3 storage is on, those under armory_images/ in it. Each
-// is deleted where it was once a record holds it (its own, or one kept meanwhile); one that fails
-// stays there for the next start. The folder goes once empty.
-func importLegacyImages(app core.App) (imported, failed int, failure string) {
-	note := func(err error) {
-		failed++
-		failure = message(err)
-	}
-	if dir := imageDir(app); exists(dir) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			note(err)
-		}
-		for _, entry := range entries {
-			path, name := filepath.Join(dir, entry.Name()), entry.Name()
-			if entry.IsDir() {
-				continue
-			}
-			// A download the server stopped in.
-			if !imageNames.MatchString(name) {
-				_ = os.Remove(path)
-				continue
-			}
-			if !imageKept(app, name) {
-				image, err := os.ReadFile(path)
-				if err == nil {
-					err = saveImage(app, name, image)
-				}
-				if err != nil {
-					note(err)
-					continue
-				}
-				imported++
-			}
-			if err := os.Remove(path); err != nil {
-				note(err)
-			}
-		}
-		_ = os.Remove(dir) // once empty
-	}
-	config := app.Settings().S3
-	if !config.Enabled {
-		return imported, failed, failure
-	}
-	bucket, done, err := openBucket(config, bucketTimeouts.list)
-	if err != nil {
-		note(err)
-		return imported, failed, failure
-	}
-	objects, err := bucket.List(armoryImagesDir + "/")
-	done()
-	if err != nil {
-		note(err)
-		return imported, failed, failure
-	}
-	for _, o := range objects {
-		name, ok := strings.CutPrefix(o.Key, armoryImagesDir+"/")
-		if !ok || !imageNames.MatchString(name) {
-			continue
-		}
-		saved, err := importBucketImage(app, config, name)
-		if err != nil {
-			note(err)
-			continue
-		}
-		if saved {
-			imported++
-		}
-	}
-	return imported, failed, failure
-}
-
-// importBucketImage keeps an image kept before 0.61.0 under armory_images/ in the S3 storage as a
-// record, unless one holds it already, then deletes it there; saved says whether it made the record.
-func importBucketImage(app core.App, config core.S3Config, name string) (saved bool, err error) {
-	if !imageKept(app, name) {
-		bucket, done, err := openBucket(config, bucketTimeouts.read)
-		if err != nil {
-			return false, err
-		}
-		r, err := bucket.GetReader(legacyKey(name))
-		if err != nil {
-			done()
-			return false, err
-		}
-		image, err := io.ReadAll(r)
-		r.Close()
-		done()
-		if err == nil {
-			err = saveImage(app, name, image)
-		}
-		if err != nil {
-			return false, err
-		}
-		saved = true
-	}
-	bucket, done, err := openBucket(config, bucketTimeouts.remove)
-	if err != nil {
-		return saved, err
-	}
-	defer done()
-	return saved, bucket.Delete(legacyKey(name))
 }

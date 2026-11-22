@@ -154,11 +154,6 @@ func TestDiscordLeadsComeOnceEachAndCloseOnesTogether(t *testing.T) {
 	if _, due := dueLead(room, run, nil, start.Add(6*time.Minute)); due {
 		t.Error("a start post comes only in the first five minutes")
 	}
-	// A run announced before posts were kept is not announced again.
-	run.Set("remindedAt", start.Add(-15*time.Minute).Format(isoLayout))
-	if _, due := dueLead(room, run, nil, start.Add(-14*time.Minute)); due {
-		t.Error("remindedAt counts as a post")
-	}
 	// Leads saved by hand or by an older client: only the choices, 15 when none.
 	room.Set("discordLeads", []int64{7, 120, 120, 5, 30, 60})
 	if leads := room.DiscordLeads(); fmt.Sprint(leads) != "[120 30 5]" {
@@ -285,7 +280,7 @@ func TestDiscordRemindersLinkBackAndUpdateInPlace(t *testing.T) {
 	}
 	// It starts (its posts came before): the start post.
 	started, before := stamp(time.Now().Add(-time.Minute)), stamp(time.Now().Add(-11*time.Minute))
-	for _, q := range []string{"UPDATE room_runs SET startsAt = {:at}, remindedAt = {:before} WHERE id = {:id}", "UPDATE discord_posts SET startsAt = {:at}, postedAt = {:before} WHERE run = {:id}"} {
+	for _, q := range []string{"UPDATE room_runs SET startsAt = {:at} WHERE id = {:id}", "UPDATE discord_posts SET startsAt = {:at}, postedAt = {:before} WHERE run = {:id}"} {
 		if _, err := app.DB().NewQuery(q).Bind(dbx.Params{"at": started, "before": before, "id": run.Id}).Execute(); err != nil {
 			t.Fatal(err)
 		}

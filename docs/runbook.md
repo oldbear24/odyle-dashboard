@@ -15,6 +15,21 @@ Every push to `main` publishes the image `ghcr.io/oldbear24/odyle-dashboard` tag
 
 Migrations run as the server starts, all pending ones in one transaction: a failing one leaves the database as it was and the server does not start, so step 4 shows it at once.
 
+## Upgrading to 1.0.0
+
+Dashboard 1.0.0 removed what earlier releases kept for old Windows apps and old data. Two things need an operator's eye:
+
+- **Servers older than 0.62.0 update to 0.67.1 first.** 0.61.0 to 0.67.1 moved data from before 0.61.0 and 0.62.0 by themselves after the update: the armory's images kept as files in `pb_data/armory_images` became records at each start, and the armory profiles kept before the top players joined them, 200 a minute. 1.0.0 no longer does either. Its migration `1791763286_upgrade_floor.go` checks the data once, before anything of 1.0.0 changes it, and refuses a database those releases have not finished with: files left in `pb_data/armory_images`, or kept armory profiles while the armory has no top players at all. The server then does not start, and the log (`docker compose logs odyle`) names what is left:
+
+  ```text
+  failed to apply migration 1791763286_upgrade_floor.go: Odyle 1.0.0 cannot start on this data yet: 120 armory profiles were kept before 0.62.0 and have not joined the top players. Run Odyle 0.67.1 first and let it finish (it adds 200 a minute; the armory's Top players page lists them once it is done), then update to 1.0.0. Nothing was changed.
+  ```
+
+  Nothing was migrated: pin `ghcr.io/oldbear24/odyle-dashboard:0.67.1`, `docker compose up -d`, wait until it is done (the folder `pb_data/armory_images` is gone, and **Server status → Armory scout** and the armory's **Top players** list the kept profiles), then pin 1.0.0 or `latest` again. If `pb_data/armory_images` still holds files after 0.67.1 has run for a few minutes, those are images it cannot keep (not PNG, JPEG or WebP, or over 2 MB) and would try again at every start: they are only copies of PLAYNC's pictures, so delete the folder and start 1.0.0. Images that 0.61.0 or later left under `armory_images/` in an S3 storage are no longer read either; they are copies of PLAYNC's, fetched again when their profile is opened, so the prefix can be deleted from the bucket.
+- **Windows apps 0.37.0 and newer.** Apps update by themselves, so every installed app should already be on 0.37.0 (**Server status** lists the apps in contact by version). An app paired before device keys (October 2026) can no longer connect: its reader sessions ended with the update, and it tells its player to pair again with a new connection link from the dashboard. **Apps & packets** shows its `session` requests refused with 401.
+
+Rolling back from 1.0.0 to 0.67.1 needs its two migrations undone first (`migrate down 2`, see [Roll back](#roll-back)): rooms get their own `cost` back at the server's Odyle per cube, and the ended sessions stay ended.
+
 ## Pin a version
 
 Run a known version instead of `latest`, so a push to `main` does not reach the server before you deploy it:

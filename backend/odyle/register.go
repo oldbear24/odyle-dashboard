@@ -25,10 +25,10 @@ type action struct {
 // POST /api/odyle/<action> for signed-in accounts.
 var accountActions = []action{
 	{"create", create}, {"join", join}, {"character", character}, {"report", report}, {"heartbeat", heartbeat}, {"sharing", sharing}, {"wishlist", wishlist},
-	{"task", checklistTask}, {"session", session}, {"invalidate", invalidate}, {"leave", leave}, {"close", closeRoom}, {"invites", invites}, {"revoke", revoke},
+	{"task", checklistTask}, {"session", session}, {"invalidate", invalidate}, {"leave", leave}, {"close", closeRoom}, {"revoke", revoke},
 	{"invite-create", inviteCreate}, {"invite-revoke", inviteRevoke},
 	{"rename", rename}, {"role", role}, {"transfer", transfer}, {"plan", plan}, {"discord-webhook", discordWebhook}, {"profile", profile},
-	{"desktop-code", desktopCode}, {"desktop-device", desktopDevice}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},
+	{"desktop-code", desktopCode}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},
 	{"delete-account", deleteAccount}, {"delete-character", deleteCharacter}, {"notifications", notifications},
 	{"push-subscribe", pushSubscribe}, {"push-unsubscribe", pushUnsubscribe}, {"push-test", pushTest}, {"share-new", shareNewSetting},
 	{"membership", membershipAnswer}, {"no-odyle", noOdyle}, {"main-character", mainCharacter},
@@ -83,8 +83,6 @@ func Register(app core.App) {
 		// The files on disk move into the S3 storage when it is on (storage.go).
 		stateOf(se.App).serving.Store(true)
 		startMove(se.App)
-		// The armory's images kept before 0.61.0 become records (imagestore.go).
-		startImport(se.App)
 		return se.Next()
 	})
 
@@ -121,12 +119,10 @@ func Register(app core.App) {
 	})
 
 	// A new backup, scheduled or made by hand, shows on the Server status page at once. The
-	// armory's images are a copy of PLAYNC's (armoryimages.go): backups leave their files out
-	// (and the folder they had before 0.61.0, which a restore keeps). A restored database can
-	// name an image whose file the server lacks: the image route forgets it, and the profile
-	// that names it fetches it again when opened.
+	// armory's images are a copy of PLAYNC's (armoryimages.go): backups leave their files out. A
+	// restored database can name an image whose file the server lacks: the image route forgets
+	// it, and the profile that names it fetches it again when opened.
 	app.OnBackupCreate().BindFunc(func(e *core.BackupEvent) error {
-		e.Exclude = append(e.Exclude, armoryImagesDir)
 		if images, err := e.App.FindCachedCollectionByNameOrId(armoryImagesCollection); err == nil {
 			e.Exclude = append(e.Exclude, path.Join(core.LocalStorageDirName, images.Id))
 		}
@@ -135,10 +131,6 @@ func Register(app core.App) {
 		// A backup that failed is the operator's to hear of (alerts.go).
 		stateOf(e.App).ops.noteBackup(err)
 		return err
-	})
-	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
-		e.Exclude = append(e.Exclude, armoryImagesDir)
-		return e.Next()
 	})
 
 	// A superuser turning the S3 file storage on moves the files on disk into it (storage.go).

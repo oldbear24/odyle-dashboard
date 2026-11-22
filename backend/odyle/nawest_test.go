@@ -51,11 +51,8 @@ func TestNAWestKeepsCharactersOfTheSameServerNameApart(t *testing.T) {
 		t.Fatalf("NA searches %v", got)
 	}
 	// The app saves the same name on Siel East and Siel West as two characters.
-	raw, err := player.NewAuthToken()
-	if err != nil {
-		t.Fatal(err)
-	}
-	auth, reuse := map[string]string{"Authorization": raw}, func(testing.TB) *tests.TestApp { return app }
+	auth, _, _ := pairedPC(t, app, player)
+	reuse := func(testing.TB) *tests.TestApp { return app }
 	for _, s := range []tests.ApiScenario{
 		{Name: "NA-East", Method: http.MethodPost, URL: "/api/odyle/character", Headers: auth, Body: strings.NewReader(`{"characterName":"Same","server":"Siel","region":"GLOBAL_NA"}`), ExpectedStatus: 200, ExpectedContent: []string{`"region":"GLOBAL_NA"`}},
 		{Name: "NA-West", Method: http.MethodPost, URL: "/api/odyle/character", Headers: auth, Body: strings.NewReader(`{"characterName":"Same","server":"Siel","region":"GLOBAL_NAW"}`), ExpectedStatus: 200, ExpectedContent: []string{`"region":"GLOBAL_NAW"`}},

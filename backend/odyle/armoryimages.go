@@ -72,13 +72,6 @@ func iconOf(m map[string]any, key string) string {
 	return name
 }
 
-// armoryImagesDir is the folder of pb_data the images were kept in before 0.61.0, and their
-// prefix in the S3 storage; importLegacyImages turns what is left there into records
-// (imagestore.go). Backups leave it out, and a restore keeps the one the server has.
-const armoryImagesDir = "armory_images"
-
-func imageDir(app core.App) string { return filepath.Join(app.DataDir(), armoryImagesDir) }
-
 // eachIcon calls visit with every icon name the profile holds.
 func (p *armoryProfile) eachIcon(visit func(name *string)) {
 	for i := range p.Gear {
@@ -268,14 +261,6 @@ func armoryImageRoute(e *core.RequestEvent) error {
 		return err
 	}
 	if record == nil {
-		// Kept before 0.61.0 and not imported yet: served from where it was.
-		if stateOf(e.App).importing.Load() {
-			if file, at, err := legacyImage(e.App, name); err == nil {
-				defer file.Close()
-				serveImage(e, name, at, file)
-				return nil
-			}
-		}
 		return notFound("This image is not kept.")
 	}
 	at := record.GetDateTime("created").Time()
@@ -286,7 +271,7 @@ func armoryImageRoute(e *core.RequestEvent) error {
 	}
 	file, err := imageFile(e.App, record)
 	if err != nil {
-		if s := stateOf(e.App); (errors.Is(err, blob.ErrNotFound) || errors.Is(err, fs.ErrNotExist)) && !s.moving.Load() && !s.importing.Load() {
+		if s := stateOf(e.App); (errors.Is(err, blob.ErrNotFound) || errors.Is(err, fs.ErrNotExist)) && !s.moving.Load() {
 			if err := e.App.Delete(record); err != nil {
 				warn(e.App, "Odyle could not forget an armory image its storage lost", "image", name, "error", message(err))
 			}
@@ -377,12 +362,8 @@ func cleanArmoryImages(app core.App) (int, error) {
 }
 
 // imagesMissing reports whether a kept profile (its JSON) names an image the server does not
-// keep: after a restore, or a change of the file storage. Not while the images kept before 0.61.0
-// are being imported (imagestore.go), nor when it cannot tell.
+// keep: after a restore, or a change of the file storage. Not when it cannot tell.
 func imagesMissing(app core.App, profile string) bool {
-	if stateOf(app).importing.Load() {
-		return false
-	}
 	names := []string{}
 	for _, m := range imageMentions.FindAllStringSubmatch(profile, -1) {
 		names = append(names, m[1])

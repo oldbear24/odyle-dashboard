@@ -19,6 +19,17 @@ import (
 // build reads "dev".
 var Version, Commit = "", ""
 
+// withServerVersion adds the release this backend was built as (`serverVersion`, the version of
+// package.json) to the answers that sign a Windows app in (pair, desktop-sign-in, session) and to
+// its heartbeat, so the app knows which release it talks to. A build without a version (go build
+// or go test by hand) leaves the field out, and the disposable test build answers "test".
+func withServerVersion(answer map[string]any) map[string]any {
+	if Version != "" {
+		answer["serverVersion"] = Version
+	}
+	return answer
+}
+
 type buildInfo struct {
 	Version    string `json:"version"`
 	Commit     string `json:"commit"`
