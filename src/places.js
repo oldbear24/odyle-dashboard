@@ -11,7 +11,7 @@ import { mapOf, mapName } from './placeline.js';
 // the dialog embeds. Map art never comes from Odyle itself.
 
 const sourceNames = { load: 'loading screen', arrival: 'arrived', flight: 'in flight', effect: 'skill or effect' };
-export const sourceName = source => sourceNames[source] ? t(sourceNames[source]) : '';
+export const sourceName = source => (sourceNames[source] ? t(sourceNames[source]) : '');
 
 // TH.GL's embed centred on a place. Its coordinates are the game's with the axes swapped
 // (keys y:x), so the centre is y,x. Only teleport statues are shown as landmarks: every other
@@ -26,21 +26,31 @@ export const mapPage = thgl => `https://aion2.th.gl/maps/${encodeURIComponent(th
 // history, which keeps a flight's places a minute apart), then the history.
 export function placesOf(data) {
   const list = [...(data.locations || [])];
-  if ((data.page || 1) === 1 && data.location?.map && (!list.length || timestamp(data.location.at) > timestamp(list[0].at))) list.unshift(data.location);
+  if (
+    (data.page || 1) === 1 &&
+    data.location?.map &&
+    (!list.length || timestamp(data.location.at) > timestamp(list[0].at))
+  )
+    list.unshift(data.location);
   return list;
 }
 // The place the map shows: the picked one, else the latest.
-export const shownPlace = (data, picked = null) => picked || placesOf({ ...data, page: 1, locations: (data.page || 1) === 1 ? data.locations : [] })[0] || null;
+export const shownPlace = (data, picked = null) =>
+  picked || placesOf({ ...data, page: 1, locations: (data.page || 1) === 1 ? data.locations : [] })[0] || null;
 const samePlace = (a, b) => Boolean(a && b) && a.at === b.at && a.map === b.map && a.x === b.x && a.y === b.y;
 
 // The map of the picked place with a pin at its centre, or why there is none.
 export function placeMap(place, maps, name) {
   const linked = mapOf(place.map, maps)?.thgl;
-  if (!linked) return `<p class="place-nomap">${esc(t('{map} has no map linked yet. A superuser links it under Game settings.', { map: mapName(place.map, maps) }))}</p>`;
+  if (!linked)
+    return `<p class="place-nomap">${esc(t('{map} has no map linked yet. A superuser links it under Game settings.', { map: mapName(place.map, maps) }))}</p>`;
   return `<div class="place-frame"><iframe src="${esc(embedUrl(linked, place))}" title="${esc(t('Map of {map} by TH.GL', { map: mapName(place.map, maps) }))}" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><span class="place-pin" aria-hidden="true"></span><button class="button secondary small place-back" type="button" data-place-back hidden>${icon('pin')} ${esc(t('Back to {name}', { name }))}</button></div><p class="place-credit">${t('Map: TH.GL’s AION 2 map, centred on the place. Moving the map hides the pin.')} <a href="${esc(mapPage(linked))}" target="_blank" rel="noopener noreferrer">${t('Open on TH.GL')} ↗</a></p>`;
 }
 
-const placeRow = (p, i, shown, maps, now) => { const on = samePlace(p, shown); return `<tr${on ? ' class="is-picked"' : ''}><td>${esc(changedAt(p.at, now))}</td><td>${esc(mapName(p.map, maps))}</td><td>${esc(sourceName(p.source))}</td><td>${on ? `<span class="place-shown">${t('Shown')}</span>` : `<button class="text-button" type="button" data-place="${i}">${t('Show')}</button>`}</td></tr>`; };
+const placeRow = (p, i, shown, maps, now) => {
+  const on = samePlace(p, shown);
+  return `<tr${on ? ' class="is-picked"' : ''}><td>${esc(changedAt(p.at, now))}</td><td>${esc(mapName(p.map, maps))}</td><td>${esc(sourceName(p.source))}</td><td>${on ? `<span class="place-shown">${t('Shown')}</span>` : `<button class="text-button" type="button" data-place="${i}">${t('Show')}</button>`}</td></tr>`;
+};
 
 // The map side of the dialog: the shown place, how the game reports places, and the map.
 export function placeMain({ data, maps, name, now, picked = null }) {
@@ -53,7 +63,9 @@ export function placeMain({ data, maps, name, now, picked = null }) {
 
 // The list side: a page of the kept places (the server's), newest first, with the buttons to the others.
 export function placeList({ data, maps, now, picked = null }) {
-  const places = placesOf(data), shown = shownPlace(data, picked), keep = data.keepDays || 30;
+  const places = placesOf(data),
+    shown = shownPlace(data, picked),
+    keep = data.keepDays || 30;
   const page = { page: data.page || 1, pages: data.pages || 1, perPage: data.perPage || places.length };
   const total = Math.max(data.total ?? places.length, places.length);
   return `<h3 class="modal-sub">${t('Places')} <span class="modal-count">${total.toLocaleString(locale())}</span></h3><table class="history-table place-table"><thead><tr><th>${t('Seen')}</th><th>${t('Map')}</th><th>${t('How')}</th><th></th></tr></thead><tbody>${places.map((place, i) => placeRow(place, i, shown, maps, now)).join('')}${fillers(page, places.length, 4)}</tbody></table>${pager(page, 'data-place-page', t('Pages of places'))}<small class="account-note">${esc(tn(keep, 'Each place is kept for {n} day.', 'Each place is kept for {n} days.'))}</small>`;
@@ -61,8 +73,10 @@ export function placeList({ data, maps, now, picked = null }) {
 
 // The dialog's body: the picked place (the latest by default) on the map, and a page of the kept places.
 export function locationBody({ data, maps, name, own = false, now, picked = null }) {
-  if (!data.shared) return `<p class="place-off">${own ? t('Location sharing is off for your account. Turn it on under Account & data to let your rooms see where your characters were last seen.') : esc(t('The player of {name} does not share their location.', { name }))}</p>`;
-  if (!placesOf(data).length && !data.total) return `<p class="place-off">${esc(tn(data.keepDays || 30, 'No place in the last {n} day yet. The Windows app sends one at each loading screen, while gliding or flying and with some skills.', 'No place in the last {n} days yet. The Windows app sends one at each loading screen, while gliding or flying and with some skills.'))}</p>`;
+  if (!data.shared)
+    return `<p class="place-off">${own ? t('Location sharing is off for your account. Turn it on under Account & data to let your rooms see where your characters were last seen.') : esc(t('The player of {name} does not share their location.', { name }))}</p>`;
+  if (!placesOf(data).length && !data.total)
+    return `<p class="place-off">${esc(tn(data.keepDays || 30, 'No place in the last {n} day yet. The Windows app sends one at each loading screen, while gliding or flying and with some skills.', 'No place in the last {n} days yet. The Windows app sends one at each loading screen, while gliding or flying and with some skills.'))}</p>`;
   return `<div class="place-main">${placeMain({ data, maps, name, now, picked })}</div><div class="place-list">${placeList({ data, maps, now, picked })}</div>`;
 }
 

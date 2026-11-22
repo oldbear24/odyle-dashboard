@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -122,7 +123,7 @@ func calendarFile(e *core.RequestEvent) error {
 		}
 		for _, r := range views[Run](found) {
 			start, ok := parseDate(r.StartsAt())
-			if !ok || !contains(r.Attendees(), mine[r.Room()]) {
+			if !ok || !slices.Contains(r.Attendees(), mine[r.Room()]) {
 				continue
 			}
 			summary := r.Dungeon()

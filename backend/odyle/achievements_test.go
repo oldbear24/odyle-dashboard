@@ -3,6 +3,7 @@ package odyle
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -67,12 +68,12 @@ func TestReadingsReachAchievementsWithTheirSpinsAndItems(t *testing.T) {
 		read(15, "spend", -80, 15)
 	}
 	p, user = progressNow(t, app, player.Id)
-	if p.Counts["spent"] != 40+500+960 || p.Unlocked["cube-hunter"] == "" || !contains(wardrobeOf(user).Owned, "badge-crate") {
+	if p.Counts["spent"] != 40+500+960 || p.Unlocked["cube-hunter"] == "" || !slices.Contains(wardrobeOf(user).Owned, "badge-crate") {
 		t.Fatalf("after spending 1,500: %v, owned %v", p.Counts, wardrobeOf(user).Owned)
 	}
 	// The page: the catalog, the counts, what was reached since the last look, then nothing new.
 	got := ask(t, app, http.MethodPost, "/api/odyle/achievements", auth, `{}`, 200)
-	if got["seen"] != "" || len(got["unlocked"].(map[string]any)) < 4 || len(got["catalog"].([]any)) != len(achievements) || !contains(anyStrings(got["owned"]), "badge-crate") {
+	if got["seen"] != "" || len(got["unlocked"].(map[string]any)) < 4 || len(got["catalog"].([]any)) != len(achievements) || !slices.Contains(anyStrings(got["owned"]), "badge-crate") {
 		t.Fatalf("the page: %v", got)
 	}
 	if again := ask(t, app, http.MethodPost, "/api/odyle/achievements", auth, `{}`, 200); again["seen"] == "" {
@@ -174,7 +175,7 @@ func TestInvitesRunsAndWhatTheAccountKeepsCount(t *testing.T) {
 	if p, _ := progressNow(t, app, friend.Id); p.Unlocked["lucky-find"] == "" {
 		t.Fatalf("the machine found: %v", p.Unlocked)
 	}
-	if slots["spins"] != float64(welcomeSpins+defaultSlots().DailySpins+2+1+1) || !contains(anyStrings(slots["owned"]), "badge-key") {
+	if slots["spins"] != float64(welcomeSpins+defaultSlots().DailySpins+2+1+1) || !slices.Contains(anyStrings(slots["owned"]), "badge-key") {
 		t.Fatalf("the machine's answer: %v spins, owned %v", slots["spins"], slots["owned"])
 	}
 }

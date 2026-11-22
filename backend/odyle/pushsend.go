@@ -13,48 +13,8 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// What goes out by Web Push (push.go): its texts in English or Czech, the subscription
+// What goes out by Web Push (push.go): its texts in each language (locales.go), the subscription
 // actions and the odyle-push job, which sends planned-run reminders.
-
-// pushTexts are the push messages in each language; a subscription without one gets English.
-var pushTexts = map[string]map[string]string{
-	"en": {
-		"run":       "%s starts in %s",
-		"soon":      "%s caps soon",
-		"soonBody":  "Its natural pool is full in about %d h; each tick of %d after that is lost.",
-		"reachBody": "Its natural pool reaches %d in about %d h, full if that is its cap.",
-		"full":      "%s is losing Odyle",
-		"fullBody":  "Its natural pool is full: each tick of %d is lost until you spend some.",
-		"atCapBody": "Its natural pool is at %d: if that is its cap, each tick of %d is lost.",
-		"test":      "Odyle notifications work",
-		"testBody":  "This device shows run reminders and cap alerts with the dashboard closed.",
-		"minutes":   "%d min",
-		"hours":     "%d h",
-		"hoursMins": "%d h %d min",
-		"ready":     "%s: the party is ready",
-		"readyBody": "All %d going can claim a cube · %s",
-		"call":      "%s calls the party to %s",
-		"callBody":  "%s · starts in about %d min",
-	},
-	"cs": {
-		"run":       "%s začíná za %s",
-		"soon":      "%s brzy dosáhne stropu",
-		"soonBody":  "Přirozená zásoba bude plná zhruba za %d h; každých %d potom propadá.",
-		"reachBody": "Přirozená zásoba dosáhne %d zhruba za %d h, plná, pokud je to její strop.",
-		"full":      "%s přichází o Odyle",
-		"fullBody":  "Přirozená zásoba je plná: každých %d propadá, dokud něco neutratíš.",
-		"atCapBody": "Přirozená zásoba je na %d: pokud je to její strop, každých %d propadá.",
-		"test":      "Oznámení Odyle fungují",
-		"testBody":  "Toto zařízení ukáže připomínky runů a upozornění na strop i se zavřeným dashboardem.",
-		"minutes":   "%d min",
-		"hours":     "%d h",
-		"hoursMins": "%d h %d min",
-		"ready":     "%s: parta je připravená",
-		"readyBody": "Všech %d jdoucích si vezme kostku · %s",
-		"call":      "%s svolává partu na %s",
-		"callBody":  "%s · začíná zhruba za %d min",
-	},
-}
 
 // partyReadyPush words a party-ready notice; its tag is the one open dashboards use.
 func partyReadyPush(language string, n partyNotice) pushMessage {
@@ -70,12 +30,10 @@ func callPush(language string, n runInvite, at time.Time) pushMessage {
 	return pushMessage{Title: pushText(language, "call", n.By, n.Dungeon), Body: pushText(language, "callBody", n.Room, minutes), Tag: "invite-" + n.RunId, Page: "#/room/" + n.RoomId}
 }
 
+// pushText is a push message's text in the subscription's language (English for one the server
+// has no texts in).
 func pushText(language, key string, args ...any) string {
-	texts, ok := pushTexts[language]
-	if !ok {
-		texts = pushTexts["en"]
-	}
-	return fmt.Sprintf(texts[key], args...)
+	return localeText(language, pushTexts, key, args...)
 }
 
 // capAlertPush words a cap alert; its tag is the one open dashboards use, so a browser shows it once.
@@ -252,7 +210,7 @@ func pushSubscribe(e *core.RequestEvent) error {
 			return nil, badRequest("The push subscription's keys are not valid.")
 		}
 		language, _ := b.text("language")
-		if language != "cs" {
+		if !knownLanguage(language) {
 			language = "en"
 		}
 		device, _ := b.text("device")

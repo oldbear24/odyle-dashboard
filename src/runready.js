@@ -18,7 +18,7 @@ export function broughtBy(user, entries, now, pick = '') {
   const own = entries.filter(c => c.user === user && c.characterName);
   const picked = pick && own.find(c => c.id === pick);
   if (picked) return { character: picked, picked: true };
-  const best = list => list.reduce((top, c) => !top || c.value > top.value ? c : top, null);
+  const best = list => list.reduce((top, c) => (!top || c.value > top.value ? c : top), null);
   const live = best(own.filter(c => status(c, now) === 'live'));
   return { character: live || best(own.filter(c => c.confirmed && c.lastReadingAt)), picked: false };
 }
@@ -26,12 +26,23 @@ export function broughtBy(user, entries, now, pick = '') {
 // Each attendee with their character, its state, cubes now and at the start, and how many can
 // claim a cube at the start (live and enough now, or expected to have enough by then).
 export function runReadiness(run, entries, now, cost, rules) {
-  const start = timestamp(run.startsAt), at = Math.max(start, now);
+  const start = timestamp(run.startsAt),
+    at = Math.max(start, now);
   const rows = run.attendees.map(user => {
     const { character, picked } = broughtBy(user, entries, now, run.picks?.[user]);
-    if (!character) return { user, character: null, picked: false, state: 'unknown', cubes: 0, cubesAtStart: 0, claims: false };
-    const state = status(character, now), later = valueAt(character, at, now, rules);
-    return { user, character, picked, state, cubes: Math.floor(character.value / cost), cubesAtStart: Math.floor(later / cost), claims: later >= cost };
+    if (!character)
+      return { user, character: null, picked: false, state: 'unknown', cubes: 0, cubesAtStart: 0, claims: false };
+    const state = status(character, now),
+      later = valueAt(character, at, now, rules);
+    return {
+      user,
+      character,
+      picked,
+      state,
+      cubes: Math.floor(character.value / cost),
+      cubesAtStart: Math.floor(later / cost),
+      claims: later >= cost,
+    };
   });
   return { rows, claim: rows.filter(r => r.claims).length, of: rows.length };
 }
@@ -45,10 +56,13 @@ export function earliestClaim(players, now, cost, rules) {
   return moments.find(at => players.every(c => valueAt(c, at, now, rules) >= cost)) ?? null;
 }
 
-// Run now: the players a call invites (backend accounts.go callable): everyone but the caller and
+// Run now: the players a call invites (backend runs.go callable): everyone but the caller and
 // viewers who plays live in the room now, or whose character there is expected to hold a cube at
 // the run's cost by its start. Members without a character there are left out.
 export function callable(entries, myId, now, start, cost, rules) {
   const users = [...new Set(entries.filter(c => c.user !== myId && c.role !== 'viewer').map(c => c.user))];
-  return users.filter(user => { const { character: c } = broughtBy(user, entries, now); return Boolean(c) && (status(c, now) === 'live' || valueAt(c, start, now, rules) >= cost); });
+  return users.filter(user => {
+    const { character: c } = broughtBy(user, entries, now);
+    return Boolean(c) && (status(c, now) === 'live' || valueAt(c, start, now, rules) >= cost);
+  });
 }

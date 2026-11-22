@@ -20,7 +20,7 @@ func boardOf(room *Room) any {
 // board lets the room owner or an officer write the room's information board ({ roomId, text });
 // an empty text clears it. Every member reads it in the room's snapshot.
 func board(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := manager(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -42,7 +42,6 @@ func board(e *core.RequestEvent) error {
 		if err := app.Save(room); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, room.Id)
 		return map[string]any{"board": boardOf(room)}, nil
 	})
 }
@@ -54,7 +53,7 @@ func board(e *core.RequestEvent) error {
 // the runs ahead and ends the ones under way, as the room lists them (runsOf), with their
 // Discord posts; the answer counts the runs cancelled.
 func roomFeaturesSetting(e *core.RequestEvent) error {
-	return mutate(e, func(app core.App, user *core.Record, b body, affected *[]string) (any, error) {
+	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		room, err := owner(app, user.Id, b.str("roomId"))
 		if err != nil {
 			return nil, err
@@ -95,7 +94,6 @@ func roomFeaturesSetting(e *core.RequestEvent) error {
 		if err := app.Save(room); err != nil {
 			return nil, err
 		}
-		*affected = append(*affected, room.Id)
 		return map[string]any{"room": roomJSON(room, odylePerCube(app)), "cancelled": cancelled}, nil
 	})
 }

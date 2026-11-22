@@ -3,6 +3,7 @@ package odyle
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -31,7 +32,7 @@ var legacyServers = map[string]string{
 }
 
 func knownServer(name string) bool {
-	return index(elyos, name) >= 0 || index(asmodian, name) >= 0
+	return slices.Index(elyos, name) >= 0 || slices.Index(asmodian, name) >= 0
 }
 
 // globalServer is a server's Global name: an older app's name for it that no Global server has
@@ -63,9 +64,6 @@ func currentServer(app core.App, userId string, data identity) (identity, error)
 	return old, nil
 }
 
-// The search region code of each region digit (searchRegions).
-var serverRegionCodes = map[int]string{1: "nae", 2: "naw", 3: "eu", 4: "la", 5: "as"}
-
 // serverBook is every Global server the backend can name: the lists above, with the servers
 // PLAYNC listed past them (game_servers), and which servers each region has open.
 type serverBook struct {
@@ -90,7 +88,7 @@ func (b serverBook) name(serverId int) string {
 // inRegion is the name of a server id in a search region (searchRegions), or "" when the id does
 // not belong to that region or the book has no name for it.
 func (b serverBook) inRegion(region string, serverId int) string {
-	if code := serverRegionCodes[serverId/100%10]; code == "" || code != region {
+	if code := regionOfDigit(serverId / 100 % 10).code; code == "" || code != region {
 		return ""
 	}
 	return b.name(serverId)
@@ -102,25 +100,23 @@ func (b serverBook) place(name string) (race, place int) {
 		return 0, 0
 	}
 	for _, race := range []int{1, 2} {
-		if at := index(b.races[race], name); at >= 0 {
+		if at := slices.Index(b.races[race], name); at >= 0 {
 			return race, at + 1
 		}
 	}
 	return 0, 0
 }
 
-// regionDigits are the Odyle regions' digits in a server id. NA counts as NA-East: NA characters
-// were all saved under it before NA-West was told apart, and the daily lookup moves those it
-// finds on NA-West (classes.go setOfficial).
-var regionDigits = map[string]int{"GLOBAL_NA": 1, "GLOBAL_NAW": 2, "GLOBAL_EU": 3, "GLOBAL_SA": 4, "GLOBAL_ASIA": 5}
-
 // id is the id of a server named in an Odyle region, or 0 for a name the book does not know.
+// NA counts as NA-East (regions.go): NA characters were all saved under it before NA-West was
+// told apart, and the daily lookup moves those it finds on NA-West (classes.go setOfficial).
 func (b serverBook) id(region, server string) int {
 	race, place := b.place(server)
-	if race == 0 || regionDigits[region] == 0 {
+	digit := regionNamed(region).digit
+	if race == 0 || digit == 0 {
 		return 0
 	}
-	return race*1000 + regionDigits[region]*100 + place
+	return race*1000 + digit*100 + place
 }
 
 // watchServerIds keeps a character's serverId the id of its region and server, however it is
@@ -179,7 +175,7 @@ func (b serverBook) searches(server, region string) []search {
 		return nil
 	}
 	out := []search{}
-	for _, r := range searchRegions[region] {
+	for _, r := range searchRegions(region) {
 		out = append(out, search{serverId: race*1000 + r.digit*100 + at, region: r.code})
 	}
 	return out
@@ -254,9 +250,9 @@ func learnServers(app core.App) error {
 	if readSettings(app).ArmoryPaused {
 		return nil
 	}
-	codes := []int{1, 2, 3, 4, 5}
 	listed, answered, failures := map[int]string{}, map[int]bool{}, []error{}
-	for _, digit := range codes {
+	for _, region := range gameRegions {
+		digit := region.digit
 		servers, err := askServers(digit)
 		if err != nil {
 			failures = append(failures, err)
@@ -327,7 +323,7 @@ func learnServers(app core.App) error {
 
 // askServers is PLAYNC's server list of one region: the ids of that region with their names.
 func askServers(digit int) (map[int]string, error) {
-	code := serverRegionCodes[digit]
+	code := regionOfDigit(digit).code
 	res, err := send(call{method: "GET", url: armoryURL() + "/en-us/api/gameinfo/servers?lang=en-us&region=" + code, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 15 * time.Second, limit: 1 << 20})
 	if err != nil {
 		return nil, err

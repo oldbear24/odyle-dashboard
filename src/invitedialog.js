@@ -1,4 +1,4 @@
-// The owner's invite dialog (main.js inviteDialog): the room's open links with the codes this
+// The owner's invite dialog (app/invites.js inviteDialog): the room's open links with the codes this
 // browser remembers (invites.js) and the form for a new one. It loads with the dialog.
 import { t, tn, locale } from './i18n.js';
 import { escape as esc, timestamp } from './model.js';
@@ -12,16 +12,30 @@ import { inviteLink, savedInvites, rememberInvites } from './invites.js';
 // after `since` (this browser's clock), when the listing was asked for: a link made
 // meanwhile, here or in another tab, is just not in it yet.
 export function withCodes(storage, roomId, listed, now = Date.now(), since = Infinity) {
-  const saved = savedInvites(storage, roomId, now), match = l => s => s.id ? s.id === l.id : s.role === l.role && s.expiresAt === l.expiresAt;
+  const saved = savedInvites(storage, roomId, now),
+    match = l => s => (s.id ? s.id === l.id : s.role === l.role && s.expiresAt === l.expiresAt);
   const rows = listed.map(l => ({ ...l, code: l.code || saved.find(match(l))?.code || '' }));
   const kept = rows.filter(r => r.code).map(r => ({ ...r, savedAt: saved.find(match(r))?.savedAt }));
-  rememberInvites(storage, roomId, [...kept, ...saved.filter(s => s.savedAt >= since && !rows.some(r => match(r)(s)))], now);
+  rememberInvites(
+    storage,
+    roomId,
+    [...kept, ...saved.filter(s => s.savedAt >= since && !rows.some(r => match(r)(s)))],
+    now,
+  );
   return rows;
 }
 // "Expires 21:30" today, "Expires 18 Oct, 21:30" on a later day.
 export function expiresLabel(expiresAt, now) {
-  const at = new Date(timestamp(expiresAt)), today = at.toDateString() === new Date(now).toDateString();
-  return t('Expires {time}', { time: at.toLocaleString(locale(), today ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) });
+  const at = new Date(timestamp(expiresAt)),
+    today = at.toDateString() === new Date(now).toDateString();
+  return t('Expires {time}', {
+    time: at.toLocaleString(
+      locale(),
+      today
+        ? { hour: '2-digit', minute: '2-digit' }
+        : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' },
+    ),
+  });
 }
 export function usesLabel(link) {
   const left = Math.max(0, link.maxUses - link.uses);
@@ -31,9 +45,15 @@ export function usesLabel(link) {
 // buttons where this browser made the link, expiry, joins left and Revoke.
 export function inviteRow(link, page, now) {
   const role = link.role === 'viewer' ? t('VIEWER INVITE') : t('PLAYER INVITE');
-  const code = link.code ? `<strong>${esc(link.code.match(/.{1,4}/g).join(' '))}</strong>` : `<p class="invite-elsewhere">${t('Its link shows only in the browser that made it.')}</p>`;
-  const copy = link.code ? `<button class="invite-link" data-copy="${esc(inviteLink(page, link.code))}" data-copied="${esc(t('Invite link copied.'))}">${icon('link')} ${t('Copy link')}</button>` : '';
-  const copyCode = link.code ? `<button class="icon-button" data-copy="${esc(link.code)}" aria-label="${esc(t('Copy code'))}" title="${esc(t('Copy code'))}">${icon('copy')}</button>` : '';
+  const code = link.code
+    ? `<strong>${esc(link.code.match(/.{1,4}/g).join(' '))}</strong>`
+    : `<p class="invite-elsewhere">${t('Its link shows only in the browser that made it.')}</p>`;
+  const copy = link.code
+    ? `<button class="invite-link" data-copy="${esc(inviteLink(page, link.code))}" data-copied="${esc(t('Invite link copied.'))}">${icon('link')} ${t('Copy link')}</button>`
+    : '';
+  const copyCode = link.code
+    ? `<button class="icon-button" data-copy="${esc(link.code)}" aria-label="${esc(t('Copy code'))}" title="${esc(t('Copy code'))}">${icon('copy')}</button>`
+    : '';
   return `<div class="invite-row" data-invite="${esc(link.id)}"><div><span>${role}${link.label ? ` · ${esc(link.label)}` : ''}</span>${code}<small>${esc(expiresLabel(link.expiresAt, now))} · ${esc(usesLabel(link))}</small></div><div class="invite-actions">${copy}<div class="invite-tools">${copyCode}<button class="invite-revoke" data-revoke-invite="${esc(link.id)}">${t('Revoke')}</button></div></div></div>`;
 }
 // The list part of the dialog: loading (null), empty or the links, player links first.
@@ -42,7 +62,8 @@ export function inviteList(rows, page, now) {
   if (!rows.length) return `<p class="invite-note">${t('No open invite links. Make one below.')}</p>`;
   return rows.map(r => inviteRow(r, page, now)).join('');
 }
-const choice = (value, label, selected = false) => `<option value="${value}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
+const choice = (value, label, selected = false) =>
+  `<option value="${value}"${selected ? ' selected' : ''}>${esc(label)}</option>`;
 // The owner's invite dialog: the room's open links, then the form for a new one: the
 // role it joins as, how long it works (24 hours unless chosen) and how many may use it.
 export function inviteDialogBody(rows, page, now) {

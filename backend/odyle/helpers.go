@@ -2,10 +2,12 @@ package odyle
 
 import (
 	"bytes"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -72,9 +74,8 @@ func message(err error) string {
 	return err.Error()
 }
 
-func isNoRows(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no rows in result set")
-}
+// isNoRows reports a lookup that found nothing (a record deleted meanwhile, or never there).
+func isNoRows(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 
 // list finds up to 500 records of a collection by filter, in id order.
 func list(app core.App, name, filter string, params dbx.Params) ([]*core.Record, error) {
@@ -113,24 +114,47 @@ func anys(values []string) []any {
 	return out
 }
 
-func contains(values []string, value string) bool {
+// without is a new list of the values other than value (never nil, so it answers [] in JSON).
+func without(values []string, value string) []string {
+	out := []string{}
 	for _, v := range values {
-		if v == value {
+		if v != value {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// changed reports whether any of the record's fields would be stored differently from the
+// record as it was loaded.
+func changed(r *core.Record, fields ...string) bool {
+	before := r.Original()
+	for _, f := range fields {
+		if !reflect.DeepEqual(storedValue(before, f), storedValue(r, f)) {
 			return true
 		}
 	}
 	return false
 }
 
-// changed reports whether any of the record's fields differs from the record as it was loaded.
-func changed(r *core.Record, fields ...string) bool {
-	before := r.Original()
-	for _, f := range fields {
-		if fmt.Sprint(before.Get(f)) != fmt.Sprint(r.Get(f)) {
-			return true
+// storedValue is a field's value the way the database stores it: what PocketBase writes for the
+// field (a select or relation list as its JSON text), and a date or JSON value as its text.
+func storedValue(r *core.Record, name string) any {
+	if field, ok := r.Collection().Fields.GetByName(name).(core.DriverValuer); ok {
+		if v, err := field.DriverValue(r); err == nil {
+			return driverValue(v)
 		}
 	}
-	return false
+	return driverValue(r.GetRaw(name))
+}
+
+func driverValue(v any) any {
+	if valuer, ok := v.(driver.Valuer); ok {
+		if out, err := valuer.Value(); err == nil {
+			return out
+		}
+	}
+	return v
 }
 
 // stringSlice is a relation or select list of a record, never nil, so it answers [] in JSON.
@@ -167,33 +191,19 @@ func (b body) set(key string) bool {
 	return true
 }
 
-// str is the value as text, the way ids from clients are compared: strings as they
-// are, numbers and booleans spelled out, and "undefined" when the key is missing.
+// str is the value as text, the way ids from clients are compared: strings as they are,
+// numbers and booleans spelled out, and "" for anything else (left out, null, a list or an
+// object), which matches no id.
 func (b body) str(key string) string {
-	v, ok := b[key]
-	if !ok {
-		return "undefined"
-	}
-	switch x := v.(type) {
-	case nil:
-		return "null"
+	switch x := b[key].(type) {
 	case string:
 		return x
 	case float64:
 		return strconv.FormatFloat(x, 'f', -1, 64)
 	case bool:
 		return strconv.FormatBool(x)
-	case []any:
-		parts := make([]string, len(x))
-		for i, item := range x {
-			parts[i] = body{"v": item}.str("v")
-			if item == nil {
-				parts[i] = ""
-			}
-		}
-		return strings.Join(parts, ",")
 	}
-	return "[object Object]"
+	return ""
 }
 
 func (b body) isTrue(key string) bool { v, ok := b[key].(bool); return ok && v }

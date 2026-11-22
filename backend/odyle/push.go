@@ -7,7 +7,7 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/hmac"
+	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -141,20 +141,6 @@ func (k *vapidKey) header(endpoint *url.URL, subject string, at time.Time) (stri
 	return "vapid t=" + signed + "." + b64.EncodeToString(signature) + ", k=" + b64.EncodeToString(k.public), nil
 }
 
-func hkdfExtract(salt, secret []byte) []byte {
-	mac := hmac.New(sha256.New, salt)
-	mac.Write(secret)
-	return mac.Sum(nil)
-}
-
-// hkdfExpand for up to 32 bytes: one block.
-func hkdfExpand(prk, info []byte, size int) []byte {
-	mac := hmac.New(sha256.New, prk)
-	mac.Write(info)
-	mac.Write([]byte{1})
-	return mac.Sum(nil)[:size]
-}
-
 // encryptPush encrypts a message for one subscription (RFC 8291) with a new key and salt:
 // the body is the aes128gcm header (salt, record size, the sender's public key) and one record.
 func encryptPush(message, clientPublic, authSecret []byte, sender *ecdh.PrivateKey, salt []byte) ([]byte, error) {
@@ -168,9 +154,23 @@ func encryptPush(message, clientPublic, authSecret []byte, sender *ecdh.PrivateK
 	}
 	senderPublic := sender.PublicKey().Bytes()
 	info := append(append([]byte("WebPush: info\x00"), clientPublic...), senderPublic...)
-	ikm := hkdfExpand(hkdfExtract(authSecret, shared), info, 32)
-	prk := hkdfExtract(salt, ikm)
-	block, err := aes.NewCipher(hkdfExpand(prk, []byte("Content-Encoding: aes128gcm\x00"), 16))
+	ikm, err := hkdf.Key(sha256.New, shared, authSecret, string(info), 32)
+	if err != nil {
+		return nil, err
+	}
+	prk, err := hkdf.Extract(sha256.New, ikm, salt)
+	if err != nil {
+		return nil, err
+	}
+	key, err := hkdf.Expand(sha256.New, prk, "Content-Encoding: aes128gcm\x00", 16)
+	if err != nil {
+		return nil, err
+	}
+	nonce, err := hkdf.Expand(sha256.New, prk, "Content-Encoding: nonce\x00", 12)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +183,7 @@ func encryptPush(message, clientPublic, authSecret []byte, sender *ecdh.PrivateK
 	header = binary.BigEndian.AppendUint32(header, 4096)
 	header = append(header, byte(len(senderPublic)))
 	header = append(header, senderPublic...)
-	return gcm.Seal(header, hkdfExpand(prk, []byte("Content-Encoding: nonce\x00"), 12), append(bytes.Clone(message), 2), nil), nil
+	return gcm.Seal(header, nonce, append(bytes.Clone(message), 2), nil), nil
 }
 
 // pushMessage is what the service worker shows (public/sw.js).

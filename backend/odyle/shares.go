@@ -62,7 +62,7 @@ func shareIn(app core.App, m *Member, characters ...string) error {
 	}
 	shared := slices.Clone(*m.shared)
 	for _, c := range characters {
-		if contains(shared, c) {
+		if slices.Contains(shared, c) {
 			continue
 		}
 		r := core.NewRecord(collection)
@@ -86,7 +86,7 @@ func setShared(app core.App, m *Member, characters []string) error {
 	}
 	stopped := []any{}
 	for _, c := range *m.shared {
-		if !contains(characters, c) {
+		if !slices.Contains(characters, c) {
 			stopped = append(stopped, c)
 		}
 	}
@@ -102,7 +102,7 @@ func setShared(app core.App, m *Member, characters []string) error {
 		}
 		kept := []string{}
 		for _, c := range *m.shared {
-			if contains(characters, c) {
+			if slices.Contains(characters, c) {
 				kept = append(kept, c)
 			}
 		}

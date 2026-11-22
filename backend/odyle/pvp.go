@@ -43,13 +43,7 @@ const pvpOpponents = 500
 // acceptedPvpAdapters are the PvP adapters stored now: Server controls switch them off like
 // reading adapters.
 func acceptedPvpAdapters(app core.App) []string {
-	out, disabled := []string{}, readSettings(app).Adapters.Disabled
-	for _, name := range verifiedPvpAdapters {
-		if !contains(disabled, name) {
-			out = append(out, name)
-		}
-	}
-	return out
+	return enabledAdapters(verifiedPvpAdapters, readSettings(app).Adapters.Disabled)
 }
 
 // pvpCounts is characters.pvp: the character's events since its owner turned PvP stats on.
@@ -96,7 +90,7 @@ func pvpPlayer(entry map[string]any, nameKey, serverKey, regionKey string) (name
 	if server == "" && region == "" {
 		return name, "", "", nil
 	}
-	if !pvpServer.MatchString(server) || !contains(regions, region) {
+	if !pvpServer.MatchString(server) || !knownRegion(region) {
 		return "", "", "", badRequest("A player's server comes with its Global region, or both are left out.")
 	}
 	// Windows 0.33.0 names seven servers otherwise (servers.go).
@@ -119,7 +113,7 @@ func validPvpEvents(b body, at time.Time) ([]pvpEvent, error) {
 			return nil, badRequest("A PvP event's id is 32 hexadecimal digits, each once.")
 		}
 		seen[e.id] = true
-		if e.kind, _ = entry["kind"].(string); !contains(pvpKinds, e.kind) {
+		if e.kind, _ = entry["kind"].(string); !slices.Contains(pvpKinds, e.kind) {
 			return nil, badRequest("A PvP event is a kill, an assist or a death.")
 		}
 		if e.name, e.server, e.region, err = pvpPlayer(entry, "name", "server", "region"); err != nil {
@@ -156,7 +150,7 @@ func pvp(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		if adapter, _ := b.text("adapter"); !contains(acceptedPvpAdapters(app), adapter) {
+		if adapter, _ := b.text("adapter"); !slices.Contains(acceptedPvpAdapters(app), adapter) {
 			return nil, badRequest("This PvP adapter is not accepted.")
 		}
 		events, err := validPvpEvents(b, time.Now())

@@ -195,6 +195,10 @@ func shrinkIcon(icon []byte) ([]byte, error) {
 		return nil, err
 	}
 	if config.Width <= iconSize && config.Height <= iconSize {
+		// Kept as sent, once it decodes whole: a header that fits says nothing about the rest.
+		if _, err := png.Decode(bytes.NewReader(icon)); err != nil {
+			return nil, err
+		}
 		return icon, nil
 	}
 	if config.Width > iconPixels || config.Height > iconPixels {

@@ -1,5 +1,5 @@
 // Parts of the dashboard load the first time they are needed (a page, a dialog, an action),
-// not with the first page, which then downloads and starts sooner; main.js lists them. Once
+// not with the first page, which then downloads and starts sooner; app/parts.js lists them. Once
 // the first page is drawn, the others load while the browser is idle (prefetch): later pages
 // open at once, the service worker keeps their files for visits without a connection, and a
 // tab left open across a deploy already holds them.
@@ -9,11 +9,23 @@
 // it without failing. A load that fails is tried again the next time; the caller of the part
 // gets what gone makes of the error.
 export function lazily(load, gone = error => Promise.reject(error)) {
-  let loading = null, module = null;
-  const fetch = () => loading ??= load().then(m => (module = m), error => { loading = null; throw error; });
+  let loading = null,
+    module = null;
+  const fetch = () =>
+    (loading ??= load().then(
+      m => (module = m),
+      error => {
+        loading = null;
+        throw error;
+      },
+    ));
   const part = () => fetch().catch(gone);
   part.loaded = () => module;
-  part.prefetch = () => fetch().then(() => true, () => false);
+  part.prefetch = () =>
+    fetch().then(
+      () => true,
+      () => false,
+    );
   return part;
 }
 
@@ -28,5 +40,7 @@ export function reloadOnce(store, now, online = true) {
     if (now - (Number(store.getItem(reloadKey)) || 0) < 60000) return false;
     store.setItem(reloadKey, String(now));
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }

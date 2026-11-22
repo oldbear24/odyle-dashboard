@@ -3,6 +3,7 @@ package odyle
 import (
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,14 +32,11 @@ func integer(value any, name string, min, max int64) (int64, error) {
 	return int64(f), nil
 }
 
-// GLOBAL_NA is NA-East (and NA characters saved before the split), GLOBAL_NAW NA-West (odyle-windows#4).
-var regions = []string{"GLOBAL_EU", "GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_SA", "GLOBAL_ASIA"}
-
 type identity struct{ characterName, server, region string }
 
 func characterIdentity(b body) (identity, error) {
 	region, _ := b.text("region")
-	if !contains(regions, region) {
+	if !knownRegion(region) {
 		return identity{}, badRequest("Select a Global region.")
 	}
 	name, err := text(b["characterName"], "Character", 40)
@@ -207,7 +205,7 @@ func readingParts(b body, value int64) (map[string]any, string, int64) {
 		parts = map[string]any{"base": base, "bonus": bonus}
 	}
 	kind, _ := b.text("kind")
-	if !contains(readingKinds, kind) {
+	if !slices.Contains(readingKinds, kind) {
 		return parts, "", 0
 	}
 	delta, err := integer(b["delta"], "Delta", -1000000, 1000000)
@@ -236,14 +234,14 @@ func validReading(b body, sessionId string, sequence int64, adapters []string) (
 	if err != nil {
 		return reading{}, err
 	}
-	if !contains(adapters, parserVersion) {
+	if !slices.Contains(adapters, parserVersion) {
 		return reading{}, badRequest("This packet adapter has not been validated for Global. No reading was saved.")
 	}
 	if !b.isTrue("confirmed") {
 		return reading{}, badRequest("A verified packet observation is required.")
 	}
 	region, _ := b.text("region")
-	if !contains(regions, region) {
+	if !knownRegion(region) {
 		return reading{}, badRequest("Select a Global region.")
 	}
 	value, err := integer(b["value"], "Odyle", 0, 1000000)

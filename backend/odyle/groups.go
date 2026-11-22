@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"regexp"
+	"slices"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -20,13 +21,7 @@ var groupId = regexp.MustCompile(`^[0-9a-f]{16}$`)
 // acceptedGroupAdapters are the group adapters stored now: Server controls switch them off like
 // reading adapters.
 func acceptedGroupAdapters(app core.App) []string {
-	out, disabled := []string{}, readSettings(app).Adapters.Disabled
-	for _, name := range verifiedGroupAdapters {
-		if !contains(disabled, name) {
-			out = append(out, name)
-		}
-	}
-	return out
+	return enabledAdapters(verifiedGroupAdapters, readSettings(app).Adapters.Disabled)
 }
 
 type gameGroup struct {
@@ -68,7 +63,7 @@ func group(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		if adapter, _ := b.text("adapter"); !contains(acceptedGroupAdapters(app), adapter) {
+		if adapter, _ := b.text("adapter"); !slices.Contains(acceptedGroupAdapters(app), adapter) {
 			return nil, badRequest("This group adapter is not accepted.")
 		}
 		party, err := groupIdOf(b, "party", "A party id is 16 hexadecimal digits or null.")

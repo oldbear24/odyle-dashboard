@@ -99,7 +99,7 @@ try {
   const total = work.reduce((sum, [weight]) => sum + weight, 0);
   let running = true, done = 0, failed = 0;
   const workers = Array.from({ length: workerCount }, async (_, w) => {
-    const mine = readers.filter((_, i) => i % workerCount === w);
+    const mine = readers.filter((_reader, i) => i % workerCount === w);
     while (running) {
       let roll = Math.random() * total;
       const [, action] = work.find(([weight]) => (roll -= weight) < 0);

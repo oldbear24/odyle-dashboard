@@ -4,21 +4,42 @@
 // readings are always fetched live.
 // The build stamps its name and its built files on the next line (vite.config.js), so every
 // build is a new worker: it keeps the kept files the build still uses and drops the rest.
+// prettier-ignore
 const build = 'dev', built = null;
 const cache = 'odyle-shell-' + build;
 const scope = new URL(self.registration.scope);
 const skipped = path => path.startsWith('api/') || path.startsWith('_/');
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(cache).then(c => c.addAll(['./', 'manifest.webmanifest', 'favicon.svg', 'icon-192.png'])).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(cache)
+      .then(c => c.addAll(['./', 'manifest.webmanifest', 'favicon.svg', 'icon-192.png']))
+      .then(() => self.skipWaiting()),
+  );
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('odyle-') && k !== cache).map(async k => { await keepBuilt(k); await caches.delete(k); }))).then(() => self.clients.claim()));
+  event.waitUntil(
+    caches
+      .keys()
+      .then(keys =>
+        Promise.all(
+          keys
+            .filter(k => k.startsWith('odyle-') && k !== cache)
+            .map(async k => {
+              await keepBuilt(k);
+              await caches.delete(k);
+            }),
+        ),
+      )
+      .then(() => self.clients.claim()),
+  );
 });
 // The built files of an older worker's cache that this build still uses move over, so a
 // release downloads only what changed.
 async function keepBuilt(name) {
   if (!built) return;
-  const old = await caches.open(name), fresh = await caches.open(cache);
+  const old = await caches.open(name),
+    fresh = await caches.open(cache);
   for (const request of await old.keys()) {
     const path = new URL(request.url).pathname.slice(scope.pathname.length);
     if (!built.includes(path)) continue;
@@ -27,7 +48,8 @@ async function keepBuilt(name) {
   }
 }
 self.addEventListener('fetch', event => {
-  const request = event.request, url = new URL(request.url);
+  const request = event.request,
+    url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
   const path = url.pathname.slice(scope.pathname.length);
   if (skipped(path)) return;
@@ -36,32 +58,70 @@ self.addEventListener('fetch', event => {
   // offline they lead to the start instead.
   if (request.mode === 'navigate') {
     const start = path === '' || path === 'index.html';
-    event.respondWith(fetch(request).then(response => { if (response.ok && start) { const copy = response.clone(); caches.open(cache).then(c => c.put('./', copy)); } return response; })
-      .catch(() => start ? caches.match('./').then(kept => kept || Response.error()) : Response.redirect(scope.href)));
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response.ok && start) {
+            const copy = response.clone();
+            caches.open(cache).then(c => c.put('./', copy));
+          }
+          return response;
+        })
+        .catch(() =>
+          start ? caches.match('./').then(kept => kept || Response.error()) : Response.redirect(scope.href),
+        ),
+    );
     return;
   }
   // Built files carry a content hash in their name and never change; the rest is refreshed in the background.
-  event.respondWith(caches.open(cache).then(c => c.match(request).then(kept => {
-    if (kept && path.startsWith('assets/')) return kept;
-    const fresh = fetch(request).then(response => { if (response.ok && response.type === 'basic') c.put(request, response.clone()); return response; });
-    if (kept) { event.waitUntil(fresh.catch(() => null)); return kept; }
-    return fresh;
-  })));
+  event.respondWith(
+    caches.open(cache).then(c =>
+      c.match(request).then(kept => {
+        if (kept && path.startsWith('assets/')) return kept;
+        const fresh = fetch(request).then(response => {
+          if (response.ok && response.type === 'basic') c.put(request, response.clone());
+          return response;
+        });
+        if (kept) {
+          event.waitUntil(fresh.catch(() => null));
+          return kept;
+        }
+        return fresh;
+      }),
+    ),
+  );
 });
 // Web Push from the backend (backend/odyle/push.go): run reminders and cap alerts with the
 // dashboard closed, `{ title, body, tag, page }` (the tag is the one open tabs use, so one shows).
 self.addEventListener('push', event => {
   let message;
-  try { message = event.data ? event.data.json() : {}; } catch { message = { body: event.data ? event.data.text() : '' }; }
-  event.waitUntil(self.registration.showNotification(message.title || 'Odyle', { body: message.body || '', tag: message.tag || undefined, icon: 'icon-192.png', data: { page: message.page || '' } }));
+  try {
+    message = event.data ? event.data.json() : {};
+  } catch {
+    message = { body: event.data ? event.data.text() : '' };
+  }
+  event.waitUntil(
+    self.registration.showNotification(message.title || 'Odyle', {
+      body: message.body || '',
+      tag: message.tag || undefined,
+      icon: 'icon-192.png',
+      data: { page: message.page || '' },
+    }),
+  );
 });
 // A click on a notification opens the dashboard at its page (or brings an open tab forward there).
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const page = event.notification.data?.page || '', target = new URL('./' + page, scope).href;
-  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async list => {
-    if (!list.length) return self.clients.openWindow(target);
-    const tab = await list[0].focus();
-    if (page && tab?.navigate) await tab.navigate(target).catch(() => { /* a tab this worker does not control keeps its page */ });
-  }));
+  const page = event.notification.data?.page || '',
+    target = new URL('./' + page, scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async list => {
+      if (!list.length) return self.clients.openWindow(target);
+      const tab = await list[0].focus();
+      if (page && tab?.navigate)
+        await tab.navigate(target).catch(() => {
+          /* a tab this worker does not control keeps its page */
+        });
+    }),
+  );
 });

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func FuzzReading(f *testing.F) {
 		if err != nil {
 			return
 		}
-		if r.value < 0 || r.value > 1000000 || float64(r.value) != value || r.sequence < 1 || !contains(regions, r.region) || r.parserVersion != "global-reference-v1" ||
+		if r.value < 0 || r.value > 1000000 || float64(r.value) != value || r.sequence < 1 || !knownRegion(r.region) || r.parserVersion != "global-reference-v1" ||
 			r.characterName == "" || length(r.characterName) > 40 || r.server == "" || length(r.server) > 40 {
 			t.Fatalf("accepted %+v from %v", r, b)
 		}
@@ -124,16 +125,17 @@ func FuzzPvpEvent(f *testing.F) {
 		}
 		e := events[0]
 		player := func(name, server, region string) bool {
-			return pvpName.MatchString(name) && length(name) <= 80 && (server == "" && region == "" || pvpServer.MatchString(server) && contains(regions, region))
+			return pvpName.MatchString(name) && length(name) <= 80 && (server == "" && region == "" || pvpServer.MatchString(server) && knownRegion(region))
 		}
-		if len(events) != 1 || !pvpEventId.MatchString(e.id) || !contains(pvpKinds, e.kind) || !player(e.name, e.server, e.region) || e.at.After(at) || at.Sub(e.at) > pvpLate ||
+		if len(events) != 1 || !pvpEventId.MatchString(e.id) || !slices.Contains(pvpKinds, e.kind) || !player(e.name, e.server, e.region) || e.at.After(at) || at.Sub(e.at) > pvpLate ||
 			e.by != "" && (e.kind != "assist" || !player(e.by, e.byServer, e.byRegion)) || e.by == "" && (e.byServer != "" || e.byRegion != "") {
 			t.Fatalf("accepted %+v", e)
 		}
 	})
 }
 
-// The body helpers keep the clients' JavaScript-era contract for any JSON a client sends.
+// The body helpers read any JSON a client sends: an id is its text, a number or boolean spelled
+// out, and "" for anything else.
 func FuzzBody(f *testing.F) {
 	for _, s := range []string{`{"v":"x"}`, `{"v":1.5}`, `{"v":null}`, `{"v":[1,null,"a",[2]]}`, `{"v":{"a":1}}`, `{}`, `{"v":true}`} {
 		f.Add(s)
@@ -144,8 +146,12 @@ func FuzzBody(f *testing.F) {
 			return
 		}
 		got := b.str("v")
-		if _, ok := b["v"]; !ok && got != "undefined" {
-			t.Fatalf("a missing field reads %q", got)
+		switch b["v"].(type) {
+		case string, float64, bool:
+		default:
+			if got != "" {
+				t.Fatalf("%s reads %q", raw, got)
+			}
 		}
 		if s, ok := b["v"].(string); ok && (got != s || b.set("v") != (s != "")) {
 			t.Fatalf("a string reads %q, set %v", got, b.set("v"))

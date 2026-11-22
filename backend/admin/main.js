@@ -6,16 +6,24 @@
 // reports, and a deploy reaches dashboards on reload.
 let page = null;
 function load() {
-  page ||= app.pb.send('/api/odyle/admin/ui', { requestKey: null }).then(info => info.version, () => '')
+  page ||= app.pb
+    .send('/api/odyle/admin/ui', { requestKey: null })
+    .then(
+      info => info.version,
+      () => '',
+    )
     .then(version => import('./extensions/odyle/odyle.js?v=' + encodeURIComponent(version)));
-  page.catch(() => { page = null; });
+  page.catch(() => {
+    page = null;
+  });
   return page;
 }
 // PocketBase's header scrolls sideways when its links do not fit, and on phones the
 // Odyle link, the last one, ends up out of sight. There every link but the open page's
 // shows only its icon (its label stays for screen readers), so all of them fit.
 const header = document.createElement('style');
-header.textContent = '@media (max-width:520px){.app-main-nav .header-link:not(.active) .txt{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}';
+header.textContent =
+  '@media (max-width:520px){.app-main-nav .header-link:not(.active) .txt{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}';
 document.head.append(header);
 app.store.headerLinks.push({ href: '#/odyle', icon: 'ri-pulse-line', label: 'Odyle' });
 app.routes.superuserOnly('#/odyle', async route => (await load()).monitorPage(route));

@@ -3,21 +3,41 @@
 // "latest release" page is linked instead, so the dashboard always has a working link.
 export const fallbackRepository = 'oldbear24/odyle-windows';
 export const releasesPage = repository => `https://github.com/${repository}/releases/latest`;
-export const packageSize = bytes => bytes >= 1048576 ? `${Math.round(bytes / 1048576)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+export const packageSize = bytes =>
+  bytes >= 1048576 ? `${Math.round(bytes / 1048576)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 // Whether an app version is older than the latest release (both "major.minor.patch", missing parts as zero).
 export function behind(version, latest) {
-  const parts = v => String(v || '').split('.').map(Number);
+  const parts = v =>
+    String(v || '')
+      .split('.')
+      .map(Number);
   if (!/^\d+(\.\d+){0,3}$/.test(String(version || '')) || !/^\d+(\.\d+){0,3}$/.test(String(latest || ''))) return false;
-  const a = parts(version), b = parts(latest);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) { const x = a[i] || 0, y = b[i] || 0; if (x !== y) return x < y; }
+  const a = parts(version),
+    b = parts(latest);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0,
+      y = b[i] || 0;
+    if (x !== y) return x < y;
+  }
   return false;
 }
 export function windowsApp(info) {
-  const page = releasesPage(info?.repository || fallbackRepository), latest = info?.latest;
+  const page = releasesPage(info?.repository || fallbackRepository),
+    latest = info?.latest;
   // Only GitHub links are ever rendered; anything else falls back to the release page.
-  const safe = url => typeof url === 'string' && url.startsWith('https://github.com/') ? url : page;
-  if (!latest || !/^\d+(\.\d+){1,3}$/.test(String(latest.version || ''))) return { version: '', url: page, publishedAt: '', packages: [] };
-  const packages = [], add = (file, kind, label) => { if (file?.url) packages.push({ kind, size: packageSize(file.size || 0), label: `${label} · ${packageSize(file.size || 0)}`, url: safe(file.url) }); };
+  const safe = url => (typeof url === 'string' && url.startsWith('https://github.com/') ? url : page);
+  if (!latest || !/^\d+(\.\d+){1,3}$/.test(String(latest.version || '')))
+    return { version: '', url: page, publishedAt: '', packages: [] };
+  const packages = [],
+    add = (file, kind, label) => {
+      if (file?.url)
+        packages.push({
+          kind,
+          size: packageSize(file.size || 0),
+          label: `${label} · ${packageSize(file.size || 0)}`,
+          url: safe(file.url),
+        });
+    };
   add(latest.packages?.installer, 'installer', 'Installer for Windows x64');
   add(latest.packages?.small, 'small', 'Download for Windows x64');
   add(latest.packages?.selfContained, 'self-contained', 'Self-contained package');

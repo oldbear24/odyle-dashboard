@@ -20,15 +20,19 @@ const semver = /^(\d+)\.(\d+)\.(\d+)$/;
 // Earlier releases were tagged MAJOR.MINOR.PATCH.RUN; missing parts count as zero.
 const parts = text => text.replace(/^v/, '').split('.').map(Number).concat([0, 0, 0, 0]).slice(0, 4);
 const compare = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
-// What does not ship: documentation, tests, CI, local scripts and editor or lint settings.
-const unshipped = /^(docs\/|tests\/|\.github\/|scripts\/|\.vscode\/)|\.md$|_test\.go$|^\.env[^/]*\.example$|^(LICENSE|\.gitignore|\.gitattributes|\.editorconfig|eslint\.config\.[cm]?js|compose\.yaml)$/;
+// What does not ship: documentation, tests, CI, local scripts and editor or lint settings, and the
+// files only the test build (build tag odyletest) compiles.
+const unshipped = /^(docs\/|tests\/|\.github\/|scripts\/|\.vscode\/)|\.md$|_test\.go$|^backend\/odyle\/(push_)?testing\.go$|^\.env[^/]*\.example$|^(LICENSE|\.gitignore|\.gitattributes|\.editorconfig|eslint\.config\.[cm]?js|\.prettierrc\.json|\.prettierignore|\.git-blame-ignore-revs|compose\.yaml)$/;
 // package.json and package-lock.json ship only through what the build uses: the runtime
 // dependencies and the build tool (vite), with every package they pull in. A change limited to
-// the test and lint tools (playwright, eslint, …), or to the version itself, ships nothing.
+// the test, lint and format tools (playwright, eslint, prettier, …), to the scripts that run them
+// (lint, format*, test*), or to
+// the version itself, ships nothing.
 const buildTools = ['vite'];
+const checkScripts = name => name === 'lint' || name.startsWith('format') || name.startsWith('test');
 const at = (ref, file) => { try { return JSON.parse(git('show', `${ref}:${file}`)); } catch { return null; } };
 function manifestShipped(before, after) {
-  const kept = m => m && { ...m, version: undefined, devDependencies: Object.fromEntries(Object.entries(m.devDependencies || {}).filter(([name]) => buildTools.includes(name))) };
+  const kept = m => m && { ...m, version: undefined, scripts: Object.fromEntries(Object.entries(m.scripts || {}).filter(([name]) => !checkScripts(name))), devDependencies: Object.fromEntries(Object.entries(m.devDependencies || {}).filter(([name]) => buildTools.includes(name))) };
   return JSON.stringify(kept(before)) !== JSON.stringify(kept(after));
 }
 // The lock entries the build uses: from the runtime dependencies and the build tools, following

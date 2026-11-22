@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -34,7 +35,8 @@ func TestRoutesAnswerUnexpectedErrorsWith500(t *testing.T) {
 		{badRequest("Choose a dungeon from the list."), 400, "Choose a dungeon from the list."},
 		{fmt.Errorf("saving: %w", badRequest("Quiet hours are times like 22:00.")), 400, "Quiet hours are times like 22:00."},
 		{forbidden("Only the room owner can do this."), 403, "Only the room owner can do this."},
-		{errors.New("sql: no rows in result set"), 404, "This no longer exists. Reload the page."},
+		{sql.ErrNoRows, 404, "This no longer exists. Reload the page."},
+		{fmt.Errorf("finding the run: %w", sql.ErrNoRows), 404, "This no longer exists. Reload the page."},
 		{errors.New("database is locked (5) (SQLITE_BUSY)"), 500, "Something went wrong while processing your request."},
 		{errors.New("constraint failed: UNIQUE constraint failed: room_members.user"), 500, "Something went wrong while processing your request."},
 	} {
