@@ -5,6 +5,9 @@
 // server) pages keep hash routes (#/armory/eu/…), which any host serves. Old hash links open
 // their page under its path. Invite links keep their code in the fragment (#/join/<code>), so
 // it never reaches a server or its logs.
+import { t } from './i18n.js';
+import { armoryRoute, armoryTarget, armoryTitle, topTitle } from './armorylinks.js';
+
 let marked = null;
 // Whether pages have paths here.
 export function usesPaths() {
@@ -64,3 +67,16 @@ export const bare = () => usesPaths() ? current() === '/' && !location.hash : !/
 // Each page's title in the tab, and for search engines that run the page: the same names
 // the backend gives it (backend/odyle/pages.go), in the reader's language.
 export function retitle(title) { if (typeof document !== 'undefined' && document.title !== title) document.title = title; }
+
+// The page a route names, or '' for none: / (welcome or your rooms), /room/<id>, /join/<code>
+// (an invite link), the pages by name and the armory's pages.
+const pageRoute = /^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots|timers|achievements|week)?)$/;
+export function pageOf(route) { if (armoryRoute.test(route)) return route; const match = route.match(pageRoute); return match ? match[1] : ''; }
+// The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
+// armory names its profiles once they are fetched, so they keep the title shown (shownTitle).
+export function pageTitle(path, shownTitle = '') {
+  if (path.startsWith('/armory')) { const target = armoryTarget(path); return target.top ? topTitle(target.top.class) : target.profile || target.card ? shownTitle : armoryTitle(null); }
+  return { '/changelog': t("What's new in Odyle"), '/privacy': t('Privacy · Odyle'), '/demo': t('Demo party room · Odyle'), '/timers': t('AION 2 timers: daily and weekly reset, Odyle regeneration · Odyle'), '/achievements': t('Achievements · Odyle'), '/week': t('Your week in Odyle') }[path] || t('Odyle — Party command');
+}
+// The navigation item a page lights up while it loads ('' for none).
+export const pageNav = path => path.startsWith('/room/') ? 'overview' : path.startsWith('/armory') ? 'armory' : { '/': 'library', '/tasks': 'tasks', '/week': 'week', '/achievements': 'achievements', '/timers': 'timers', '/account': 'account' }[path] || '';
