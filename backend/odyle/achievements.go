@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"time"
 
@@ -243,7 +244,7 @@ func grant(app core.App, user *core.Record, reached []achievement) error {
 	}
 	w := wardrobeOf(user)
 	for _, id := range items {
-		if !contains(w.Owned, id) {
+		if !slices.Contains(w.Owned, id) {
 			w.Owned = append(w.Owned, id)
 		}
 	}

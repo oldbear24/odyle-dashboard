@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -47,7 +48,7 @@ func teammates(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		if adapter, _ := b.text("adapter"); !contains(acceptedTeammateAdapters(app), adapter) {
+		if adapter, _ := b.text("adapter"); !slices.Contains(acceptedTeammateAdapters(app), adapter) {
 			return badRequest("This teammate adapter is not accepted.")
 		}
 		raw, ok := b["names"].([]any)

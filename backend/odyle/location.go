@@ -3,6 +3,7 @@ package odyle
 import (
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -120,7 +121,7 @@ func validPlace(b body) (place, error) {
 		h = math.Round(math.Mod(h+720, 360)*10) / 10
 		p.Heading = &h
 	}
-	if p.Source, _ = b.text("source"); !contains(locationSources, p.Source) {
+	if p.Source, _ = b.text("source"); !slices.Contains(locationSources, p.Source) {
 		return p, badRequest("The source must be load, arrival, flight or effect.")
 	}
 	return p, nil
@@ -141,7 +142,7 @@ func location(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		if adapter, _ := b.text("adapter"); !contains(acceptedLocationAdapters(app), adapter) {
+		if adapter, _ := b.text("adapter"); !slices.Contains(acceptedLocationAdapters(app), adapter) {
 			return nil, badRequest("This location adapter is not accepted.")
 		}
 		p, err := validPlace(b)

@@ -113,7 +113,7 @@ func validPvpEvents(b body, at time.Time) ([]pvpEvent, error) {
 			return nil, badRequest("A PvP event's id is 32 hexadecimal digits, each once.")
 		}
 		seen[e.id] = true
-		if e.kind, _ = entry["kind"].(string); !contains(pvpKinds, e.kind) {
+		if e.kind, _ = entry["kind"].(string); !slices.Contains(pvpKinds, e.kind) {
 			return nil, badRequest("A PvP event is a kill, an assist or a death.")
 		}
 		if e.name, e.server, e.region, err = pvpPlayer(entry, "name", "server", "region"); err != nil {
@@ -150,7 +150,7 @@ func pvp(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		if adapter, _ := b.text("adapter"); !contains(acceptedPvpAdapters(app), adapter) {
+		if adapter, _ := b.text("adapter"); !slices.Contains(acceptedPvpAdapters(app), adapter) {
 			return nil, badRequest("This PvP adapter is not accepted.")
 		}
 		events, err := validPvpEvents(b, time.Now())

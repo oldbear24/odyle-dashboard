@@ -77,7 +77,7 @@ func checkClassRoles(value any) ([]classRole, error) {
 		if name == "" || length(name) > 40 {
 			return nil, badRequest("Name each class in 1 to 40 characters.")
 		}
-		if !contains(partyRoles, role) {
+		if !slices.Contains(partyRoles, role) {
 			return nil, badRequest("Give each class a role: tank, healer, support or damage.")
 		}
 		if seen[strings.ToLower(name)] {
@@ -228,7 +228,7 @@ func checkMaintenance(value any) (maintenanceWindow, error) {
 	}
 	hour, okHour := v["hour"].(float64)
 	hours, okHours := v["hours"].(float64)
-	if !contains(weekDays, day) || !okHour || !okHours || hour != float64(int64(hour)) || hours != float64(int64(hours)) || hour < 0 || hour > 23 || hours < 1 || hours > 12 {
+	if !slices.Contains(weekDays, day) || !okHour || !okHours || hour != float64(int64(hour)) || hours != float64(int64(hours)) || hour < 0 || hour > 23 || hours < 1 || hours > 12 {
 		return maintenanceWindow{}, badRequest("The weekly maintenance is a day, a start hour from 0 to 23 (UTC) and 1 to 12 hours.")
 	}
 	return maintenanceWindow{Day: day, Hour: int64(hour), Hours: int64(hours)}, nil
@@ -380,7 +380,7 @@ func loadSettings(app core.App) settings {
 	if out.WeeklyResetDay == "" {
 		out.WeeklyResetDay = "wednesday"
 	}
-	if !contains(levels, out.AnnouncementLevel) {
+	if !slices.Contains(levels, out.AnnouncementLevel) {
 		out.AnnouncementLevel = "info"
 	}
 	// A stored window that no longer checks out is none.
@@ -424,7 +424,7 @@ func windowsVersions(value any) ([]string, error) {
 		if !windowsVersion.MatchString(text) {
 			return nil, badRequest("Hold back Windows versions like 0.18.0, one per line.")
 		}
-		if !contains(out, text) {
+		if !slices.Contains(out, text) {
 			out = append(out, text)
 		}
 	}
@@ -541,7 +541,7 @@ func accepted(lists adapterLists) []string {
 func enabledAdapters(builtIn, disabled []string) []string {
 	out := []string{}
 	for _, name := range builtIn {
-		if !contains(disabled, name) {
+		if !slices.Contains(disabled, name) {
 			out = append(out, name)
 		}
 	}
@@ -563,7 +563,7 @@ func adapterSettings(value any) (adapterLists, error) {
 			if !adapterName.MatchString(name) {
 				return nil, badRequest("Adapter names use letters, digits, dots, dashes and underscores, up to 80 characters.")
 			}
-			if !contains(out, name) {
+			if !slices.Contains(out, name) {
 				out = append(out, name)
 			}
 		}
@@ -579,14 +579,14 @@ func adapterSettings(value any) (adapterLists, error) {
 	}
 	lists := adapterLists{Extra: []string{}, Disabled: []string{}}
 	for _, name := range extraNames {
-		if !contains(verifiedAdapters, name) && !contains(verifiedLocationAdapters, name) && !contains(verifiedGroupAdapters, name) && !contains(verifiedPvpAdapters, name) && !contains(verifiedTeammateAdapters, name) {
+		if !slices.Contains(verifiedAdapters, name) && !slices.Contains(verifiedLocationAdapters, name) && !slices.Contains(verifiedGroupAdapters, name) && !slices.Contains(verifiedPvpAdapters, name) && !slices.Contains(verifiedTeammateAdapters, name) {
 			lists.Extra = append(lists.Extra, name)
 		}
 	}
 	// The location, group, PvP and teammate adapters (location.go, groups.go, pvp.go,
 	// teammates.go) are switched off here too, never accepted as reading ones.
 	for _, name := range disabledNames {
-		if contains(verifiedAdapters, name) || contains(verifiedLocationAdapters, name) || contains(verifiedGroupAdapters, name) || contains(verifiedPvpAdapters, name) || contains(verifiedTeammateAdapters, name) {
+		if slices.Contains(verifiedAdapters, name) || slices.Contains(verifiedLocationAdapters, name) || slices.Contains(verifiedGroupAdapters, name) || slices.Contains(verifiedPvpAdapters, name) || slices.Contains(verifiedTeammateAdapters, name) {
 			lists.Disabled = append(lists.Disabled, name)
 		}
 	}
@@ -658,7 +658,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	}
 	if b.has("weeklyResetDay") {
 		day, _ := b.text("weeklyResetDay")
-		if !contains(weekDays, day) {
+		if !slices.Contains(weekDays, day) {
 			return settings{}, badRequest("Choose the weekly reset day (sunday to saturday).")
 		}
 		next.WeeklyResetDay = day
@@ -708,7 +708,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	}
 	if b.has("announcementLevel") {
 		level, _ := b.text("announcementLevel")
-		if !contains(levels, level) {
+		if !slices.Contains(levels, level) {
 			return settings{}, badRequest("Choose info or warning for the announcement.")
 		}
 		next.AnnouncementLevel = level
@@ -878,7 +878,7 @@ func announcementAt(s settings, at time.Time) any {
 func announcementOf(r *core.Record) settings {
 	s := settings{Announcement: r.GetString("announcement"), AnnouncementLevel: r.GetString("announcementLevel"),
 		AnnouncementFrom: isoOf(r.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(r.GetDateTime("announcementUntil"))}
-	if !contains(levels, s.AnnouncementLevel) {
+	if !slices.Contains(levels, s.AnnouncementLevel) {
 		s.AnnouncementLevel = "info"
 	}
 	return s

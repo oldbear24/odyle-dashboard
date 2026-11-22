@@ -131,7 +131,7 @@ func isoTime(t time.Time) string {
 func armoryRoute(e *core.RequestEvent) error {
 	region, characterId := e.Request.PathValue("region"), e.Request.PathValue("characterId")
 	serverId, _ := strconv.Atoi(e.Request.PathValue("serverId"))
-	server := armoryServer(e.App, region, serverId)
+	server := serversOf(e.App).inRegion(region, serverId)
 	if server == "" || !armoryIds.MatchString(characterId) {
 		return notFound("This character is not in the armory.")
 	}

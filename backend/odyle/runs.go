@@ -1,6 +1,7 @@
 package odyle
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -37,19 +38,19 @@ func runsOf(app core.App, roomId string, members []*Member) ([]plannedRun, error
 		}
 		// A pick counts while the member still goes and still shares that character here.
 		for member, character := range r.Picks() {
-			if m := byId[member]; m != nil && contains(r.Attendees(), member) && m.Shares(app, character) {
+			if m := byId[member]; m != nil && slices.Contains(r.Attendees(), member) && m.Shares(app, character) {
 				picks[users[member]] = character
 			}
 		}
 		cant := []string{}
 		for _, id := range r.Cant() {
-			if user := users[id]; user != "" && !contains(r.Attendees(), id) {
+			if user := users[id]; user != "" && !slices.Contains(r.Attendees(), id) {
 				cant = append(cant, user)
 			}
 		}
 		invited := []string{}
 		for _, id := range r.Invited() {
-			if user := users[id]; user != "" && !contains(r.Attendees(), id) && !contains(r.Cant(), id) {
+			if user := users[id]; user != "" && !slices.Contains(r.Attendees(), id) && !slices.Contains(r.Cant(), id) {
 				invited = append(invited, user)
 			}
 		}
@@ -261,7 +262,7 @@ func (p *runPlanner) changeRun(b body) error {
 	}
 	going, isGoing := b.boolean("going")
 	// After the start, its attendees wrap the run up too: done, or it did not happen.
-	started, attending := !timeOf(r.StartsAt()).After(time.Now()), contains(r.Attendees(), p.m.Id)
+	started, attending := !timeOf(r.StartsAt()).After(time.Now()), slices.Contains(r.Attendees(), p.m.Id)
 	switch {
 	case b.isTrue("done"):
 		return p.wrapUp(r, started, attending)
@@ -299,7 +300,7 @@ func (p *runPlanner) wrapUp(r *Run, started, attending bool) error {
 	}
 	party, _ := runParty(readSettings(p.app), r)
 	for _, w := range wishes {
-		if contains(party, w.GetString("member")) {
+		if slices.Contains(party, w.GetString("member")) {
 			if err := p.app.Delete(w); err != nil {
 				return err
 			}
@@ -403,7 +404,7 @@ func (p *runPlanner) answerGoing(r *Run, b body, going bool) error {
 	attendees := append([]string{}, r.Attendees()...)
 	if !going {
 		attendees = without(attendees, p.m.Id)
-	} else if !contains(attendees, p.m.Id) {
+	} else if !slices.Contains(attendees, p.m.Id) {
 		attendees = append(attendees, p.m.Id)
 	}
 	r.SetAttendees(attendees)
@@ -539,7 +540,7 @@ func (p *runPlanner) newRun(b body) error {
 			return err
 		}
 		for _, w := range wishes {
-			if member := w.GetString("member"); member != p.m.Id && !contains(invited, member) {
+			if member := w.GetString("member"); member != p.m.Id && !slices.Contains(invited, member) {
 				invited = append(invited, member)
 			}
 		}
@@ -588,7 +589,7 @@ func upcoming(e *core.RequestEvent) error {
 			return err
 		}
 		for _, r := range views[Run](found) {
-			if !contains(r.Attendees(), mine[r.Room()]) {
+			if !slices.Contains(r.Attendees(), mine[r.Room()]) {
 				continue
 			}
 			name := ""

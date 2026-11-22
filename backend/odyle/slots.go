@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"math/big"
+	"slices"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -146,7 +147,7 @@ func wardrobeOf(user *core.Record) wardrobe {
 func (w wardrobe) look() map[string]string {
 	out := map[string]string{}
 	for _, kind := range []string{"color", "frame", "badge"} {
-		if c, ok := cosmeticById(w.Equipped[kind]); ok && c.Kind == kind && contains(w.Owned, c.Id) {
+		if c, ok := cosmeticById(w.Equipped[kind]); ok && c.Kind == kind && slices.Contains(w.Owned, c.Id) {
 			out[kind] = c.Value
 		}
 	}
@@ -305,7 +306,7 @@ func slotSpin(e *core.RequestEvent) error {
 		}
 		pool := slotPool(rarity)
 		won := pool[roll(int64(len(pool)))]
-		duplicate := contains(w.Owned, won.Id)
+		duplicate := slices.Contains(w.Owned, won.Id)
 		if duplicate {
 			w.Shards++
 			if w.Shards >= shardsForSpin {
@@ -348,7 +349,7 @@ func slotEquip(e *core.RequestEvent) error {
 		w.refill(app, time.Now())
 		if isText && id == "" {
 			delete(w.Equipped, kind)
-		} else if c, ok := cosmeticById(id); !isText || !ok || c.Kind != kind || !contains(w.Owned, id) {
+		} else if c, ok := cosmeticById(id); !isText || !ok || c.Kind != kind || !slices.Contains(w.Owned, id) {
 			return nil, badRequest("That item is not in your collection.")
 		} else {
 			w.Equipped[kind] = id

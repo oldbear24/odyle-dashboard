@@ -61,12 +61,6 @@ func armoryURL() string {
 // PLAYNC's character ids are URL-safe Base64 with padding.
 var armoryIds = regexp.MustCompile(`^[A-Za-z0-9_-]{8,90}={0,2}$`)
 
-// armoryServer is the name of a PLAYNC server id in a search region (regions.go), or ""
-// when the id does not belong to it or no server of that id is known (servers.go).
-func armoryServer(app core.App, region string, serverId int) string {
-	return serversOf(app).inRegion(region, serverId)
-}
-
 // armoryVersion is the shape of the kept profiles: one kept in an older shape (without item
 // details, skills, titles, skins, boards' nodes or images) is fetched again when opened.
 const armoryVersion = 2
@@ -322,7 +316,7 @@ func armoryStatus(app core.App) map[string]any {
 		var name string
 		_ = app.DB().NewQuery("SELECT name FROM armory_profiles WHERE serverId = {:server} AND characterId = {:id} AND name != '' UNION ALL SELECT name FROM armory_ranks WHERE serverId = {:server} AND characterId = {:id} AND name != '' LIMIT 1").
 			Bind(dbx.Params{"server": q["serverId"], "id": q["characterId"]}).Row(&name)
-		q["name"], q["server"] = name, armoryServer(app, q["region"].(string), q["serverId"].(int))
+		q["name"], q["server"] = name, serversOf(app).inRegion(q["region"].(string), q["serverId"].(int))
 	}
 	out["queue"] = queue
 	var kept, hidden int

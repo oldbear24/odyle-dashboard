@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -126,7 +127,7 @@ func FuzzPvpEvent(f *testing.F) {
 		player := func(name, server, region string) bool {
 			return pvpName.MatchString(name) && length(name) <= 80 && (server == "" && region == "" || pvpServer.MatchString(server) && knownRegion(region))
 		}
-		if len(events) != 1 || !pvpEventId.MatchString(e.id) || !contains(pvpKinds, e.kind) || !player(e.name, e.server, e.region) || e.at.After(at) || at.Sub(e.at) > pvpLate ||
+		if len(events) != 1 || !pvpEventId.MatchString(e.id) || !slices.Contains(pvpKinds, e.kind) || !player(e.name, e.server, e.region) || e.at.After(at) || at.Sub(e.at) > pvpLate ||
 			e.by != "" && (e.kind != "assist" || !player(e.by, e.byServer, e.byRegion)) || e.by == "" && (e.byServer != "" || e.byRegion != "") {
 			t.Fatalf("accepted %+v", e)
 		}

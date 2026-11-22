@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"regexp"
+	"slices"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -62,7 +63,7 @@ func group(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		if adapter, _ := b.text("adapter"); !contains(acceptedGroupAdapters(app), adapter) {
+		if adapter, _ := b.text("adapter"); !slices.Contains(acceptedGroupAdapters(app), adapter) {
 			return nil, badRequest("This group adapter is not accepted.")
 		}
 		party, err := groupIdOf(b, "party", "A party id is 16 hexadecimal digits or null.")

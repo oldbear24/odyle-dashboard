@@ -114,15 +114,6 @@ func anys(values []string) []any {
 	return out
 }
 
-func contains(values []string, value string) bool {
-	for _, v := range values {
-		if v == value {
-			return true
-		}
-	}
-	return false
-}
-
 // without is a new list of the values other than value (never nil, so it answers [] in JSON).
 func without(values []string, value string) []string {
 	out := []string{}

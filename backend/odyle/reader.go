@@ -2,6 +2,7 @@ package odyle
 
 import (
 	"regexp"
+	"slices"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/dbx"
@@ -241,7 +242,7 @@ func report(e *core.RequestEvent) error {
 	}
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
 		if readSettings(app).ReaderPaused {
-			if contains(pauseUnawareAdapters, b.str("parserVersion")) {
+			if slices.Contains(pauseUnawareAdapters, b.str("parserVersion")) {
 				return nil, badRequest("Packet readers are paused by the server operators.")
 			}
 			return nil, unavailable("Packet readers are paused by the server operators.")
@@ -363,7 +364,7 @@ func sharing(e *core.RequestEvent) error {
 		}
 		next := []string{}
 		for _, id := range m.Shared(app) {
-			if !contains(targets, id) {
+			if !slices.Contains(targets, id) {
 				next = append(next, id)
 			}
 		}

@@ -53,15 +53,6 @@ type search struct {
 	region   string
 }
 
-func index(names []string, name string) int {
-	for i, n := range names {
-		if n == name {
-			return i
-		}
-	}
-	return -1
-}
-
 var tags = regexp.MustCompile(`<[^>]*>`)
 
 func plainName(name any) string {

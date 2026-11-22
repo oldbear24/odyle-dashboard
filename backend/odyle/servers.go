@@ -3,6 +3,7 @@ package odyle
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -31,7 +32,7 @@ var legacyServers = map[string]string{
 }
 
 func knownServer(name string) bool {
-	return index(elyos, name) >= 0 || index(asmodian, name) >= 0
+	return slices.Index(elyos, name) >= 0 || slices.Index(asmodian, name) >= 0
 }
 
 // globalServer is a server's Global name: an older app's name for it that no Global server has
@@ -99,7 +100,7 @@ func (b serverBook) place(name string) (race, place int) {
 		return 0, 0
 	}
 	for _, race := range []int{1, 2} {
-		if at := index(b.races[race], name); at >= 0 {
+		if at := slices.Index(b.races[race], name); at >= 0 {
 			return race, at + 1
 		}
 	}

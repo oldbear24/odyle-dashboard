@@ -25,7 +25,6 @@ import (
 
 const armorySite = "Odyle Armory"
 
-
 // The profile tabs (src/armory.js armoryTabs) as titles name them; the player card
 // (/card, cards.go) is a page of its own.
 var tabTitles = map[string]string{"skills": "skills", "daevanion": "Daevanion boards", "titles": "titles", "appearance": "appearance", "upgrade": "upgrades"}
@@ -73,7 +72,7 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	if len(parts) == 5 {
 		tab = parts[4]
 	}
-	server := armoryServer(app, region, serverId)
+	server := serversOf(app).inRegion(region, serverId)
 	if _, known := tabTitles[tab]; server == "" || !armoryIds.MatchString(characterId) || tab != "" && tab != "card" && !known {
 		return web.Page{Missing: true}
 	}
@@ -248,7 +247,7 @@ func sitemapRoute(e *core.RequestEvent) error {
 		return err
 	}
 	for _, k := range kept {
-		if armoryServer(e.App, k.Region, k.ServerId) == "" || !armoryIds.MatchString(k.CharacterId) {
+		if serversOf(e.App).inRegion(k.Region, k.ServerId) == "" || !armoryIds.MatchString(k.CharacterId) {
 			continue
 		}
 		entry := sitemapEntry{Loc: fmt.Sprintf("%s/armory/%s/%d/%s", base, k.Region, k.ServerId, k.CharacterId)}
