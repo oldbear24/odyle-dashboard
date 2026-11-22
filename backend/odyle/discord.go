@@ -226,7 +226,7 @@ func discordWebhook(e *core.RequestEvent) error {
 		language, setLanguage := "", !b.has("webhook") && b.has("language")
 		if setLanguage {
 			language, _ = b.text("language")
-			if language != "en" && language != "cs" {
+			if !knownLanguage(language) {
 				return badRequest("Choose English or Czech for the Discord posts.")
 			}
 		}
@@ -236,8 +236,8 @@ func discordWebhook(e *core.RequestEvent) error {
 				return err
 			}
 			language = "en"
-			if l, _ := b.text("language"); l == "cs" {
-				language = "cs"
+			if l, _ := b.text("language"); knownLanguage(l) {
+				language = l
 			}
 			if url != "" {
 				if name, err = connectWebhook(url, room.Name(), language); err != nil {

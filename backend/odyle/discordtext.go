@@ -34,28 +34,16 @@ type words struct {
 	partyReady             func(n int) string
 }
 
-var languages = map[string]words{
-	"en": {connected: func(room string) string {
-		return "Odyle will remind this channel of planned runs in **" + room + "** before each one starts."
-	}, starts: "Starts", now: "Starting now", cancelled: "Cancelled", done: "Done", open: "Open the room", event: "The event",
-		going: func(n int) string { return "Going (" + strconv.Itoa(n) + ")" }, waiting: func(n int) string { return "Waiting for a place (" + strconv.Itoa(n) + ")" }, nobody: "Nobody yet", footer: func(room string) string { return "Odyle · " + room },
-		claims: "Can claim a cube", claimsAhead: func(k, n int) string { return fraction(k, n) + " by the start (an estimate)" }, claimsNow: fraction,
-		partyReady: func(n int) string { return fraction(n, n) + " · party ready" }},
-	"cs": {connected: func(room string) string {
-		return "Odyle bude tomuto kanálu připomínat plánované běhy místnosti **" + room + "** před začátkem každého."
-	}, starts: "Začíná", now: "Začíná teď", cancelled: "Zrušeno", done: "Hotovo", open: "Otevřít místnost", event: "Událost",
-		going: func(n int) string { return "Jdou (" + strconv.Itoa(n) + ")" }, waiting: func(n int) string { return "Čekají na místo (" + strconv.Itoa(n) + ")" }, nobody: "Zatím nikdo", footer: func(room string) string { return "Odyle · " + room },
-		claims: "Vezme si kostku", claimsAhead: func(k, n int) string { return fraction(k, n) + " do začátku (odhad)" }, claimsNow: fraction,
-		partyReady: func(n int) string { return fraction(n, n) + " · parta je připravená" }},
-}
-
 func fraction(k, n int) string { return strconv.Itoa(k) + "/" + strconv.Itoa(n) }
 
+// say is the words of Discord posts in a language (locales.go), English for one the server has
+// no texts in.
 func say(language string) words {
-	if w, ok := languages[language]; ok {
-		return w
-	}
-	return languages["en"]
+	d := func(key string, args ...any) string { return localeText(language, discordTexts, key, args...) }
+	return words{connected: func(room string) string { return d("connected", room) }, starts: d("starts"), now: d("now"), cancelled: d("cancelled"), done: d("done"), open: d("open"), event: d("event"),
+		going: func(n int) string { return d("going", n) }, waiting: func(n int) string { return d("waiting", n) }, nobody: d("nobody"), footer: func(room string) string { return d("footer", room) },
+		claims: d("claims"), claimsAhead: func(k, n int) string { return d("claimsAhead", fraction(k, n)) }, claimsNow: fraction,
+		partyReady: func(n int) string { return d("partyReady", fraction(n, n)) }}
 }
 
 func reminder(p runPost, language string) map[string]any {
