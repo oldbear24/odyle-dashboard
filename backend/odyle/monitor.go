@@ -41,7 +41,6 @@ var shown = map[string][]string{
 	"character":       {"characterName", "server", "region"},
 	"pair":            {"name"},
 	"desktop-sign-in": {"name"},
-	"desktop-device":  {"name"},
 	"unpair":          {},
 	// The dashboard
 	"create": {"name"}, "join": {}, "rename": {"roomId", "name"}, "leave": {"roomId"}, "close": {"roomId"}, "revoke": {"roomId", "memberId"}, "role": {"roomId", "memberId", "role"}, "transfer": {"roomId", "memberId"},
@@ -53,7 +52,7 @@ var shown = map[string][]string{
 
 // Requests of the Windows app (source "app"); everything else comes from the dashboard
 // ("web"). Character saves come from both, and count as the app's.
-var appKinds = map[string]bool{"session": true, "report": true, "heartbeat": true, "location": true, "game-group": true, "pvp": true, "teammates": true, "invalidate": true, "character": true, "pair": true, "desktop-sign-in": true, "desktop-device": true, "unpair": true}
+var appKinds = map[string]bool{"session": true, "report": true, "heartbeat": true, "location": true, "game-group": true, "pvp": true, "teammates": true, "invalidate": true, "character": true, "pair": true, "desktop-sign-in": true, "unpair": true}
 
 func details(packet *object, kind string, b body) {
 	for _, f := range shown[kind] {

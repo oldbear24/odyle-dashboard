@@ -124,6 +124,20 @@ func fixtures(se *core.ServeEvent) {
 		token, err := user.NewAuthToken()
 		return map[string]any{"token": token, "record": user}, err
 	})
+	// A PC paired with the account as the pair route pairs it, without that route's rate limit:
+	// the app's token, its account and its device key. The reader routes take only a paired PC.
+	fixture(se, "paired-app", func(e *core.RequestEvent, b body) (any, error) {
+		user, err := e.App.FindRecordById("users", b.str("user"))
+		if err != nil {
+			return nil, err
+		}
+		key, device, err := newDevice(e.App, user.Id, deviceName(b["name"]))
+		if err != nil {
+			return nil, err
+		}
+		token, err := appToken(user, device)
+		return map[string]any{"token": token, "record": user, "deviceKey": key}, err
+	})
 	// An operator signed in to the PocketBase dashboard, with the given password if any.
 	fixture(se, "superuser", func(e *core.RequestEvent, b body) (any, error) {
 		su, err := e.App.FindAuthRecordByEmail(core.CollectionNameSuperusers, "operator@test.invalid")
@@ -236,7 +250,7 @@ func fixtures(se *core.ServeEvent) {
 			role = b.str("role")
 		}
 		for i := 0; i < count(b["count"]); i++ {
-			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i)})
+			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i), "cost": 40})
 			if err != nil {
 				return nil, err
 			}

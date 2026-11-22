@@ -22,6 +22,7 @@ let child,
   code,
   viewerCode,
   publisher,
+  playerApp,
   first,
   second,
   oauthServer,
@@ -68,6 +69,16 @@ async function request(path, body, auth, method = 'POST') {
   return { status: res.status, data: await res.json() };
 }
 const action = (name, body, auth) => request('/api/odyle/' + name, body, auth);
+// The Windows app of a PC paired with the account, as the pair route pairs it (without its rate
+// limit): its app token, its account and its device key; name names the PC. Since 1.0.0 the reader
+// routes take only a paired PC: /session its device key, /report and /character its token.
+async function pairedApp(user, name) {
+  const paired = await request('/__test__/paired-app', { user: user.record.id, ...(name ? { name } : {}) });
+  assert.equal(paired.status, 200, JSON.stringify(paired.data));
+  return paired.data;
+}
+// A reader session of the paired app.
+const openSession = (app, extra = {}) => action('session', { deviceKey: app.deviceKey, ...extra }, app);
 // A server time is not later than now. Go reads the precise Windows clock and Node a
 // coarser one, so a time the server just wrote can be a few milliseconds ahead.
 const past = at => Date.parse(at) <= Date.now() + 1000;
@@ -380,7 +391,8 @@ test('Web Push sends a test, run reminders and cap alerts that only the browser 
       ).status,
       200,
     );
-    const session = (await request('/api/odyle/session', {}, user)).data;
+    const pushReader = await pairedApp(user),
+      session = (await openSession(pushReader)).data;
     assert.equal(
       (
         await request(
@@ -399,7 +411,7 @@ test('Web Push sends a test, run reminders and cap alerts that only the browser 
             bonus: 100,
             kind: 'snapshot',
           },
-          user,
+          pushReader,
         )
       ).status,
       200,
@@ -511,9 +523,12 @@ test('first Discord OAuth sign-in creates an account; repeat sign-in retains its
   assert.equal(invalid.status, 400);
 });
 test('character identity can be saved before any game reading without accepting manual energy', async () => {
-  const user = (await request('/__test__/account', { name: 'Character metadata' })).data;
+  const user = await pairedApp((await request('/__test__/account', { name: 'Character metadata' })).data);
   const identity = { characterName: ' NewMain ', server: ' Lumiel ', region: 'GLOBAL_EU' };
   assert.equal((await action('character', identity)).status, 401);
+  // A browser's token saves no character (1.0.0): only the app of a paired PC does.
+  const browser = (await request('/__test__/account', { name: 'Character metadata' })).data;
+  assert.equal((await action('character', identity, browser)).status, 401);
   const saves = await Promise.all(Array.from({ length: 3 }, () => action('character', identity, user)));
   for (const save of saves) assert.equal(save.status, 200, JSON.stringify(save.data));
   const c = saves[0].data.character;
@@ -537,7 +552,7 @@ test('character identity can be saved before any game reading without accepting 
   for (const bad of [{ characterName: '' }, { server: '' }, { region: 'KR' }])
     assert.equal((await action('character', { ...identity, ...bad }, user)).status, 400);
   assert.equal((await request('/api/collections/characters/records/' + c.id, undefined, outsider, 'GET')).status, 404);
-  const session = (await action('session', {}, user)).data;
+  const session = (await openSession(user)).data;
   const reported = await action(
     'report',
     {
@@ -566,8 +581,9 @@ test('characters get their official portrait from the game; players cannot chang
   const [author, mate] = await Promise.all(
     ['Portrait owner', 'Portrait mate'].map(async name => (await request('/__test__/account', { name })).data),
   );
+  const authorApp = await pairedApp(author);
   const save = async (characterName, server, region = 'GLOBAL_EU') =>
-    (await action('character', { characterName, server, region }, author)).data.character;
+    (await action('character', { characterName, server, region }, authorApp)).data.character;
   // NA East and West share server names; Western is only listed on NA West.
   const c = await save('Pictured', 'Lumiel'),
     western = await save('Western', 'Nezekan', 'GLOBAL_NA');
@@ -920,7 +936,7 @@ test('accounts keep private daily and weekly checklists that reset by time', asy
 });
 test('superusers watch connected apps and their packets live and edit the server settings', async () => {
   const operator = (await request('/__test__/superuser', {})).data,
-    reader = (await request('/__test__/account', { name: 'Monitored reader' })).data;
+    reader = await pairedApp((await request('/__test__/account', { name: 'Monitored reader' })).data);
   const monitor = auth => request('/api/odyle/admin/monitor', undefined, auth, 'GET');
   // Only superusers reach the routes and the live topic.
   assert.equal((await monitor()).status, 401);
@@ -928,7 +944,7 @@ test('superusers watch connected apps and their packets live and edit the server
   await assert.rejects(() => connect(url, reader.token, 'odyle.admin.packets'));
   const stream = await connect(url, operator.token, 'odyle.admin.packets');
   try {
-    const session = (await action('session', { appVersion: '0.6.0.12' }, reader)).data;
+    const session = (await openSession(reader, { appVersion: '0.6.0.12' })).data;
     const opened = (await stream.next())?.data.packet;
     assert.equal(opened.kind, 'session');
     assert.equal(opened.appVersion, '0.6.0.12');
@@ -1156,7 +1172,7 @@ test('superusers watch connected apps and their packets live and edit the server
 });
 test('superusers follow background jobs, run them by hand and pause parts of Odyle under server controls', async () => {
   const operator = (await request('/__test__/superuser', {})).data,
-    member = (await request('/__test__/account', { name: 'Controlled member' })).data;
+    member = await pairedApp((await request('/__test__/account', { name: 'Controlled member' })).data);
   const jobs = auth => request('/api/odyle/admin/jobs', undefined, auth, 'GET'),
     run = (name, auth = operator) => request('/api/odyle/admin/jobs/' + name, {}, auth);
   const settings = body => request('/api/odyle/admin/settings', body, operator, body === undefined ? 'GET' : 'POST');
@@ -1302,7 +1318,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     assert.equal(JSON.stringify(refused).includes('ABCDEFGH23456789'), false);
     // Paused packet readers: apps hear of it from rooms, sessions and heartbeats, readings are refused, and they resume once it is off.
     assert.equal((await settings({ readerPaused: true })).data.settings.readerPaused, true);
-    const reader = (await action('session', {}, member)).data;
+    const reader = (await openSession(member)).data;
     assert.equal(reader.readerPaused, true);
     assert.equal((await request('/api/odyle/rooms', undefined, member, 'GET')).data.readerPaused, true);
     const beat = await action('heartbeat', { sessionId: reader.sessionId }, member);
@@ -1330,7 +1346,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
     assert.equal((await action('heartbeat', { sessionId: reader.sessionId }, member)).data.readerPaused, false);
     assert.equal((await action('report', held, member)).status, 200);
     // Packet adapters: a new decoder shows up rejected, can be accepted before a deploy and a built-in one stopped.
-    const session = (await action('session', {}, member)).data;
+    const session = (await openSession(member)).data;
     const reading = (sequence, parserVersion) =>
       action(
         'report',
@@ -1427,7 +1443,7 @@ test('superusers follow background jobs, run them by hand and pause parts of Ody
 });
 test('superusers read the server status: stored data, connected app versions, the release lookup and the last hour of traffic', async () => {
   const operator = (await request('/__test__/superuser', {})).data,
-    member = (await request('/__test__/account', { name: 'Counted member' })).data;
+    member = await pairedApp((await request('/__test__/account', { name: 'Counted member' })).data);
   const status = auth => request('/api/odyle/admin/status', undefined, auth, 'GET');
   assert.equal((await status()).status, 401);
   assert.equal((await status(member)).status, 403);
@@ -1435,7 +1451,7 @@ test('superusers read the server status: stored data, connected app versions, th
   const reason = (data, kind, message) =>
     data.traffic.errors.find(r => r.kind === kind && r.message === message) || { count: 0 };
   const before = (await status(operator)).data;
-  const session = (await action('session', { appVersion: '0.6.0.13' }, member)).data;
+  const session = (await openSession(member, { appVersion: '0.6.0.13' })).data;
   const reading = {
     sessionId: session.sessionId,
     sequence: 1,
@@ -1600,7 +1616,8 @@ test('accounts see their history, delete characters, export their data, sign out
     200,
   );
   // Every change of a value is kept in the character's history; unchanged values are not.
-  const session = (await action('session', {}, holder)).data;
+  const holderApp = await pairedApp(holder, 'Reading PC'),
+    session = (await openSession(holderApp)).data;
   const reading = {
     sessionId: session.sessionId,
     characterName: 'Historian',
@@ -1610,14 +1627,18 @@ test('accounts see their history, delete characters, export their data, sign out
     parserVersion: 'test-fixture-v1',
     confirmed: true,
   };
-  const kept = (await action('report', { ...reading, sequence: 1, value: 100 }, holder)).data.character;
+  const kept = (await action('report', { ...reading, sequence: 1, value: 100 }, holderApp)).data.character;
   for (const [sequence, value] of [
     [2, 100],
     [3, 140],
   ])
-    assert.equal((await action('report', { ...reading, sequence, value, characterId: kept.id }, holder)).status, 200);
-  const spare = (await action('character', { characterName: 'Spare', server: 'Lumiel', region: 'GLOBAL_EU' }, holder))
-    .data.character;
+    assert.equal(
+      (await action('report', { ...reading, sequence, value, characterId: kept.id }, holderApp)).status,
+      200,
+    );
+  const spare = (
+    await action('character', { characterName: 'Spare', server: 'Lumiel', region: 'GLOBAL_EU' }, holderApp)
+  ).data.character;
   assert.equal((await action('sharing', { roomId, characterId: kept.id, enabled: true }, holder)).status, 200);
   const history = (id, auth) => request('/api/odyle/history/' + id, undefined, auth, 'GET');
   const own = await history(kept.id, holder);
@@ -1706,7 +1727,7 @@ test('accounts see their history, delete characters, export their data, sign out
   );
   assert.deepEqual((await request('/api/odyle/export', undefined, holder, 'GET')).data.characters, []);
   assert.equal(
-    (await action('report', { ...reading, sequence: 4, value: 150, characterId: kept.id }, holder)).status,
+    (await action('report', { ...reading, sequence: 4, value: 150, characterId: kept.id }, holderApp)).status,
     404,
   );
   // Signing out everywhere ends every token and reader session but keeps this browser signed in.
@@ -1714,15 +1735,17 @@ test('accounts see their history, delete characters, export their data, sign out
     await action('pair', { code: (await action('desktop-code', {}, holder)).data.code, name: '  Gaming   PC  ' })
   ).data;
   assert.deepEqual(
-    (await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps.map(a => [
-      Object.keys(a).sort(),
-      a.name,
-    ]),
-    [[['lastSignInAt', 'name', 'pairedAt'], 'Gaming PC']],
+    (await request('/api/odyle/export', undefined, holder, 'GET')).data.pairedWindowsApps
+      .map(a => [Object.keys(a).sort(), a.name])
+      .sort((a, b) => a[1].localeCompare(b[1])),
+    [
+      [['lastSignInAt', 'name', 'pairedAt'], 'Gaming PC'],
+      [['lastSignInAt', 'name', 'pairedAt'], 'Reading PC'],
+    ],
   );
   const fresh = await action('sign-out-everywhere', {}, holder);
   assert.equal(fresh.status, 200, JSON.stringify(fresh.data));
-  for (const old of [holder, paired])
+  for (const old of [holder, paired, holderApp])
     assert.equal((await request('/api/odyle/rooms', undefined, old, 'GET')).status, 401);
   assert.equal((await action('desktop-sign-in', { deviceKey: paired.deviceKey })).status, 401);
   const current = { token: fresh.data.token, record: fresh.data.record };
@@ -1778,8 +1801,10 @@ test('room owners rename rooms, change roles and hand rooms over; runs are plann
     await stream.close();
   }
   // A player made viewer stops sharing; the owner cannot change themselves or members of other rooms.
-  const own = (await action('character', { characterName: 'Mate main', server: 'Lumiel', region: 'GLOBAL_EU' }, mate))
-    .data.character;
+  const mateApp = await pairedApp(mate);
+  const own = (
+    await action('character', { characterName: 'Mate main', server: 'Lumiel', region: 'GLOBAL_EU' }, mateApp)
+  ).data.character;
   const shared = await action('sharing', { roomId, characterId: own.id, enabled: true }, mate);
   assert.equal(shared.status, 200);
   assert.deepEqual(shared.data.sharedCharacters, [own.id]);
@@ -1929,23 +1954,24 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
     assert.equal((await settings({ dungeons: [] })).status, 200);
   }
   // Caps: 30 characters, 20 owned rooms and 50 memberships per account.
+  const collectorApp = await pairedApp(collector);
   assert.equal((await request('/__test__/characters', { user: collector.record.id, count: 29 })).status, 200);
   assert.equal(
-    (await action('character', { characterName: 'Thirtieth', server: 'Lumiel', region: 'GLOBAL_EU' }, collector))
+    (await action('character', { characterName: 'Thirtieth', server: 'Lumiel', region: 'GLOBAL_EU' }, collectorApp))
       .status,
     200,
   );
   assert.equal(
-    (await action('character', { characterName: 'Thirtieth', server: 'Lumiel', region: 'GLOBAL_EU' }, collector))
+    (await action('character', { characterName: 'Thirtieth', server: 'Lumiel', region: 'GLOBAL_EU' }, collectorApp))
       .status,
     200,
   );
   assert.equal(
-    (await action('character', { characterName: 'One too many', server: 'Lumiel', region: 'GLOBAL_EU' }, collector))
+    (await action('character', { characterName: 'One too many', server: 'Lumiel', region: 'GLOBAL_EU' }, collectorApp))
       .status,
     400,
   );
-  const session = (await action('session', {}, collector)).data;
+  const session = (await openSession(collectorApp)).data;
   assert.equal(
     (
       await action(
@@ -1961,7 +1987,7 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
           parserVersion: 'test-fixture-v1',
           confirmed: true,
         },
-        collector,
+        collectorApp,
       )
     ).status,
     400,
@@ -1979,7 +2005,7 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
     ).status,
     200,
   );
-  const invite = (await action('invites', { roomId }, planner)).data.invites[0].code;
+  const invite = (await action('invite-create', { roomId }, planner)).data.invite.code;
   assert.equal((await action('join', { code: invite }, collector)).status, 400);
   // Inactive accounts are kept unless a superuser sets a period; then the nightly job deletes them.
   assert.equal((await request('/__test__/inactive', { user: idle.record.id, days: 40 })).status, 200);
@@ -2009,9 +2035,10 @@ test('accounts list their paired PCs and remove one without signing out elsewher
   const me = (await request('/__test__/account', { name: 'PC owner' })).data,
     other = (await request('/__test__/account', { name: 'PC stranger' })).data;
   const account = async (auth = me) => (await request('/api/odyle/account', undefined, auth, 'GET')).data;
-  // Two PCs: one names itself when it gets its key, the other at its next sign-in.
-  const desk = (await action('desktop-device', { name: 'DESK-PC' }, me)).data.deviceKey,
-    laptop = (await action('desktop-device', {}, me)).data.deviceKey;
+  // Two PCs: one names itself when it pairs, the other at its next sign-in.
+  const deskApp = await pairedApp(me, 'DESK-PC'),
+    desk = deskApp.deviceKey,
+    laptop = (await pairedApp(me)).deviceKey;
   assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 'LAPTOP' })).status, 200);
   assert.equal((await action('desktop-sign-in', { deviceKey: laptop, name: 42 })).status, 200);
   // A Windows app sends its expired token with the sign-in that renews it: the sign-in answers as
@@ -2027,17 +2054,20 @@ test('accounts list their paired PCs and remove one without signing out elsewher
   assert.deepEqual(page.devices.map(d => d.name).sort(), ['DESK-PC', 'LAPTOP']);
   for (const d of page.devices) assert.deepEqual(Object.keys(d).sort(), ['id', 'lastSignInAt', 'name', 'pairedAt']);
   // A reader session opened with the key belongs to that PC; an unknown key is a pairing that ended.
-  const session = (await action('session', { deviceKey: desk }, me)).data;
+  const session = (await action('session', { deviceKey: desk }, deskApp)).data;
   assert.ok(session.sessionId);
   assert.equal((await action('session', { deviceKey: 'x'.repeat(48) }, me)).status, 401);
   assert.equal((await action('session', { deviceKey: desk }, other)).status, 401);
-  assert.equal((await action('session', {}, me)).status, 200);
+  // Without a key (an app paired before device keys) the server tells the player to pair again (1.0.0).
+  const keyless = await action('session', {}, me);
+  assert.equal(keyless.status, 401);
+  assert.match(keyless.data.message, /Pair it again: copy a new connection link from the dashboard\./);
   page = await account();
   const deskId = page.devices.find(d => d.name === 'DESK-PC').id;
   assert.equal(page.apps.find(a => a.sessionId === session.sessionId).device, deskId);
   // Rooms name the account's own readers by PC, so the dashboard does not ask to connect one.
   const readers = (await request('/api/odyle/rooms', undefined, me, 'GET')).data.readers;
-  assert.equal(readers.length, 2);
+  assert.equal(readers.length, 1);
   assert.equal(readers.find(r => r.sessionId === session.sessionId).name, 'DESK-PC');
   for (const r of readers) assert.deepEqual(Object.keys(r).sort(), ['lastContactAt', 'name', 'sessionId']);
   assert.deepEqual((await request('/api/odyle/rooms', undefined, other, 'GET')).data.readers, []);
@@ -2052,7 +2082,9 @@ test('accounts list their paired PCs and remove one without signing out elsewher
     parserVersion: 'test-fixture-v1',
     confirmed: true,
   };
-  const read = await action('report', { ...fields, sessionId: session.sessionId, sequence: 1 }, me);
+  // Its readings come with its own token: a browser's is refused, and so is another PC's.
+  assert.equal((await action('report', { ...fields, sessionId: session.sessionId, sequence: 1 }, me)).status, 401);
+  const read = await action('report', { ...fields, sessionId: session.sessionId, sequence: 1 }, deskApp);
   assert.equal(read.status, 200, JSON.stringify(read.data));
   const restarted = (await action('session', { deviceKey: desk }, me)).data;
   assert.equal((await action('heartbeat', { sessionId: session.sessionId }, me)).status, 403);
@@ -2065,13 +2097,12 @@ test('accounts list their paired PCs and remove one without signing out elsewher
     page.apps.filter(a => a.device === deskId).map(a => a.sessionId),
     [restarted.sessionId],
   );
-  assert.equal(page.apps.filter(a => !a.device).length, 1, 'a session opened without a device key is left alone');
   assert.equal(
     (
       await action(
         'report',
         { ...fields, characterId: read.data.character.id, sessionId: restarted.sessionId, sequence: 1 },
-        me,
+        deskApp,
       )
     ).status,
     200,
@@ -2222,8 +2253,8 @@ test('planned runs can be changed, are posted to Discord and listed as upcoming'
   assert.equal((await snapshot2(roomId, lead)).room.discordReminders, false);
 });
 test('history older than 30 days leaves with the clean-up', async () => {
-  const me = (await request('/__test__/account', { name: 'Old history' })).data,
-    session = (await action('session', {}, me)).data;
+  const me = await pairedApp((await request('/__test__/account', { name: 'Old history' })).data),
+    session = (await openSession(me)).data;
   const read = (sequence, value) =>
     action(
       'report',
@@ -2279,7 +2310,7 @@ test('owners save a full dungeon catalog and closed rooms answer plainly', async
   for (const [name, body] of [
     ['close', { roomId }],
     ['rename', { roomId, name: 'Again' }],
-    ['invites', { roomId }],
+    ['invite-create', { roomId }],
   ]) {
     const again = await action(name, body, host);
     assert.equal(again.status, 404, name);
@@ -2388,7 +2419,8 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     assert.equal((await snapshot(owner)).data.members.length, 6);
     assert.equal((await snapshot(outsider)).status, 403);
   });
-  publisher = (await action('session', {}, player)).data;
+  playerApp = await pairedApp(player);
+  publisher = (await openSession(playerApp)).data;
   const input = {
     sessionId: publisher.sessionId,
     sequence: 1,
@@ -2401,10 +2433,10 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     confirmed: true,
   };
   await t.test('each account keeps several character values, including confirmed zero', async () => {
-    const one = await action('report', input, player);
+    const one = await action('report', input, playerApp);
     assert.equal(one.status, 200, JSON.stringify(one.data));
     first = one.data.character;
-    const two = await action('report', { ...input, sequence: 2, characterName: 'Alt', value: 265 }, player);
+    const two = await action('report', { ...input, sequence: 2, characterName: 'Alt', value: 265 }, playerApp);
     assert.equal(two.status, 200);
     second = two.data.character;
     assert.notEqual(first.id, second.id);
@@ -2485,9 +2517,11 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     // The action that replaced every link of a room at once is gone (1.0.0).
     assert.equal((await action('invites', { roomId: room.id }, owner)).status, 404);
     assert.equal((await action('report', { ...input, sequence: 3, characterId: first.id }, outsider)).status, 403);
-    const outSession = (await action('session', {}, outsider)).data;
+    const outsiderApp = await pairedApp(outsider),
+      outSession = (await openSession(outsiderApp)).data;
     assert.equal(
-      (await action('report', { ...input, sessionId: outSession.sessionId, characterId: first.id }, outsider)).status,
+      (await action('report', { ...input, sessionId: outSession.sessionId, characterId: first.id }, outsiderApp))
+        .status,
       403,
     );
   });
@@ -2513,36 +2547,29 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     // Device sign-in is capped at 30 a minute per client; the whole run stays below that.
     assert.equal((await action('desktop-sign-in', { deviceKey: 'x'.repeat(48) })).status, 401);
     assert.equal((await action('desktop-sign-in', { deviceKey: 7 })).status, 400);
-    // An app paired before device keys existed gets one with its (refreshable) token; a paired
-    // app's token is bound to its PC and cannot mint another key.
-    assert.equal((await action('desktop-device', {}, paired)).status, 403);
-    const upgraded = await action('desktop-device', {}, player);
-    assert.equal(upgraded.status, 200);
-    assert.notEqual(upgraded.data.deviceKey, paired.deviceKey);
-    assert.equal((await action('desktop-device', {})).status, 401);
-    assert.equal(
-      (await action('desktop-sign-in', { deviceKey: upgraded.data.deviceKey })).data.record.id,
-      player.record.id,
-    );
+    // Nobody mints a key with a token any more: the route that gave apps paired before device keys
+    // theirs is gone (1.0.0); such an app pairs again.
+    for (const auth of [paired, player, undefined])
+      assert.equal((await action('desktop-device', {}, auth)).status, 404);
     // Disconnecting forgets only that app's key.
     assert.equal((await action('unpair', { deviceKey: paired.deviceKey })).status, 200);
     assert.equal((await action('unpair', { deviceKey: paired.deviceKey })).status, 200);
     assert.equal((await action('desktop-sign-in', { deviceKey: paired.deviceKey })).status, 401);
-    assert.equal((await action('desktop-sign-in', { deviceKey: upgraded.data.deviceKey })).status, 200);
+    assert.equal((await action('desktop-sign-in', { deviceKey: playerApp.deviceKey })).status, 200);
   });
   await t.test('an account keeps its ten most recently used Windows pairings', async () => {
     const holder = (await request('/__test__/account', { name: 'Many PCs' })).data,
       keys = [];
     // A pause between pairings gives each its own millisecond, so their order is certain.
     for (let i = 0; i < 10; i++) {
-      keys.push((await action('desktop-device', {}, holder)).data.deviceKey);
+      keys.push((await pairedApp(holder)).deviceKey);
       await delay(3);
     }
     // The first PC signed in last, so the second and third are the least recently used when two more pair.
     assert.equal((await action('desktop-sign-in', { deviceKey: keys[0] })).status, 200);
     for (let i = 0; i < 2; i++) {
       await delay(3);
-      keys.push((await action('desktop-device', {}, holder)).data.deviceKey);
+      keys.push((await pairedApp(holder)).deviceKey);
     }
     assert.deepEqual((await request('/__test__/devices', { keys })).data.kept, [
       true,
@@ -2567,10 +2594,10 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     },
   );
   await t.test('sequences are atomic, manual data, unverified adapters and impersonation are rejected', async () => {
-    assert.equal((await action('report', input, player)).status, 400);
+    assert.equal((await action('report', input, playerApp)).status, 400);
     const duplicate = await Promise.all([
-      action('report', { ...input, sequence: 3, characterId: first.id }, player),
-      action('report', { ...input, sequence: 3, characterId: first.id }, player),
+      action('report', { ...input, sequence: 3, characterId: first.id }, playerApp),
+      action('report', { ...input, sequence: 3, characterId: first.id }, playerApp),
     ]);
     assert.deepEqual(duplicate.map(r => r.status).sort(), [200, 400]);
     for (const patch of [
@@ -2579,7 +2606,7 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
       { value: -1 },
       { value: 1.5 },
     ])
-      assert.equal((await action('report', { ...input, sequence: 4, ...patch }, player)).status, 400);
+      assert.equal((await action('report', { ...input, sequence: 4, ...patch }, playerApp)).status, 400);
   });
   await t.test('heartbeat and confidence reset preserve each last saved value', async () => {
     await action('heartbeat', { sessionId: publisher.sessionId, characterId: first.id }, player);
@@ -2590,7 +2617,7 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     assert.equal(stale.confirmed, true);
     assert.equal(stale.valid, false);
     assert.equal(stale.lastReadingAt, saved.lastReadingAt);
-    publisher = (await action('session', { previousSessionId: publisher.sessionId }, player)).data;
+    publisher = (await openSession(playerApp, { previousSessionId: publisher.sessionId })).data;
     assert.equal(
       (await request('/api/collections/characters/records/' + second.id, undefined, player, 'GET')).data.value,
       265,

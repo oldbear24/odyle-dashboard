@@ -54,7 +54,7 @@ func TestOlderAppsServerNamesFindTheGlobalServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	player := newUser(t, app, "Daeva")
-	auth := tokenOf(t, player)
+	auth, session := pairedReader(t, app, player)
 	tassin := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Moved", "server": "Tassin", "region": "GLOBAL_EU"})
 	agnita := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Stays", "server": "Agnita", "region": "GLOBAL_EU"})
 	both := saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Twin", "server": "Agnita", "region": "GLOBAL_EU"})
@@ -84,7 +84,6 @@ func TestOlderAppsServerNamesFindTheGlobalServer(t *testing.T) {
 		t.Fatalf("Fresh saved %d times, %v", n, err)
 	}
 	// A reading without a character id finds the character the same way.
-	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
 	answer := ask(t, app, http.MethodPost, "/api/odyle/report", auth, `{"sessionId":"`+session.Id+`","sequence":1,"characterName":"Moved","server":"Agnita","region":"GLOBAL_EU","value":120,"source":"packet","parserVersion":"global-reference-v2","confirmed":true}`, 200)
 	if id, server := idOf(answer); id != tassin.Id || server != "Tassin" {
 		t.Fatalf("an older app's reading went to %s on %s, want %s on Tassin", id, server, tassin.Id)
@@ -206,7 +205,7 @@ func TestCharactersAreFoundByServerId(t *testing.T) {
 		t.Fatal(err)
 	}
 	player := newUser(t, app, "Daeva")
-	auth := tokenOf(t, player)
+	auth, session := pairedReader(t, app, player)
 	save := func(name, server, region string) (string, string, float64) {
 		t.Helper()
 		answer := ask(t, app, http.MethodPost, "/api/odyle/character", auth, `{"characterName":"`+name+`","server":"`+server+`","region":"`+region+`"}`, 200)
@@ -261,7 +260,6 @@ func TestCharactersAreFoundByServerId(t *testing.T) {
 	if kept, _ := app.FindRecordById("characters", far); kept.GetInt("serverId") != 1324 {
 		t.Fatalf("saved after the rename, the character has id %d", kept.GetInt("serverId"))
 	}
-	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
 	answer := ask(t, app, http.MethodPost, "/api/odyle/report", auth, `{"sessionId":"`+session.Id+`","sequence":1,"characterName":"Kael","server":"Farreach","region":"GLOBAL_EU","value":120,"source":"packet","parserVersion":"global-reference-v2","confirmed":true}`, 200)
 	if c, _ := answer["character"].(map[string]any); c["id"] != far || c["server"] != "Farreach" || c["serverId"] != float64(1324) {
 		t.Fatalf("a reading on the renamed server: %v", c)

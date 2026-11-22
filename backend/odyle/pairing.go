@@ -153,22 +153,6 @@ func pair(e *core.RequestEvent) error {
 	})
 }
 
-// desktopDevice gives a device key to an app paired before keys existed; it asks with
-// its still-valid token. An app that has a key holds a token bound to it (devices.go),
-// which cannot mint another: a forgotten PC must not pair itself again.
-func desktopDevice(e *core.RequestEvent) error {
-	if requestDevice(e) != "" {
-		return forbidden("This PC is already paired.")
-	}
-	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		key, _, err := newDevice(app, user.Id, deviceName(b["name"]))
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"deviceKey": key}, nil
-	})
-}
-
 // desktopSignIn is public: a fresh account token for a paired app. An unknown key (the
 // app disconnected, the account signed out everywhere or was deleted) is 401, and the
 // app pairs again.

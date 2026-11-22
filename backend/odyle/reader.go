@@ -52,22 +52,39 @@ func appVersion(value any) string {
 	return ""
 }
 
-// session opens a reader session. A paired app sends its device key, so removing the
-// PC ends this session too; a key the server no longer knows means the pairing ended
-// (401, and the app pairs again). Newer apps also send their version, for the
-// superuser dashboard's Apps page. Sessions open while packet readers are paused, so
-// the app learns of the pause from the answer.
+// Reader routes answer this to an app without a pairing of its PC: one paired before device
+// keys (October 2026), whose saved connection 1.0.0 no longer accepts, or a request that does
+// not come from the paired app at all. Apps take the server's own 401 for a pairing that ended
+// and ask for a new connection link.
+const pairAgain = "This PC's pairing is from an older Odyle and no longer works. Pair it again: copy a new connection link from the dashboard."
+
+// pairedRequest is the PC whose app token signed the request, or a 401 for any other token
+// (a browser's, or the refreshable token apps had before device keys). boundDevice has already
+// signed nobody in with the token of a PC whose pairing ended.
+func pairedRequest(e *core.RequestEvent) (string, error) {
+	if id := requestDevice(e); id != "" {
+		return id, nil
+	}
+	return "", unauthorized(pairAgain)
+}
+
+// session opens a reader session for a paired PC, which names itself with its device key, so
+// removing the PC ends this session too. Without a key (an app paired before device keys) it is
+// a 401 that tells the player to pair again, and so is a key the server no longer knows (the
+// pairing ended). Apps also send their version, for the superuser dashboard's Apps page.
+// Sessions open while packet readers are paused, so the app learns of the pause from the answer.
 func session(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
-		var device *Device
-		if b.set("deviceKey") {
-			key, err := deviceKey(b)
-			if err != nil {
-				return nil, err
-			}
-			if device = findDevice(app, key); device == nil || device.User() != user.Id {
-				return nil, unauthorized("This PC is no longer paired with an account.")
-			}
+		if !b.set("deviceKey") {
+			return nil, unauthorized(pairAgain)
+		}
+		key, err := deviceKey(b)
+		if err != nil {
+			return nil, err
+		}
+		device := findDevice(app, key)
+		if device == nil || device.User() != user.Id {
+			return nil, unauthorized("This PC is no longer paired with an account.")
 		}
 		if b.set("previousSessionId") {
 			previous, err := ownSession(app, user.Id, b.str("previousSessionId"))
@@ -82,15 +99,13 @@ func session(e *core.RequestEvent) error {
 		// restart, an update, a crash). Their readings are not marked stale: a restarted app
 		// takes its character over within seconds, and otherwise the missing heartbeat turns
 		// it stale.
-		if device != nil {
-			old, err := list(app, "publisher_sessions", "device = {:device}", dbx.Params{"device": device.Id})
-			if err != nil {
+		old, err := list(app, "publisher_sessions", "device = {:device}", dbx.Params{"device": device.Id})
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range old {
+			if err := app.Delete(s); err != nil {
 				return nil, err
-			}
-			for _, s := range old {
-				if err := app.Delete(s); err != nil {
-					return nil, err
-				}
 			}
 		}
 		s, err := newAs[ReaderSession](app, "publisher_sessions")
@@ -98,27 +113,24 @@ func session(e *core.RequestEvent) error {
 			return nil, err
 		}
 		s.Set("user", user.Id)
+		s.Set("device", device.Id)
 		s.Contacted()
-		if device != nil {
-			s.Set("device", device.Id)
-		}
 		s.Set("appVersion", appVersion(b["appVersion"]))
 		if err := app.Save(s); err != nil {
 			return nil, err
-		}
-		if device == nil {
-			if err := endExtraSessions(app, user.Id); err != nil {
-				return nil, err
-			}
 		}
 		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats"), "shareTeammates": shareTeammates(user)}, nil
 	})
 }
 
 // character saves a character's identity before its first game reading. This route
-// cannot supply energy, confidence, ownership, timestamps or a reader session.
+// cannot supply energy, confidence, ownership, timestamps or a reader session. Only a
+// paired PC's app saves one (pairedRequest).
 func character(e *core.RequestEvent) error {
 	return mutate(e, func(app core.App, user *core.Record, b body, _ *[]string) (any, error) {
+		if _, err := pairedRequest(e); err != nil {
+			return nil, err
+		}
 		for key := range b {
 			if key != "characterName" && key != "server" && key != "region" {
 				return nil, badRequest("Only character name, server and region may be saved here.")
@@ -250,6 +262,12 @@ func report(e *core.RequestEvent) error {
 		session, err := ownSession(app, user.Id, b.str("sessionId"))
 		if err != nil {
 			return nil, err
+		}
+		// Only the paired PC that opened the session sends its readings: a session opened
+		// before device keys, or a request with another token, is a 401. The app of that PC
+		// signs in again with its device key and repeats the reading once.
+		if device, err := pairedRequest(e); err != nil || session.Device() != device {
+			return nil, unauthorized(pairAgain)
 		}
 		// Only a reading from the account's own open session names its adapter on the
 		// monitor and in the operator's alerts (seenAdapters).

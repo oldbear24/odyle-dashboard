@@ -28,7 +28,32 @@ let child,
   plaync,
   playncUrl;
 const shots = process.env.ODYLE_UI_SHOTS;
+// Since 1.0.0 the reader routes take only a paired PC: /session its device key, /report and
+// /character its app token. A test that reads for an account sends them through a PC paired with
+// it (one per account token, made by the test build's fixture); requests that name a key or come
+// with an app's token already are sent as they are. tests/integration.test.mjs checks the rule.
+const readerApps = new Map();
+async function readerApp(auth) {
+  if (!readerApps.has(auth.token)) {
+    const res = await fetch(url + '/__test__/paired-app', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: auth.record.id }),
+    });
+    assert.equal(res.status, 200);
+    readerApps.set(auth.token, await res.json());
+  }
+  return readerApps.get(auth.token);
+}
 async function request(path, body, auth, method = 'POST') {
+  if (auth?.record && ['/api/odyle/session', '/api/odyle/report', '/api/odyle/character'].includes(path)) {
+    if (path === '/api/odyle/session' && body?.deviceKey) return send(path, body, auth, method);
+    const app = await readerApp(auth);
+    return send(path, path === '/api/odyle/session' ? { deviceKey: app.deviceKey, ...body } : body, app, method);
+  }
+  return send(path, body, auth, method);
+}
+async function send(path, body, auth, method) {
   const res = await fetch(url + path, {
     method,
     headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: auth.token } : {}) },
@@ -2653,7 +2678,7 @@ test('each character keeps its own checklist, filled from the Global list, and t
 
 test('the account page lists paired PCs, removes one and signs out everywhere', async () => {
   const user = await account('PC owner');
-  const key = (await request('/api/odyle/desktop-device', { name: 'GAMING-PC' }, user)).data.deviceKey;
+  const key = (await request('/__test__/paired-app', { user: user.record.id, name: 'GAMING-PC' })).data.deviceKey;
   const { page, errors, close } = await open(user, '#/account');
   try {
     await page.locator('.device-row', { hasText: 'GAMING-PC' }).waitFor();

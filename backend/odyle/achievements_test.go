@@ -34,8 +34,7 @@ func TestReadingsReachAchievementsWithTheirSpinsAndItems(t *testing.T) {
 	app := newTestApp(t)
 	acceptFixtures(t, app)
 	player := newUser(t, app, "Daeva")
-	auth := tokenOf(t, player)
-	session := saved(t, app, "publisher_sessions", map[string]any{"user": player.Id, "expiresAt": expiry(86400)})
+	auth, session := pairedReader(t, app, player)
 	sequence := 0
 	read := func(value int64, kind string, delta, base int64) {
 		t.Helper()
@@ -57,8 +56,9 @@ func TestReadingsReachAchievementsWithTheirSpinsAndItems(t *testing.T) {
 	if p.Counts["spends"] != 1 || p.Counts["spent"] != 40 || p.Counts["items"] != 1 || p.Counts["days"] != 1 || p.Counts["streak"] != 1 || p.Counts["read"] != 1 {
 		t.Fatalf("counts: %v", p.Counts)
 	}
-	// 2 for the first reading, 1 for the cube, 1 for the item, and the slot machine's spin of the day.
-	if user.GetInt("spins") != 5 {
+	// 2 for pairing the PC, 2 for the first reading, 1 for the cube, 1 for the item, and the slot
+	// machine's spin of the day.
+	if user.GetInt("spins") != 7 {
 		t.Fatalf("spins: %d", user.GetInt("spins"))
 	}
 	// A snapshot that dropped (spent on a PC without the reader) counts too; 1,000 spent gives the crate.
