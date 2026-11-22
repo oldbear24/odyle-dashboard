@@ -144,7 +144,7 @@ func pair(e *core.RequestEvent) error {
 				return err
 			}
 			achieved(app, user.Id, nil, true)
-			result = map[string]any{"token": token, "record": user, "deviceKey": key}
+			result = withServerVersion(map[string]any{"token": token, "record": user, "deviceKey": key})
 			return nil
 		}); err != nil {
 			return err
@@ -185,7 +185,7 @@ func desktopSignIn(e *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"token": token, "record": user})
+		return e.JSON(200, withServerVersion(map[string]any{"token": token, "record": user}))
 	})
 }
 

@@ -119,7 +119,7 @@ func session(e *core.RequestEvent) error {
 		if err := app.Save(s); err != nil {
 			return nil, err
 		}
-		return map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats"), "shareTeammates": shareTeammates(user)}, nil
+		return withServerVersion(map[string]any{"sessionId": s.Id, "sequence": 0, "readerPaused": readSettings(app).ReaderPaused, "shareLocation": user.GetBool("shareLocation"), "pvpStats": user.GetBool("pvpStats"), "shareTeammates": shareTeammates(user)}), nil
 	})
 }
 
@@ -407,7 +407,7 @@ func heartbeat(e *core.RequestEvent) error {
 			beat(e.App, session, read, time.Now())
 			noteReader(e.App, session.Id, b, time.Now())
 		}
-		return e.JSON(200, map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation"), "pvpStats": e.Auth.GetBool("pvpStats"), "shareTeammates": shareTeammates(e.Auth)})
+		return e.JSON(200, withServerVersion(map[string]any{"serverNow": now(), "readerPaused": readSettings(e.App).ReaderPaused, "shareLocation": e.Auth.GetBool("shareLocation"), "pvpStats": e.Auth.GetBool("pvpStats"), "shareTeammates": shareTeammates(e.Auth)}))
 	})
 }
 

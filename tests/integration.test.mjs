@@ -2537,10 +2537,17 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
   await t.test('a paired app keeps its pairing: its device key signs in again until it unpairs', async () => {
     const paired = (await action('pair', { code: (await action('desktop-code', {}, player)).data.code })).data;
     assert.match(paired.deviceKey, /^[A-Za-z0-9]{48}$/);
+    // Every answer that signs an app in names the server's release (the test build is "test").
+    assert.equal(paired.serverVersion, 'test');
     // The key, not the one-day token, is what lasts: each sign-in issues a fresh account token.
     const signedIn = await action('desktop-sign-in', { deviceKey: paired.deviceKey });
     assert.equal(signedIn.status, 200, JSON.stringify(signedIn.data));
     assert.equal(signedIn.data.record.id, player.record.id);
+    assert.equal(signedIn.data.serverVersion, 'test');
+    const opened = await action('session', { deviceKey: paired.deviceKey }, signedIn.data);
+    assert.deepEqual([opened.status, opened.data.serverVersion], [200, 'test']);
+    const beat = await action('heartbeat', { sessionId: opened.data.sessionId }, signedIn.data);
+    assert.deepEqual([beat.status, beat.data.serverVersion], [200, 'test']);
     assert.equal((await request('/api/odyle/rooms', undefined, signedIn.data, 'GET')).status, 200);
     // Device sign-in is capped at 30 a minute per client; the whole run stays below that.
     assert.equal((await action('desktop-sign-in', { deviceKey: 'x'.repeat(48) })).status, 401);
