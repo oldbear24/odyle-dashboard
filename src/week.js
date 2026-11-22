@@ -1,5 +1,5 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, timestamp, classOf, weekDates } from './model.js';
+import { escape as esc, timestamp, classOf, weekDates, number as count } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { weeklyLedger } from './history.js';
@@ -16,7 +16,7 @@ import { achievementName } from './achievements.js';
 const dayMs = 86400000, weekMs = 7 * dayMs;
 // A daily period is named by its middle, so the reset hour never shifts it a day in the reader's zone.
 const halfDay = dayMs / 2;
-const number = n => Math.round(n).toLocaleString(locale());
+const number = n => count(Math.round(n));
 
 // The change a reading made, as weeklyLedger counts it: what a spend took, else a drop.
 function spentAt(readings, i) {

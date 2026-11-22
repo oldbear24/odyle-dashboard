@@ -29,4 +29,6 @@ export function weekDates(from, until) {
   const sameYear = first.getFullYear() === last.getFullYear();
   return `${first.toLocaleDateString(locale(), { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })} – ${last.toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' })}`;
 }
+// A count in the reader's language: 1,234 or 1 234; anything not a number counts as 0.
+export const number = value => (Number(value) || 0).toLocaleString(locale());
 export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));

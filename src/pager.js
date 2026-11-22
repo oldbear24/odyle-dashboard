@@ -17,6 +17,13 @@ export function pageOf(list, page, perPage) {
 // Empty rows that fill a short page up to perPage rows of the given columns.
 export const fillers = ({ pages, perPage }, rows, columns) => pages > 1 && rows < perPage ? `<tr class="pager-filler" aria-hidden="true">${'<td>&nbsp;</td>'.repeat(columns)}</tr>`.repeat(perPage - rows) : '';
 
+// The periods a dialog offers: those of `offered` shorter than what the server keeps, then that.
+export const periodChoices = (offered, keep) => [...offered.filter(days => days < keep), keep];
+// The switch between them, `attribute` carrying the days; none for a single period.
+export function periodSwitch(choices, days, attribute, name) {
+  return choices.length > 1 ? `<div class="segmented" role="group" aria-label="${esc(t('Period'))}">${choices.map(d => `<button type="button" ${attribute}="${d}" aria-pressed="${d === days}">${esc(name(d))}</button>`).join('')}</div>` : '';
+}
+
 // The buttons under a list; `attribute` carries the page each button opens.
 export function pager({ page, pages }, attribute, label) {
   if (pages <= 1) return '';

@@ -9,8 +9,8 @@
 // from the Odyle server only (backend/odyle/armoryimages.go). Its paths, the titles of its pages
 // and the class emblems are in armorylinks.js, which the rest of the dashboard uses without
 // loading this module: it loads with the armory's first page (main.js).
-import { t, tn, locale } from './i18n.js';
-import { age, escape as esc } from './model.js';
+import { t, tn } from './i18n.js';
+import { age, escape as esc, number } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { armoryRoute, profilePath, topPath, imageUrl, classBadge } from './armorylinks.js';
@@ -23,7 +23,6 @@ const regionLabel = region => regionNames()[searchRegions[region]] || '';
 // The character's page on PLAYNC's own site.
 export const playncPage = answer => `https://aion2.plaync.com/en-us/characters/${encodeURIComponent(answer.serverId)}/${encodeURIComponent(answer.characterId)}?region=${encodeURIComponent(answer.region)}`;
 
-const number = value => Number(value || 0).toLocaleString(locale());
 const percent = (part, whole) => whole ? Math.min(100, Math.round(part / whole * 100)) : 0;
 
 const picture = (base, name, kind = '') => { const src = imageUrl(base, name); return src ? `<img class="armory-img ${kind}" src="${esc(src)}" alt="" loading="lazy" decoding="async" draggable="false">` : ''; };

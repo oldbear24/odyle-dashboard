@@ -1,4 +1,4 @@
-import { timestamp } from './model.js';
+import { timestamp, escape as escapeText } from './model.js';
 import { t } from './i18n.js';
 // Daily and weekly resets of the Global service happen at one UTC hour (07:00 by
 // default) and the weekly reset on one weekday (Wednesday by default); the backend
@@ -40,4 +40,3 @@ export function templatesForm(templates, tasks, scope) {
   const part = (cadence, label) => group(cadence).length ? `<fieldset><legend>${label}</legend>${rows(group(cadence))}</fieldset>` : '';
   return `<form id="task-templates-form" class="templates-form">${part('daily', t('Daily'))}${part('weekly', t('Weekly'))}<button class="button primary" type="submit">${t('Add the chosen tasks')}</button></form>`;
 }
-const escapeText = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);

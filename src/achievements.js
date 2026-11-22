@@ -1,5 +1,5 @@
 import { t, tn, locale } from './i18n.js';
-import { escape as esc, timestamp } from './model.js';
+import { escape as esc, timestamp, number } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { swatch } from './slots.js';
@@ -9,7 +9,6 @@ import { swatch } from './slots.js';
 // catalog, the goals and what each gives). Never ranked or compared: nobody else sees them, only
 // the items an account wears next to its name. Signed out the page shows what there is to reach.
 
-const number = n => Number(n).toLocaleString(locale());
 // Each achievement's sign, name and how it is reached (goal: the count it needs).
 const about = {
   'paired': ['🖥️', () => t('Connected'), () => t('Pair the Windows app with your account.')],
