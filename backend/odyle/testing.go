@@ -52,8 +52,13 @@ func loopbackOnly(addr string) error {
 }
 
 // guarded is the test build's start: a banner, a refusal of an address other machines reach, then
-// the fixtures.
+// the fixtures. PocketBase's in-process test scenarios start no server (se.Server is nil) and
+// listen nowhere, so only a real serve is checked.
 func guarded(se *core.ServeEvent) {
+	if se.Server == nil {
+		fixtures(se)
+		return
+	}
 	if err := loopbackOnly(se.Server.Addr); err != nil {
 		fmt.Fprintln(os.Stderr, "odyle-test: "+err.Error())
 		os.Exit(1)

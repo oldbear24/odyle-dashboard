@@ -17,8 +17,8 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/subscriptions"
 )
 
-// A truncated or corrupt PNG is refused (or, when its header says it fits, kept as it came: see
-// the skipped case) without a panic, and a header that claims a huge picture is never decoded.
+// A truncated or corrupt PNG is refused without a panic, also when its header says it already fits,
+// and a header that claims a huge picture is never decoded.
 func TestShrinkIconRefusesTruncatedAndCorruptPNGs(t *testing.T) {
 	big := pngOf(t, 512)
 	for name, icon := range map[string][]byte{
