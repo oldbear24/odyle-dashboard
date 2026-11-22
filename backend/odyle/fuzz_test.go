@@ -133,7 +133,8 @@ func FuzzPvpEvent(f *testing.F) {
 	})
 }
 
-// The body helpers keep the clients' JavaScript-era contract for any JSON a client sends.
+// The body helpers read any JSON a client sends: an id is its text, a number or boolean spelled
+// out, and "" for anything else.
 func FuzzBody(f *testing.F) {
 	for _, s := range []string{`{"v":"x"}`, `{"v":1.5}`, `{"v":null}`, `{"v":[1,null,"a",[2]]}`, `{"v":{"a":1}}`, `{}`, `{"v":true}`} {
 		f.Add(s)
@@ -144,8 +145,12 @@ func FuzzBody(f *testing.F) {
 			return
 		}
 		got := b.str("v")
-		if _, ok := b["v"]; !ok && got != "undefined" {
-			t.Fatalf("a missing field reads %q", got)
+		switch b["v"].(type) {
+		case string, float64, bool:
+		default:
+			if got != "" {
+				t.Fatalf("%s reads %q", raw, got)
+			}
 		}
 		if s, ok := b["v"].(string); ok && (got != s || b.set("v") != (s != "")) {
 			t.Fatalf("a string reads %q, set %v", got, b.set("v"))

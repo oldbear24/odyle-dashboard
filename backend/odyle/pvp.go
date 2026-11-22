@@ -43,13 +43,7 @@ const pvpOpponents = 500
 // acceptedPvpAdapters are the PvP adapters stored now: Server controls switch them off like
 // reading adapters.
 func acceptedPvpAdapters(app core.App) []string {
-	out, disabled := []string{}, readSettings(app).Adapters.Disabled
-	for _, name := range verifiedPvpAdapters {
-		if !contains(disabled, name) {
-			out = append(out, name)
-		}
-	}
-	return out
+	return enabledAdapters(verifiedPvpAdapters, readSettings(app).Adapters.Disabled)
 }
 
 // pvpCounts is characters.pvp: the character's events since its owner turned PvP stats on.

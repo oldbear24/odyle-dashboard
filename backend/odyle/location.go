@@ -32,13 +32,7 @@ const locationKeepEvery, locationKeepDistance = time.Minute, 100
 // acceptedLocationAdapters are the location adapters stored now: Server controls switch them
 // off like reading adapters.
 func acceptedLocationAdapters(app core.App) []string {
-	out, disabled := []string{}, readSettings(app).Adapters.Disabled
-	for _, name := range verifiedLocationAdapters {
-		if !contains(disabled, name) {
-			out = append(out, name)
-		}
-	}
-	return out
+	return enabledAdapters(verifiedLocationAdapters, readSettings(app).Adapters.Disabled)
 }
 
 // A game map as superusers name it (Game settings): its id from the game, a name, and the map

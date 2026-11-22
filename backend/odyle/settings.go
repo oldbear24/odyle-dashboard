@@ -533,13 +533,19 @@ func dungeonNames(entries []dungeonEntry) []string {
 var adapterName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`)
 
 func accepted(lists adapterLists) []string {
+	return append(enabledAdapters(verifiedAdapters, lists.Disabled), lists.Extra...)
+}
+
+// enabledAdapters are the built-in adapters of one kind (protocols.go) that Server controls did
+// not switch off.
+func enabledAdapters(builtIn, disabled []string) []string {
 	out := []string{}
-	for _, name := range verifiedAdapters {
-		if !contains(lists.Disabled, name) {
+	for _, name := range builtIn {
+		if !contains(disabled, name) {
 			out = append(out, name)
 		}
 	}
-	return append(out, lists.Extra...)
+	return out
 }
 
 func adapterSettings(value any) (adapterLists, error) {

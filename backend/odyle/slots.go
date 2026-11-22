@@ -338,15 +338,17 @@ func slotEquip(e *core.RequestEvent) error {
 		if err != nil {
 			return nil, err
 		}
-		kind, id := b.str("kind"), b.str("id")
+		// An empty id takes the kind off; a left-out or non-text id is no item.
+		kind, _ := b.text("kind")
+		id, isText := b.text("id")
 		if kind != "color" && kind != "frame" && kind != "badge" {
 			return nil, badRequest("Choose a colour, a frame or a badge.")
 		}
 		w := wardrobeOf(user)
 		w.refill(app, time.Now())
-		if id == "" {
+		if isText && id == "" {
 			delete(w.Equipped, kind)
-		} else if c, ok := cosmeticById(id); !ok || c.Kind != kind || !contains(w.Owned, id) {
+		} else if c, ok := cosmeticById(id); !isText || !ok || c.Kind != kind || !contains(w.Owned, id) {
 			return nil, badRequest("That item is not in your collection.")
 		} else {
 			w.Equipped[kind] = id

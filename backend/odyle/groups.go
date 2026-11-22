@@ -20,13 +20,7 @@ var groupId = regexp.MustCompile(`^[0-9a-f]{16}$`)
 // acceptedGroupAdapters are the group adapters stored now: Server controls switch them off like
 // reading adapters.
 func acceptedGroupAdapters(app core.App) []string {
-	out, disabled := []string{}, readSettings(app).Adapters.Disabled
-	for _, name := range verifiedGroupAdapters {
-		if !contains(disabled, name) {
-			out = append(out, name)
-		}
-	}
-	return out
+	return enabledAdapters(verifiedGroupAdapters, readSettings(app).Adapters.Disabled)
 }
 
 type gameGroup struct {

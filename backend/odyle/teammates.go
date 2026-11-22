@@ -23,13 +23,7 @@ const teammatesLimit = 48
 // acceptedTeammateAdapters are the teammate adapters accepted now: Server controls switch them off
 // like reading adapters.
 func acceptedTeammateAdapters(app core.App) []string {
-	out, disabled := []string{}, readSettings(app).Adapters.Disabled
-	for _, name := range verifiedTeammateAdapters {
-		if !contains(disabled, name) {
-			out = append(out, name)
-		}
-	}
-	return out
+	return enabledAdapters(verifiedTeammateAdapters, readSettings(app).Adapters.Disabled)
 }
 
 // teammates hands the scout the names of the players in a party or force with a character of the
