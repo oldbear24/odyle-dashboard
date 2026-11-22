@@ -9,7 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { connect } from './sse.mjs';
 import { createServer } from 'node:http';
 import { pushService } from './push-service.mjs';
-const url = 'http://127.0.0.1:18090';
+// The test backend's port; another run on the same machine sets its own (ODYLE_INTEGRATION_PORT).
+const port = Number(process.env.ODYLE_INTEGRATION_PORT || 18090);
+const url = `http://127.0.0.1:${port}`;
 let child, directory, owner, player, viewer, outsider, room, code, viewerCode, publisher, first, second, oauthServer, oauthUrl, playncServer, playncUrl, legacyId, legacyRoomId, legacyInvites;
 let releaseServer, releaseUrl, releaseHits = 0, releaseDown = false;
 // Stands in for Discord's webhook API; `discordAnswer` is the status it answers with.
@@ -40,7 +42,7 @@ async function stop() { if (child && child.exitCode === null) { const closed = n
 async function start() {
   // The test build of the backend (npm run backend:build): it approves only the synthetic
   // test-fixture-v1 adapter and adds the /__test__ routes (backend/odyle/testing.go).
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18090', '--dir=' + join(directory, 'data')], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl, ODYLE_DISCORD_WEBHOOK_BASE: discordUrl, ODYLE_TEST_SKIP_MIGRATIONS: upgraded ? '' : upgrades.join(',') } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', `--http=127.0.0.1:${port}`, '--dir=' + join(directory, 'data')], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, DISCORD_CLIENT_ID: 'test-application', DISCORD_CLIENT_SECRET: 'test-only-secret', PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, ODYLE_WINDOWS_RELEASE_URL: releaseUrl, ODYLE_DISCORD_WEBHOOK_BASE: discordUrl, ODYLE_TEST_SKIP_MIGRATIONS: upgraded ? '' : upgrades.join(',') } });
   let log = ''; child.stdout.on('data', v => log += v); child.stderr.on('data', v => log += v);
   for (let i = 0; i < 50; i++) {
     try {
@@ -1143,6 +1145,38 @@ test('the dashboard offers the newest Windows release through the backend, cache
     const operator = (await request('/__test__/superuser', {})).data, lookup = (await request('/api/odyle/admin/status', undefined, operator, 'GET')).data.release;
     assert.deepEqual([lookup.version, lookup.fetchedAt, lookup.error], ['', '', 'GitHub answered 503.']); assert.ok(past(lookup.checkedAt));
   } finally { releaseDown = false; }
+});
+// The test build signs anybody in as a superuser (/__test__/superuser), so it names itself, says so
+// when it starts and refuses to listen where other machines can reach it (#201).
+test('the test build is version "test", prints a banner and listens on loopback addresses only', async () => {
+  assert.equal((await request('/api/odyle/announcement', undefined, undefined, 'GET')).data.dashboard, 'test');
+  const binary = resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test');
+  const scratch = await mkdtemp(join(tmpdir(), 'odyle-test-build-'));
+  try {
+    for (const address of ['0.0.0.0', '[::]', '']) {
+      const refused = await new Promise(done => {
+        const run = spawn(binary, ['serve', `--http=${address}:${port + 1}`, '--dir=' + join(scratch, 'refused')], { stdio: ['ignore', 'pipe', 'pipe'] });
+        let log = ''; run.stdout.on('data', v => log += v); run.stderr.on('data', v => log += v);
+        const guard = setTimeout(() => run.kill(), 30000);
+        run.on('exit', code => { clearTimeout(guard); done({ code, log }); });
+      });
+      assert.equal(refused.code, 1, `${address || '(all addresses)'}: ${refused.log}`);
+      assert.match(refused.log, /listens only on a loopback address/);
+      assert.doesNotMatch(refused.log, /THE DISPOSABLE TEST BUILD/, 'no banner for a start that is refused');
+    }
+    // On a loopback address it starts, and says what it is.
+    const run = spawn(binary, ['serve', `--http=127.0.0.1:${port + 1}`, '--dir=' + join(scratch, 'data')], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let log = ''; run.stdout.on('data', v => log += v); run.stderr.on('data', v => log += v);
+    try {
+      let up = false;
+      for (let i = 0; i < 100 && !up; i++) { up = await fetch(`http://127.0.0.1:${port + 1}/api/health`).then(r => r.ok, () => false); if (!up) await delay(100); }
+      assert.ok(up, log);
+      for (let i = 0; i < 30 && !log.includes('THE DISPOSABLE TEST BUILD'); i++) await delay(100);
+      assert.match(log, /THE DISPOSABLE TEST BUILD/);
+    } finally {
+      const closed = new Promise(done => run.once('exit', done)); run.kill(); await closed;
+    }
+  } finally { await rm(scratch, { recursive: true, force: true, maxRetries: 3 }); }
 });
 // Last: it spends this client's pairing budget for the minute.
 test('pairing, device sign-in and invite previews are rate limited', async () => {

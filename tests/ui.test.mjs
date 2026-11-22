@@ -1,5 +1,5 @@
 // Browser checks of the built dashboard (npm run build first) against a disposable
-// backend on port 18091 (the test build, npm run backend:build). Accounts are issued by
+// backend on port 18091, or ODYLE_UI_PORT (the test build, npm run backend:build). Accounts are issued by
 // a test-only route (backend/odyle/testing.go) and put into the
 // browser's localStorage as the SDK stores a Discord sign-in. Set ODYLE_UI_SHOTS to a
 // directory to keep a screenshot of every checked page, and ODYLE_UI_WIDTH to check
@@ -16,7 +16,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import { createServer } from 'node:http';
-const url = 'http://127.0.0.1:18091';
+const port = Number(process.env.ODYLE_UI_PORT || 18091);
+const url = `http://127.0.0.1:${port}`;
 const dashboardVersion = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
 let child, directory, browser, discord, discordUrl, discordPosts = 0, plaync, playncUrl;
 const shots = process.env.ODYLE_UI_SHOTS;
@@ -60,7 +61,7 @@ before(async () => {
   });
   await new Promise(r => plaync.listen(0, '127.0.0.1', r)); playncUrl = 'http://127.0.0.1:' + plaync.address().port;
   directory = await mkdtemp(join(tmpdir(), 'odyle-ui-test-'));
-  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', '--http=127.0.0.1:18091', '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, PLAYNC_ASSETS_URL: playncUrl + '/assets/', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
+  child = spawn(resolve('.runtime', process.platform === 'win32' ? 'odyle-test.exe' : 'odyle-test'), ['serve', `--http=127.0.0.1:${port}`, '--dir=' + join(directory, 'data'), '--publicDir=' + resolve('dist')], { stdio: 'ignore', env: { ...process.env, PLAYNC_SEARCH_URL: playncUrl + '/search', PLAYNC_ARMORY_URL: playncUrl, PLAYNC_IMAGE_URL: playncUrl, PLAYNC_ASSETS_URL: playncUrl + '/assets/', ODYLE_WINDOWS_RELEASE_URL: 'http://127.0.0.1:9/releases', ODYLE_DISCORD_WEBHOOK_BASE: discordUrl } });
   for (let i = 0; i < 50 && !(await fetch(url + '/api/health').then(r => r.ok, () => false)); i++) await delay(100);
   browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM_PATH ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } : {});
   if (shots) await mkdir(shots, { recursive: true });
@@ -328,7 +329,9 @@ test('rooms plan, change and export runs, and members see each character history
     await toast(page).filter({ hasText: 'Copied for Discord: paste it in any channel.' }).waitFor();
     await page.locator('.runs .wish-row').scrollIntoViewIfNeeded(); await shot(page, 'room-runs');
     const copied = await page.evaluate(() => window.copied);
-    assert.equal(copied.length, 1); assert.match(copied[0], /^\*\*Fire Temple\*\* · <t:\d+:F> \(<t:\d+:R>\) · Going \(1(\/\d+)?\): .+ · Bring food · http:\/\/127\.0\.0\.1:18091\/room\/\w+$/);
+    assert.equal(copied.length, 1); assert.match(copied[0], /^\*\*Fire Temple\*\* · <t:\d+:F> \(<t:\d+:R>\) · Going \(1(\/\d+)?\): .+ · Bring food · http:\/\/\S+$/);
+    const roomLink = copied[0].split(' · ').at(-1);
+    assert.ok(roomLink.startsWith(url + '/room/'), roomLink); assert.match(roomLink.slice(url.length), /^\/room\/\w+$/);
     await page.locator(`[data-history="${c.id}"]`).click();
     await page.locator('#modal .history-line').waitFor();
     assert.deepEqual(await page.locator('#modal .history-table tbody td:nth-child(2)').allInnerTexts(), ['90', '30', '55', '20']);
@@ -1736,7 +1739,7 @@ test('a page that fails to load says so, replaces the page before it and loads b
 test('the privacy notice is a page of the dashboard, and no page loads anything from another site (#39)', async () => {
   const { page, errors, close } = await open(null, '#/');
   const elsewhere = [];
-  page.on('request', request => { if (new URL(request.url()).host !== '127.0.0.1:18091') elsewhere.push(request.url()); });
+  page.on('request', request => { if (new URL(request.url()).host !== `127.0.0.1:${port}`) elsewhere.push(request.url()); });
   try {
     await page.locator('.welcome-note a[href="./privacy"]').click();
     await page.getByRole('heading', { name: 'Privacy.' }).waitFor();
@@ -2239,6 +2242,132 @@ test('a server rolled back to an older release is no news: no note and no reload
     assert.equal(loads, 0);
     assert.equal(await page.locator('.update-note.is-newer').count(), 0);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('odyle.reloadedFor')), null);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+// Names players choose are shown as text wherever they appear, never as markup: a room, character,
+// server, display name, wished dungeon and information board made of HTML run nothing and open
+// no element, in the lists, the dialogs and the attributes that carry them.
+const pwned = 'window.__pwned=1';
+const hostile = {
+  room: `"></title><img src=x onerror=${pwned}> room`, character: `<img src=x onerror=${pwned}>`, other: `"><svg onload=${pwned}>`, server: `<b onmouseover=${pwned}>x`,
+  lead: `<script>${pwned}</script>`, mate: `'"</td><i onclick=${pwned}>`, dungeon: `"><img src=x onerror=${pwned}>`,
+  board: `See https://example.com/"onmouseover="${pwned} and <img src=x onerror=${pwned}> and [x](javascript:${pwned})`,
+};
+const injected = 'img[src="x"], svg[onload], [onerror], [onload], [onmouseover], [onclick], script:not([src])';
+async function nothingRan(page, where) {
+  assert.equal(await page.evaluate(() => window.__pwned), undefined, `${where}: a script ran`);
+  assert.equal(await page.locator(injected).count(), 0, `${where}: an element came out of a name`);
+}
+test('hostile room, character, server, display and dungeon names and a hostile board are only ever text', async () => {
+  const [lead, mate] = await Promise.all([account(hostile.lead), account(hostile.mate)]);
+  const created = await request('/api/odyle/create', { name: hostile.room }, lead);
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  const roomId = created.data.room.id;
+  assert.equal((await request('/__test__/member', { room: roomId, user: mate.record.id, role: 'reporter' })).status, 200);
+  const characters = [];
+  for (const [owner, characterName] of [[lead, hostile.character], [mate, hostile.other]]) {
+    const saved = await request('/api/odyle/character', { characterName, server: hostile.server, region: 'GLOBAL_EU' }, owner);
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    characters.push(saved.data.character);
+    assert.equal((await request('/api/odyle/sharing', { roomId, characterId: saved.data.character.id, enabled: true }, owner)).status, 200);
+  }
+  assert.equal((await request('/api/odyle/wishlist', { roomId, dungeon: hostile.dungeon, wanted: true }, lead)).status, 200);
+  assert.equal((await request('/api/odyle/board', { roomId, text: hostile.board }, lead)).status, 200);
+  for (const [who, auth] of [['lead', lead], ['mate', mate]]) {
+    const { page, errors, close } = await open(auth, '#/');
+    try {
+      await page.getByRole('heading', { name: 'Rooms & characters.' }).waitFor();
+      assert.ok((await page.locator('.personal-characters').innerText()).includes(who === 'lead' ? hostile.character : hostile.other), 'the library lists the character as text');
+      await nothingRan(page, who + ' library');
+      for (const path of ['#/room/' + roomId, '#/tasks', '#/week', '#/achievements', '#/account']) {
+        await page.evaluate(path => { location.hash = path; }, path);
+        await page.waitForLoadState('networkidle'); await delay(400);
+        await nothingRan(page, who + ' ' + path);
+      }
+      await page.evaluate(path => { location.hash = path; }, '#/room/' + roomId);
+      await page.locator('.room-page h1').waitFor();
+      assert.ok((await page.locator('.room-page h1').innerText()).includes(hostile.room), 'the room name is text');
+      assert.ok((await page.locator('.member-card .name-text').allInnerTexts()).some(text => text.includes(hostile.character)), 'the member card names the character');
+      assert.ok((await page.locator('.board-text').innerText()).includes('<img src=x onerror='), 'the board shows its markup as text');
+      // The board's link is a link to the address and nothing else: no attribute came out of its quotes.
+      for (const link of await page.locator('.board-text a').all()) assert.equal(await link.getAttribute('onmouseover'), null);
+      assert.equal(await page.locator('.board-text a[href^="javascript:"]').count(), 0);
+      assert.equal(await page.locator('.wishlist [data-plan-wish], .wishlist [data-wish]').first().evaluate(button => (button.dataset.planWish || button.dataset.wish)), hostile.dungeon, 'the wished dungeon is an attribute value, whole');
+      await nothingRan(page, who + ' room');
+      await shot(page, 'hostile-room');
+      // The dialogs that carry the names: the room's settings, its invites and a character's history.
+      await page.locator('[data-action="room-settings"]').click();
+      await page.locator('#modal').waitFor();
+      if (who === 'lead') assert.equal(await page.locator('#rename-form [name=name]').inputValue(), hostile.room, 'the rename field holds the name whole');
+      await nothingRan(page, who + ' settings');
+      await page.keyboard.press('Escape');
+      await page.locator(`[data-history="${characters[who === 'lead' ? 0 : 1].id}"]`).click();
+      await page.locator('#modal .history-dialog').waitFor();
+      assert.ok((await page.locator('#modal').innerText()).includes(who === 'lead' ? hostile.character : hostile.other));
+      await nothingRan(page, who + ' history');
+      await page.keyboard.press('Escape');
+      assert.deepEqual(errors, [], who);
+    } finally { await close(); }
+  }
+  // A display name made of HTML is kept whole in the form that edits it, and the room's rename takes a hostile name too.
+  const { page, errors, close } = await open(lead, '#/account');
+  try {
+    assert.equal(await page.locator('#profile-form [name=displayName]').inputValue(), hostile.lead);
+    await nothingRan(page, 'account');
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
+});
+
+// A server that answers with markup in its message (a proxy's error page, a message that quotes a
+// name) shows it as text, on a page that could not load and under the form of an action that failed.
+test('a failed page load and a refused action show their messages as text', async () => {
+  const user = await account('Message reader');
+  const roomId = (await request('/api/odyle/create', { name: 'Message room' }, user)).data.room.id;
+  const message = `<img src=x onerror=${pwned}> down`;
+  const { page, errors, close } = await open(user, '#/room/' + roomId);
+  try {
+    await page.locator('.room-page h1').waitFor();
+    // The room page's own request fails.
+    await page.route('**/api/odyle/snapshot/*', route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message }) }));
+    await page.evaluate(() => { location.hash = '#/week'; });
+    await page.evaluate(id => { location.hash = '#/room/' + id; }, roomId);
+    await page.getByRole('heading', { name: 'This page could not be loaded.' }).waitFor();
+    assert.match(await page.locator('main .intro').innerText(), /The Odyle server did not answer\./);
+    await nothingRan(page, 'a room that did not load');
+    await page.unroute('**/api/odyle/snapshot/*');
+    await page.locator('[data-action=reload-page]').click();
+    await page.locator('.room-page h1').waitFor();
+    // An action the server refuses with markup in its message.
+    await page.route('**/api/odyle/rename', route => route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message }) }));
+    await page.locator('[data-action="room-settings"]').click();
+    await page.locator('#rename-form [name=name]').fill('Another name');
+    await page.locator('#rename-form [type=submit]').click();
+    await page.locator('#rename-form .form-error[role=alert]').waitFor();
+    assert.ok((await page.locator('#rename-form .form-error').innerText()).includes('<img src=x onerror='), 'the refusal shows its markup as text');
+    await nothingRan(page, 'a refused rename');
+    assert.deepEqual(errors.filter(e => !/status of 5\d\d|status of 4\d\d/.test(e)), []);
+  } finally { await close(); }
+});
+
+test('a tab whose account another tab replaced reloads as the new one, and clearing the storage signs it out (#198)', async () => {
+  const [one, two] = await Promise.all([account('First tab account'), account('Second tab account')]);
+  const { page, errors, close } = await open(one, '#/account');
+  try {
+    assert.equal(await page.locator('#profile-form [name=displayName]').inputValue(), 'First tab account');
+    const other = await page.context().newPage();
+    await other.goto(url + '/#/account'); await other.locator('#profile-form').waitFor();
+    // Another account signs in in the second tab: the first reloads and is that account.
+    const reloaded = page.waitForEvent('load');
+    await other.evaluate(session => localStorage.setItem('odyle.account', session), JSON.stringify({ token: two.token, record: two.record }));
+    await reloaded;
+    await page.waitForFunction(() => document.querySelector('#profile-form [name=displayName]')?.value === 'Second tab account');
+    // The browser's storage cleared (a "clear site data"): every tab is signed out.
+    await other.evaluate(() => localStorage.clear());
+    await page.locator('[data-action="discord"]').waitFor({ timeout: 5000 });
+    await toast(page).filter({ hasText: 'You signed out in another tab.' }).waitFor();
+    assert.equal(await page.locator('.personal-characters').count(), 0);
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });
