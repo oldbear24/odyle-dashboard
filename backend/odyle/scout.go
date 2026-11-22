@@ -26,7 +26,7 @@ import (
 //     a class's top rankLimit whose gear is unknown or scoutRebuild old, as many as its lanes
 //     (scoutLanes under Server controls) have free, each lane one every scoutBuildGap at most,
 //     passing over the characters whose gear is read already or whose lookup failed lately: the
-//     armory's queue runs them beside the readers' (armory.go), reading the info and equipment
+//     armory's queue runs them beside the readers' (armoryqueue.go), reading the info and equipment
 //     pages and each item's page as a lookup does, and keeps each as its build in armory_ranks
 //     (ranks.go), with the icons but no portrait and no profile;
 //   - a character the last search page listed (by id and name): its info page, for its combat

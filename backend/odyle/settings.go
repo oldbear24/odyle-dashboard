@@ -156,7 +156,7 @@ type settings struct {
 	PairingPaused       bool           `json:"pairingPaused"`
 	ReaderPaused        bool           `json:"readerPaused"`
 	ArmoryPaused        bool           `json:"armoryPaused"`
-	// How many of the armory's lookups run at once (armory.go): readers' and, beside them, the
+	// How many of the armory's lookups run at once (armoryqueue.go): readers' and, beside them, the
 	// scout's (scout.go; 0 lets it read no gear).
 	ArmoryLanes   int64          `json:"armoryLanes"`
 	ScoutLanes    int64          `json:"scoutLanes"`
@@ -807,11 +807,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}
-	// More or fewer armory lookups at once start or wait at once (armory.go).
+	// More or fewer armory lookups at once start or wait at once (armoryqueue.go).
 	if b.has("armoryLanes") || b.has("scoutLanes") {
 		stateOf(app).armory.resize(next)
 	}
-	// Pausing the armory and resuming it ends a wait PLAYNC asked for (armory.go), so a
+	// Pausing the armory and resuming it ends a wait PLAYNC asked for (armoryqueue.go), so a
 	// superuser need not wait it out or restart the server.
 	if wasPaused && !next.ArmoryPaused {
 		stateOf(app).armory.unblock()

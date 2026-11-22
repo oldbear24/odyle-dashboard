@@ -1,6 +1,6 @@
 // Discord reminders under Room settings (#33): the room owner connects a channel webhook and
 // chooses when runs are posted; the backend posts each run, edits the post after a change and
-// marks it when the run is cancelled or done (backend/odyle/discord.go). The webhook URL never
+// marks it when the run is cancelled or done (backend/odyle/discordjob.go). The webhook URL never
 // comes back from the server; its name in Discord and how the last delivery went do.
 import { t, language } from './i18n.js';
 import { age, escape as esc } from './model.js';

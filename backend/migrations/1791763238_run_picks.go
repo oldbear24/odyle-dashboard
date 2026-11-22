@@ -2,7 +2,7 @@ package migrations
 
 import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
-// The character each attendee brings to a planned run (backend/odyle/accounts.go plan):
+// The character each attendee brings to a planned run (backend/odyle/runs.go plan):
 // picks maps a membership to one of its own characters shared in the room. Rooms list it by
 // account id as `picks`; `attendees` stays the list of account ids the Windows app reads.
 func init() {
