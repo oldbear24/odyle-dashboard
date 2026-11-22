@@ -197,9 +197,8 @@ func rooms(e *core.RequestEvent) error {
 // to this room, so only those and the viewer's own are read; members always see all of
 // their own, each flagged with whether it is shared here. The announcement rides along, so
 // an open dashboard room needs no separate request for it, and so do the viewer's own
-// readers (readersOf). The
-// dungeon catalog comes twice: `dungeons` keeps the names that older dashboards read,
-// and `catalog` adds each dungeon's cost, party size and category.
+// readers (readersOf). The dungeon catalog (`catalog`) gives each dungeon's cost, party size
+// and category.
 func snapshot(e *core.RequestEvent) error {
 	return run(e, func() error {
 		id := e.Request.PathValue("id")
@@ -273,7 +272,7 @@ func snapshot(e *core.RequestEvent) error {
 				return err
 			}
 		}
-		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "dungeons": dungeonNames(rules.Dungeons), "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules), "classRoles": rules.ClassRoles, "maps": rules.Maps, "classIcons": classIcons(e.App)})
+		return e.JSON(200, map[string]any{"room": roomJSON(room, rules.OdylePerCube), "serverNow": now(), "members": out, "board": boardOf(room), "wishlist": wishes, "runs": runs, "week": week, "catalog": rules.Dungeons, "announcement": announcement(rules), "readers": readers, "clock": rules.Clock, "remindersPaused": rules.RemindersPaused, "maintenance": maintenanceOf(rules), "classRoles": rules.ClassRoles, "maps": rules.Maps, "classIcons": classIcons(e.App)})
 	})
 }
 

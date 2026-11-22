@@ -74,7 +74,7 @@ func TestCachedSettingsFollowEveryChange(t *testing.T) {
 func TestTheDungeonCatalogKeepsCostsPartySizesAndCategories(t *testing.T) {
 	app := newTestApp(t)
 	type entry = map[string]any
-	saved, err := writeSettings(app, body{"dungeons": []any{
+	saved, err := writeSettings(app, body{"catalog": []any{
 		"  Krao   Cave ",
 		entry{"name": "Abyssal Forge: Ludra", "cost": float64(80), "partySize": float64(10), "category": "  Sanctuary ", "unconfirmed": true},
 		entry{"name": "krao cave", "cost": float64(20)},
@@ -88,13 +88,10 @@ func TestTheDungeonCatalogKeepsCostsPartySizesAndCategories(t *testing.T) {
 	if !slices.Equal(saved.Dungeons, want) || !slices.Equal(readSettings(app).Dungeons, want) {
 		t.Fatalf("saved %+v", saved.Dungeons)
 	}
-	if got := dungeonNames(saved.Dungeons); !slices.Equal(got, []string{"Krao Cave", "Abyssal Forge: Ludra", "Draupnir"}) {
-		t.Fatalf("names %v", got)
-	}
 	for _, bad := range []any{"Krao Cave", []any{float64(42)}, []any{entry{"cost": float64(20)}}, []any{entry{"name": "X", "cost": float64(1001)}}, []any{entry{"name": "X", "cost": float64(-1)}},
 		[]any{entry{"name": "X", "cost": 2.5}}, []any{entry{"name": "X", "partySize": float64(6)}}, []any{entry{"name": "X", "partySize": "5"}},
 		[]any{entry{"name": "X", "category": strings.Repeat("c", 31)}}, []any{entry{"name": "X", "category": float64(5)}}, []any{entry{"name": "X", "unconfirmed": "yes"}}} {
-		if _, err := writeSettings(app, body{"dungeons": bad}); err == nil {
+		if _, err := writeSettings(app, body{"catalog": bad}); err == nil {
 			t.Errorf("accepted %v", bad)
 		}
 	}
@@ -120,34 +117,29 @@ func TestTheDungeonCatalogKeepsCostsPartySizesAndCategories(t *testing.T) {
 	}
 }
 
-// The superuser answer keeps `dungeons` the list of names admin pages opened before
-// catalog entries read and send back with every save: those names keep their saved
-// details, while `catalog` carries and saves the entries.
-func TestAdminPagesFromBeforeCatalogEntriesKeepTheCosts(t *testing.T) {
+// The superuser answer carries the catalog's entries as `catalog` only; `dungeons`, the
+// names admin pages from before catalog entries read and sent back, is gone since 1.0.0, and a
+// save that sends it is refused without changing anything.
+func TestTheCatalogIsSavedAndAnsweredAsCatalogOnly(t *testing.T) {
 	app := newTestApp(t)
 	type entry = map[string]any
 	saved, err := writeSettings(app, body{"catalog": []any{entry{"name": "Fire Temple", "cost": float64(60), "partySize": float64(5), "category": "Lower", "unconfirmed": true}, "Udas Temple"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := asJSON(t, saved); !strings.Contains(got, `"dungeons":["Fire Temple","Udas Temple"]`) || !strings.Contains(got, `"catalog":[{"name":"Fire Temple","cost":60,"partySize":5,"category":"Lower","unconfirmed":true},{"name":"Udas Temple","cost":0,"partySize":0,"category":"","unconfirmed":false}]`) {
+	if got := asJSON(t, saved); strings.Contains(got, `"dungeons"`) || !strings.Contains(got, `"catalog":[{"name":"Fire Temple","cost":60,"partySize":5,"category":"Lower","unconfirmed":true},{"name":"Udas Temple","cost":0,"partySize":0,"category":"","unconfirmed":false}]`) {
 		t.Fatalf("answer %s", got)
 	}
-	if got := asJSON(t, defaultSettings()); !strings.Contains(got, `"dungeons":[]`) || !strings.Contains(got, `"catalog":[]`) {
+	if got := asJSON(t, defaultSettings()); strings.Contains(got, `"dungeons"`) || !strings.Contains(got, `"catalog":[]`) {
 		t.Fatalf("defaults %s", got)
 	}
-	// An old page saves its game settings with the names it read, one dungeon added.
-	saved, err = writeSettings(app, body{"odylePerCube": float64(45), "dungeons": []any{"fire temple", "Udas Temple", "Krao Cave"}})
-	if err != nil {
-		t.Fatal(err)
+	for _, b := range []body{{"odylePerCube": float64(45), "dungeons": []any{"Fire Temple"}}, {"catalog": []any{"Krao Cave"}, "dungeons": []any{}}} {
+		if _, err := writeSettings(app, b); err == nil || err.Error() != "Send the dungeon catalog as catalog." {
+			t.Fatalf("%v: %v", b, err)
+		}
 	}
-	want := []dungeonEntry{{Name: "fire temple", Cost: 60, PartySize: 5, Category: "Lower", Unconfirmed: true}, {Name: "Udas Temple"}, {Name: "Krao Cave"}}
-	if !slices.Equal(saved.Dungeons, want) {
-		t.Fatalf("names saved as %+v", saved.Dungeons)
-	}
-	// The catalog itself is saved as given: a name alone costs Odyle per cube.
-	if saved, err = writeSettings(app, body{"catalog": []any{"Fire Temple"}, "dungeons": []any{"Ignored"}}); err != nil || !slices.Equal(saved.Dungeons, []dungeonEntry{{Name: "Fire Temple"}}) {
-		t.Fatalf("catalog saved as %+v, %v", saved.Dungeons, err)
+	if got := readSettings(app); got.OdylePerCube != 40 || len(got.Dungeons) != 2 || got.Dungeons[0].Cost != 60 {
+		t.Fatalf("a refused save changed the settings: %+v", got)
 	}
 }
 
@@ -182,7 +174,7 @@ func TestTheCatalogMigrationTurnsNamesIntoEntries(t *testing.T) {
 		t.Fatalf("max size %d", size)
 	}
 	// Entries saved with costs go back to their names.
-	if _, err := writeSettings(app, body{"dungeons": []any{map[string]any{"name": "Fire Temple", "cost": float64(60)}}}); err != nil {
+	if _, err := writeSettings(app, body{"catalog": []any{map[string]any{"name": "Fire Temple", "cost": float64(60)}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := migration.Down(app); err != nil {

@@ -912,7 +912,7 @@ test('with a dungeon catalog rooms pick dungeons from it and show what a cube co
     'Fire Temple',
     { name: 'Abyssal Forge: Ludra', cost: 80, partySize: 10, category: 'Sanctuary' },
   ];
-  assert.equal((await request('/api/odyle/admin/settings', { dungeons: catalog }, operator)).status, 200);
+  assert.equal((await request('/api/odyle/admin/settings', { catalog }, operator)).status, 200);
   const { page, errors, close } = await open(lead, '#/room/' + roomId);
   try {
     await page.locator('.room-page h1').waitFor();
@@ -961,14 +961,14 @@ test('with a dungeon catalog rooms pick dungeons from it and show what a cube co
     );
     await shot(page, 'room-catalog');
     // Without a catalog the forms take any name again.
-    assert.equal((await request('/api/odyle/admin/settings', { dungeons: [] }, operator)).status, 200);
+    assert.equal((await request('/api/odyle/admin/settings', { catalog: [] }, operator)).status, 200);
     await page.reload();
     await page.locator('#wish-form input[name=dungeon][list=wish-suggestions]').waitFor();
     assert.equal(await page.locator('.dungeon-facts').count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     await close();
-    await request('/api/odyle/admin/settings', { dungeons: [] }, operator);
+    await request('/api/odyle/admin/settings', { catalog: [] }, operator);
   }
 });
 
@@ -3564,7 +3564,7 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     await request(
       '/api/odyle/admin/settings',
       {
-        dungeons: [],
+        catalog: [],
         inactiveAccountDays: 0,
         historyDays: 30,
         locationDays: 30,

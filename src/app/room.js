@@ -329,7 +329,7 @@ async function loadRoom() {
     roomAgain = true;
     return;
   } // older than a change drawn meanwhile
-  const dungeons = snapshot.dungeons || [];
+  const catalog = snapshot.catalog || [];
   Object.assign(state, {
     room: snapshot.room,
     remindersPaused: Boolean(snapshot.remindersPaused),
@@ -344,8 +344,8 @@ async function loadRoom() {
     members: snapshot.members,
     wishlist: snapshot.wishlist || [],
     runs: snapshot.runs || [],
-    dungeons,
-    catalog: snapshot.catalog || dungeons.map(name => ({ name, cost: 0 })),
+    dungeons: catalog.map(d => d.name),
+    catalog,
     readers: snapshot.readers || state.readers,
     serverOffset: Date.parse(snapshot.serverNow) - Date.now(),
     online: true,

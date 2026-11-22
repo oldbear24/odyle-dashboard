@@ -464,16 +464,16 @@ test('catalog upgrade turns saved dungeon names into entries that cost Odyle per
   }));
   try {
     const saved = (await settings()).data.settings;
-    assert.deepEqual([saved.dungeons, saved.catalog], [['Fire Temple', 'Udas Temple'], entries]);
-    // Rooms keep the names under `dungeons`, which open dashboards read, and get the entries as `catalog`.
+    assert.deepEqual([saved.dungeons, saved.catalog], [undefined, entries]);
+    // Rooms get the entries as `catalog` (the names alone as `dungeons` went in 1.0.0).
     const room = await snapshot2(legacyRoomId, outsider);
-    assert.deepEqual([room.dungeons, room.catalog, room.room.cost], [['Fire Temple', 'Udas Temple'], entries, 40]);
+    assert.deepEqual([room.dungeons, room.catalog, room.room.cost], [undefined, entries, 40]);
     assert.equal(
       (await action('wishlist', { roomId: legacyRoomId, dungeon: 'Old Cave', wanted: true }, outsider)).status,
       400,
     );
   } finally {
-    assert.equal((await settings({ dungeons: [] })).status, 200);
+    assert.equal((await settings({ catalog: [] })).status, 200);
   }
 });
 test('first Discord OAuth sign-in creates an account; repeat sign-in retains its rooms', async () => {
@@ -1029,7 +1029,6 @@ test('superusers watch connected apps and their packets live and edit the server
     weeklyResetDay: 'wednesday',
     inactiveAccountDays: 0,
     catalog: [],
-    dungeons: [],
     announcement: '',
     announcementLevel: 'info',
     announcementFrom: '',
@@ -1084,14 +1083,16 @@ test('superusers watch connected apps and their packets live and edit the server
     { locationDays: 7.5 },
     { pvpDays: 0 },
     { pvpDays: '90' },
-    { dungeons: 'Fire Temple' },
-    { dungeons: [''] },
-    { dungeons: ['x'.repeat(61)] },
-    { dungeons: [{ cost: 20 }] },
-    { dungeons: [{ name: 'Krao Cave', cost: 1001 }] },
-    { dungeons: [{ name: 'Krao Cave', partySize: 6 }] },
-    { dungeons: [{ name: 'Krao Cave', category: 'c'.repeat(31) }] },
-    { dungeons: [{ name: 'Krao Cave', unconfirmed: 'yes' }] },
+    { catalog: 'Fire Temple' },
+    { catalog: [''] },
+    { catalog: ['x'.repeat(61)] },
+    { catalog: [{ cost: 20 }] },
+    { catalog: [{ name: 'Krao Cave', cost: 1001 }] },
+    { catalog: [{ name: 'Krao Cave', partySize: 6 }] },
+    { catalog: [{ name: 'Krao Cave', category: 'c'.repeat(31) }] },
+    { catalog: [{ name: 'Krao Cave', unconfirmed: 'yes' }] },
+    // The names alone, as admin pages from before catalog entries sent them, are refused (1.0.0).
+    { dungeons: ['Fire Temple'] },
     { classRoles: 'Templar' },
     { classRoles: [{ class: 'Templar', role: 'dps' }] },
     {
@@ -1142,23 +1143,24 @@ test('superusers watch connected apps and their packets live and edit the server
         { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true },
       ],
     );
-    // Admin pages opened before catalog entries read `dungeons` as names and send them back: the costs stay.
-    const older = (await settings({ odylePerCube: 45, dungeons: ['Fire Temple', 'Udas Temple', 'Krao Cave'] })).data
-      .settings;
+    // The names alone (`dungeons`, from admin pages before catalog entries) are refused and change nothing.
+    const older = await settings({ odylePerCube: 50, dungeons: ['Fire Temple', 'Udas Temple', 'Krao Cave'] });
+    assert.deepEqual([older.status, older.data.message], [400, 'Send the dungeon catalog as catalog.']);
+    const kept = (await settings()).data.settings;
     assert.deepEqual(
-      [older.dungeons, older.catalog.map(d => [d.name, d.cost, d.partySize])],
+      [kept.odylePerCube, kept.dungeons, kept.catalog.map(d => [d.name, d.cost, d.partySize])],
       [
-        ['Fire Temple', 'Udas Temple', 'Krao Cave'],
+        45,
+        undefined,
         [
           ['Fire Temple', 0, 0],
           ['Udas Temple', 80, 10],
-          ['Krao Cave', 0, 0],
         ],
       ],
     );
   } finally {
     assert.equal(
-      (await settings({ odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', dungeons: [] })).status,
+      (await settings({ odylePerCube: 40, dailyResetHour: 7, weeklyResetDay: 'wednesday', catalog: [] })).status,
       200,
     );
   }
@@ -1901,7 +1903,7 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
     assert.equal(
       (
         await settings({
-          dungeons: [
+          catalog: [
             'Fire Temple',
             { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true },
           ],
@@ -1909,9 +1911,9 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
       ).status,
       200,
     );
-    // Snapshots keep the names as `dungeons` and add each dungeon's cost (0: Odyle per cube) as `catalog`; the room still reports Odyle per cube.
+    // Snapshots carry each dungeon with its cost (0: Odyle per cube) as `catalog`; the room still reports Odyle per cube.
     const room = await snapshot2(roomId, planner);
-    assert.deepEqual(room.dungeons, ['Fire Temple', 'Udas Temple']);
+    assert.equal(room.dungeons, undefined);
     assert.deepEqual(room.catalog, [
       { name: 'Fire Temple', cost: 0, partySize: 0, category: '', unconfirmed: false },
       { name: 'Udas Temple', cost: 80, partySize: 10, category: 'Sanctuary', unconfirmed: true },
@@ -1947,7 +1949,7 @@ test('a dungeon catalog guides wishlists and runs, accounts have caps and inacti
     );
     assert.equal((await action('wishlist', { roomId, dungeon: 'Old Cave', wanted: false }, planner)).status, 200);
   } finally {
-    assert.equal((await settings({ dungeons: [] })).status, 200);
+    assert.equal((await settings({ catalog: [] })).status, 200);
   }
   // Caps: 30 characters, 20 owned rooms and 50 memberships per account.
   const collectorApp = await pairedApp(collector);
@@ -2290,14 +2292,14 @@ test('owners save a full dungeon catalog and closed rooms answer plainly', async
   const saved = await fetch(url + '/api/odyle/admin/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: operator.token },
-    body: JSON.stringify({ dungeons: names }),
+    body: JSON.stringify({ catalog: names }),
   });
   assert.equal(saved.status, 200, await saved.clone().text());
   assert.deepEqual((await saved.json()).settings.catalog, names);
   const cleared = await fetch(url + '/api/odyle/admin/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: operator.token },
-    body: JSON.stringify({ dungeons: [] }),
+    body: JSON.stringify({ catalog: [] }),
   });
   assert.equal(cleared.status, 200);
   const host = (await request('/__test__/account', { name: 'Closing host' })).data,
