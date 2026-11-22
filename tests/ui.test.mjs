@@ -4131,10 +4131,12 @@ test('a failed page load and a refused action show their messages as text', asyn
   const { page, errors, close } = await open(user, '#/room/' + roomId);
   try {
     await page.locator('.room-page h1').waitFor();
-    // The room page's own request fails.
-    await page.route('**/api/odyle/snapshot/*', route =>
-      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message }) }),
-    );
+    // The room page's own request fails, after longer than the dashboard's 5-second tick: the tick's
+    // redraw while the room loads draws no empty room, which kept the failure from showing (1.0.1).
+    await page.route('**/api/odyle/snapshot/*', async route => {
+      await delay(6000);
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message }) });
+    });
     await page.evaluate(() => {
       location.hash = '#/week';
     });
