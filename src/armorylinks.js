@@ -3,11 +3,13 @@
 // profiles and top players, and the class emblems character rows show.
 import { t } from './i18n.js';
 import { escape as esc } from './model.js';
+import { regionSource, serverSource, profileRegionSource } from './regions.js';
 
 // A profile's tabs after its first one (gear and stats), as their paths name them.
 export const armoryTabs = ['skills', 'daevanion', 'titles', 'appearance', 'upgrade'];
-// PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes.
-export const armoryRoute = /^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card))?)?$/;
+// PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes
+// (regions.js).
+export const armoryRoute = new RegExp(String.raw`^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/${regionSource}\/${serverSource}\/[^/]{1,60}|\/${profileRegionSource}\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card))?)?$`);
 export const profilePath = (hit, tab = '') => `/armory/${hit.region}/${hit.serverId}/${hit.characterId}${armoryTabs.includes(tab) ? '/' + tab : ''}`;
 // A character's own profile, once the daily lookup found it on PLAYNC (officialId), else "".
 export const officialPath = c => {

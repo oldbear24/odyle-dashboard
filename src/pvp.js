@@ -2,6 +2,7 @@ import { t, tn, locale } from './i18n.js';
 import { escape as esc, changedAt, age, regionLabel, timestamp } from './model.js';
 import { pageOf, pager, fillers } from './pager.js';
 import { findPath } from './armorylinks.js';
+import { findable } from './regions.js';
 import { link } from './routes.js';
 
 // PvP stats (opt-in): a character's kills, assists and deaths against other players, as its
@@ -26,9 +27,8 @@ export function periodSwitch(days, keep) {
 
 // A player as the game named them: the name, linked to the armory's lookup when the game said
 // their server, and the server with its region under it.
-const serverName = /^[A-Za-z]{2,20}$/, regionName = /^GLOBAL_(NAW?|EU|SA|ASIA)$/;
 export function playerCell(p) {
-  const known = serverName.test(p.server || '') && regionName.test(p.region || '');
+  const known = findable(p);
   const where = known ? `<small>${esc(p.server)} ${esc(regionLabel(p.region))}</small>` : '';
   const name = known ? `<a href="${esc(link(findPath(p.region, p.server, p.name)))}" title="${esc(t('Look up {name} in the armory', { name: p.name }))}">${esc(p.name)}</a>` : esc(p.name);
   return `<span class="pvp-player">${name}${where}</span>`;

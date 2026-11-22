@@ -27,6 +27,7 @@ import { boardSection, boardForm } from './board.js';
 import { featureOn, featuresForm, changedFeatures } from './roomfeatures.js';
 import { armoryRoute, armoryTarget, armoryTitle, topTitle, classBadge, profilePath, findPath, officialPath } from './armorylinks.js';
 import { lazily, reloadOnce } from './lazy.js';
+import { findable } from './regions.js';
 // The fonts come with the dashboard, so no visitor's address goes to a font service (#39).
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/manrope';
@@ -931,7 +932,7 @@ function card(c, index, counted = null, cost = room?.cost || perCube) {
   const action = self && room && c.id ? `<button class="remove" data-share="${esc(c.id)}" data-enabled="false" data-name="${esc(c.characterName)}" ${c.role === 'viewer' ? 'disabled' : ''} title="${esc(t('Hide {name} from this room. Its saved values stay on your account.', { name: c.characterName }))}">${t('Hide')}</button>`
     : self && !room ? `${c.id ? mainToggle(c) : ''}<button data-character="${esc(c.id || '')}" data-action="reading">${t('Reader')}</button>${c.id ? `<button class="remove" data-delete-character="${esc(c.id)}" data-name="${esc(c.characterName)}" title="${esc(t('Delete {name} from your account', { name: c.characterName }))}">${t('Delete')}</button>` : ''}` : '';
   // The profile itself once the daily lookup found the character on PLAYNC, else a search by name.
-  const armoryPath = officialPath(c) || (c.characterName && /^[A-Za-z]{2,20}$/.test(c.server || '') && /^GLOBAL_(NAW?|EU|SA|ASIA)$/.test(c.region || '') ? findPath(c.region, c.server, c.characterName) : '');
+  const armoryPath = officialPath(c) || (c.characterName && findable(c) ? findPath(c.region, c.server, c.characterName) : '');
   const armory = !demo && armoryPath ? `<a class="card-link icon-only" href="${esc(link(armoryPath))}" title="${esc(t('Gear and stats of {name} on PLAYNC', { name: c.characterName }))}">${icon('search')}<span class="sr-only">${t('Armory')}</span></a>` : '';
   // A packet reading needs no label; samples, old manual values and characters waiting for the game say so.
   const source = demo ? t('Sample') : c.source === 'packet' ? '' : c.source === 'manual' ? t('Legacy manual') : t('Waiting for game');
