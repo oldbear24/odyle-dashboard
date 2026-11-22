@@ -9,6 +9,8 @@ COPY index.html vite.config.js CHANGELOG.md ./
 # The privacy notice is a page of the dashboard (src/privacy.js).
 COPY docs/privacy.md ./docs/privacy.md
 COPY src ./src
+# The player card's options, which the backend checks choices against (src/card.js imports them).
+COPY backend/odyle/data/cards.json ./backend/odyle/data/cards.json
 COPY public ./public
 ARG VITE_POCKETBASE_URL
 ENV VITE_POCKETBASE_URL=$VITE_POCKETBASE_URL

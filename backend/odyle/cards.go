@@ -25,16 +25,33 @@ import (
 // finish shows only while its owner's answer is yes. A card nobody chose a design for has
 // none (""): the dashboard draws it after the character's race.
 
+// cardChoices are the card's designs, finishes and options as Odyle offers them, in their order
+// (data/cards.json, which the dashboard reads too: src/card.js); "" is none, or the design's own.
+type cardChoices struct {
+	Designs      []string          `json:"designs"`
+	Finishes     []string          `json:"finishes"`
+	Layouts      []string          `json:"layouts"`
+	Stats        []string          `json:"stats"`
+	Lines        []string          `json:"lines"`
+	Auras        []string          `json:"auras"`
+	Accents      []string          `json:"accents"`
+	AccentColors map[string]string `json:"accentColors"` // only the dashboard draws them
+	Frames       []string          `json:"frames"`
+	NameStyles   []string          `json:"nameStyles"`
+}
+
+var cardOffer = embeddedJSON[cardChoices]("data/cards.json")
+
 var (
-	cardDesigns  = []string{"elysea", "asmodae", "abyss", "balaur", "beluslan", "heiron", "sanctum", "pandaemonium", "eltnen", "inggison", "dredgion", "tiamaranta"}
-	cardFinishes = []string{"", "prism", "starfall", "etched", "sunburst", "ice", "scales", "aether", "opal", "galaxy", "lenticular", "brushed", "stained", "shield"}
-	cardLayouts  = []string{"classic", "full"}
-	cardStats    = []string{"primary", "deity"}
-	cardLines    = []string{"title", "legion", "none"}
-	cardAuras    = []string{"", "glow", "embers", "stardust", "runes", "storm", "wings", "orbit", "feathers", "shards", "rift"}
-	cardAccents  = []string{"", "gold", "silver", "ember", "jade", "azure", "violet", "rose"}
-	cardFrames   = []string{"", "gilded", "silver", "radiant", "none"}
-	cardNames    = []string{"", "gold", "glow"}
+	cardDesigns  = cardOffer.Designs
+	cardFinishes = cardOffer.Finishes
+	cardLayouts  = cardOffer.Layouts
+	cardStats    = cardOffer.Stats
+	cardLines    = cardOffer.Lines
+	cardAuras    = cardOffer.Auras
+	cardAccents  = cardOffer.Accents
+	cardFrames   = cardOffer.Frames
+	cardNames    = cardOffer.NameStyles
 )
 
 // cardOptions are a card's look beyond its design and finish.

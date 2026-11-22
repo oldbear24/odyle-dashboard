@@ -15,25 +15,32 @@ import { icon } from './icons.js';
 import { link, address } from './routes.js';
 import { profilePath, imageUrl, classBadge } from './armorylinks.js';
 import { gradeClass } from './armory.js';
+import cardOffer from '../backend/odyle/data/cards.json' with { type: 'json' };
 
-export const cardDesigns = () => [['elysea', t('Elysea'), t('Pearl and gold leaf under an Elyos sky')], ['asmodae', t('Asmodae'), t('Twilight violet with ember trim')], ['abyss', t('Abyss'), t('Obsidian split by aether light')],
-  ['balaur', t('Balaur'), t('Crimson dragon scale and black iron')], ['beluslan', t('Beluslan'), t('Glacier blue over Asmodian snowfields')], ['heiron', t('Heiron'), t('Forest green and bronze of the Elyos wilds')],
-  ['sanctum', t('Sanctum'), t('White marble and gold of the Elyos capital')], ['pandaemonium', t('Pandaemonium'), t('Black iron and lantern light of the Asmodian capital')], ['eltnen', t('Eltnen'), t('Desert sand and copper under a high sun')],
-  ['inggison', t('Inggison'), t('A twilight jungle of glowing blooms')], ['dredgion', t('Dredgion'), t('Balaur warship steel and warning lights')], ['tiamaranta', t('Tiamaranta'), t('Dragon gold over dark jade')]];
-export const cardFinishes = () => [['', t('Plain'), t('A clean print')], ['prism', t('Prism holo'), t('Rainbow foil that shifts with the light')], ['starfall', t('Starfall holo'), t('Glitter scattered over the foil')], ['etched', t('Etched foil'), t('Engraved metal lines')],
-  ['sunburst', t('Sunburst holo'), t('Rays of light fanning out from the shine')], ['ice', t('Cracked ice'), t('Shattered foil shards that catch the light')], ['scales', t('Dragon scale'), t('Balaur scales in burnished foil')], ['aether', t('Aether holo'), t('Bands of aether light drifting like an aurora')],
-  ['opal', t('Opal holo'), t('A milky sheen that flashes every colour')], ['galaxy', t('Galaxy holo'), t('Stars and nebulae deep under the foil')], ['lenticular', t('Lenticular'), t('Fine ridges that change colour as the card turns')],
-  ['brushed', t('Brushed metal'), t('Brushed steel with a streak of light')], ['stained', t('Stained glass'), t('Panes of coloured glass lit from behind')], ['shield', t('Aether shield'), t('A glowing grid like a shield of aether')]];
-export const cardLayouts = () => [['classic', t('Classic')], ['full', t('Full art')]];
-export const cardStatSets = () => [['primary', t('Main stats')], ['deity', t('Deity stats')]];
-export const cardLines = () => [['title', t('Title')], ['legion', t('Legion')], ['none', t('Nothing')]];
-// The effect around the card, the accent colours (with their colour), frames and name styles;
+// The designs, finishes and options a card offers, in their order, come from the file the backend
+// checks choices against (backend/odyle/data/cards.json); here each gets its words, by its key.
 // "" is none, or the design's own.
-export const cardAuras = () => [['', t('No effect')], ['glow', t('Glow')], ['embers', t('Embers')], ['stardust', t('Stardust')], ['runes', t('Runes')], ['storm', t('Storm')],
-  ['wings', t('Wings')], ['orbit', t('Orbits')], ['feathers', t('Feathers')], ['shards', t('Shards')], ['rift', t('Rift')]];
-export const cardAccents = () => [['', t('From the design')], ['gold', t('Gold'), '#e3b54a'], ['silver', t('Silver'), '#d3dae2'], ['ember', t('Ember'), '#ff7a45'], ['jade', t('Jade'), '#4fd1a1'], ['azure', t('Azure'), '#4aa8ff'], ['violet', t('Violet'), '#b07cff'], ['rose', t('Rose'), '#ff6fa8']];
-export const cardFrames = () => [['', t('From the design')], ['gilded', t('Gilded')], ['silver', t('Silvered')], ['radiant', t('Radiant')], ['none', t('No frame')]];
-export const cardNameStyles = () => [['', t('Simple')], ['gold', t('Gold leaf')], ['glow', t('Glowing')]];
+const offered = (list, words) => list.map(key => [key, ...(words[key] ?? [key])]);
+export const cardDesigns = () => offered(cardOffer.designs, {
+  elysea: [t('Elysea'), t('Pearl and gold leaf under an Elyos sky')], asmodae: [t('Asmodae'), t('Twilight violet with ember trim')], abyss: [t('Abyss'), t('Obsidian split by aether light')],
+  balaur: [t('Balaur'), t('Crimson dragon scale and black iron')], beluslan: [t('Beluslan'), t('Glacier blue over Asmodian snowfields')], heiron: [t('Heiron'), t('Forest green and bronze of the Elyos wilds')],
+  sanctum: [t('Sanctum'), t('White marble and gold of the Elyos capital')], pandaemonium: [t('Pandaemonium'), t('Black iron and lantern light of the Asmodian capital')], eltnen: [t('Eltnen'), t('Desert sand and copper under a high sun')],
+  inggison: [t('Inggison'), t('A twilight jungle of glowing blooms')], dredgion: [t('Dredgion'), t('Balaur warship steel and warning lights')], tiamaranta: [t('Tiamaranta'), t('Dragon gold over dark jade')] });
+export const cardFinishes = () => offered(cardOffer.finishes, {
+  '': [t('Plain'), t('A clean print')], prism: [t('Prism holo'), t('Rainbow foil that shifts with the light')], starfall: [t('Starfall holo'), t('Glitter scattered over the foil')], etched: [t('Etched foil'), t('Engraved metal lines')],
+  sunburst: [t('Sunburst holo'), t('Rays of light fanning out from the shine')], ice: [t('Cracked ice'), t('Shattered foil shards that catch the light')], scales: [t('Dragon scale'), t('Balaur scales in burnished foil')], aether: [t('Aether holo'), t('Bands of aether light drifting like an aurora')],
+  opal: [t('Opal holo'), t('A milky sheen that flashes every colour')], galaxy: [t('Galaxy holo'), t('Stars and nebulae deep under the foil')], lenticular: [t('Lenticular'), t('Fine ridges that change colour as the card turns')],
+  brushed: [t('Brushed metal'), t('Brushed steel with a streak of light')], stained: [t('Stained glass'), t('Panes of coloured glass lit from behind')], shield: [t('Aether shield'), t('A glowing grid like a shield of aether')] });
+export const cardLayouts = () => offered(cardOffer.layouts, { classic: [t('Classic')], full: [t('Full art')] });
+export const cardStatSets = () => offered(cardOffer.stats, { primary: [t('Main stats')], deity: [t('Deity stats')] });
+export const cardLines = () => offered(cardOffer.lines, { title: [t('Title')], legion: [t('Legion')], none: [t('Nothing')] });
+// The effect around the card, the accent colours (with their colour), frames and name styles.
+export const cardAuras = () => offered(cardOffer.auras, { '': [t('No effect')], glow: [t('Glow')], embers: [t('Embers')], stardust: [t('Stardust')], runes: [t('Runes')], storm: [t('Storm')],
+  wings: [t('Wings')], orbit: [t('Orbits')], feathers: [t('Feathers')], shards: [t('Shards')], rift: [t('Rift')] });
+export const cardAccents = () => offered(cardOffer.accents, { '': [t('From the design')], gold: [t('Gold')], silver: [t('Silver')], ember: [t('Ember')], jade: [t('Jade')], azure: [t('Azure')], violet: [t('Violet')], rose: [t('Rose')] })
+  .map(([key, label]) => cardOffer.accentColors[key] ? [key, label, cardOffer.accentColors[key]] : [key, label]);
+export const cardFrames = () => offered(cardOffer.frames, { '': [t('From the design')], gilded: [t('Gilded')], silver: [t('Silvered')], radiant: [t('Radiant')], none: [t('No frame')] });
+export const cardNameStyles = () => offered(cardOffer.nameStyles, { '': [t('Simple')], gold: [t('Gold leaf')], glow: [t('Glowing')] });
 export const defaultOptions = () => ({ layout: 'classic', back: '', stats: 'primary', line: 'title', skills: [], aura: '', accent: '', frame: '', nameStyle: '' });
 export const cardPath = answer => profilePath(answer) + '/card';
 // The page's title in the tab, as the backend names it (backend/odyle/pages.go).

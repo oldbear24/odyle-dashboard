@@ -178,3 +178,14 @@ test('the look picker keeps its choices under tabs', async () => {
   assert.match(cardPage(own, { tab: 'effects' }), /data-card-panel="design" hidden>/);
   assert.match(cardPage(own, { tab: 'nope' }), /aria-selected="true" tabindex="0" data-card-tab="design"/);
 });
+
+test('every design, finish and option the backend offers has its own words', async () => {
+  const card = await import('../src/card.js');
+  const offer = JSON.parse(require('node:fs').readFileSync(require('node:path').join(__dirname, '../backend/odyle/data/cards.json'), 'utf8'));
+  const lists = { designs: card.cardDesigns(), finishes: card.cardFinishes(), layouts: card.cardLayouts(), stats: card.cardStatSets(), lines: card.cardLines(), auras: card.cardAuras(), accents: card.cardAccents(), frames: card.cardFrames(), nameStyles: card.cardNameStyles() };
+  for (const [name, list] of Object.entries(lists)) {
+    assert.deepEqual(list.map(([key]) => key), offer[name], name);
+    for (const [key, label] of list) assert.ok(typeof label === 'string' && label !== '' && (label !== key || key === ''), `${name} ${key}`);
+  }
+  assert.deepEqual(card.cardAccents().filter(a => a.length === 3).map(([key, , colour]) => [key, colour]), Object.entries(offer.accentColors));
+});

@@ -1,0 +1,12 @@
+{
+  "designs": ["elysea", "asmodae", "abyss", "balaur", "beluslan", "heiron", "sanctum", "pandaemonium", "eltnen", "inggison", "dredgion", "tiamaranta"],
+  "finishes": ["", "prism", "starfall", "etched", "sunburst", "ice", "scales", "aether", "opal", "galaxy", "lenticular", "brushed", "stained", "shield"],
+  "layouts": ["classic", "full"],
+  "stats": ["primary", "deity"],
+  "lines": ["title", "legion", "none"],
+  "auras": ["", "glow", "embers", "stardust", "runes", "storm", "wings", "orbit", "feathers", "shards", "rift"],
+  "accents": ["", "gold", "silver", "ember", "jade", "azure", "violet", "rose"],
+  "accentColors": { "gold": "#e3b54a", "silver": "#d3dae2", "ember": "#ff7a45", "jade": "#4fd1a1", "azure": "#4aa8ff", "violet": "#b07cff", "rose": "#ff6fa8" },
+  "frames": ["", "gilded", "silver", "radiant", "none"],
+  "nameStyles": ["", "gold", "glow"]
+}
