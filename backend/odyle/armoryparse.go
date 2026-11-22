@@ -19,10 +19,18 @@ func jsonText(m map[string]any, key string, max int) string {
 	return cut(collapse(tags.ReplaceAllString(s, "")), max)
 }
 
-// jsonValue is a value PLAYNC sends as text or as a number ("630", "13%", 630).
+// jsonValue is a value PLAYNC sends as text or as a number ("630", "13%", 630). A number is held to
+// max like text, but never cut, which would change it: past max digits it is written with an exponent
+// (1e+300), and left out when even that is too long.
 func jsonValue(m map[string]any, key string, max int) string {
 	if f, ok := m[key].(float64); ok {
-		return strconv.FormatFloat(f, 'f', -1, 64)
+		if s := strconv.FormatFloat(f, 'f', -1, 64); len(s) <= max {
+			return s
+		}
+		if s := strconv.FormatFloat(f, 'g', 6, 64); len(s) <= max {
+			return s
+		}
+		return ""
 	}
 	return jsonText(m, key, max)
 }

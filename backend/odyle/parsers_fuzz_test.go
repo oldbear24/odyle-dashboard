@@ -42,8 +42,6 @@ func objectOf(raw []byte) (map[string]any, bool) {
 	return m, json.Unmarshal(raw, &m) == nil && m != nil
 }
 
-var digitsOnly = regexp.MustCompile(`^-?[0-9]+(.[0-9]+)?$`)
-
 // officialItemSeeds are item pages: the tests' own, then the doc samples that look like one.
 func officialItemSeeds(f *testing.F) [][]byte {
 	item, _ := json.Marshal(officialItem())
@@ -82,9 +80,7 @@ func FuzzReadItem(f *testing.F) {
 			t.Fatalf("set of %+v", item.Set)
 		}
 		for _, line := range append(append([]armoryLine{}, item.Main...), item.Sub...) {
-			// A value sent as a number is written out whole whatever its length (jsonValue applies its
-			// limit to text only: 1e300 becomes 301 digits), so only texts are held to 20.
-			tooLong := func(v string) bool { return length(v) > 20 && !digitsOnly.MatchString(v) }
+			tooLong := func(v string) bool { return length(v) > 20 }
 			if line.Name == "" || length(line.Name) > 60 || tooLong(line.Value) || tooLong(line.Min) || tooLong(line.Extra) {
 				t.Fatalf("line %+v", line)
 			}

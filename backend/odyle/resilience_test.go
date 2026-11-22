@@ -41,10 +41,9 @@ func TestShrinkIconRefusesTruncatedAndCorruptPNGs(t *testing.T) {
 			}
 		})
 	}
-	// The icons that do fit stay as they are; a corrupt one that claims to fit is not checked.
+	// The icons that do fit stay as they are, once they decode whole.
 	small := pngOf(t, 64)
 	t.Run("a truncated icon that already fits", func(t *testing.T) {
-		t.Skip("shrinkIcon returns an icon whose header says it fits without decoding it, so a truncated 64 px PNG is kept and served broken; unreachable from PLAYNC's own files, but the check is missing")
 		if _, err := shrinkIcon(small[:len(small)-20]); err == nil {
 			t.Fatal("a truncated icon was kept")
 		}
