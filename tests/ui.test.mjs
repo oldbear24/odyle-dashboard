@@ -2317,8 +2317,10 @@ test('timers, achievements and your week: open game rules, milestones with their
     await page.locator('.timer-card').first().waitFor();
     assert.ok((await page.locator('.timer-card').count()) >= 3);
     const before = await page.locator('.timer-value').first().innerText();
-    await delay(1300);
-    assert.notEqual(await page.locator('.timer-value').first().innerText(), before);
+    // The countdown ticks by itself; a busy CI machine may take longer than a second to show it.
+    await page.waitForFunction(was => document.querySelector('.timer-value')?.innerText !== was, before, {
+      timeout: 5000,
+    });
     assert.equal(await page.locator('.tick-strip li').count(), 8);
     assert.ok(await page.locator('.timers-cta [data-action="discord"]').isVisible());
     await shot(page, 'timers');
@@ -4131,10 +4133,12 @@ test('a failed page load and a refused action show their messages as text', asyn
   const { page, errors, close } = await open(user, '#/room/' + roomId);
   try {
     await page.locator('.room-page h1').waitFor();
-    // The room page's own request fails.
-    await page.route('**/api/odyle/snapshot/*', route =>
-      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message }) }),
-    );
+    // The room page's own request fails, after longer than the dashboard's 5-second tick: the tick's
+    // redraw while the room loads draws no empty room, which kept the failure from showing (1.0.1).
+    await page.route('**/api/odyle/snapshot/*', async route => {
+      await delay(6000);
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message }) });
+    });
     await page.evaluate(() => {
       location.hash = '#/week';
     });

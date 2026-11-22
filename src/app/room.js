@@ -215,6 +215,10 @@ function plannedRuns(now) {
   });
 }
 export function dashboard() {
+  // A room whose snapshot has not come yet has nothing to draw: a redraw meanwhile (the 5-second
+  // tick, news, a language change) would draw an empty room, and keep a load that fails from
+  // saying so (router.js show).
+  if (state.room?.loading) return;
   rendered = signature();
   const { room, members, demo } = state;
   // Odyle cannot be pooled. Each player brings one character (their best fresh one),
@@ -369,7 +373,7 @@ export function changedRoom(id, update) {
 export async function openRoom(id, ticket) {
   await leaveRoomTopic();
   clearRoom();
-  state.room = { id };
+  state.room = { id, loading: true }; // until its snapshot replaces it (loadRoom)
   rendered = '';
   await refreshRoom();
   if (ticket !== state.navigation) return;
