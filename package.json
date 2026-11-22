@@ -1,5 +1,38 @@
 {
-  "name": "odyle-dashboard", "version": "0.67.1", "private": true, "type": "module", "engines": { "node": ">=26" },
-  "scripts": { "dev": "vite --host 127.0.0.1", "build": "vite build", "preview": "vite preview --host 127.0.0.1", "test": "node --test \"tests/unit/*.test.mjs\"", "test:integration": "node --test tests/integration.test.mjs", "backend:build": "node scripts/build-backend.mjs", "backend": "node scripts/serve-backend.mjs", "backend:profile": "node scripts/profile-backend.mjs", "test:backend": "cd backend && go vet ./... && go vet -tags odyletest ./... && go test ./...", "test:ui": "node --test tests/ui.test.mjs", "lint": "eslint ." },
-  "dependencies": { "@fontsource-variable/dm-sans": "^5.3.0", "@fontsource-variable/manrope": "^5.3.0", "pocketbase": "^0.29.0" }, "devDependencies": { "@axe-core/playwright": "4.14.0", "@eslint/js": "^10.0.1", "eslint": "^10.15.0", "globals": "^17.14.0", "playwright": "1.65.1", "vite": "^8.3.8" }
+  "name": "odyle-dashboard",
+  "version": "0.67.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "test:integration": "node --test tests/integration.test.mjs",
+    "backend:build": "node scripts/build-backend.mjs",
+    "backend": "node scripts/serve-backend.mjs",
+    "backend:profile": "node scripts/profile-backend.mjs",
+    "test:backend": "cd backend && go vet ./... && go vet -tags odyletest ./... && go test ./...",
+    "test:ui": "node --test tests/ui.test.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write src public backend/admin tests",
+    "format:check": "prettier --check src public backend/admin tests"
+  },
+  "dependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "pocketbase": "^0.29.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "playwright": "1.65.1",
+    "prettier": "^3.10.1",
+    "vite": "^8.3.8"
+  }
 }

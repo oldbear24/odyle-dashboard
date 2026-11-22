@@ -22,13 +22,14 @@ const parts = text => text.replace(/^v/, '').split('.').map(Number).concat([0, 0
 const compare = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
 // What does not ship: documentation, tests, CI, local scripts and editor or lint settings, and the
 // files only the test build (build tag odyletest) compiles.
-const unshipped = /^(docs\/|tests\/|\.github\/|scripts\/|\.vscode\/)|\.md$|_test\.go$|^backend\/odyle\/(push_)?testing\.go$|^\.env[^/]*\.example$|^(LICENSE|\.gitignore|\.gitattributes|\.editorconfig|eslint\.config\.[cm]?js|compose\.yaml)$/;
+const unshipped = /^(docs\/|tests\/|\.github\/|scripts\/|\.vscode\/)|\.md$|_test\.go$|^backend\/odyle\/(push_)?testing\.go$|^\.env[^/]*\.example$|^(LICENSE|\.gitignore|\.gitattributes|\.editorconfig|eslint\.config\.[cm]?js|\.prettierrc\.json|\.prettierignore|\.git-blame-ignore-revs|compose\.yaml)$/;
 // package.json and package-lock.json ship only through what the build uses: the runtime
 // dependencies and the build tool (vite), with every package they pull in. A change limited to
-// the test and lint tools (playwright, eslint, …), to the scripts that run them (lint, test*), or to
+// the test, lint and format tools (playwright, eslint, prettier, …), to the scripts that run them
+// (lint, format*, test*), or to
 // the version itself, ships nothing.
 const buildTools = ['vite'];
-const checkScripts = name => name === 'lint' || name.startsWith('test');
+const checkScripts = name => name === 'lint' || name.startsWith('format') || name.startsWith('test');
 const at = (ref, file) => { try { return JSON.parse(git('show', `${ref}:${file}`)); } catch { return null; } };
 function manifestShipped(before, after) {
   const kept = m => m && { ...m, version: undefined, scripts: Object.fromEntries(Object.entries(m.scripts || {}).filter(([name]) => !checkScripts(name))), devDependencies: Object.fromEntries(Object.entries(m.devDependencies || {}).filter(([name]) => buildTools.includes(name))) };

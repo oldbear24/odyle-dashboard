@@ -1,0 +1,8 @@
+# Formatted: src, public, backend/admin and tests (npm run format). Built and fetched files stay as they are.
+dist/
+backend/web/dist/
+.runtime/
+node_modules/
+backend/pb_data/
+*.png
+*.svg
