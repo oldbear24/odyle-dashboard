@@ -2359,6 +2359,9 @@ test('timers, achievements and your week: open game rules, milestones with their
       player,
     )
   ).data.character;
+  // The room, the paired PC and the first reading are counted before the page opens, so the spend
+  // below is the only news the page hears (otherwise it races the page's own first look).
+  assert.equal((await request('/api/odyle/achievements', undefined, player, 'GET')).status, 200);
   const { page, errors, close } = await open(player, '#/');
   try {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
@@ -4135,6 +4138,7 @@ test('a failed page load and a refused action show their messages as text', asyn
     await page.evaluate(() => {
       location.hash = '#/week';
     });
+    await page.locator('.week-page').waitFor();
     await page.evaluate(id => {
       location.hash = '#/room/' + id;
     }, roomId);
