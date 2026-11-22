@@ -122,8 +122,8 @@ function progressLine(progress) {
 }
 // Where the lookup stands, with its progress bar while it runs and Refresh when it may.
 export function lookupStatus(answer, now, refreshable) {
-  const busy = waiting(answer), progress = answer.state === 'fetching' && answer.progress, percent = Math.min(100, Math.max(0, Number(progress?.percent) || 0));
-  const bar = progress ? `<span class="armory-track armory-progress" role="progressbar" aria-label="${esc(t('Lookup progress'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></span>` : '';
+  const busy = waiting(answer), progress = answer.state === 'fetching' && answer.progress, filled = Math.min(100, Math.max(0, Number(progress?.percent) || 0));
+  const bar = progress ? `<span class="armory-track armory-progress" role="progressbar" aria-label="${esc(t('Lookup progress'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${filled}"><i style="width:${filled}%"></i></span>` : '';
   return `<div class="armory-status ${busy ? 'is-waiting' : answer.state === 'failed' ? 'is-failed' : ''}" role="status">${busy ? '<span class="armory-spinner" aria-hidden="true"></span>' : icon('info')}<span>${esc(lookupLine(answer, now))}${bar}</span>${refreshable ? `<button class="button secondary" data-action="armory-refresh">${t('Refresh')}</button>` : ''}</div>`;
 }
 
@@ -261,7 +261,7 @@ function appearanceTab(p, images) {
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '±') + number(Math.abs(n));
 const stateNames = () => ({ big: t('Big upgrade'), some: t('Worth an upgrade'), small: t('Small upgrade'), even: t('On par') });
 // A rolled stat's value: a share ("13%") or a number.
-const rolledText = (value, percent) => number(value) + (percent ? '%' : '');
+const rolledText = (value, inPercent) => number(value) + (inPercent ? '%' : '');
 // What a piece of gear is behind the strongest by, in words.
 function upgradeReasons(row, sample) {
   const g = row.item, d = g?.detail, ref = row.ref, gaps = row.gaps;
