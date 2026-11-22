@@ -61,7 +61,6 @@ type state struct {
 	proxySetup  string     // why ODYLE_TRUSTED_PROXY_* did not apply (proxy.go)
 
 	storageSetup string       // why ODYLE_STORAGE_S3_* did not apply (storage.go)
-	importing    atomic.Bool  // the armory's images kept before 0.61.0 are being imported (imagestore.go)
 	storageMove  *storageMove // the last move of the files on disk into the S3 storage
 	moving       atomic.Bool  // a move runs now
 	serving      atomic.Bool  // the server serves (moves start only then)

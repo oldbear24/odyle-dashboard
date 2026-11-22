@@ -32,7 +32,6 @@ func create(e *core.RequestEvent) error {
 		}
 		room.SetName(name)
 		room.SetOwner(user.Id)
-		room.Set("cost", cost)
 		if err := app.Save(room); err != nil {
 			return nil, err
 		}

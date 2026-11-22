@@ -3,7 +3,6 @@ package odyle
 import (
 	"archive/zip"
 	"context"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -115,17 +114,10 @@ func TestABackupRestoresOnACopy(t *testing.T) {
 	}
 }
 
-// The armory's images are a copy of PLAYNC's: backups leave their files out (the records'
-// files, and the folder they had before 0.61.0) and keep the rest of the file storage; a restore
-// keeps the old folder the server has instead of taking an older backup's.
+// The armory's images are a copy of PLAYNC's: backups leave their records' files out and keep
+// the rest of the file storage.
 func TestBackupsLeaveTheArmoryImagesOut(t *testing.T) {
 	app := newTestApp(t)
-	if err := os.MkdirAll(imageDir(app), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(imageDir(app), "Icon_Old.png"), []byte("png"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	image := keptImage(t, app, "Icon_Kept.png", tinyPNG(t))
 	owner := newUser(t, app, "Pictured")
 	c, err := newRecord(app, "characters")
@@ -155,19 +147,11 @@ func TestBackupsLeaveTheArmoryImagesOut(t *testing.T) {
 	names := []string{}
 	for _, f := range r.File {
 		names = append(names, f.Name)
-		if strings.HasPrefix(f.Name, armoryImagesDir) || strings.HasPrefix(f.Name, core.LocalStorageDirName+"/"+image.Collection().Id) {
+		if strings.HasPrefix(f.Name, core.LocalStorageDirName+"/"+image.Collection().Id) {
 			t.Fatalf("the backup holds %s", f.Name)
 		}
 	}
 	if !slices.Contains(names, "data.db") || !slices.Contains(names, core.LocalStorageDirName+"/"+fileKey(c, "portrait")) {
 		t.Fatalf("the backup holds %v, without the database or the portrait", names)
-	}
-	restore := &core.BackupEvent{Name: "no-images.zip", Exclude: []string{core.LocalBackupsDirName}}
-	restore.App = app
-	if err := app.OnBackupRestore().Trigger(restore, func(e *core.BackupEvent) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(restore.Exclude, armoryImagesDir) || !slices.Contains(restore.Exclude, core.LocalBackupsDirName) {
-		t.Fatalf("a restore moves all but %v", restore.Exclude)
 	}
 }

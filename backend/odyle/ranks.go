@@ -136,39 +136,6 @@ func watchArmoryProfiles(app core.App) {
 	app.OnRecordAfterUpdateSuccess("armory_profiles").BindFunc(hide)
 }
 
-// rankKeptProfiles gives up to n kept profiles without a row one, from what they hold (the
-// profiles kept before 0.62.0); it asks PLAYNC for nothing.
-func rankKeptProfiles(app core.App, n int) (int, error) {
-	rows := []struct {
-		Region      string `db:"region"`
-		ServerId    int    `db:"serverId"`
-		CharacterId string `db:"characterId"`
-		Profile     string `db:"profile"`
-		Hidden      bool   `db:"hidden"`
-	}{}
-	if err := app.DB().NewQuery("SELECT p.region, p.serverId, p.characterId, COALESCE(CAST(p.profile AS TEXT), '') AS profile, p.hidden FROM armory_profiles p LEFT JOIN armory_ranks r ON r.serverId = p.serverId AND r.characterId = p.characterId WHERE r.id IS NULL AND p.fetchedAt != '' LIMIT {:n}").
-		Bind(dbx.Params{"n": n}).All(&rows); err != nil {
-		return 0, err
-	}
-	done := 0
-	for _, row := range rows {
-		var p armoryProfile
-		if json.Unmarshal([]byte(row.Profile), &p) != nil || p.Name == "" {
-			continue
-		}
-		if err := keepRank(app, row.Region, row.ServerId, row.CharacterId, p, p.Version >= armoryVersion); err != nil {
-			return done, err
-		}
-		if row.Hidden {
-			if _, err := app.DB().NewQuery("UPDATE armory_ranks SET hidden = TRUE WHERE serverId = {:server} AND characterId = {:id}").Bind(dbx.Params{"server": row.ServerId, "id": row.CharacterId}).Execute(); err != nil {
-				return done, err
-			}
-		}
-		done++
-	}
-	return done, nil
-}
-
 // inTop is the SQL of the ids of the rows within their class's top rankLimit.
 const inTop = "SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY class ORDER BY combatPower DESC, id) AS place FROM armory_ranks WHERE hidden = FALSE AND class != '') WHERE place <= {:limit}"
 

@@ -11,7 +11,7 @@ import (
 func TestWhat1Point0RemovedIsGone(t *testing.T) {
 	app := newTestApp(t)
 	lead, mate := newUser(t, app, "Lead"), newUser(t, app, "Mate")
-	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Old room", "cost": 40})
+	room := saved(t, app, "party_rooms", map[string]any{"owner": lead.Id, "name": "Old room"})
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": lead.Id, "role": "owner"})
 	saved(t, app, "room_members", map[string]any{"room": room.Id, "user": mate.Id, "role": "reporter"})
 	first := saved(t, app, "characters", map[string]any{"user": mate.Id, "characterName": "First", "server": "Lumiel", "region": "GLOBAL_EU"})
@@ -21,6 +21,12 @@ func TestWhat1Point0RemovedIsGone(t *testing.T) {
 
 	// Replacing every invite link of a room at once (dashboards before links were made one by one).
 	ask(t, app, http.MethodPost, "/api/odyle/invites", owner, `{"roomId":"`+room.Id+`"}`, 404)
+
+	// A room's cost is the server's Odyle per cube: rooms keep no value of their own any more.
+	created := ask(t, app, http.MethodPost, "/api/odyle/create", owner, `{"name":"New room"}`, 200)["room"].(map[string]any)
+	if rooms, _ := app.FindCollectionByNameOrId("party_rooms"); created["cost"] != float64(odylePerCube(app)) || rooms.Fields.GetByName("cost") != nil {
+		t.Fatalf("a new room's cost %v", created["cost"])
+	}
 
 	// Sharing names its characters: without characterId or characterIds nothing is shared.
 	in := `"roomId":"` + room.Id + `","enabled":true`

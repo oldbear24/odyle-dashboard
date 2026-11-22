@@ -250,7 +250,7 @@ func fixtures(se *core.ServeEvent) {
 			role = b.str("role")
 		}
 		for i := 0; i < count(b["count"]); i++ {
-			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i), "cost": 40})
+			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i)})
 			if err != nil {
 				return nil, err
 			}

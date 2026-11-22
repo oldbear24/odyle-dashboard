@@ -117,10 +117,6 @@ func dueLead(room *Room, r *Run, posts []*core.Record, at time.Time) (int64, boo
 			postedAt = append(postedAt, p.GetDateTime("postedAt").Time())
 		}
 	}
-	// Announced before posts were kept (or by an earlier version): that counts too.
-	if reminded := r.GetString("remindedAt"); reminded != "" {
-		postedAt = append(postedAt, timeOf(reminded))
-	}
 	// covered says whether a post came within window before the start.
 	covered := func(window time.Duration) bool {
 		for _, p := range postedAt {
@@ -339,8 +335,7 @@ func postRun(app core.App, r *Run, lead int64, fail failer) (bool, error) {
 			return true, err
 		}
 	}
-	_, err = app.DB().NewQuery("UPDATE room_runs SET remindedAt = {:at} WHERE id = {:id}").Bind(dbx.Params{"at": now(), "id": r.Id}).Execute()
-	return true, err
+	return true, nil
 }
 
 // markDirty marks posts for an edit (bind {:marked} to stamp(time.Now())). It moves their

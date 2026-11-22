@@ -72,8 +72,8 @@ func newTestApp(t testing.TB) *tests.TestApp {
 		t.Fatal(err)
 	}
 	Register(app)
-	// Every request of a test serves, which would start moving files into S3 storage and importing
-	// old armory images in the background; tests run them themselves.
+	// Every request of a test serves, which would start moving files into S3 storage in the
+	// background; tests run it themselves.
 	stateOf(app).byHand.Store(true)
 	// PocketBase starts its cron when the app serves, and every request of a test serves, so
 	// the jobs ran whenever a minute began, even while a test tore its app down (a data race

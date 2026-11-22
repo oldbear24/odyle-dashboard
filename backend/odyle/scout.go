@@ -189,16 +189,10 @@ func (s *armoryScout) enqueue(by string, names []scoutName) int {
 	return taken
 }
 
-// scoutArmory is the odyle-armory-scout job: the profiles kept before 0.62.0 join the top players
-// (no request to PLAYNC), then, unless the armory is paused or PLAYNC refused the server, up to
-// scoutSteps pages.
+// scoutArmory is the odyle-armory-scout job: unless the armory is paused or PLAYNC refused the
+// server, up to scoutSteps pages.
 func scoutArmory(app core.App) (result, error) {
 	out := result{}
-	ranked, err := rankKeptProfiles(app, 200)
-	out.Done += ranked
-	if err != nil {
-		return out, err
-	}
 	s := stateOf(app).scout
 	for i := 0; i < scoutSteps; i++ {
 		if i > 0 {
