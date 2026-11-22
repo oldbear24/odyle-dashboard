@@ -225,311 +225,335 @@ func plan(e *core.RequestEvent) error {
 			return nil, forbidden("The room owner turned planned runs off.")
 		}
 		// Officers change, cancel and wrap up every run, like the owner (#43).
-		roomId, viewer, isOwner := m.Room(), m.Role() == "viewer", m.Role() == "owner" || m.Role() == "officer"
+		p := &runPlanner{app: app, user: user, m: m, room: room, roomId: m.Room(), viewer: m.Role() == "viewer", isOwner: m.Role() == "owner" || m.Role() == "officer"}
 		if b.set("id") {
-			r, err := findAs[Run](app, "room_runs", b.str("id"))
-			if err != nil || r.Room() != roomId {
-				return nil, notFound("This run is no longer planned.")
-			}
-			going, isGoing := b.boolean("going")
-			// After the start, its attendees wrap the run up too: done, or it did not happen.
-			started, attending := !timeOf(r.StartsAt()).After(time.Now()), contains(r.Attendees(), m.Id)
-			switch {
-			case b.isTrue("done"):
-				if !started {
-					return nil, badRequest("A run can be marked done once it has started.")
-				}
-				if r.PlannedBy() != m.Id && !isOwner && !attending {
-					return nil, forbidden("Only its planner, an attendee, an officer or the room owner can mark this run done.")
-				}
-				// The dungeon leaves the wishlist of everyone in its party; those still waiting for a
-				// place keep theirs.
-				ran, err := dungeon(r.Dungeon())
-				if err != nil {
-					return nil, err
-				}
-				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": ran.key})
-				if err != nil {
-					return nil, err
-				}
-				party, _ := runParty(readSettings(app), r)
-				for _, w := range wishes {
-					if contains(party, w.GetString("member")) {
-						if err := app.Delete(w); err != nil {
-							return nil, err
-						}
-					}
-				}
-				if err := endPosts(app, r, "done"); err != nil {
-					return nil, err
-				}
-				if err := app.Delete(r); err != nil {
-					return nil, err
-				}
-			case b.isTrue("again"):
-				if viewer {
-					return nil, forbidden("Viewers cannot plan runs.")
-				}
-				// The same dungeon, note and local time a week later (the browser sends that time,
-				// which keeps it across a daylight saving change), with the caller going.
-				next := timeOf(r.StartsAt()).Add(7 * 24 * time.Hour).UTC().Format(isoLayout)
-				if b.has("startsAt") {
-					if next, err = runStart(b["startsAt"], time.Now()); err != nil {
-						return nil, err
-					}
-				} else if next, err = runStart(next, time.Now()); err != nil {
-					return nil, err
-				}
-				if err := runRoom(app, roomId); err != nil {
-					return nil, err
-				}
-				again, err := newAs[Run](app, "room_runs")
-				if err != nil {
-					return nil, err
-				}
-				again.Set("room", roomId)
-				again.Set("plannedBy", m.Id)
-				again.SetDungeon(r.Dungeon())
-				again.SetStart(next)
-				again.SetNote(r.Note())
-				again.SetAttendees([]string{m.Id})
-				if err := app.Save(again); err != nil {
-					return nil, err
-				}
-				achieved(app, user.Id, adding(map[string]int64{"planned": 1}), false)
-			case b.isTrue("remove"):
-				if r.PlannedBy() != m.Id && !isOwner && !(started && attending) {
-					return nil, forbidden("Only its planner, an officer or the room owner can cancel this run.")
-				}
-				if err := endPosts(app, r, "cancelled"); err != nil {
-					return nil, err
-				}
-				if err := app.Delete(r); err != nil {
-					return nil, err
-				}
-			case b.has("cant"):
-				// Can't (#45): the member answers they cannot come, which takes them off the run;
-				// false takes the answer back. Going again clears it.
-				if viewer {
-					return nil, forbidden("Viewers cannot join runs.")
-				}
-				cant, ok := b.boolean("cant")
-				if !ok {
-					return nil, badRequest("Can't must be true or false.")
-				}
-				answered := []string{}
-				for _, id := range r.Cant() {
-					if id != m.Id {
-						answered = append(answered, id)
-					}
-				}
-				if cant {
-					answered = append(answered, m.Id)
-					attendees := []string{}
-					for _, id := range r.Attendees() {
-						if id != m.Id {
-							attendees = append(attendees, id)
-						}
-					}
-					r.SetAttendees(attendees)
-					picks := r.Picks()
-					delete(picks, m.Id)
-					r.Set("picks", picks)
-				}
-				r.Set("cant", answered)
-				if err := app.Save(r); err != nil {
-					return nil, err
-				}
-			case isGoing:
-				if viewer {
-					return nil, forbidden("Viewers cannot join runs.")
-				}
-				if going {
-					answered := []string{}
-					for _, id := range r.Cant() {
-						if id != m.Id {
-							answered = append(answered, id)
-						}
-					}
-					r.Set("cant", answered)
-				}
-				// Going with a character: one of the member's own, shared in this room.
-				pick := ""
-				if going && b.set("character") {
-					c, err := ownCharacter(app, user.Id, b.str("character"))
-					if err != nil {
-						return nil, err
-					}
-					if !m.Shares(app, c.Id) {
-						return nil, badRequest("Pick a character you share in this room.")
-					}
-					pick = c.Id
-				}
-				// A member already going keeps their place; one leaving drops their pick.
-				attendees, already := []string{}, contains(r.Attendees(), m.Id)
-				for _, id := range r.Attendees() {
-					if id != m.Id || going {
-						attendees = append(attendees, id)
-					}
-				}
-				if going && !already {
-					attendees = append(attendees, m.Id)
-				}
-				r.SetAttendees(attendees)
-				picks := r.Picks()
-				delete(picks, m.Id)
-				if pick != "" {
-					picks[m.Id] = pick
-				}
-				r.Set("picks", picks)
-				if err := app.Save(r); err != nil {
-					return nil, err
-				}
-			case b.has("dungeon") || b.has("startsAt") || b.has("note") || b.has("link"):
-				if viewer {
-					return nil, forbidden("Viewers cannot plan runs.")
-				}
-				if r.PlannedBy() != m.Id && !isOwner {
-					return nil, forbidden("Only its planner, an officer or the room owner can change this run.")
-				}
-				// A run keeps its dungeon when the name only differs in case or spacing,
-				// even if the catalog changed since.
-				if b.has("dungeon") {
-					typed, err := dungeon(b["dungeon"])
-					if err != nil {
-						return nil, err
-					}
-					current, err := dungeon(r.Dungeon())
-					if err != nil {
-						return nil, err
-					}
-					if typed.key != current.key {
-						name, err := catalogName(app, b["dungeon"])
-						if err != nil {
-							return nil, err
-						}
-						if name == nil {
-							return nil, badRequest("Choose a dungeon from the list.")
-						}
-						r.SetDungeon(name.dungeon)
-					}
-				}
-				// A new start time is announced again on Discord.
-				if b.has("startsAt") {
-					startsAt, err := runStart(b["startsAt"], time.Now())
-					if err != nil {
-						return nil, err
-					}
-					if parsed, _ := parseDate(startsAt); !parsed.Equal(timeOf(r.StartsAt())) {
-						r.SetStart(startsAt)
-					}
-				}
-				if b.has("note") {
-					n, err := note(b, "note")
-					if err != nil {
-						return nil, err
-					}
-					r.SetNote(n)
-				}
-				if b.has("link") {
-					link, err := eventLink(b["link"])
-					if err != nil {
-						return nil, err
-					}
-					r.Set("link", link)
-				}
-				if err := app.Save(r); err != nil {
-					return nil, err
-				}
-			default:
-				return nil, badRequest("Send going or cant (true or false), the changes to the run, done, again or remove: true.")
-			}
+			err = p.changeRun(b)
 		} else {
-			if viewer {
-				return nil, forbidden("Viewers cannot plan runs.")
-			}
-			name, err := catalogName(app, b["dungeon"])
-			if err != nil {
-				return nil, err
-			}
-			if name == nil {
-				return nil, badRequest("Choose a dungeon from the list.")
-			}
-			n, err := note(b, "note")
-			if err != nil {
-				return nil, err
-			}
-			// Run now: the run starts in ten minutes, once per half hour and room.
-			called := b.isTrue("call")
-			var startsAt string
-			if called {
-				calls, err := app.CountRecords("room_runs", dbx.HashExp{"room": roomId, "called": true}, dbx.NewExp("created >= {:since}", dbx.Params{"since": ago(callGap)}))
-				if err != nil {
-					return nil, err
-				}
-				if calls > 0 {
-					return nil, badRequest("The party was called less than 30 minutes ago. Answer that run instead.")
-				}
-				startsAt = time.Now().Add(callLead).Truncate(time.Minute).UTC().Format(isoLayout)
-			} else if startsAt, err = runStart(b["startsAt"], time.Now()); err != nil {
-				return nil, err
-			}
-			if err := runRoom(app, roomId); err != nil {
-				return nil, err
-			}
-			r, err := newAs[Run](app, "room_runs")
-			if err != nil {
-				return nil, err
-			}
-			r.Set("room", roomId)
-			r.Set("plannedBy", m.Id)
-			r.SetDungeon(name.dungeon)
-			r.SetStart(startsAt)
-			r.SetNote(n)
-			if b.has("link") {
-				link, err := eventLink(b["link"])
-				if err != nil {
-					return nil, err
-				}
-				r.Set("link", link)
-			}
-			r.SetAttendees([]string{m.Id})
-			r.Set("called", called)
-			// Planned from the wishlist (#45): the members who want the dungeon are invited. A
-			// call invites those who can come now (callable).
-			invited := []string{}
-			if called {
-				start, _ := parseDate(startsAt)
-				if invited, err = callable(app, roomId, m.Id, start, runCost(readSettings(app), name.dungeon)); err != nil {
-					return nil, err
-				}
-			} else if b.isTrue("fromWish") && room.On("wishlist") {
-				wishes, err := list(app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": roomId, "key": name.key})
-				if err != nil {
-					return nil, err
-				}
-				for _, w := range wishes {
-					if member := w.GetString("member"); member != m.Id && !contains(invited, member) {
-						invited = append(invited, member)
-					}
-				}
-			}
-			r.Set("invited", invited)
-			if err := app.Save(r); err != nil {
-				return nil, err
-			}
-			if err := inviteToRun(app, r, invited, user, called); err != nil {
-				return nil, err
-			}
-			achieved(app, user.Id, adding(map[string]int64{"planned": 1}), false)
+			err = p.newRun(b)
 		}
-		*affected = append(*affected, roomId)
-		runs, err := runsOf(app, roomId, nil)
+		if err != nil {
+			return nil, err
+		}
+		*affected = append(*affected, p.roomId)
+		runs, err := runsOf(app, p.roomId, nil)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"runs": runs}, nil
 	})
+}
+
+// runPlanner is a member of a room acting on its planned runs (plan); isOwner is true for
+// its owner and officers.
+type runPlanner struct {
+	app             core.App
+	user            *core.Record
+	m               *Member
+	room            *Room
+	roomId          string
+	viewer, isOwner bool
+}
+
+// changeRun acts on one planned run of the room, by the verb the body names.
+func (p *runPlanner) changeRun(b body) error {
+	r, err := findAs[Run](p.app, "room_runs", b.str("id"))
+	if err != nil || r.Room() != p.roomId {
+		return notFound("This run is no longer planned.")
+	}
+	going, isGoing := b.boolean("going")
+	// After the start, its attendees wrap the run up too: done, or it did not happen.
+	started, attending := !timeOf(r.StartsAt()).After(time.Now()), contains(r.Attendees(), p.m.Id)
+	switch {
+	case b.isTrue("done"):
+		return p.wrapUp(r, started, attending)
+	case b.isTrue("again"):
+		return p.planAgain(r, b)
+	case b.isTrue("remove"):
+		return p.cancel(r, started, attending)
+	case b.has("cant"):
+		return p.answerCant(r, b)
+	case isGoing:
+		return p.answerGoing(r, b, going)
+	case b.has("dungeon") || b.has("startsAt") || b.has("note") || b.has("link"):
+		return p.edit(r, b)
+	default:
+		return badRequest("Send going or cant (true or false), the changes to the run, done, again or remove: true.")
+	}
+}
+
+// wrapUp marks a started run done: the dungeon leaves the wishlist of everyone in its party;
+// those still waiting for a place keep theirs.
+func (p *runPlanner) wrapUp(r *Run, started, attending bool) error {
+	if !started {
+		return badRequest("A run can be marked done once it has started.")
+	}
+	if r.PlannedBy() != p.m.Id && !p.isOwner && !attending {
+		return forbidden("Only its planner, an attendee, an officer or the room owner can mark this run done.")
+	}
+	ran, err := dungeon(r.Dungeon())
+	if err != nil {
+		return err
+	}
+	wishes, err := list(p.app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": p.roomId, "key": ran.key})
+	if err != nil {
+		return err
+	}
+	party, _ := runParty(readSettings(p.app), r)
+	for _, w := range wishes {
+		if contains(party, w.GetString("member")) {
+			if err := p.app.Delete(w); err != nil {
+				return err
+			}
+		}
+	}
+	if err := endPosts(p.app, r, "done"); err != nil {
+		return err
+	}
+	return p.app.Delete(r)
+}
+
+// planAgain plans the same dungeon, note and local time a week later (the browser sends that
+// time, which keeps it across a daylight saving change), with the caller going.
+func (p *runPlanner) planAgain(r *Run, b body) error {
+	if p.viewer {
+		return forbidden("Viewers cannot plan runs.")
+	}
+	next := timeOf(r.StartsAt()).Add(7 * 24 * time.Hour).UTC().Format(isoLayout)
+	var err error
+	if b.has("startsAt") {
+		if next, err = runStart(b["startsAt"], time.Now()); err != nil {
+			return err
+		}
+	} else if next, err = runStart(next, time.Now()); err != nil {
+		return err
+	}
+	if err := runRoom(p.app, p.roomId); err != nil {
+		return err
+	}
+	again, err := newAs[Run](p.app, "room_runs")
+	if err != nil {
+		return err
+	}
+	again.Set("room", p.roomId)
+	again.Set("plannedBy", p.m.Id)
+	again.SetDungeon(r.Dungeon())
+	again.SetStart(next)
+	again.SetNote(r.Note())
+	again.SetAttendees([]string{p.m.Id})
+	if err := p.app.Save(again); err != nil {
+		return err
+	}
+	achieved(p.app, p.user.Id, adding(map[string]int64{"planned": 1}), false)
+	return nil
+}
+
+// cancel deletes a run with its Discord posts marked cancelled.
+func (p *runPlanner) cancel(r *Run, started, attending bool) error {
+	if r.PlannedBy() != p.m.Id && !p.isOwner && !(started && attending) {
+		return forbidden("Only its planner, an officer or the room owner can cancel this run.")
+	}
+	if err := endPosts(p.app, r, "cancelled"); err != nil {
+		return err
+	}
+	return p.app.Delete(r)
+}
+
+// answerCant (#45): the member answers they cannot come, which takes them off the run; false
+// takes the answer back. Going again clears it.
+func (p *runPlanner) answerCant(r *Run, b body) error {
+	if p.viewer {
+		return forbidden("Viewers cannot join runs.")
+	}
+	cant, ok := b.boolean("cant")
+	if !ok {
+		return badRequest("Can't must be true or false.")
+	}
+	answered := without(r.Cant(), p.m.Id)
+	if cant {
+		answered = append(answered, p.m.Id)
+		r.SetAttendees(without(r.Attendees(), p.m.Id))
+		picks := r.Picks()
+		delete(picks, p.m.Id)
+		r.Set("picks", picks)
+	}
+	r.Set("cant", answered)
+	return p.app.Save(r)
+}
+
+// answerGoing joins the run or leaves it. Going with a character: one of the member's own,
+// shared in this room.
+func (p *runPlanner) answerGoing(r *Run, b body, going bool) error {
+	if p.viewer {
+		return forbidden("Viewers cannot join runs.")
+	}
+	if going {
+		r.Set("cant", without(r.Cant(), p.m.Id))
+	}
+	pick := ""
+	if going && b.set("character") {
+		c, err := ownCharacter(p.app, p.user.Id, b.str("character"))
+		if err != nil {
+			return err
+		}
+		if !p.m.Shares(p.app, c.Id) {
+			return badRequest("Pick a character you share in this room.")
+		}
+		pick = c.Id
+	}
+	// A member already going keeps their place; one leaving drops their pick.
+	attendees := append([]string{}, r.Attendees()...)
+	if !going {
+		attendees = without(attendees, p.m.Id)
+	} else if !contains(attendees, p.m.Id) {
+		attendees = append(attendees, p.m.Id)
+	}
+	r.SetAttendees(attendees)
+	picks := r.Picks()
+	delete(picks, p.m.Id)
+	if pick != "" {
+		picks[p.m.Id] = pick
+	}
+	r.Set("picks", picks)
+	return p.app.Save(r)
+}
+
+// edit changes a run's dungeon, start, note or link.
+func (p *runPlanner) edit(r *Run, b body) error {
+	if p.viewer {
+		return forbidden("Viewers cannot plan runs.")
+	}
+	if r.PlannedBy() != p.m.Id && !p.isOwner {
+		return forbidden("Only its planner, an officer or the room owner can change this run.")
+	}
+	// A run keeps its dungeon when the name only differs in case or spacing,
+	// even if the catalog changed since.
+	if b.has("dungeon") {
+		typed, err := dungeon(b["dungeon"])
+		if err != nil {
+			return err
+		}
+		current, err := dungeon(r.Dungeon())
+		if err != nil {
+			return err
+		}
+		if typed.key != current.key {
+			name, err := catalogName(p.app, b["dungeon"])
+			if err != nil {
+				return err
+			}
+			if name == nil {
+				return badRequest("Choose a dungeon from the list.")
+			}
+			r.SetDungeon(name.dungeon)
+		}
+	}
+	// A new start time is announced again on Discord.
+	if b.has("startsAt") {
+		startsAt, err := runStart(b["startsAt"], time.Now())
+		if err != nil {
+			return err
+		}
+		if parsed, _ := parseDate(startsAt); !parsed.Equal(timeOf(r.StartsAt())) {
+			r.SetStart(startsAt)
+		}
+	}
+	if b.has("note") {
+		n, err := note(b, "note")
+		if err != nil {
+			return err
+		}
+		r.SetNote(n)
+	}
+	if b.has("link") {
+		link, err := eventLink(b["link"])
+		if err != nil {
+			return err
+		}
+		r.Set("link", link)
+	}
+	return p.app.Save(r)
+}
+
+// newRun plans a run with the planner going. Run now (call) starts it in ten minutes, once
+// per half hour and room.
+func (p *runPlanner) newRun(b body) error {
+	if p.viewer {
+		return forbidden("Viewers cannot plan runs.")
+	}
+	name, err := catalogName(p.app, b["dungeon"])
+	if err != nil {
+		return err
+	}
+	if name == nil {
+		return badRequest("Choose a dungeon from the list.")
+	}
+	n, err := note(b, "note")
+	if err != nil {
+		return err
+	}
+	called := b.isTrue("call")
+	var startsAt string
+	if called {
+		calls, err := p.app.CountRecords("room_runs", dbx.HashExp{"room": p.roomId, "called": true}, dbx.NewExp("created >= {:since}", dbx.Params{"since": ago(callGap)}))
+		if err != nil {
+			return err
+		}
+		if calls > 0 {
+			return badRequest("The party was called less than 30 minutes ago. Answer that run instead.")
+		}
+		startsAt = time.Now().Add(callLead).Truncate(time.Minute).UTC().Format(isoLayout)
+	} else if startsAt, err = runStart(b["startsAt"], time.Now()); err != nil {
+		return err
+	}
+	if err := runRoom(p.app, p.roomId); err != nil {
+		return err
+	}
+	r, err := newAs[Run](p.app, "room_runs")
+	if err != nil {
+		return err
+	}
+	r.Set("room", p.roomId)
+	r.Set("plannedBy", p.m.Id)
+	r.SetDungeon(name.dungeon)
+	r.SetStart(startsAt)
+	r.SetNote(n)
+	if b.has("link") {
+		link, err := eventLink(b["link"])
+		if err != nil {
+			return err
+		}
+		r.Set("link", link)
+	}
+	r.SetAttendees([]string{p.m.Id})
+	r.Set("called", called)
+	// Planned from the wishlist (#45): the members who want the dungeon are invited. A
+	// call invites those who can come now (callable).
+	invited := []string{}
+	if called {
+		start, _ := parseDate(startsAt)
+		if invited, err = callable(p.app, p.roomId, p.m.Id, start, runCost(readSettings(p.app), name.dungeon)); err != nil {
+			return err
+		}
+	} else if b.isTrue("fromWish") && p.room.On("wishlist") {
+		wishes, err := list(p.app, "room_wishes", "room = {:room} && key = {:key}", dbx.Params{"room": p.roomId, "key": name.key})
+		if err != nil {
+			return err
+		}
+		for _, w := range wishes {
+			if member := w.GetString("member"); member != p.m.Id && !contains(invited, member) {
+				invited = append(invited, member)
+			}
+		}
+	}
+	r.Set("invited", invited)
+	if err := p.app.Save(r); err != nil {
+		return err
+	}
+	if err := inviteToRun(p.app, r, invited, p.user, called); err != nil {
+		return err
+	}
+	achieved(p.app, p.user.Id, adding(map[string]int64{"planned": 1}), false)
+	return nil
 }
 
 // upcoming lists the runs the account is going to in the next 24 hours across all its

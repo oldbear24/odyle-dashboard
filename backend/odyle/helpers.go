@@ -122,6 +122,17 @@ func contains(values []string, value string) bool {
 	return false
 }
 
+// without is a new list of the values other than value (never nil, so it answers [] in JSON).
+func without(values []string, value string) []string {
+	out := []string{}
+	for _, v := range values {
+		if v != value {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // changed reports whether any of the record's fields differs from the record as it was loaded.
 func changed(r *core.Record, fields ...string) bool {
 	before := r.Original()
