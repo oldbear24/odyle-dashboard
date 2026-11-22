@@ -132,8 +132,6 @@ function describe(p) {
       return named('PC paired', p.name);
     case 'desktop-sign-in':
       return named('Paired PC signed in', p.name);
-    case 'desktop-device':
-      return named('Device key for an older pairing', p.name);
     case 'unpair':
       return 'PC disconnected its pairing';
     case 'create':
@@ -146,8 +144,6 @@ function describe(p) {
       return 'Left ' + room(p);
     case 'close':
       return 'Closed ' + room(p);
-    case 'invites':
-      return 'New invites for ' + room(p);
     case 'invite-create':
       return 'New ' + (p.role === 'viewer' ? 'viewer' : 'player') + ' invite link for ' + room(p);
     case 'invite-revoke':
