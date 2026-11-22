@@ -25,7 +25,7 @@ type action struct {
 // POST /api/odyle/<action> for signed-in accounts.
 var accountActions = []action{
 	{"create", create}, {"join", join}, {"character", character}, {"report", report}, {"heartbeat", heartbeat}, {"sharing", sharing}, {"wishlist", wishlist},
-	{"task", checklistTask}, {"session", session}, {"invalidate", invalidate}, {"leave", leave}, {"close", closeRoom}, {"invites", invites}, {"revoke", revoke},
+	{"task", checklistTask}, {"session", session}, {"invalidate", invalidate}, {"leave", leave}, {"close", closeRoom}, {"revoke", revoke},
 	{"invite-create", inviteCreate}, {"invite-revoke", inviteRevoke},
 	{"rename", rename}, {"role", role}, {"transfer", transfer}, {"plan", plan}, {"discord-webhook", discordWebhook}, {"profile", profile},
 	{"desktop-code", desktopCode}, {"desktop-device", desktopDevice}, {"forget-device", forgetDevice}, {"sign-out-everywhere", signOutEverywhere},

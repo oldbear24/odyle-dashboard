@@ -897,7 +897,10 @@ onAction({
   },
   'add-all': async () => {
     const id = state.room.id,
-      result = await send('sharing', { roomId: id, enabled: true });
+      characterIds = mine()
+        .filter(c => !c.shared)
+        .map(c => c.id),
+      result = await send('sharing', { roomId: id, characterIds, enabled: true });
     changedRoom(id, () => applyShared(me(), result.sharedCharacters));
   },
   'leave-room': () =>

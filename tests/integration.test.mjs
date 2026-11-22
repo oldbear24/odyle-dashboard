@@ -261,7 +261,7 @@ before(async () => {
   legacyRoomId = legacyRoom.data.id;
   assert.equal((await request('/__test__/legacy-catalog', {})).status, 200);
   // Invite links made before links had a maker, a label or a use limit.
-  const made = await action('invites', { roomId: legacyRoomId }, outsider);
+  const made = await request('/__test__/legacy-invites', { room: legacyRoomId, user: outsider.record.id });
   assert.equal(made.status, 200, JSON.stringify(made.data));
   legacyInvites = made.data.invites;
   await stop();
@@ -2451,8 +2451,22 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
       (await action('sharing', { roomId: room.id, characterId: first.id, enabled: 'yes' }, player)).status,
       400,
     );
-    // Older clients without characterId share or hide every saved character at once.
-    assert.equal((await action('sharing', { roomId: room.id, enabled: true }, player)).status, 200);
+    // A request names its characters: without characterId or characterIds it is refused (1.0.0),
+    // and characterIds (Add all) shares several at once, all or none.
+    assert.equal((await action('sharing', { roomId: room.id, enabled: true }, player)).status, 400);
+    assert.equal((await action('sharing', { roomId: room.id, characterIds: [], enabled: true }, player)).status, 400);
+    assert.equal(
+      (await action('sharing', { roomId: room.id, characterIds: [second.id, legacyId], enabled: true }, player)).status,
+      403,
+    );
+    assert.equal((await shared()).length, 1);
+    const all = await action(
+      'sharing',
+      { roomId: room.id, characterIds: [first.id, second.id], enabled: true },
+      player,
+    );
+    assert.equal(all.status, 200, JSON.stringify(all.data));
+    assert.deepEqual(all.data.sharedCharacters, [first.id, second.id]);
     assert.equal((await shared()).length, 2);
     assert.equal(
       (await action('sharing', { roomId: room.id, characterId: second.id, enabled: false }, player)).status,
@@ -2464,8 +2478,12 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
       [first.id],
     );
     assert.equal(JSON.stringify(chars).includes('readingSession'), false);
-    assert.equal((await action('sharing', { roomId: room.id, enabled: true }, viewer)).status, 403);
-    assert.equal((await action('invites', { roomId: room.id }, viewer)).status, 403);
+    assert.equal(
+      (await action('sharing', { roomId: room.id, characterIds: [first.id], enabled: true }, viewer)).status,
+      403,
+    );
+    // The action that replaced every link of a room at once is gone (1.0.0).
+    assert.equal((await action('invites', { roomId: room.id }, owner)).status, 404);
     assert.equal((await action('report', { ...input, sequence: 3, characterId: first.id }, outsider)).status, 403);
     const outSession = (await action('session', {}, outsider)).data;
     assert.equal(
@@ -2582,13 +2600,13 @@ test('Discord accounts, persistent characters, private rooms and desktop pairing
     await settle();
     const stream = await connect(url, viewer.token, 'odyle.room.' + room.id);
     try {
-      await action('sharing', { roomId: room.id, enabled: true }, owner);
+      await action('sharing', { roomId: room.id, characterId: second.id, enabled: true }, player);
       assert.equal((await stream.next())?.data.refresh, true);
       const memberId = (await snapshot(owner)).data.members.find(m => m.user === viewer.record.id).id;
       // A removed member hears once that it was removed, and nothing after that.
       await action('revoke', { roomId: room.id, memberId }, owner);
       assert.deepEqual((await stream.next())?.data, { refresh: true, removed: true });
-      await action('sharing', { roomId: room.id, enabled: false }, owner);
+      await action('sharing', { roomId: room.id, characterId: second.id, enabled: false }, player);
       assert.equal(await stream.next(400), null);
       assert.equal((await snapshot(viewer)).status, 403);
     } finally {

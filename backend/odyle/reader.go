@@ -346,21 +346,11 @@ func sharing(e *core.RequestEvent) error {
 		if !ok {
 			return nil, badRequest("Sharing must be true or false.")
 		}
-		// Sharing is per character. Without characterId (older clients) the choice
-		// applies to every character the account has saved right now.
-		var targets []string
-		if b.set("characterId") {
-			c, err := ownCharacter(app, user.Id, b.str("characterId"))
-			if err != nil {
-				return nil, err
-			}
-			targets = []string{c.Id}
-		} else {
-			saved, err := list(app, "characters", "user = {:user}", dbx.Params{"user": user.Id})
-			if err != nil {
-				return nil, err
-			}
-			targets = ids(saved)
+		// Sharing is per character: one (characterId), or several of the account's at once
+		// (characterIds, the room page's Add all).
+		targets, err := sharedTargets(app, user.Id, b)
+		if err != nil {
+			return nil, err
 		}
 		next := []string{}
 		for _, id := range m.Shared(app) {
@@ -432,4 +422,33 @@ func invalidate(e *core.RequestEvent) error {
 		c.Set("gameGroup", nil)
 		return nil, app.Save(c)
 	})
+}
+
+// sharedTargets are the characters a sharing request names: characterId, or characterIds, a
+// list of up to 50 of the account's own characters. One of them is required; a character of
+// another account, or one that no longer exists, refuses the whole request.
+func sharedTargets(app core.App, userId string, b body) ([]string, error) {
+	if b.set("characterId") {
+		c, err := ownCharacter(app, userId, b.str("characterId"))
+		if err != nil {
+			return nil, err
+		}
+		return []string{c.Id}, nil
+	}
+	listed, ok := b["characterIds"].([]any)
+	if !ok || len(listed) == 0 || len(listed) > 50 {
+		return nil, badRequest("Choose the characters to share.")
+	}
+	targets := []string{}
+	for _, raw := range listed {
+		id, _ := raw.(string)
+		c, err := ownCharacter(app, userId, id)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(targets, c.Id) {
+			targets = append(targets, c.Id)
+		}
+	}
+	return targets, nil
 }

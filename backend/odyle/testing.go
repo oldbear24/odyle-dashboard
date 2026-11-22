@@ -236,7 +236,7 @@ func fixtures(se *core.ServeEvent) {
 			role = b.str("role")
 		}
 		for i := 0; i < count(b["count"]); i++ {
-			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i), "cost": 40})
+			room, err := save(e.App, "party_rooms", map[string]any{"owner": b["user"], "name": "Bulk " + strconv.Itoa(i)})
 			if err != nil {
 				return nil, err
 			}
@@ -263,6 +263,16 @@ func fixtures(se *core.ServeEvent) {
 		}
 		_, err = save(e.App, "room_members", map[string]any{"room": room.Id, "user": b["user"], "role": "owner", "sharing": true})
 		return room, err
+	})
+	// Invite links made before links had a maker, a label or a use limit: a player and a viewer
+	// link, as dashboards of that time made them.
+	fixture(se, "legacy-invites", func(e *core.RequestEvent, b body) (any, error) {
+		room, err := findAs[Room](e.App, "party_rooms", b.str("room"))
+		if err != nil {
+			return nil, err
+		}
+		invites, err := roomInvites(e.App, room, b.str("user"))
+		return map[string]any{"invites": invites}, err
 	})
 	// A dungeon catalog of plain names, as saved before catalog entries.
 	fixture(se, "legacy-catalog", func(e *core.RequestEvent, b body) (any, error) {
