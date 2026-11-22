@@ -11,8 +11,8 @@ import { onlineReader, readerLabel } from '../readers.js';
 import { inAppBrowser } from '../signin.js';
 import { state, remembered } from './state.js';
 import { pb } from './server.js';
-import { app, announce, modal, toast, badgeOf } from './ui.js';
-import { onAction } from './actions.js';
+import { app, announce, modal, toast, badgeOf, copyText } from './ui.js';
+import { onData, onAction } from './actions.js';
 import { helpPart, pairingPart } from './parts.js';
 import { announcementBar, updateNote, appVersion } from './notes.js';
 import { noteAchievements } from './pages.js';
@@ -124,6 +124,10 @@ async function desktopDialog(another) {
   if (!pb.authStore.isValid || state.demo) return toast(t('Sign in with Discord to connect your reader.'));
   return (await pairingPart()).desktopDialog(another);
 }
+// The copy buttons of the dialogs (invite and connection links, the card, signing in elsewhere).
+onData({
+  copy: async el => toast(await copyText(el.dataset.copy) ? el.dataset.copied || t('Code copied.') : t('Copying is blocked here. Select the text and copy it yourself.')),
+});
 onAction({
   reading: () => desktopDialog(false),
   desktop: () => desktopDialog(true),

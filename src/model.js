@@ -32,7 +32,7 @@ export function weekDates(from, until) {
 // A count in the reader's language: 1,234 or 1 234; anything not a number counts as 0.
 export const number = value => (Number(value) || 0).toLocaleString(locale());
 export const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-// What a redraw compares (main parts' signatures): hook responses list record fields in a
+// What a redraw compares (each page's signature): hook responses list record fields in a
 // different order each time, so keys are sorted and identical data compares equal.
 export const canonical = value => JSON.stringify(value, (key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : v);
 // Members (or the account) without what changes with every heartbeat: when each was last seen.

@@ -1,4 +1,4 @@
-// The owner's invite dialog (main.js inviteDialog): the room's open links with the codes this
+// The owner's invite dialog (app/invites.js inviteDialog): the room's open links with the codes this
 // browser remembers (invites.js) and the form for a new one. It loads with the dialog.
 import { t, tn, locale } from './i18n.js';
 import { escape as esc, timestamp } from './model.js';

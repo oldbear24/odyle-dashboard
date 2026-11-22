@@ -1,7 +1,7 @@
-// After an update the dashboard says once that it was updated (main.js, odyle.seenVersion), with
+// After an update the dashboard says once that it was updated (app/notes.js, odyle.seenVersion), with
 // a link to What's new (whatsnew.js, which loads with its page). A tab left open while a newer
 // release went out says that one is out, with a way to load it (#197). Neither note is a live
-// region: pages draw them again with every redraw, and main.js reads out the news once.
+// region: pages draw them again with every redraw, and app/notes.js reads out the news once.
 import { t } from './i18n.js';
 import { escape as esc } from './model.js';
 import { icon } from './icons.js';

@@ -1,5 +1,5 @@
 // What the rest of the dashboard needs of the armory without loading it (armory.js loads with
-// its first page, main.js): its paths, which page a path asks for, the title of its search,
+// its first page, app/armory.js): its paths, which page a path asks for, the title of its search,
 // profiles and top players, and the class emblems character rows show.
 import { t } from './i18n.js';
 import { escape as esc } from './model.js';

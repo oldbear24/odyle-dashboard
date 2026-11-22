@@ -8,7 +8,7 @@ import { pairingKey as key, forgetPairing, readerLabel } from './readers.js';
 // invite codes, invites.js) and the dialog shows the same link again instead of a new
 // one, until a minute before it expires. A new link replaces the code on the server too.
 // Signing out of the browser forgets it (readers.js). The dialog loads with its first opening
-// (main.js desktopDialog).
+// (app/pairing.js desktopDialog).
 const lifetime = 300000;
 export function savedPairing(storage, user, now = Date.now()) {
   let saved; try { saved = JSON.parse(storage.getItem(key)); } catch { return null; }

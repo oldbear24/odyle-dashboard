@@ -1,5 +1,5 @@
 // The demo workspace (#/demo): a sample room to try the dashboard without signing in, and the
-// made-up history of its characters for the history dialog. It loads with the demo (main.js).
+// made-up history of its characters for the history dialog. It loads with the demo (app/room.js).
 import { t } from './i18n.js';
 
 // The sample room at now: its members and their characters, the wishlist, the classes' roles,

@@ -1,5 +1,5 @@
 // Parts of the dashboard load the first time they are needed (a page, a dialog, an action),
-// not with the first page, which then downloads and starts sooner; main.js lists them. Once
+// not with the first page, which then downloads and starts sooner; app/parts.js lists them. Once
 // the first page is drawn, the others load while the browser is idle (prefetch): later pages
 // open at once, the service worker keeps their files for visits without a connection, and a
 // tab left open across a deploy already holds them.

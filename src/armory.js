@@ -8,7 +8,7 @@
 // only, so they need no account. Images (the game's icons, the character's portrait) come
 // from the Odyle server only (backend/odyle/armoryimages.go). Its paths, the titles of its pages
 // and the class emblems are in armorylinks.js, which the rest of the dashboard uses without
-// loading this module: it loads with the armory's first page (main.js).
+// loading this module: it loads with the armory's first page (app/armory.js).
 import { t, tn } from './i18n.js';
 import { age, escape as esc, number } from './model.js';
 import { icon } from './icons.js';
@@ -29,7 +29,7 @@ const picture = (base, name, kind = '') => { const src = imageUrl(base, name); r
 const initials = name => [...String(name || '?')].slice(0, 2).join('').toUpperCase();
 
 // Bookmarks: characters this browser keeps in a list, newest first, each with the numbers of
-// its profile as last opened here. main.js keeps them in localStorage (odyle.armory.bookmarks).
+// its profile as last opened here. app/armory.js keeps them in localStorage (odyle.armory.bookmarks).
 export const bookmarkLimit = 50;
 export const bookmarkKey = c => `${c.region}/${c.serverId}/${c.characterId}`;
 // Saved bookmarks as far as they still make sense; anything else in storage is left out.
