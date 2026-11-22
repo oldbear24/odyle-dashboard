@@ -17,7 +17,7 @@ import { state, storage } from './app/state.js';
 import { pb } from './app/server.js';
 import { app, setPressed, formError, failed } from './app/ui.js';
 import { clickHandler, submitHandler, changeHandler } from './app/actions.js';
-import { gone, prefetchParts, roomPart, accountPart, notificationsPart, pairingPart } from './app/parts.js';
+import { gone, prefetchParts, libraryPart, roomPart, tasksPart, accountPart, notificationsPart, pairingPart } from './app/parts.js';
 import { checkRelease, loadAnnouncement } from './app/notes.js';
 import { show, go, rerender, currentPath } from './app/router.js';
 import { cardPreview } from './app/armory.js';
@@ -83,6 +83,9 @@ useEnglishLocale(navigator.languages || [navigator.language]);
 if (startLanguage === 'cs') for (const href of [dmSansLatinExt, manropeLatinExt]) document.head.append(Object.assign(document.createElement('link'), { rel: 'preload', as: 'font', type: 'font/woff2', href, crossOrigin: '' }));
 // A kept sign-in is renewed while the dictionary loads (#186).
 const renewing = pb.authStore.isValid ? renewal() : null;
+// The part the signed-in page needs loads alongside the renewal, so its code and its data do not
+// wait for each other on a first visit (parts.js; the router loads it again and finds it loaded).
+if (pb.authStore.isValid) { const path = currentPath(); (path.startsWith('/room/') ? roomPart : path === '/tasks' ? tasksPart : path === '/account' ? accountPart : path === '/' ? libraryPart : null)?.prefetch(); }
 useLanguage(startLanguage).catch(() => useLanguage('en')).then(() => {
   document.documentElement.lang = language(); retitle(pageTitle(currentPath(), document.title));
   if (pb.authStore.isValid) return authenticated(renewing).catch(failure);
