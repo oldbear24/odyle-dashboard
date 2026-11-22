@@ -31,14 +31,11 @@ func integer(value any, name string, min, max int64) (int64, error) {
 	return int64(f), nil
 }
 
-// GLOBAL_NA is NA-East (and NA characters saved before the split), GLOBAL_NAW NA-West (odyle-windows#4).
-var regions = []string{"GLOBAL_EU", "GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_SA", "GLOBAL_ASIA"}
-
 type identity struct{ characterName, server, region string }
 
 func characterIdentity(b body) (identity, error) {
 	region, _ := b.text("region")
-	if !contains(regions, region) {
+	if !knownRegion(region) {
 		return identity{}, badRequest("Select a Global region.")
 	}
 	name, err := text(b["characterName"], "Character", 40)
@@ -243,7 +240,7 @@ func validReading(b body, sessionId string, sequence int64, adapters []string) (
 		return reading{}, badRequest("A verified packet observation is required.")
 	}
 	region, _ := b.text("region")
-	if !contains(regions, region) {
+	if !knownRegion(region) {
 		return reading{}, badRequest("Select a Global region.")
 	}
 	value, err := integer(b["value"], "Odyle", 0, 1000000)

@@ -387,13 +387,13 @@ func armorySearchRoute(e *core.RequestEvent) error {
 // ones PLAYNC last listed in the region, or every server known while it has listed none.
 func armoryServersRoute(e *core.RequestEvent) error {
 	book, out := serversOf(e.App), []map[string]any{}
-	for _, r := range []string{"GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_EU", "GLOBAL_SA", "GLOBAL_ASIA"} {
-		servers := book.regionServers(searchRegions[r][0].digit)
+	for _, r := range gameRegions {
+		servers := book.regionServers(r.digit)
 		races := map[int][]string{1: {}, 2: {}}
 		for _, s := range servers {
 			races[s.Id/1000] = append(races[s.Id/1000], s.Name)
 		}
-		out = append(out, map[string]any{"region": r, "elyos": races[1], "asmodian": races[2], "servers": servers})
+		out = append(out, map[string]any{"region": r.odyle, "elyos": races[1], "asmodian": races[2], "servers": servers})
 	}
 	e.Response.Header().Set("Cache-Control", "public, max-age=3600")
 	return e.JSON(200, map[string]any{"regions": out})

@@ -90,7 +90,7 @@ func pvpPlayer(entry map[string]any, nameKey, serverKey, regionKey string) (name
 	if server == "" && region == "" {
 		return name, "", "", nil
 	}
-	if !pvpServer.MatchString(server) || !contains(regions, region) {
+	if !pvpServer.MatchString(server) || !knownRegion(region) {
 		return "", "", "", badRequest("A player's server comes with its Global region, or both are left out.")
 	}
 	// Windows 0.33.0 names seven servers otherwise (servers.go).

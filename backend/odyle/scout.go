@@ -661,7 +661,7 @@ func (s *armoryScout) search(app core.App) (bool, error) {
 	s.mu.Lock()
 	page := 1 + scoutPick(max(1, s.pages[key]))
 	s.mu.Unlock()
-	region := serverRegionCodes[digit]
+	region := regionOfDigit(digit).code
 	query := "keyword=" + letter + "&pcId=" + url.QueryEscape(strings.Join(classes[class], ",")) + "&serverId=" + strconv.Itoa(server.Id) + "&region=" + region +
 		"&localeInfo=en-US&page=" + strconv.Itoa(page) + "&size=" + strconv.Itoa(scoutPageSize) + "&sort=level"
 	res, err := send(call{method: "GET", url: searchURL() + "?" + query, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 1 << 20})

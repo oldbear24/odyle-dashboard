@@ -61,7 +61,7 @@ func armoryURL() string {
 // PLAYNC's character ids are URL-safe Base64 with padding.
 var armoryIds = regexp.MustCompile(`^[A-Za-z0-9_-]{8,90}={0,2}$`)
 
-// armoryServer is the name of a PLAYNC server id in a search region (searchRegions), or ""
+// armoryServer is the name of a PLAYNC server id in a search region (regions.go), or ""
 // when the id does not belong to it or no server of that id is known (servers.go).
 func armoryServer(app core.App, region string, serverId int) string {
 	return serversOf(app).inRegion(region, serverId)

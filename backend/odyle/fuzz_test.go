@@ -103,7 +103,7 @@ func FuzzReading(f *testing.F) {
 		if err != nil {
 			return
 		}
-		if r.value < 0 || r.value > 1000000 || float64(r.value) != value || r.sequence < 1 || !contains(regions, r.region) || r.parserVersion != "global-reference-v1" ||
+		if r.value < 0 || r.value > 1000000 || float64(r.value) != value || r.sequence < 1 || !knownRegion(r.region) || r.parserVersion != "global-reference-v1" ||
 			r.characterName == "" || length(r.characterName) > 40 || r.server == "" || length(r.server) > 40 {
 			t.Fatalf("accepted %+v from %v", r, b)
 		}
@@ -124,7 +124,7 @@ func FuzzPvpEvent(f *testing.F) {
 		}
 		e := events[0]
 		player := func(name, server, region string) bool {
-			return pvpName.MatchString(name) && length(name) <= 80 && (server == "" && region == "" || pvpServer.MatchString(server) && contains(regions, region))
+			return pvpName.MatchString(name) && length(name) <= 80 && (server == "" && region == "" || pvpServer.MatchString(server) && knownRegion(region))
 		}
 		if len(events) != 1 || !pvpEventId.MatchString(e.id) || !contains(pvpKinds, e.kind) || !player(e.name, e.server, e.region) || e.at.After(at) || at.Sub(e.at) > pvpLate ||
 			e.by != "" && (e.kind != "assist" || !player(e.by, e.byServer, e.byRegion)) || e.by == "" && (e.byServer != "" || e.byRegion != "") {

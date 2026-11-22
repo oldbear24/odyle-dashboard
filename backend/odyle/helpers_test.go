@@ -187,3 +187,43 @@ func TestRecordHooksRefreshTheRoomsRoutesChange(t *testing.T) {
 	post(owner, "transfer", `,"memberId":"`+mates.Id+`"`)
 	told("transfer")
 }
+
+// The one region table answers what the four copies it replaced did.
+func TestRegionTableMatchesTheOldCopies(t *testing.T) {
+	type search struct {
+		digit int
+		code  string
+	}
+	oldSearch := map[string][]search{"GLOBAL_NA": {{1, "nae"}, {2, "naw"}}, "GLOBAL_NAW": {{2, "naw"}}, "GLOBAL_EU": {{3, "eu"}}, "GLOBAL_SA": {{4, "la"}}, "GLOBAL_ASIA": {{5, "as"}}}
+	oldCodes := map[int]string{1: "nae", 2: "naw", 3: "eu", 4: "la", 5: "as"}
+	oldDigits := map[string]int{"GLOBAL_NA": 1, "GLOBAL_NAW": 2, "GLOBAL_EU": 3, "GLOBAL_SA": 4, "GLOBAL_ASIA": 5}
+	oldTitles := map[string]string{"nae": "North America East", "naw": "North America West", "eu": "Europe", "la": "South America", "as": "Asia"}
+	oldOrder := []string{"GLOBAL_NA", "GLOBAL_NAW", "GLOBAL_EU", "GLOBAL_SA", "GLOBAL_ASIA"}
+	for _, name := range append(oldOrder, "", "GLOBAL_KR", "global_eu") {
+		got := []search{}
+		for _, r := range searchRegions(name) {
+			got = append(got, search{r.digit, r.code})
+		}
+		if want := oldSearch[name]; fmt.Sprint(got) != fmt.Sprint(append([]search{}, want...)) {
+			t.Errorf("searchRegions(%q) = %v, want %v", name, got, want)
+		}
+		if regionNamed(name).digit != oldDigits[name] || knownRegion(name) != (oldDigits[name] != 0) {
+			t.Errorf("region %q: digit %d", name, regionNamed(name).digit)
+		}
+	}
+	for digit := -1; digit <= 10; digit++ {
+		if regionOfDigit(digit).code != oldCodes[digit] {
+			t.Errorf("digit %d: %q", digit, regionOfDigit(digit).code)
+		}
+	}
+	for _, code := range []string{"nae", "naw", "eu", "la", "as", "", "kr"} {
+		if regionOfCode(code).title != oldTitles[code] {
+			t.Errorf("code %q: %q", code, regionOfCode(code).title)
+		}
+	}
+	for i, r := range gameRegions {
+		if r.odyle != oldOrder[i] {
+			t.Errorf("order %d: %s", i, r.odyle)
+		}
+	}
+}
