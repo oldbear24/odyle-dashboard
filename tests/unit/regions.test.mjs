@@ -19,9 +19,9 @@ test('the regions and servers the armory can look up', () => {
 });
 
 test('the armory route is built from the shared patterns and matches what it matched before', () => {
-  // The literal the route was before #193.
+  // The literal the route was before #193, with comparisons of two profiles since.
   const before =
-    /^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card))?)?$/;
+    /^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/GLOBAL_(?:NAW?|EU|SA|ASIA)\/[A-Za-z]{2,20}\/[^/]{1,60}|\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card)|\/compare\/(?:nae|naw|eu|la|as)\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2})?)?$/;
   assert.equal(armoryRoute.source, before.source);
   assert.equal(armoryRoute.flags, before.flags);
 });

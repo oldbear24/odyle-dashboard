@@ -66,6 +66,22 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 	if title, _, private, missing, _ := describe("/armory/eu/2304/Tm90S2VwdFlldE5vdEtlcHQ="); title != "A character on Lumiel · Odyle Armory" || !private || missing {
 		t.Fatalf("a profile not kept: %q %v %v", title, private, missing)
 	}
+	// Two profiles side by side are named after both, by server while one is not kept, and stay
+	// out of search engines; one with a hidden profile or a server outside its region is no page.
+	for route, want := range map[string]string{
+		profile + "/compare/eu/2304/" + pageId:                           "Kai vs Kai · Odyle Armory",
+		profile + "/compare/eu/2304/Tm90S2VwdFlldE5vdEtlcHQ=":            "Kai vs a character on Lumiel · Odyle Armory",
+		"/armory/eu/2304/Tm90S2VwdFlldE5vdEtlcHQ=/compare" + profile[7:]: "a character on Lumiel vs Kai · Odyle Armory",
+	} {
+		if title, description, private, missing, _ := describe(route); title != want || !private || missing || !strings.Contains(description, "side by side") {
+			t.Errorf("%s: %q %q %v %v", route, title, description, private, missing)
+		}
+	}
+	for _, route := range []string{profile + "/compare/eu/2304/SGlkZGVuSGlkZGVuSGlkZGVu", profile + "/compare/nae/2304/" + pageId, profile + "/compare/eu/2304/short", profile + "/skills/compare/eu/2304/" + pageId} {
+		if _, _, _, missing, _ := describe(route); !missing {
+			t.Errorf("%s is a page", route)
+		}
+	}
 	for _, route := range []string{"/armory/eu/2304/SGlkZGVuSGlkZGVuSGlkZGVu", "/armory/nae/2304/" + pageId, profile + "/gear", "/rooms", "/armory/eu"} {
 		if _, _, _, missing, _ := describe(route); !missing {
 			t.Errorf("%s is a page", route)

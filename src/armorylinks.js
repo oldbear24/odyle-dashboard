@@ -8,9 +8,10 @@ import { regionSource, serverSource, profileRegionSource } from './regions.js';
 // A profile's tabs after its first one (gear and stats), as their paths name them.
 export const armoryTabs = ['skills', 'daevanion', 'titles', 'appearance', 'upgrade'];
 // PLAYNC's character ids are URL-safe Base64 with padding; search regions are its own codes
-// (regions.js).
+// (regions.js). A profile's path may name a second profile to compare it with (/compare/…).
+const profileSource = String.raw`\/${profileRegionSource}\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}`;
 export const armoryRoute = new RegExp(
-  String.raw`^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/${regionSource}\/${serverSource}\/[^/]{1,60}|\/${profileRegionSource}\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card))?)?$`,
+  String.raw`^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/${regionSource}\/${serverSource}\/[^/]{1,60}|${profileSource}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card)|\/compare${profileSource})?)?$`,
 );
 export const profilePath = (hit, tab = '') =>
   `/armory/${hit.region}/${hit.serverId}/${hit.characterId}${armoryTabs.includes(tab) ? '/' + tab : ''}`;
@@ -24,9 +25,13 @@ export const officialPath = c => {
 };
 // The top players of a class (the first class without one).
 export const topPath = (className = '') => '/armory/top' + (/^[A-Za-z]{2,30}$/.test(className) ? '/' + className : '');
+// Two profiles side by side, the first on the left.
+export const comparePath = (a, b) =>
+  `/armory/${a.region}/${a.serverId}/${a.characterId}/compare/${b.region}/${b.serverId}/${b.characterId}`;
 export const findPath = (region, server, name) => `/armory/find/${region}/${server}/${encodeURIComponent(name)}`;
 // What a path asks for: { search } (the form), { find: { region, server, name } }, { profile: { region, serverId, characterId, tab } },
-// { card: { region, serverId, characterId } } or { top: { class } } ('' for the first).
+// { card: { region, serverId, characterId } }, { compare: [left, right] } (each { region, serverId,
+// characterId }) or { top: { class } } ('' for the first).
 export function armoryTarget(path) {
   const parts = path.split('/').slice(2);
   if (parts[0] === 'top' && parts.length <= 2) return { top: { class: parts[1] || '' } };
@@ -37,6 +42,13 @@ export function armoryTarget(path) {
       return { search: true };
     }
   }
+  if (parts.length === 7 && parts[3] === 'compare')
+    return {
+      compare: [
+        { region: parts[0], serverId: parts[1], characterId: parts[2] },
+        { region: parts[4], serverId: parts[5], characterId: parts[6] },
+      ],
+    };
   if (parts.length === 4 && parts[3] === 'card')
     return { card: { region: parts[0], serverId: parts[1], characterId: parts[2] } };
   if (parts.length === 3 || (parts.length === 4 && armoryTabs.includes(parts[3])))
@@ -78,4 +90,11 @@ export function armoryTitle(answer, tab = '') {
       upgrade: t("{name}'s upgrades · {server} · Odyle Armory", of),
     }[tab] || t('{name} · Level {level} {class} on {server} · Odyle Armory', of)
   );
+}
+// A comparison's title, as the backend names it (backend/odyle/pages.go): both characters by
+// name, or by server while the armory does not keep them yet.
+export function compareTitle(left, right) {
+  const name = answer =>
+    answer?.profile?.name || (answer?.server ? t('a character on {server}', { server: answer.server }) : '…');
+  return t('{a} vs {b} · Odyle Armory', { a: name(left), b: name(right) });
 }

@@ -15,6 +15,7 @@ import { armoryPart, cardPart, cardImagePart } from './parts.js';
 import { shell } from './shell.js';
 import { go } from './router.js';
 import { failure } from './session.js';
+import { compareShow, compareShown, compareRender, leaveCompare } from './compare.js';
 
 let armoryServers = null,
   armoryAnswer = null,
@@ -23,8 +24,8 @@ let armoryServers = null,
   armoryTimer = 0,
   armoryTab = '',
   armoryBoard = '';
-const armoryKey = 'odyle.armory';
-function armoryChoice() {
+export const armoryKey = 'odyle.armory';
+export function armoryChoice() {
   try {
     return JSON.parse(storage.getItem(armoryKey)) || {};
   } catch {
@@ -33,7 +34,7 @@ function armoryChoice() {
 }
 // Bookmarked characters (#72), in this browser only: no account needed, nothing sent anywhere.
 const bookmarksKey = 'odyle.armory.bookmarks';
-const bookmarks = () => armoryPart.loaded()?.readBookmarks(storage.getItem(bookmarksKey)) || [];
+export const bookmarks = () => armoryPart.loaded()?.readBookmarks(storage.getItem(bookmarksKey)) || [];
 function keepBookmarks(list) {
   try {
     storage.setItem(bookmarksKey, JSON.stringify(list));
@@ -113,6 +114,9 @@ const armoryRefreshable = () =>
   Date.now() + state.serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
 // The armory's images (the game's icons, portraits) come from the backend (armoryimages.go).
 export const armoryImages = () => pb.buildURL('/api/odyle/armory-images/');
+// The regions with their servers, once fetched, and the profile on screen (app/compare.js).
+export const armoryRegions = () => armoryServers || [];
+export const armoryShown = () => armoryAnswer;
 // The top players page (armory.js armoryTop): the class it shows ('' for the first, null on the
 // armory's other pages) and the backend's answer for it (backend/odyle/ranks.go).
 let armoryTopClass = null,
@@ -120,6 +124,7 @@ let armoryTopClass = null,
 export function armoryRender(searching = false) {
   const armory = armoryPart.loaded();
   if (!armory) return;
+  if (compareShown()) return compareRender();
   if (armoryTopClass !== null) {
     shell(armory.armoryTop(armoryTopAnswer, armoryImages(), armoryTopClass), 'armory');
     return retitle(topTitle(armoryTopAnswer?.class || armoryTopClass));
@@ -151,8 +156,11 @@ function armoryPoll(path, ticket) {
       Math.max(2, armoryAnswer.retryAfter || 5) * 1000,
     );
 }
-// Leaving the armory stops asking for a profile that waits.
-export const stopArmory = () => clearTimeout(armoryTimer);
+// Leaving the armory stops asking for a profile or a comparison that waits.
+export const stopArmory = () => {
+  clearTimeout(armoryTimer);
+  leaveCompare();
+};
 // A profile's player card (card.js): a page of its own, without the sidebar. The look shown
 // is the saved one until its player tries another (cardLook), the picker on the tab last
 // opened (cardTab); the card turns until the page is left (animateCard).
@@ -335,6 +343,8 @@ export async function armoryPage(path, ticket, refresh = false) {
   if (ticket !== state.navigation) return;
   const target = armoryTarget(path);
   armoryTopClass = target.top ? target.top.class : null;
+  if (target.compare) return compareShow(target.compare, ticket);
+  leaveCompare();
   if (target.top) return topShow(target.top.class, ticket);
   if (target.card) return cardShow(path, target.card, ticket);
   if (target.profile) return profileShow(path, target.profile, ticket, refresh, armory);
