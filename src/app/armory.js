@@ -133,6 +133,7 @@ export function armoryRender(searching = false) {
       : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()),
     'armory',
   );
+  armory.bindProgress(document.querySelector('.growth-chart'));
   retitle(armoryTitle(armoryAnswer, armoryTab));
 }
 // While a profile waits for PLAYNC, it is asked for again when the backend says to.

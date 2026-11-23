@@ -2176,4 +2176,24 @@ export default {
   'This teammate adapter is not accepted.': 'Tento adaptér spoluhráčů server nepřijímá.',
   "Teammates are 1 to 48 players' names.": 'Spoluhráči jsou 1 až 48 jmen hráčů.',
   'PvP stats must be true or false.': 'PvP statistiky musí být true nebo false.',
+  // Armory: combat power and item level history (armoryhistory.js)
+  Progress: 'Vývoj',
+  '{change} in 30 days': '{change} za 30 dní',
+  '{change} since {date}': '{change} od {date}',
+  '{n} day kept since {date}|{n} days kept since {date}': [
+    '{n} zaznamenaný den od {date}',
+    '{n} zaznamenané dny od {date}',
+    '{n} zaznamenaných dní od {date}',
+  ],
+  'The history of this character starts with this reading. Odyle keeps one point a day, so the chart fills in as PLAYNC lists new combat power and item level.':
+    'Historie této postavy začíná tímto načtením. Odyle si ukládá jeden bod denně, takže se graf zaplní, jak PLAYNC ukáže novou bojovou sílu a úroveň předmětu.',
+  'Combat power, last 30 days': 'Bojová síla za posledních 30 dní',
+  'Combat power since {date}': 'Bojová síla od {date}',
+  'Item level since {date}': 'Úroveň předmětu od {date}',
+  'Highest combat power': 'Nejvyšší bojová síla',
+  'on {date}': 'dne {date}',
+  'Combat power from {fromPower} on {from} to {toPower} on {to}; item level from {fromItem} to {toItem}. Use the arrow keys to read each day.':
+    'Bojová síla od {fromPower} ({from}) do {toPower} ({to}); úroveň předmětu od {fromItem} do {toItem}. Šipkami si přečteš jednotlivé dny.',
+  'Every day as a table': 'Všechny dny v tabulce',
+  Day: 'Den',
 };

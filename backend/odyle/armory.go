@@ -257,8 +257,9 @@ type armoryNode struct {
 }
 
 // cleanArmory is a job: profiles nobody opened for 30 days are deleted, hidden ones kept, the
-// characters below their class's top checked more than 30 days ago forgotten (ranks.go), and then
-// the images no kept profile or top player names (armoryimages.go).
+// characters below their class's top checked more than 30 days ago forgotten (ranks.go), the
+// history of the characters no longer kept and of more than 180 days ago (armoryhistory.go), and
+// then the images no kept profile or top player names (armoryimages.go).
 func cleanArmory(app core.App) (result, error) {
 	res, err := app.DB().NewQuery("DELETE FROM armory_profiles WHERE hidden = FALSE AND viewedAt < {:before}").Bind(dbx.Params{"before": ago(armoryKeep)}).Execute()
 	if err != nil {
@@ -270,6 +271,10 @@ func cleanArmory(app core.App) (result, error) {
 		return result{Done: int(deleted)}, err
 	}
 	deleted += int64(forgotten)
+	// The history of the characters forgotten, and the days older than historyKeep.
+	if _, err := cleanHistory(app); err != nil {
+		return result{Done: int(deleted)}, err
+	}
 	if _, err := cleanArmoryImages(app); err != nil {
 		return result{Done: int(deleted)}, err
 	}

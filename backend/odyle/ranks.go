@@ -70,8 +70,8 @@ func (p *armoryProfile) slim() {
 }
 
 // keepRank keeps a character's row as PLAYNC's pages list it now: its name, class, level, combat
-// power and item level, and with built (its gear was read too) its build and portrait. A hidden
-// row keeps its switch.
+// power and item level, and with built (its gear was read too) its build and portrait, and today's
+// point of its history. A hidden row keeps its switch and gets no history.
 func keepRank(app core.App, region string, serverId int, characterId string, p armoryProfile, built bool) error {
 	record, err := app.FindFirstRecordByFilter("armory_ranks", "serverId = {:server} && characterId = {:id}", dbx.Params{"server": serverId, "id": characterId})
 	if isNoRows(err) {
@@ -111,7 +111,14 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 		}
 		record.Set("builtAt", iso(builtAt))
 	}
-	return app.Save(record)
+	if err := app.Save(record); err != nil {
+		return err
+	}
+	// Today's point of its history (armoryhistory.go), unless it is hidden.
+	if record.GetBool("hidden") {
+		return nil
+	}
+	return keepHistory(app, serverId, characterId, p)
 }
 
 // forgetRank deletes a character's row (PLAYNC no longer lists it), unless it is hidden.
@@ -121,12 +128,16 @@ func forgetRank(app core.App, serverId int, characterId string) error {
 }
 
 // watchArmoryProfiles hides a character's row with its profile: a superuser hiding a profile
-// keeps the character out of the top players and the scout too.
+// keeps the character out of the top players and the scout too, and deletes its history.
 func watchArmoryProfiles(app core.App) {
 	hide := func(e *core.RecordEvent) error {
 		if e.Record.GetBool("hidden") {
+			serverId, characterId := e.Record.GetInt("serverId"), e.Record.GetString("characterId")
 			if _, err := e.App.DB().NewQuery("UPDATE armory_ranks SET hidden = TRUE WHERE serverId = {:server} AND characterId = {:id}").
-				Bind(dbx.Params{"server": e.Record.GetInt("serverId"), "id": e.Record.GetString("characterId")}).Execute(); err != nil {
+				Bind(dbx.Params{"server": serverId, "id": characterId}).Execute(); err != nil {
+				return err
+			}
+			if err := forgetHistory(e.App, serverId, characterId); err != nil {
 				return err
 			}
 		}

@@ -412,7 +412,8 @@ Public routes for the armory, signed in or not, with their own rate limits per a
       "statEffects": ["Combat Speed +1.5%"], "skillEffects": ["Bolt +1"] }] },
   "partial": false, "classIcon": "class_icon_chanter.png", "fetchedAt": "2026-10-16T10:00:00.000Z", "error": "",
   "state": "fresh", "position": 0, "wait": 0, "retryAfter": 0, "lookupError": "", "progress": null,
-  "card": { "design": "abyss", "finish": "prism", "options": { "layout": "classic", "back": "", "stats": "primary", "line": "title", "skills": [] }, "mine": false, "holo": false }
+  "card": { "design": "abyss", "finish": "prism", "options": { "layout": "classic", "back": "", "stats": "primary", "line": "title", "skills": [] }, "mine": false, "holo": false },
+  "history": [{ "day": "2026-10-16", "combatPower": 105210, "itemLevel": 1660, "level": 45 }, { "day": "2026-11-23", "combatPower": 107458, "itemLevel": 1671, "level": 45 }]
 }
 ```
 
@@ -437,6 +438,7 @@ Public routes for the armory, signed in or not, with their own rate limits per a
 - Opening a profile older than six hours queues it again, and `?refresh=1` does the same once it is 15 minutes old. The kept copy is answered meanwhile. While a lookup waits or runs, every request for the profile reports it (`queued` or `fetching`), with or without `?refresh=1` (dashboard 0.52.0; before, a profile under six hours old answered `fresh` until the lookup ended).
 - Clients ask again after `retryAfter` seconds while the state is `queued`, `fetching` or `busy`. While `queued` it is about when the lookup is due to start (2 to 15 seconds), and 2 while `fetching`.
 - A character PLAYNC does not list, a hidden profile, or an id or server outside the region answers 404.
+- `history` (dashboard 1.1.0; absent from older servers) is how the character progressed: one point per UTC `day` (`YYYY-MM-DD`) with its `combatPower`, `itemLevel` and `level` as PLAYNC's pages listed them the last time the armory read them that day, the oldest first, at most 180 points, `[]` when there are none. Every reading of the character writes today's point: a reader's lookup and the [scout](armory.md#top-players-and-the-scout)'s checks and gear reads. It is `armory_history`, read with one query of its index; see [Armory](armory.md#history).
 
 `armory_ranks` (dashboard 0.62.0, superusers only under **Collections**) is what both read ([Armory](armory.md#top-players-and-the-scout)); `hidden` on a row keeps that character out of them and out of the scout, and hiding a character's profile sets it.
 
