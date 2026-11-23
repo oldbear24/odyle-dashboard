@@ -24,10 +24,10 @@ const (
 )
 
 // slimmed is a copy of the profile with only what the Upgrade tab compares (its build): each
-// item's slot, name, grade, enchantment, exceed level, icon, type, item level, rolled stats (soul
-// binding) by name and value, stones by name, stone slots, set and where it comes from; the
-// Daevanion boards' open nodes; the skills on the skill bar. Some 8 KB for a character at the
-// level cap.
+// item's slot, name, grade, enchantment, exceed level, icon, type, item level and limits, main
+// stats and rolled stats (soul binding) by name and value, stones by name and grade, stone slots,
+// set (with its bonuses on the first of its pieces) and where it comes from; the Daevanion boards'
+// open nodes; the skills on the skill bar. Some 12 KB for a character at the level cap.
 func slimmed(p armoryProfile) armoryProfile {
 	var out armoryProfile
 	if raw, err := json.Marshal(p); err == nil {
@@ -43,6 +43,7 @@ func (p *armoryProfile) slim() {
 	for i := range p.Boards {
 		p.Boards[i].Icon, p.Boards[i].Nodes, p.Boards[i].StatEffects, p.Boards[i].SkillEffects = "", []armoryNode{}, []string{}, []string{}
 	}
+	sets := map[string]bool{} // the sets whose bonuses an earlier piece keeps
 	for i := range p.Gear {
 		d := p.Gear[i].Detail
 		if d == nil {
@@ -52,12 +53,20 @@ func (p *armoryProfile) slim() {
 		for _, line := range d.Sub {
 			rolled = append(rolled, armoryLine{Name: line.Name, Value: line.Value})
 		}
-		d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc, d.Race = []armoryLine{}, rolled, []armorySubSkill{}, []armoryStone{}, []string{}, []string{}, "", ""
+		main := make([]armoryLine, 0, len(d.Main))
+		for _, line := range d.Main {
+			main = append(main, armoryLine{Name: line.Name, Value: line.Value, Extra: line.Extra, Exceed: line.Exceed})
+		}
+		d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc, d.Race = main, rolled, []armorySubSkill{}, []armoryStone{}, []string{}, []string{}, "", ""
 		for j := range d.Stones {
-			d.Stones[j] = armoryStone{Name: d.Stones[j].Name}
+			d.Stones[j] = armoryStone{Name: d.Stones[j].Name, Grade: d.Stones[j].Grade}
 		}
 		if d.Set != nil {
-			d.Set = &armorySet{Name: d.Set.Name, Equipped: d.Set.Equipped, Items: []armorySetItem{}, Bonuses: []armorySetBonus{}}
+			bonuses := []armorySetBonus{}
+			if !sets[d.Set.Name] && d.Set.Bonuses != nil {
+				sets[d.Set.Name], bonuses = true, d.Set.Bonuses
+			}
+			d.Set = &armorySet{Name: d.Set.Name, Equipped: d.Set.Equipped, Items: []armorySetItem{}, Bonuses: bonuses}
 		}
 	}
 	skills := []armorySkill{}
