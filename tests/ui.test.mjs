@@ -1339,6 +1339,16 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
       assert.match(await page.locator('.armory-tab').innerText(), text);
       await shot(page, 'armory-' + tab.toLowerCase());
     }
+    // The Upgrade tab compares with the next step until the strongest are chosen, which this
+    // browser remembers.
+    const group = key => page.locator(`[data-armory-upgrade-group="${key}"]`);
+    assert.equal(await group('next').getAttribute('aria-pressed'), 'true');
+    await group('top').click();
+    await page.locator('[data-armory-upgrade-group="top"][aria-pressed="true"]').waitFor();
+    await page.reload();
+    await page.locator('[data-armory-upgrade-group="top"][aria-pressed="true"]').waitFor();
+    await group('next').click();
+    await page.locator('[data-armory-upgrade-group="next"][aria-pressed="true"]').waitFor();
     await page.locator('.armory-tabs a', { hasText: 'Gear & stats' }).click();
     await page.waitForURL(/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
     await items.first().waitFor();
