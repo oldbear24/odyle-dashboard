@@ -260,8 +260,10 @@ export function slotAdvice(item, slot, sample) {
       });
   }
   row.actions.sort((a, b) => b.value - a.value);
-  row.score = Math.round(row.actions.reduce((sum, a) => sum + a.value, 0));
-  row.state = upgradeState(row.score);
+  const worth = row.actions.reduce((sum, a) => sum + a.value, 0);
+  row.score = Math.round(worth);
+  // Anything worth doing is at least a small upgrade, however little it rounds to.
+  row.state = upgradeState(worth);
   return row;
 }
 
@@ -296,7 +298,7 @@ function planSteps(rows, extra) {
   const out = [...steps.values(), ...extra].map(step => {
     const values = step.entries.map(e => e.action.value).sort((a, b) => b - a);
     const value = values[0] + values.slice(1).reduce((sum, v) => sum + v / 2, 0);
-    return { ...step, part: partOf[step.kind], value, state: upgradeState(Math.round(value)) };
+    return { ...step, part: partOf[step.kind], value, state: upgradeState(value) };
   });
   const plan = Object.fromEntries(planParts.map(part => [part, []]));
   for (const step of out) plan[step.part]?.push(step);
