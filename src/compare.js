@@ -103,7 +103,7 @@ export function compareSlot(slot, left, right) {
     b,
     left: left || null,
     right: right || null,
-    same: Boolean(a && b && a.name === b.name),
+    same: Boolean(a && b && a.name === b.name && a.grade === b.grade),
     only: a && !b ? 'a' : b && !a ? 'b' : '',
     better,
   };

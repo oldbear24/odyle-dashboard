@@ -291,7 +291,9 @@ function planSteps(rows, extra) {
     for (const action of row.actions) {
       const arcana = isArcana(row.ref.slot),
         slot = arcana ? 'Arcana' : row.ref.slot;
-      const key = arcana ? `Arcana|${action.kind}` : `${slot}|${action.kind}|${action.target?.name || ''}`;
+      const key = arcana
+        ? `Arcana|${action.kind}`
+        : `${slot}|${action.kind}|${action.target ? action.target.name + '|' + action.target.grade : ''}`;
       if (!steps.has(key)) steps.set(key, { kind: action.kind, slot, entries: [] });
       steps.get(key).entries.push({ row, action });
     }

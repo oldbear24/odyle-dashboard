@@ -536,7 +536,8 @@ function levelMeter(from, to, max, label) {
 }
 
 // Whether a step's places get different items (the arcana, each of its own kind).
-const manyTargets = step => new Set(step.entries.map(e => e.action.target?.name)).size > 1;
+const manyTargets = step =>
+  new Set(step.entries.map(e => e.action.target && e.action.target.name + '|' + e.action.target.grade)).size > 1;
 // What a step says to do, in a few words.
 function stepTitle(step) {
   const a = step.entries[0].action,

@@ -100,6 +100,10 @@ type armoryScout struct {
 	pages map[string]int
 	level int64
 	built []time.Time
+	// How many characters below the top pendingPeers lists, as Server status last counted them
+	// (counted again after a minute: it reads every row of each class).
+	peers   int
+	peersAt time.Time
 }
 
 func newArmoryScout() *armoryScout {
@@ -642,8 +646,18 @@ func scoutStatus(app core.App) map[string]any {
 	for i, n := range waiting {
 		nameQueue[i] = map[string]any{"name": n.name, "server": n.server, "region": n.region}
 	}
-	peers, _ := pendingPeers(app)
-	return map[string]any{"builds": total, "neverBuilt": never, "buildQueue": builds, "peers": len(peers), "checks": checks, "checkQueue": queue,
+	s.mu.Lock()
+	peers, counted := s.peers, time.Since(s.peersAt) < time.Minute
+	s.mu.Unlock()
+	if !counted {
+		if list, err := pendingPeers(app); err == nil {
+			peers = len(list)
+			s.mu.Lock()
+			s.peers, s.peersAt = peers, time.Now()
+			s.mu.Unlock()
+		}
+	}
+	return map[string]any{"builds": total, "neverBuilt": never, "buildQueue": builds, "peers": peers, "checks": checks, "checkQueue": queue,
 		"own": pendingOwn(app, level), "names": names, "nameQueue": nameQueue, "level": level, "buildEvery": every, "lastBuildAt": isoTime(builtAt)}
 }
 

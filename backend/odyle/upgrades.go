@@ -52,7 +52,7 @@ const (
 const (
 	upgradeBandStep = 1.05
 	upgradeNextLow  = 1.05 // times the band's top: the next step starts above the character
-	upgradeNextHigh = 2.0  // times where it starts
+	upgradeNextHigh = 2.0  // times the band's top: where it ends
 )
 
 // upgradeSlots is the order of the slots compared: the paper doll's (src/armory.js). A
@@ -753,10 +753,10 @@ func upgradeBand(power int64) int {
 }
 
 // nextRange is the combat power the next step of a band starts and ends at: from upgradeNextLow
-// times the band's top (so every character of the band is weaker) to upgradeNextHigh times that.
+// times the band's top (so every character of the band is weaker) to upgradeNextHigh times it.
 func nextRange(band int) (low, high int64) {
-	low = int64(math.Ceil(math.Pow(upgradeBandStep, float64(band+1)) * upgradeNextLow))
-	return low, int64(float64(low) * upgradeNextHigh)
+	top := math.Pow(upgradeBandStep, float64(band+1))
+	return int64(math.Ceil(top * upgradeNextLow)), int64(top * upgradeNextHigh)
 }
 
 // upgradeOddRoom is how many characters past the sample a comparison reads at most to make up for

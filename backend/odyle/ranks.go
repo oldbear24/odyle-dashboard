@@ -125,6 +125,11 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 		}
 		record.Set("builtAt", iso(builtAt))
 	}
+	// A profile hidden while the lookup ran keeps the row hidden: saving the row read before would
+	// show it again.
+	if hidden, _ := app.CountRecords("armory_profiles", dbx.HashExp{"serverId": serverId, "characterId": characterId, "hidden": true}); hidden > 0 {
+		record.Set("hidden", true)
+	}
 	if err := app.Save(record); err != nil {
 		return err
 	}

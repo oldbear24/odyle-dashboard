@@ -926,6 +926,24 @@ test('the upgrade plan says what to do in each slot to catch up with the group',
     ).actions.map(a => [a.kind, a.itemLevel]),
     [['replace', { from: 36, to: 65 }]],
   );
+  // Two places moving to the two grades of one name are two steps, not one.
+  const rings = slotOf('Ring', 10, 20, [
+    rung('Noble Ring', 'Unique', 65, 12),
+    rung('Noble Ring', 'Legend', 36, 6),
+    rung('Old Ring', 'Rare', 20, 2),
+  ]);
+  const ringOf = (slot, name, grade, itemLevel) => ({ slot, name, grade, enchant: 0, detail: { itemLevel } });
+  const grades = upgradePlan(
+    { ...profile, gear: [ringOf('Ring1', 'Old Ring', 'Rare', 20), ringOf('Ring2', 'Noble Ring', 'Legend', 36)] },
+    { ...reference, slots: [rings] },
+  );
+  assert.deepEqual(
+    grades.steps.gear.map(s => [s.slot, s.entries.length, s.entries[0].action.target.grade]),
+    [
+      ['Ring', 1, 'Unique'],
+      ['Ring', 1, 'Legend'],
+    ],
+  );
   // Rolled stats: values as PLAYNC writes them.
   assert.deepEqual(['13%', '+120', '1,200', '-2.5%', '?', undefined].map(rolledValue), [
     { value: 13, percent: true },

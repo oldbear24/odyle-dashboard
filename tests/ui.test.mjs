@@ -4402,6 +4402,14 @@ test('a profile compares with another character side by side, picked from a sear
     await picker.waitFor();
     assert.equal(await page.locator('#modal-title').innerText(), 'Compare Armorerx with…');
     await page.locator('#modal [data-action="close-dialog"]').click();
+    // Back to the profile: its own page again, not the comparison under its address.
+    await page.goBack();
+    await page.waitForURL(url + both);
+    await page.goBack();
+    await page.waitForURL(url + left);
+    await page.locator('main.armory-profile').waitFor();
+    assert.equal(await page.locator('.compare-side').count(), 0);
+    assert.doesNotMatch(await page.title(), / vs /);
     assert.deepEqual(errors, []);
   } finally {
     await close();

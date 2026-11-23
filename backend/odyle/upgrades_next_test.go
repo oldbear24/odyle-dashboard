@@ -104,7 +104,7 @@ func TestUpgradesCompareWithTheNextStep(t *testing.T) {
 	built := now()
 	peerRow(t, app, "me", "Chanter", 45, 50000, 500, "")
 	low, high := nextRange(upgradeBand(50000))
-	if low <= 50000*1.05 || low > 50000*1.11 || high != low*2 {
+	if low <= 50000*1.05 || low > 50000*1.11 || high < 50000*2 || high > 50000*2.11 || float64(high) > float64(low)/upgradeNextLow*upgradeNextHigh+1 {
 		t.Fatalf("next step of 50,000: %d to %d", low, high)
 	}
 	for n := range 30 {

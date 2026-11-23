@@ -25,8 +25,11 @@ func keepHistory(app core.App, serverId int, characterId string, p armoryProfile
 		return nil
 	}
 	at := now()
+	// Nothing for a character hidden meanwhile (a superuser hiding it while its lookup ran).
 	_, err := app.DB().NewQuery("INSERT INTO armory_history (serverId, characterId, day, combatPower, itemLevel, level, created, updated) " +
-		"VALUES ({:server}, {:id}, {:day}, {:power}, {:itemLevel}, {:level}, {:at}, {:at}) " +
+		"SELECT {:server}, {:id}, {:day}, {:power}, {:itemLevel}, {:level}, {:at}, {:at} " +
+		"WHERE NOT EXISTS (SELECT 1 FROM armory_ranks r WHERE r.serverId = {:server} AND r.characterId = {:id} AND r.hidden = TRUE) " +
+		"AND NOT EXISTS (SELECT 1 FROM armory_profiles p WHERE p.serverId = {:server} AND p.characterId = {:id} AND p.hidden = TRUE) " +
 		"ON CONFLICT (serverId, characterId, day) DO UPDATE SET combatPower = excluded.combatPower, itemLevel = excluded.itemLevel, level = excluded.level, updated = excluded.updated").
 		Bind(dbx.Params{"server": serverId, "id": characterId, "day": historyDay(time.Now()), "power": p.CombatPower, "itemLevel": p.ItemLevel, "level": p.Level, "at": at}).Execute()
 	return err

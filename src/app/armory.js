@@ -106,7 +106,28 @@ async function loadUpgrade(ticket) {
   } catch {
     armoryUpgrades.set(key, { at: Date.now(), answer: kept?.answer, error: !kept?.answer });
   }
-  if (ticket === state.navigation && armoryTab === 'upgrade' && upgradeKey(armoryAnswer) === key) armoryRender();
+  if (ticket === state.navigation && armoryTab === 'upgrade' && upgradeKey(armoryAnswer) === key && !picking())
+    armoryRender();
+}
+// Whether the Compare picker (compare.js) is open over the page: drawing the page again would
+// close it, so the page is drawn once the picker closes instead (unless that leaves the page).
+let pickerWait = false;
+function picking() {
+  const dialog = document.querySelector('#modal[open]');
+  if (!dialog?.querySelector('.compare-picker')) return false;
+  if (!pickerWait) {
+    const ticket = state.navigation;
+    pickerWait = true;
+    dialog.addEventListener(
+      'close',
+      () => {
+        pickerWait = false;
+        if (ticket === state.navigation) armoryRender();
+      },
+      { once: true },
+    );
+  }
+  return true;
 }
 const armoryRefreshable = () =>
   armoryAnswer?.state === 'fresh' &&
@@ -283,25 +304,23 @@ async function profileShow(path, target, ticket, refresh, armory) {
     return toast(t(error.message));
   }
   if (ticket !== state.navigation) return;
-  // The same profile again (a lookup's progress): only the status line changes, so an item
-  // card open on hover or focus stays.
+  // The same profile again (a lookup's progress), on its own page (not back from a comparison,
+  // whose sides have status lines too): only the status line changes, so an item card open on
+  // hover or focus stays. While the Compare picker is open over it, the page waits to be drawn
+  // again, so the picker stays.
+  const status = document.querySelector('main.armory-profile .armory-status');
   const unchanged =
     same &&
     !refresh &&
-    document.querySelector('.armory-status') &&
+    status &&
     answer.partial === armoryAnswer.partial &&
     JSON.stringify(answer.profile) === JSON.stringify(armoryAnswer.profile);
   state.online = true;
   armoryAnswer = answer;
   if (answer.profile && !answer.partial && armory.isBookmarked(bookmarks(), answer))
     keepBookmarks(armory.refreshBookmark(bookmarks(), answer));
-  if (unchanged)
-    document.querySelector('.armory-status').outerHTML = armory.lookupStatus(
-      answer,
-      Date.now() + state.serverOffset,
-      armoryRefreshable(),
-    );
-  else armoryRender();
+  if (unchanged) status.outerHTML = armory.lookupStatus(answer, Date.now() + state.serverOffset, armoryRefreshable());
+  else if (!(status && picking())) armoryRender();
   loadUpgrade(ticket).catch(failure);
   return armoryPoll(path, ticket);
 }
