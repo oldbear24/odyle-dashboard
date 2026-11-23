@@ -108,6 +108,63 @@ before(async () => {
             }))
           : [],
       });
+    // The second "Armorer" is a weaker Templar with a rod enchanted less and a helmet, to compare with.
+    if (at.pathname === '/api/character/info' && q.get('characterId') === armorerAlt[0])
+      return json({
+        profile: {
+          characterName: 'Armorerx',
+          characterLevel: 12,
+          className: 'Templar',
+          pcId: 9,
+          raceName: 'Asmodians',
+          genderName: 'Male',
+          serverName: 'Lumiel',
+          combatPower: 52000,
+        },
+        stat: {
+          statList: [
+            { type: 'STR', name: 'Might', value: 30 },
+            { type: 'ItemLevel', name: 'ItemLevel', value: 900 },
+          ],
+        },
+        title: { ownedCount: 40, totalCount: 304, titleList: [] },
+        daevanion: { boardList: [{ id: 71, name: 'Nezekan', openNodeCount: 5, totalNodeCount: 40, open: 1 }] },
+      });
+    if (at.pathname === '/api/character/equipment' && q.get('characterId') === armorerAlt[0])
+      return json({
+        equipment: {
+          equipmentList: [
+            {
+              id: 110830051,
+              slotPos: 1,
+              slotPosName: 'MainHand',
+              name: 'Enraged Kromede Rod',
+              grade: 'Unique',
+              enchantLevel: 7,
+              exceedLevel: 0,
+              icon: icon('Icon_Rod.png'),
+            },
+            {
+              id: 210130099,
+              slotPos: 3,
+              slotPosName: 'Helmet',
+              name: 'Vakron Helm',
+              grade: 'Legend',
+              enchantLevel: 3,
+              exceedLevel: 0,
+              icon: icon('Icon_Helm.png'),
+            },
+          ],
+          skinList: [],
+        },
+        petwing: { pet: { name: 'Pagati', level: 1 }, wing: { name: 'Forest Spirit Wings', grade: 'Unique' } },
+        skill: {
+          skillList: [
+            { name: 'Bolt', category: 'Active', skillLevel: 9, needLevel: 1, acquired: 1, equip: 1 },
+            { name: 'Shield Bash', category: 'Active', skillLevel: 5, needLevel: 1, acquired: 1, equip: 1 },
+          ],
+        },
+      });
     if (at.pathname === '/api/character/info')
       return json({
         profile: {
@@ -2275,6 +2332,7 @@ test('the main pages pass the axe accessibility check, signed out and in', async
     [null, profileAt + '/titles'],
     [null, profileAt + '/upgrade'],
     [null, profileAt + '/card'],
+    [null, profileAt + '/compare/eu/2304/' + armorer[0]],
     [null, '#/armory/top/Chanter'],
     [null, '#/changelog'],
     [null, '#/privacy'],
@@ -4193,6 +4251,80 @@ test('a tab whose account another tab replaced reloads as the new one, and clear
     await page.locator('[data-action="discord"]').waitFor({ timeout: 5000 });
     await toast(page).filter({ hasText: 'You signed out in another tab.' }).waitFor();
     assert.equal(await page.locator('.personal-characters').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('a profile compares with another character side by side, picked from a search, and the sides trade places', async () => {
+  const left = '/armory/eu/2304/' + armorer[0],
+    both = left + '/compare/eu/2304/' + armorerAlt[0];
+  const { page, errors, close } = await open(null, '#' + left);
+  try {
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor({ timeout: 15000 });
+    // Compare opens the picker: the strongest of the class (never the character itself) and a search.
+    await page.locator('[data-action="armory-compare"]').click();
+    const picker = page.locator('#modal[open] .compare-picker');
+    await picker.waitFor();
+    assert.equal(await page.locator('#modal-title').innerText(), 'Compare Armorer with…');
+    await picker.locator('.compare-picker-top .armory-spinner').waitFor({ state: 'detached' });
+    assert.match(await picker.locator('.compare-picker-top').innerText(), /Strongest Chanter characters/i);
+    await picker.locator('select[name="region"]').selectOption('GLOBAL_EU');
+    await picker.locator('select[name="server"]').selectOption('Lumiel');
+    await picker.locator('input[name="name"]').fill('Armorer');
+    await picker.locator('[type="submit"]').click();
+    const hit = picker.locator('.compare-picker-results [data-compare-pick]');
+    await hit.first().waitFor();
+    // The search lists the other Armorer, not the one compared.
+    assert.equal(await hit.count(), 1);
+    assert.equal(await hit.getAttribute('data-compare-pick'), 'eu/2304/' + armorerAlt[0]);
+    await shot(page, 'armory-compare-picker');
+    await hit.click();
+    // The compare page: its own path, the second character fetched from PLAYNC while it shows.
+    await page.waitForURL(url + both);
+    await page.getByRole('heading', { name: 'Compare characters' }).waitFor();
+    await page.locator('.compare-side h2', { hasText: 'Armorerx' }).waitFor({ timeout: 15000 });
+    await page.locator('.compare-summary').waitFor();
+    assert.equal(await page.title(), 'Armorer vs Armorerx · Odyle Armory');
+    assert.match(
+      await page.locator('.compare-summary tr', { hasText: 'Combat power' }).innerText(),
+      /107,458\s*\+55,458\s*52,000/,
+    );
+    assert.equal(
+      await page.locator('.compare-summary tr', { hasText: 'Combat power' }).locator('td.is-better').count(),
+      1,
+    );
+    // Gear slot by slot: the same rod, better enchanted on the left, with its card on focus.
+    const rod = page.locator('.compare-slot', { hasText: 'Main hand' });
+    assert.match(await rod.locator('.compare-slot-head').innerText(), /Same item/i);
+    assert.equal(
+      await rod.locator('.compare-item').first().locator('.compare-chip.is-better').first().innerText(),
+      '+15',
+    );
+    await rod.locator('.compare-item').first().focus();
+    assert.ok(await rod.locator('.compare-item').first().locator('.armory-tip').isVisible());
+    await page.keyboard.press('Escape');
+    assert.match(
+      await page.locator('.compare-slot', { hasText: 'Helmet' }).locator('.compare-slot-head').innerText(),
+      /Only Armorerx/i,
+    );
+    assert.match(await page.locator('.compare-skills').innerText(), /Bolt[\s\S]*Shield Bash/);
+    // Shared as a path, named after both and kept out of search engines.
+    const served = await (await fetch(page.url())).text();
+    assert.match(served, /<title>Armorer vs Armorerx · Odyle Armory<\/title>/);
+    assert.match(served, /<meta name="robots" content="noindex">/);
+    await shot(page, 'armory-compare');
+    // The sides trade places.
+    await page.locator('[data-action="compare-swap"]').click();
+    await page.waitForURL(url + '/armory/eu/2304/' + armorerAlt[0] + '/compare/eu/2304/' + armorer[0]);
+    await page.locator('.compare-side h2').first().filter({ hasText: 'Armorerx' }).waitFor();
+    assert.equal(await page.title(), 'Armorerx vs Armorer · Odyle Armory');
+    // Either side can be picked again; the other one stays.
+    await page.locator('[data-compare-change="1"]').click();
+    await picker.waitFor();
+    assert.equal(await page.locator('#modal-title').innerText(), 'Compare Armorerx with…');
+    await page.locator('#modal [data-action="close-dialog"]').click();
     assert.deepEqual(errors, []);
   } finally {
     await close();

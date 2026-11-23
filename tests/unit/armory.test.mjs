@@ -181,6 +181,7 @@ test('armory paths say what they show', async () => {
     profileAt + '/skills',
     profileAt + '/appearance',
     profileAt + '/upgrade',
+    profileAt + '/compare/nae/1101/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=',
     '/armory/top',
     '/armory/top/Chanter',
     findPath('GLOBAL_EU', 'Lumiel', 'Ka'),
@@ -199,6 +200,11 @@ test('armory paths say what they show', async () => {
     '/armory/top/Chanter/x',
     '/armory/top/',
     '/armory/top/<b>',
+    profileAt + '/compare',
+    profileAt + '/compare/xx/2304/kdPX-_ocYSqMloiCy7IXZ0CDm',
+    profileAt + '/compare/eu/2304/short',
+    profileAt + '/compare/eu/2304/kdPX-_ocYSqMloiCy7IXZ0CDm/skills',
+    profileAt + '/skills/compare/eu/2304/kdPX-_ocYSqMloiCy7IXZ0CDm',
   ])
     assert.ok(!armoryRoute.test(path), path);
   assert.deepEqual(

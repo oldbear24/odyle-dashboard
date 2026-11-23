@@ -1,0 +1,447 @@
+/* Two armory characters side by side (src/compare.js) and the picker of whom to compare with.
+   Loaded with the armory (src/parts/armory.js), after armory.css, whose item cards, grades and
+   panels it reuses. */
+.armory-compare {
+  max-width: 1240px;
+}
+.compare-heads {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+.compare-side {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 150% at 0% 0%, var(--race-glow, #21392b) 0%, transparent 55%),
+    linear-gradient(180deg, #1a231f, #131a17);
+}
+.compare-side.is-asmodian {
+  --race-glow: #352947;
+  --race: #a993dc;
+}
+.compare-side.is-elyos {
+  --race-glow: #1d3a50;
+  --race: #86c6f0;
+}
+.compare-side .armory-portrait {
+  width: 76px;
+  height: 76px;
+  font-size: 22px;
+}
+.compare-who {
+  min-width: 0;
+}
+.compare-who h2 {
+  margin: 2px 0 0;
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+.compare-who h2 a {
+  color: inherit;
+}
+.compare-who h2 a:hover {
+  color: var(--mint);
+}
+.compare-who .armory-tags {
+  margin-top: 6px;
+}
+.compare-change {
+  align-self: start;
+}
+.compare-status {
+  grid-column: 1/-1;
+}
+.compare-status .armory-status {
+  margin: 0;
+}
+.compare-swap {
+  align-self: center;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 18px;
+}
+
+/* Side-by-side numbers: a row label, then each side's value; the better one is marked. */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.compare-table th,
+.compare-table td {
+  padding: 7px 8px;
+  border-top: 1px solid #ffffff0d;
+  text-align: left;
+  vertical-align: top;
+}
+.compare-table thead th {
+  border-top: 0;
+  padding-top: 0;
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #8fa697;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.compare-table thead th:first-child {
+  width: 36%;
+}
+.compare-table tbody th {
+  font-weight: 500;
+  color: #c4d2c8;
+  overflow-wrap: anywhere;
+}
+.compare-table tbody th small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.compare-table td {
+  font-family: 'Manrope Variable', 'Manrope', sans-serif;
+  font-weight: 700;
+  color: #e3ece6;
+}
+.compare-table td.is-none {
+  color: #5d6c63;
+}
+.compare-table td.is-better {
+  color: var(--mint);
+  background: #b5f2cd0d;
+}
+.compare-table td > span {
+  margin-right: 6px;
+}
+.compare-table td small {
+  font-family: 'DM Sans Variable', 'DM Sans', sans-serif;
+  font-weight: 500;
+}
+.compare-gap {
+  display: inline-block;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid #4f7d61;
+  color: var(--mint);
+  white-space: nowrap;
+}
+.compare-table tr.is-main td span {
+  font-size: 17px;
+}
+.compare-table .armory-track {
+  margin-top: 6px;
+}
+.compare-pieces {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.armory-panel .compare-table + h3,
+.compare-skills h3,
+.compare-gear h3 {
+  margin-top: 16px;
+}
+.compare-skills h3 span,
+.compare-gear h3 span {
+  color: #9aaba0;
+  margin-left: 4px;
+}
+
+/* Gear, slot by slot. */
+.compare-names {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #dfe9e2;
+}
+.compare-names span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compare-slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.compare-slot-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.compare-slot-head h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #9fb0a5;
+}
+.compare-slot-head em {
+  font-style: normal;
+  font-size: 10.5px;
+  color: #9aaba0;
+}
+.compare-slot.is-different .compare-slot-head em {
+  color: #e7c37a;
+}
+.compare-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.compare-item {
+  align-items: flex-start;
+  height: 100%;
+}
+.compare-item.is-only {
+  border-color: #4f7d6180;
+}
+.compare-item-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.compare-item-text strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--grade, #d8e1db);
+  overflow-wrap: anywhere;
+}
+.compare-item.is-empty strong {
+  color: #7f9285;
+  font-weight: 500;
+}
+.compare-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.compare-chip {
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid #ffffff1a;
+  color: #b4c3b9;
+  white-space: nowrap;
+}
+.compare-chip.is-better {
+  border-color: #4f7d61;
+  background: #b5f2cd14;
+  color: var(--mint);
+  font-weight: 650;
+}
+.compare-sub,
+.compare-set {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.compare-set {
+  color: #a9b9ae;
+}
+
+/* Skills. */
+.compare-skill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.compare-skill .armory-icon {
+  --size: 28px;
+  border-radius: 7px;
+}
+.compare-pair.is-lists {
+  gap: 14px;
+}
+.compare-only {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.compare-only li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.compare-only b {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* The picker. */
+.compare-picker {
+  display: grid;
+  gap: 16px;
+}
+.compare-picker h3 {
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #8fa697;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+.compare-picker-intro {
+  margin: 0;
+  font-size: 13px;
+  color: #b4c6b9;
+}
+.compare-candidates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.compare-candidate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.compare-candidate:hover {
+  border-color: #61866b;
+}
+.compare-candidate-who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.compare-candidate-who strong {
+  font-size: 13.5px;
+}
+.compare-candidate-who small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.compare-candidate-power {
+  flex: none;
+  text-align: right;
+  font-size: 11.5px;
+  color: #cfe2d5;
+}
+.compare-candidate-power small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+.compare-form {
+  padding: 0 12px 12px;
+}
+
+@media (min-width: 641px) {
+  /* The right side's item cards open to its left. */
+  .compare-pair > :last-child > .armory-tip {
+    left: auto;
+    right: calc(100% + 10px);
+  }
+}
+@media (max-width: 800px) {
+  .compare-side {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 14px;
+  }
+  .compare-change {
+    grid-column: 1/-1;
+    justify-self: start;
+  }
+}
+@media (max-width: 640px) {
+  .compare-heads {
+    gap: 6px;
+  }
+  .compare-side {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: 8px;
+    padding: 12px;
+  }
+  .compare-side .armory-portrait {
+    width: 56px;
+    height: 56px;
+    font-size: 18px;
+  }
+  .compare-who h2 {
+    font-size: 17px;
+  }
+  .compare-swap {
+    min-width: 34px;
+    min-height: 34px;
+    font-size: 15px;
+  }
+  .compare-change {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .compare-status .armory-status {
+    padding: 7px 8px;
+    font-size: 11px;
+  }
+  .compare-table {
+    font-size: 12px;
+  }
+  .compare-table th,
+  .compare-table td {
+    padding: 6px 4px;
+  }
+  .compare-table tr.is-main td span {
+    font-size: 14px;
+  }
+  .compare-item {
+    padding: 6px;
+    gap: 6px;
+  }
+  .compare-item .armory-icon {
+    --size: 36px;
+  }
+  .compare-pair.is-lists {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .compare-candidate {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .compare-candidate-power {
+    font-size: 11px;
+  }
+}
+.compare-gear > h3 {
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--mint);
+}

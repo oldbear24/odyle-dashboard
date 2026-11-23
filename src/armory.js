@@ -25,20 +25,20 @@ export const regionNames = () => ({
 });
 // PLAYNC's search regions and the regions Odyle names them by.
 const searchRegions = { nae: 'GLOBAL_NA', naw: 'GLOBAL_NAW', eu: 'GLOBAL_EU', la: 'GLOBAL_SA', as: 'GLOBAL_ASIA' };
-const regionLabel = region => regionNames()[searchRegions[region]] || '';
+export const regionLabel = region => regionNames()[searchRegions[region]] || '';
 // The character's page on PLAYNC's own site.
 export const playncPage = answer =>
   `https://aion2.plaync.com/en-us/characters/${encodeURIComponent(answer.serverId)}/${encodeURIComponent(answer.characterId)}?region=${encodeURIComponent(answer.region)}`;
 
 const percent = (part, whole) => (whole ? Math.min(100, Math.round((part / whole) * 100)) : 0);
 
-const picture = (base, name, kind = '') => {
+export const picture = (base, name, kind = '') => {
   const src = imageUrl(base, name);
   return src
     ? `<img class="armory-img ${kind}" src="${esc(src)}" alt="" loading="lazy" decoding="async" draggable="false">`
     : '';
 };
-const initials = name => [...String(name || '?')].slice(0, 2).join('').toUpperCase();
+export const initials = name => [...String(name || '?')].slice(0, 2).join('').toUpperCase();
 
 // Bookmarks: characters this browser keeps in a list, newest first, each with the numbers of
 // its profile as last opened here. app/armory.js keeps them in localStorage (odyle.armory.bookmarks).
@@ -269,6 +269,7 @@ const accessorySlots = [
 ];
 const arcanaSlots = ['Arcana1', 'Arcana2', 'Arcana3', 'Arcana4', 'Arcana5'];
 const companionSlots = ['Wings', 'Pet'];
+export { armourSlots, accessorySlots, arcanaSlots, companionSlots };
 const skillGroups = () => [
   ['Active', t('Active skills')],
   ['Passive', t('Passive skills')],
@@ -277,7 +278,7 @@ const skillGroups = () => [
 const titleCategories = () => ({ Attack: t('Offensive'), Defense: t('Defensive'), Etc: t('Other') });
 
 // An icon in its grade's frame, with the enchantment (+15) and exceed level on it.
-function itemIcon(images, item, size = '') {
+export function itemIcon(images, item, size = '') {
   const art = picture(images, item.icon);
   return `<span class="armory-icon ${size} ${gradeClass(item.grade)}${art ? '' : ' is-empty'}" aria-hidden="true">${art}${item.enchant ? `<b class="armory-enchant">+${number(item.enchant)}</b>` : ''}${item.exceed ? `<i class="armory-exceed">✦${number(item.exceed)}</i>` : ''}${item.level ? `<b class="armory-enchant">${esc(t('Lv {level}', { level: item.level }))}</b>` : ''}</span>`;
 }
@@ -292,7 +293,7 @@ const lines = list =>
 
 // An item's card, shown over its slot on hover or focus: what PLAYNC's item page lists, or
 // (loading) that it is on its way.
-function itemTip(images, g, loading) {
+export function itemTip(images, g, loading) {
   const d = g.detail,
     names = gradeNames();
   const kind = d?.category ? `${names[g.grade] || g.grade} · ${d.category}` : names[g.grade] || g.grade || '';
@@ -688,7 +689,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
     .join(
       '',
     )}${profile.legion ? `<span class="armory-legion" title="${esc(t('Legion'))}">${icon('people')}${esc(profile.legion)}</span>` : ''}</p></div>
-<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
+<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><button class="button secondary armory-compare" data-action="armory-compare" aria-haspopup="dialog">${icon('swords')} ${t('Compare')}</button><a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
   const content =
