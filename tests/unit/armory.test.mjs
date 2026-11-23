@@ -998,7 +998,7 @@ test('the upgrade tab shows the plan, the arcana, the skills gear raises, every 
     part('polish'),
     /<h4>Reroll the soul binding<\/h4>[\s\S]*?<li>Critical Hit: none → 40 \(67 % of them\)<\/li>/,
   );
-  assert.match(part('polish'), /<h4>Swap 1 stone for Unique<\/h4>/);
+  assert.match(part('polish'), /<h4>Better stones<\/h4>[\s\S]*?<li>1 stone below their usual Unique<\/li>/);
   assert.match(part('goal'), /<h4>Open more of Nezekan<\/h4>[\s\S]*?<li>12 of 40 nodes · they open 30<\/li>/);
   // The arcana: their sets, this one's, the bonuses, the swaps and each arcana's skills.
   assert.match(

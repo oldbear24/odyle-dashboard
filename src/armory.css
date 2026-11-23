@@ -1883,13 +1883,33 @@ i.armory-stone-art {
   color: #9fb0a5;
 }
 .upgrade-compare.is-small {
-  align-items: center;
-}
-.upgrade-compare.is-small .upgrade-arrow {
-  padding-top: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
 }
 .upgrade-compare.is-small .armory-icon {
   --size: 32px;
+}
+.upgrade-swaps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.upgrade-swaps li {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff06;
+}
+.upgrade-swaps h5 {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #9fb0a5;
 }
 /* Skills raised by gear: theirs (the median, how many) against yours. */
 .upgrade-boosts > p {

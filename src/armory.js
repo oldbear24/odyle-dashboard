@@ -514,6 +514,9 @@ const theirItem = (images, item, share) =>
     item.enchant ? t('usually +{n}', { n: number(item.enchant) }) : '',
     item.itemLevel ? t('item level {n}', { n: number(item.itemLevel) }) : '',
   ]);
+// The item worn and the one they wear, one above the other (in narrow cards).
+const smallCompare = (images, item, target, share, label) =>
+  `<div class="upgrade-compare is-small"><div><small>${t('Yours')}</small>${yourItem(images, item)}</div><div><small>${esc(label)}</small>${target ? theirItem(images, target, share) : ''}</div></div>`;
 // Enchantment or exceed levels as a meter: those the item has, those to go, and the item's limit.
 function levelMeter(from, to, max, label) {
   const top = Math.max(max, to, 1);
@@ -523,14 +526,21 @@ function levelMeter(from, to, max, label) {
   return `<span class="upgrade-meter" role="img" aria-label="${esc(label)}">${cells}</span>`;
 }
 
+// Whether a step's places get different items (the arcana, each of its own kind).
+const manyTargets = step => new Set(step.entries.map(e => e.action.target?.name)).size > 1;
 // What a step says to do, in a few words.
 function stepTitle(step) {
-  const a = step.entries[0].action;
+  const a = step.entries[0].action,
+    n = step.entries.length;
   switch (step.kind) {
     case 'fill':
-      return t('Fill it: {item}', { item: a.target.name });
+      return manyTargets(step)
+        ? tn(n, 'Fill {n} empty place', 'Fill {n} empty places')
+        : t('Fill it: {item}', { item: a.target.name });
     case 'replace':
-      return t('Replace with {item}', { item: a.target.name });
+      return manyTargets(step)
+        ? tn(n, 'Replace {n} item', 'Replace {n} items')
+        : t('Replace with {item}', { item: a.target.name });
     case 'enchant':
       return step.entries.length > 1
         ? tn(step.entries.length, 'Enchant {n} item further', 'Enchant {n} items further')
@@ -540,17 +550,17 @@ function stepTitle(step) {
         ? tn(step.entries.length, 'Exceed {n} item', 'Exceed {n} items')
         : t('Exceed {from} → {to}', { from: number(a.from), to: number(a.to) });
     case 'stones': {
-      const n = step.entries.reduce((sum, e) => sum + e.action.empty, 0);
-      return tn(n, 'Engrave {n} empty stone slot', 'Engrave {n} empty stone slots');
+      const empty = step.entries.reduce((sum, e) => sum + e.action.empty, 0);
+      return tn(empty, 'Engrave {n} empty stone slot', 'Engrave {n} empty stone slots');
     }
-    case 'stoneGrade': {
-      const n = step.entries.reduce((sum, e) => sum + e.action.count, 0);
-      return tn(n, 'Swap {n} stone for {grade}', 'Swap {n} stones for {grade}', { grade: gradeName(a.grade) });
-    }
+    case 'stoneGrade':
+      return t('Better stones');
     case 'reroll':
       return t('Reroll the soul binding');
     case 'goal':
-      return t('Later: {item}', { item: a.target.name });
+      return manyTargets(step)
+        ? tn(n, 'Later: {n} better item', 'Later: {n} better items')
+        : t('Later: {item}', { item: a.target.name });
     case 'skill':
       return t('Put {skill} on your skill bar', { skill: a.skill.name });
     case 'board':
@@ -569,7 +579,13 @@ function stepBody(images, step) {
     case 'fill':
     case 'replace':
     case 'goal': {
-      visual = `<div class="upgrade-compare"><div><small>${t('Yours')}</small>${yourItem(images, first.row.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div><small>${step.kind === 'goal' ? t('The best of them wear') : t('They wear')}</small>${theirItem(images, a.target, a.share)}</div></div>`;
+      const theirs = step.kind === 'goal' ? t('The best of them wear') : t('They wear');
+      // Places that get different items: each place with its own.
+      if (manyTargets(step)) {
+        visual = `<ul class="upgrade-swaps">${step.entries.map(e => `<li><h5>${esc(slotLabel(e.row.item?.slot || e.row.slot))}</h5>${smallCompare(images, e.row.item, e.action.target, e.action.share, theirs)}</li>`).join('')}</ul>`;
+        break;
+      }
+      visual = `<div class="upgrade-compare"><div><small>${t('Yours')}</small>${yourItem(images, first.row.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div><small>${theirs}</small>${theirItem(images, a.target, a.share)}</div></div>`;
       if (a.itemLevel?.from && a.itemLevel.to > a.itemLevel.from)
         facts.push(
           t('Item level {mine} → {theirs} ({gain})', {
@@ -621,7 +637,12 @@ function stepBody(images, step) {
       if (a.names?.length) facts.push(t('They engrave: {stones}', { stones: a.names.join(', ') }));
       break;
     case 'stoneGrade':
-      facts.push(t('Most of their stones here are {grade}', { grade: gradeName(a.grade) }));
+      facts.push(
+        ...step.entries.map(
+          e =>
+            `${where(e)}${tn(e.action.count, '{n} stone below their usual {grade}', '{n} stones below their usual {grade}', { grade: gradeName(e.action.grade) })}`,
+        ),
+      );
       break;
     case 'reroll':
       for (const e of step.entries)
@@ -727,7 +748,7 @@ function arcanaSection(images, plan) {
   const places = arcana.places
     .map(
       r =>
-        `<li class="upgrade-arcana-place is-${r.state}"><h4>${esc(slotLabel(r.item?.slot || r.slot))}</h4><div class="upgrade-compare is-small"><div>${yourItem(images, r.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div>${r.common ? theirItem(images, r.common, shareOf(r.common, r.ref)) : ''}</div></div>${r.boosts.length ? `<ul class="upgrade-boost-list" aria-label="${esc(t('Skills it raises'))}">${r.boosts.slice(0, 6).map(boost).join('')}</ul>` : ''}</li>`,
+        `<li class="upgrade-arcana-place is-${r.state}"><h4>${esc(slotLabel(r.item?.slot || r.slot))}</h4>${smallCompare(images, r.item, r.common, r.common ? shareOf(r.common, r.ref) : 0, t('They wear'))}${r.boosts.length ? `<ul class="upgrade-boost-list" aria-label="${esc(t('Skills it raises'))}">${r.boosts.slice(0, 6).map(boost).join('')}</ul>` : ''}</li>`,
     )
     .join('');
   return `<section class="armory-panel upgrade-arcana"><div class="section-heading"><h2>${t('Arcana')}</h2></div><div class="upgrade-arcana-sets">${usual}${yours}</div>${bonuses ? `<ul class="upgrade-set-bonuses">${bonuses}</ul>` : ''}${swaps}<ul class="upgrade-arcana-places">${places}</ul></section>`;

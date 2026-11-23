@@ -816,10 +816,22 @@ export default {
     'Vlož kameny do {n} volných slotů',
     'Vlož kameny do {n} volných slotů',
   ],
-  'Swap {n} stone for {grade}|Swap {n} stones for {grade}': [
-    'Vyměň {n} kámen za {grade}',
-    'Vyměň {n} kameny za {grade}',
-    'Vyměň {n} kamenů za {grade}',
+  'Better stones': 'Lepší kameny',
+  '{n} stone below their usual {grade}|{n} stones below their usual {grade}': [
+    '{n} kámen pod jejich obvyklou kvalitou {grade}',
+    '{n} kameny pod jejich obvyklou kvalitou {grade}',
+    '{n} kamenů pod jejich obvyklou kvalitou {grade}',
+  ],
+  'Fill {n} empty place|Fill {n} empty places': [
+    'Doplň {n} prázdné místo',
+    'Doplň {n} prázdná místa',
+    'Doplň {n} prázdných míst',
+  ],
+  'Replace {n} item|Replace {n} items': ['Vyměň {n} předmět', 'Vyměň {n} předměty', 'Vyměň {n} předmětů'],
+  'Later: {n} better item|Later: {n} better items': [
+    'Později: {n} lepší předmět',
+    'Později: {n} lepší předměty',
+    'Později: {n} lepších předmětů',
   ],
   'Reroll the soul binding': 'Přeroluj spoutání duše',
   'Later: {item}': 'Později: {item}',
@@ -836,7 +848,6 @@ export default {
   'Once it is at its enchantment limit': 'Až bude na maximu vylepšení',
   '{n} empty|{n} empty': ['{n} volný', '{n} volné', '{n} volných'],
   'They engrave: {stones}': 'Vkládají: {stones}',
-  'Most of their stones here are {grade}': 'Většina jejich kamenů tady je {grade}',
   '{stat}: none → {theirs} ({share})': '{stat}: žádný → {theirs} ({share})',
   '{stat}: {mine} → {theirs} ({share})': '{stat}: {mine} → {theirs} ({share})',
   '{share} keep it on their bar, level {level}; yours is level {mine}':
