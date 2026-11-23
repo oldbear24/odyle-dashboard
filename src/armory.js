@@ -502,7 +502,11 @@ function planItem(images, item, facts) {
 }
 // The character's own item: its grade and item level.
 const yourItem = (images, g) =>
-  planItem(images, g, g ? [gradeName(g.grade), g.detail?.itemLevel ? t('item level {n}', { n: number(g.detail.itemLevel) }) : ''] : []);
+  planItem(
+    images,
+    g,
+    g ? [gradeName(g.grade), g.detail?.itemLevel ? t('item level {n}', { n: number(g.detail.itemLevel) }) : ''] : [],
+  );
 // An item the group wears: how many of them, how far they enchant it, its item level.
 const theirItem = (images, item, share) =>
   planItem(images, { ...item, enchant: 0, exceed: 0 }, [
@@ -575,10 +579,14 @@ function stepBody(images, step) {
           }),
         );
       if (a.grade > 0)
-        facts.push(t('Grade {mine} → {theirs}', { mine: gradeName(first.row.item.grade), theirs: gradeName(a.target.grade) }));
+        facts.push(
+          t('Grade {mine} → {theirs}', { mine: gradeName(first.row.item.grade), theirs: gradeName(a.target.grade) }),
+        );
       if (a.stats?.length) facts.push(t('As they have it: {stats}', { stats: a.stats.map(gainText).join(', ') }));
       if (step.kind !== 'goal' && a.target.maxEnchant && a.target.enchant)
-        facts.push(t('They enchant it to +{n} of +{max}', { n: number(a.target.enchant), max: number(a.target.maxEnchant) }));
+        facts.push(
+          t('They enchant it to +{n} of +{max}', { n: number(a.target.enchant), max: number(a.target.maxEnchant) }),
+        );
       if (a.target.sources?.length) facts.push(`${t('How to obtain')}: ${a.target.sources.join(', ')}`);
       break;
     }
@@ -677,10 +685,17 @@ function upgradePlanList(images, plan) {
     .map(part => {
       const steps = plan.steps[part],
         [title, about] = names[part];
-      const more = steps.length > shown
-        ? `<details class="upgrade-more"><summary>${esc(tn(steps.length - shown, '{n} more', '{n} more'))}</summary><ol class="upgrade-steps">${steps.slice(shown).map(s => planStep(images, s)).join('')}</ol></details>`
-        : '';
-      return `<div class="upgrade-part is-${part}"><h3>${esc(title)} <span>${number(steps.length)}</span></h3><p>${esc(about)}</p><ol class="upgrade-steps">${steps.slice(0, shown).map(s => planStep(images, s)).join('')}</ol>${more}</div>`;
+      const more =
+        steps.length > shown
+          ? `<details class="upgrade-more"><summary>${esc(tn(steps.length - shown, '{n} more', '{n} more'))}</summary><ol class="upgrade-steps">${steps
+              .slice(shown)
+              .map(s => planStep(images, s))
+              .join('')}</ol></details>`
+          : '';
+      return `<div class="upgrade-part is-${part}"><h3>${esc(title)} <span>${number(steps.length)}</span></h3><p>${esc(about)}</p><ol class="upgrade-steps">${steps
+        .slice(0, shown)
+        .map(s => planStep(images, s))
+        .join('')}</ol>${more}</div>`;
     });
   return parts.length ? parts.join('') : '';
 }
@@ -701,7 +716,7 @@ function arcanaSection(images, plan) {
   const bonuses = mineSets
     .map(
       s =>
-        `<li><strong>${esc(s.name)}</strong>${s.on.map(b => `<span class="is-on">${esc(t('{n} pieces', { n: b.count }))}: ${b.effects.map(esc).join(', ')}</span>`).join('')}${s.next ? `<span class="is-next">${esc(tn(s.next.count - s.mine, 'One more piece', '{n} more pieces'))} (${esc(t('{n} pieces', { n: s.next.count }))}): ${s.next.effects.map(esc).join(', ')}</span>` : ''}</li>`,
+        `<li><strong>${esc(s.name)}</strong>${s.on.map(b => `<span class="is-on">${esc(t('{n} pieces', { n: b.count }))}: ${b.effects.map(esc).join(', ')}</span>`).join('')}${s.next ? `<span class="is-next">${esc(tn(s.next.count - s.mine, '{n} more piece', '{n} more pieces'))} (${esc(t('{n} pieces', { n: s.next.count }))}): ${s.next.effects.map(esc).join(', ')}</span>` : ''}</li>`,
     )
     .join('');
   const swaps = arcana.swaps.length
@@ -785,14 +800,24 @@ function upgradeTab(answer, p, images, upgrade, group = 'next') {
       t('their median {value} ({gap})', { value: number(cp.median), gap: signed(-cp.gap) }),
       true,
     ],
-    [t('Item level'), number(il.mine), t('their median {value} ({gap})', { value: number(il.median), gap: signed(-il.gap) })],
+    [
+      t('Item level'),
+      number(il.mine),
+      t('their median {value} ({gap})', { value: number(il.median), gap: signed(-il.gap) }),
+    ],
     third,
   ];
   const player = q =>
     `<li><a href="${esc(link(profilePath(q)))}"><span class="armory-mini" aria-hidden="true">${esc(initials(q.name))}${picture(images, q.portrait)}</span><strong>${esc(q.name)}</strong><span>${esc([q.server, `${number(q.combatPower)} CP`].filter(Boolean).join(' · '))}</span></a></li>`;
   const about = next
-    ? t('Compared with {n} {class} characters a step above, from every Global region: what they did that this character has not yet.', { ...of, n: number(n) })
-    : t('Compared with the {n} strongest {class} characters the armory keeps, from every Global region, by combat power.', { ...of, n: number(n) });
+    ? t(
+        'Compared with {n} {class} characters a step above, from every Global region: what they did that this character has not yet.',
+        { ...of, n: number(n) },
+      )
+    : t(
+        'Compared with the {n} strongest {class} characters the armory keeps, from every Global region, by combat power.',
+        { ...of, n: number(n) },
+      );
   const fallback =
     group === 'next' && !next
       ? `<p class="upgrade-fallback">${icon('info')}<span>${esc(t('Odyle knows too few {class} characters a step above this one yet, so this compares with the strongest.', of))}</span></p>`

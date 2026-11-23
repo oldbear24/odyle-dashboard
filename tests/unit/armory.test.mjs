@@ -28,7 +28,17 @@ import {
   imageUrl,
   officialPath,
 } from '../../src/armorylinks.js';
-import { upgradePlan, upgradeSlot, compareSlot, gradeRank, rolledValue } from '../../src/upgrade.js';
+import {
+  upgradePlan,
+  upgradeSlot,
+  slotAdvice,
+  slotWeight,
+  mainStatsOf,
+  ladderOf,
+  planParts,
+  gradeRank,
+  rolledValue,
+} from '../../src/upgrade.js';
 // The armory page (#67): src/armory.js.
 const now = Date.parse('2026-10-16T12:00:00Z');
 // A profile as the backend keeps it (backend/odyle/armory.go), with an item's details, skills,
@@ -510,7 +520,7 @@ test("a profile's tabs show its skills, Daevanion boards, titles and appearance"
   );
 });
 
-// What the strongest Chanters the armory keeps wear (backend/odyle/upgrades.go).
+// What a group of stronger Chanters wears (backend/odyle/upgrades.go): the next step of this one.
 const strongest = (name, combatPower, n) => ({
   name,
   level: 45,
@@ -522,247 +532,395 @@ const strongest = (name, combatPower, n) => ({
   itemLevel: 1800,
   portrait: '',
 });
+const rung = (name, grade, itemLevel, count, extra = {}) => ({
+  name,
+  grade,
+  icon: '',
+  category: '',
+  count,
+  enchant: 0,
+  exceed: 0,
+  itemLevel,
+  maxEnchant: 0,
+  maxExceed: 0,
+  main: [],
+  sources: [],
+  ...extra,
+});
+const slotOf = (slot, players, items, ladder, extra = {}) => ({
+  slot,
+  players,
+  items,
+  grade: ladder[0]?.grade || '',
+  itemLevel: ladder[0]?.itemLevel || 0,
+  enchant: 0,
+  exceed: 0,
+  stones: 0,
+  stoneSlots: 0,
+  stoneNames: [],
+  stoneGrade: '',
+  popular: [...ladder].sort((a, b) => b.count - a.count).slice(0, 3),
+  ladder,
+  rolledItems: 0,
+  rolled: [],
+  boostItems: 0,
+  boosts: [],
+  ...extra,
+});
+const dragonLord = rung('Dragon Lord Mace', 'Mythic', 120, 4, {
+  icon: 'Icon_Mace.png',
+  enchant: 15,
+  maxEnchant: 15,
+  maxExceed: 5,
+  main: [{ name: 'Attack', percent: false, value: 1000 }],
+  sources: ['Crafting', "Dragon Lord's Refuge"],
+});
 const reference = {
   class: 'Chanter',
-  players: [strongest('Top<i>', 150000, 1), strongest('Second', 120000, 2), strongest('Third', 100000, 3)],
-  combatPower: { median: 120000, low: 100000, high: 150000 },
+  group: 'next',
+  excluded: 2,
+  sample: 10,
+  players: [strongest('Top<i>', 150000, 1), strongest('Second', 120000, 2), strongest('Third', 110000, 3)],
+  combatPowers: [150000, 120000, 110000],
+  combatPower: { median: 120000, low: 110000, high: 150000 },
   itemLevel: { median: 1750, low: 1600, high: 1800 },
   slots: [
-    {
-      slot: 'MainHand',
-      players: 3,
-      items: 3,
-      grade: 'Mythic',
-      itemLevel: 120,
-      enchant: 15,
-      exceed: 5,
-      stones: 2,
-      stoneSlots: 2,
-      stoneNames: [
-        { name: 'Attack', count: 5 },
-        { name: 'Critical Hit', count: 1 },
+    slotOf(
+      'MainHand',
+      10,
+      10,
+      [
+        dragonLord,
+        rung('Enraged Kromede Rod', 'Unique', 102, 5, { enchant: 15, exceed: 5, maxEnchant: 15, maxExceed: 5 }),
+        rung('Old Rod', 'Legend', 80, 1),
       ],
-      rolledItems: 3,
-      rolled: [
-        { name: 'Combat Speed', percent: true, count: 3, value: 15 },
-        { name: 'Critical Hit', percent: false, count: 2, value: 1200 },
-        { name: 'Accuracy', percent: false, count: 1, value: 80 },
+      { enchant: 15, exceed: 5 },
+    ),
+    slotOf('Helmet', 10, 10, [
+      rung('Nuakum Helm', 'Unique', 86, 8, { enchant: 12, sources: ['Expedition'] }),
+      rung('Vakron Helm', 'Legend', 70, 2),
+    ]),
+    slotOf('Earring', 10, 20, [rung('Berk Earrings', 'Unique', 54, 20, { enchant: 10, sources: ['Expedition'] })]),
+    slotOf(
+      'Ring',
+      10,
+      20,
+      [rung('Kromede Ring', 'Unique', 86, 18, { enchant: 13, exceed: 2, maxEnchant: 15, maxExceed: 5 })],
+      {
+        enchant: 13,
+        exceed: 2,
+        stoneGrade: 'Unique',
+        stoneNames: [
+          { name: 'Attack', count: 30 },
+          { name: 'Critical Hit', count: 20 },
+        ],
+        rolledItems: 18,
+        rolled: [
+          { name: 'Critical Hit', percent: false, count: 12, value: 40 },
+          { name: 'Accuracy', percent: false, count: 3, value: 80 },
+        ],
+      },
+    ),
+    slotOf('Arcana1', 10, 10, [rung('Chalice of Vigor', 'Unique', 80, 9, { set: 'Primal Vigor', enchant: 4 })], {
+      enchant: 4,
+      boostItems: 9,
+      boosts: [
+        { name: 'Bolt', icon: '', count: 9, level: 4 },
+        { name: 'Storm', icon: '', count: 5, level: 2 },
       ],
-      popular: [
-        {
-          name: 'Dragon Lord Mace',
-          grade: 'Mythic',
-          icon: 'Icon_Mace.png',
-          category: 'Mace',
-          count: 2,
-          enchant: 15,
-          exceed: 5,
-          itemLevel: 120,
-          sources: ['Crafting', "Dragon Lord's Refuge"],
-        },
-        {
-          name: 'Enraged Kromede Rod',
-          grade: 'Unique',
-          icon: '',
-          category: 'Mace',
-          count: 1,
-          enchant: 15,
-          exceed: 3,
-          itemLevel: 102,
-          sources: [],
-        },
+    }),
+    slotOf(
+      'Arcana2',
+      10,
+      10,
+      [
+        rung('Parchment of Vigor', 'Unique', 80, 6, { set: 'Primal Vigor', enchant: 4 }),
+        rung('Parchment of Magic', 'Unique', 80, 4, { set: 'Magic Armor', enchant: 4 }),
       ],
-    },
-    {
-      slot: 'Helmet',
-      players: 3,
-      items: 3,
-      grade: 'Legend',
-      itemLevel: 0,
-      enchant: 0,
-      exceed: 0,
-      stones: 0,
-      stoneSlots: 0,
-      stoneNames: [],
-      popular: [
-        {
-          name: 'Vakron Helm',
-          grade: 'Legend',
-          icon: '',
-          category: '',
-          count: 3,
-          enchant: 0,
-          exceed: 0,
-          itemLevel: 0,
-          sources: [],
-        },
-      ],
-    },
-    {
-      slot: 'Earring',
-      players: 3,
-      items: 6,
-      grade: 'Unique',
-      itemLevel: 54,
-      enchant: 10,
-      exceed: 0,
-      stones: 0,
-      stoneSlots: 0,
-      stoneNames: [],
-      popular: [
-        {
-          name: 'Berk Earrings',
-          grade: 'Unique',
-          icon: '',
-          category: 'Earrings',
-          count: 6,
-          enchant: 10,
-          exceed: 0,
-          itemLevel: 54,
-          sources: ['Expedition'],
-        },
-      ],
-    },
-    {
-      slot: 'Arcana3',
-      players: 1,
-      items: 1,
-      grade: 'Legend',
-      itemLevel: 0,
-      enchant: 0,
-      exceed: 0,
-      stones: 0,
-      stoneSlots: 0,
-      stoneNames: [],
-      popular: [
-        {
-          name: 'Compass',
-          grade: 'Legend',
-          icon: '',
-          category: '',
-          count: 1,
-          enchant: 0,
-          exceed: 0,
-          itemLevel: 0,
-          sources: [],
-        },
-      ],
-    },
+      { enchant: 4 },
+    ),
+    slotOf('Arcana3', 1, 1, [rung('Compass', 'Legend', 0, 1)]),
   ],
   sets: [
-    { name: 'Primal Vigor', players: 3, pieces: 4 },
-    { name: 'Storm', players: 1, pieces: 2 },
+    {
+      name: 'Primal Vigor',
+      players: 10,
+      pieces: 3,
+      bonuses: [
+        { count: 2, effects: ['+60 PvE Attack'] },
+        { count: 4, effects: ['+150 PvE Attack'] },
+      ],
+    },
+    { name: 'Magic Armor', players: 6, pieces: 2, bonuses: [] },
   ],
   boards: [
-    { name: 'Nezekan', players: 3, open: 30, total: 40 },
-    { name: 'Triniel', players: 3, open: 20, total: 116 },
+    { name: 'Nezekan', players: 10, open: 30, total: 40 },
+    { name: 'Triniel', players: 10, open: 20, total: 116 },
   ],
   skills: [
-    { name: 'Bolt', category: 'Active', icon: '', players: 3, level: 15 },
-    { name: 'Absolution', category: 'Dp', icon: '', players: 2, level: 10 },
+    { name: 'Bolt', category: 'Active', icon: '', players: 10, level: 15 },
+    { name: 'Heal', category: 'Active', icon: '', players: 8, level: 9 },
+    { name: 'Absolution', category: 'Dp', icon: '', players: 6, level: 10 },
     { name: 'Seldom', category: 'Active', icon: '', players: 0, level: 1 },
   ],
+  arcanaPlayers: 10,
+  arcanaSkills: [
+    { name: 'Bolt', icon: '', count: 10, level: 8 },
+    { name: 'Storm', icon: '', count: 6, level: 3 },
+  ],
+  gearPlayers: 10,
+  gearSkills: [{ name: 'Bolt', icon: '', count: 8, level: 2 }],
   builtAt: '2026-10-16T11:55:00.000Z',
 };
+// The profile with two rings and two arcana of another set, and a skill learned but off its bar.
+const ring = (slot, enchant, extra) => ({
+  slot,
+  name: 'Kromede Ring',
+  grade: 'Unique',
+  enchant,
+  exceed: 0,
+  icon: '',
+  detail: {
+    itemLevel: 86,
+    maxEnchant: 15,
+    maxExceed: 5,
+    main: [{ name: 'Attack', value: '50', extra: String(enchant * 3) }],
+    sub: [],
+    stoneSlots: 3,
+    stones: [],
+    subSkills: [],
+    ...extra,
+  },
+});
+const magic = (slot, name, skill) => ({
+  slot,
+  name,
+  grade: 'Unique',
+  enchant: 4,
+  exceed: 0,
+  icon: '',
+  detail: {
+    itemLevel: 80,
+    maxEnchant: 5,
+    main: [],
+    sub: [],
+    stoneSlots: 0,
+    stones: [],
+    subSkills: [skill],
+    set: {
+      name: 'Magic Armor',
+      equipped: 2,
+      items: [],
+      bonuses: [
+        { count: 2, effects: ['Magic +1'] },
+        { count: 4, effects: ['Magic +2'] },
+      ],
+    },
+  },
+});
+const upgraded = {
+  ...profile,
+  gear: [
+    ...profile.gear.filter(g => g.slot !== 'Arcana3'),
+    ring('Ring1', 10, { stones: [{ name: 'Attack', grade: 'Legend' }] }),
+    ring('Ring2', 15, {
+      stones: [{}, {}, {}].map(() => ({ name: 'Attack', grade: 'Unique' })),
+      sub: [{ name: 'Critical Hit', value: '40' }],
+    }),
+    magic('Arcana1', 'Chalice of Magic', { name: 'Bolt', level: 3 }),
+    magic('Arcana2', 'Parchment of Magic', { name: 'Heal', level: 1 }),
+    profile.gear.find(g => g.slot === 'Arcana3'),
+  ],
+  skills: [
+    ...profile.skills,
+    { name: 'Heal', category: 'Active', level: 5, acquired: true, equipped: false, icon: '' },
+  ],
+};
 
-test('the upgrade plan ranks the slots by how far the gear is behind the strongest of the class', async () => {
+test('the upgrade plan says what to do in each slot to catch up with the group', async () => {
   assert.deepEqual(
     ['MainHand', 'Earring2', 'Ring1', 'Bracelet2', 'Rune1', 'Arcana3', 'Pet', 'Wings'].map(upgradeSlot),
     ['MainHand', 'Earring', 'Ring', 'Bracelet', 'Rune', 'Arcana3', '', 'Wings'],
   );
   assert.deepEqual(['Common', 'Legend', 'Mythic', 'Special', undefined].map(gradeRank), [1, 3, 6, 0, 0]);
-  const plan = upgradePlan(profile, reference);
-  // Behind in item level (18 of 120), grade (two), exceed (two), one empty stone slot and the stats
-  // most of the strongest roll: Combat Speed lower (13 % of their 15 %), no Critical Hit; few roll Accuracy.
-  const main = plan.rows.find(r => r.slot === 'MainHand');
-  assert.deepEqual(main.gaps, {
-    itemLevel: 18,
-    enchant: 0,
-    exceed: 2,
-    grade: 2,
-    stones: 1,
-    rolled: [
-      { name: 'Combat Speed', percent: true, theirs: 15, mine: 13 },
-      { name: 'Critical Hit', percent: false, theirs: 1200, mine: null },
-    ],
-  });
-  assert.equal(main.score, 73);
+  assert.deepEqual(['MainHand', 'Helmet', 'Bracelet', 'Arcana2', 'Wings'].map(slotWeight), [1.6, 1, 0.7, 0.6, 0.5]);
+  // Main stats: value and extra summed, an exceed line's extra too; a share and a number apart.
+  assert.deepEqual([...mainStatsOf(detail)], [['Attack|', 844]]);
+  const plan = upgradePlan(upgraded, reference);
+  const row = slot => plan.rows.find(r => (r.item?.slot || r.slot) === slot);
+  // The main hand: a good share of them moved on to the Dragon Lord Mace, so a new item, not more
+  // enchanting; what it adds as they have it.
+  const main = row('MainHand');
+  assert.equal(main.next.name, 'Dragon Lord Mace');
+  assert.equal(main.goal, null);
+  assert.deepEqual(
+    main.actions.map(a => [a.kind, a.itemLevel, a.grade, a.stats, Math.round(a.value)]),
+    [['replace', { from: 102, to: 120 }, 2, [{ name: 'Attack', percent: false, value: 156 }], 96]],
+  );
   assert.equal(main.state, 'big');
-  assert.equal(main.best.name, 'Dragon Lord Mace');
-  assert.equal(main.wearsBest, false);
-  // Both earrings, which every one of the strongest wears, are missing; the helmet and arcana are on par.
+  // The helmet without details: its own rung's item level.
   assert.deepEqual(
-    plan.rows.map(r => [r.slot, r.score, r.state]),
+    row('Helmet').actions.map(a => [a.kind, a.target.name, a.itemLevel, a.grade]),
+    [['replace', 'Nuakum Helm', { from: 70, to: 86 }, 1]],
+  );
+  // A ring worth keeping: enchanted as far as they take it (what that adds, from what its
+  // enchantment adds now), its empty stone slots, a stone below their grade, the stat most roll.
+  assert.deepEqual(
+    row('Ring1').actions.map(a => [a.kind, Math.round(a.value)]),
     [
-      ['MainHand', 73, 'big'],
-      ['Helmet', 0, 'even'],
-      ['Earring', 100, 'big'],
-      ['Earring', 100, 'big'],
-      ['Arcana3', 0, 'even'],
+      ['enchant', 9],
+      ['stones', 4],
+      ['reroll', 3],
+      ['stoneGrade', 1],
+    ],
+  );
+  const ringActions = row('Ring1').actions;
+  assert.deepEqual(
+    [ringActions[0].from, ringActions[0].to, ringActions[0].max, ringActions[0].stats],
+    [10, 13, 15, [{ name: 'Attack', percent: false, value: 9 }]],
+  );
+  assert.deepEqual(ringActions[1].names, ['Attack', 'Critical Hit']);
+  assert.deepEqual(ringActions[2].stats, [
+    { name: 'Critical Hit', percent: false, theirs: 40, mine: null, share: 12 / 18 },
+  ]);
+  // The other ring is at its enchantment's limit: exceed levels next.
+  assert.deepEqual(
+    row('Ring2').actions.map(a => [a.kind, a.from, a.to, a.max, a.after]),
+    [['exceed', 0, 2, 5, false]],
+  );
+  // No earrings: both places to fill.
+  assert.deepEqual(
+    plan.rows.filter(r => r.ref.slot === 'Earring').map(r => [r.actions[0].kind, r.score]),
+    [
+      ['fill', 100],
+      ['fill', 100],
+    ],
+  );
+  // The plan: one step for both earrings, the skill most keep on their bar, the boards behind.
+  const steps = part => plan.steps[part].map(s => [s.kind, s.slot, s.entries.length, Math.round(s.value)]);
+  assert.deepEqual(planParts, ['quick', 'gear', 'enchant', 'polish', 'goal']);
+  assert.deepEqual(steps('quick'), [
+    ['fill', 'Earring', 2, 150],
+    ['skill', '', 1, 5],
+    ['stones', 'Ring', 1, 4],
+  ]);
+  assert.deepEqual(steps('gear'), [
+    ['replace', 'MainHand', 1, 96],
+    ['replace', 'Helmet', 1, 52],
+  ]);
+  assert.deepEqual(steps('enchant'), [
+    ['enchant', 'Ring', 1, 9],
+    ['exceed', 'Ring', 1, 8],
+  ]);
+  assert.deepEqual(steps('polish'), [
+    ['reroll', 'Ring', 1, 3],
+    ['stoneGrade', 'Ring', 1, 1],
+  ]);
+  assert.deepEqual(
+    plan.steps.goal.map(s => [s.kind, s.entries[0].action.board?.name]),
+    [
+      ['board', 'Triniel'],
+      ['board', 'Nezekan'],
+    ],
+  );
+  // The arcana: they wear 3 Primal Vigor and 2 Magic Armor; this one 2 Magic Armor (and the main
+  // hand's 2 Primal Vigor), with the next bonus of each; both arcana are of the other set.
+  assert.deepEqual(
+    plan.arcana.usual.map(s => [s.name, s.pieces]),
+    [
+      ['Primal Vigor', 3],
+      ['Magic Armor', 2],
     ],
   );
   assert.deepEqual(
-    plan.picks.map(r => r.slot),
-    ['Earring', 'Earring', 'MainHand'],
+    plan.arcana.sets.map(s => [s.name, s.mine, s.on.map(b => b.count), s.next?.count]),
+    [
+      ['Primal Vigor', 2, [2], 4],
+      ['Magic Armor', 2, [2], 4],
+    ],
   );
-  // Its place: third with the three strongest, by combat power.
-  assert.equal(plan.place, 3);
-  assert.equal(plan.below, false);
+  assert.deepEqual(
+    plan.arcana.swaps.map(s => [s.slot, s.from.name, s.to.name]),
+    [
+      ['Arcana1', 'Chalice of Magic', 'Chalice of Vigor'],
+      ['Arcana2', 'Parchment of Magic', 'Parchment of Vigor'],
+    ],
+  );
+  assert.deepEqual(
+    plan.arcana.places[0].boosts.map(b => [b.name, b.level, b.mine, b.share]),
+    [
+      ['Bolt', 4, 3, 1],
+      ['Storm', 2, 0, 5 / 9],
+    ],
+  );
+  // The skills arcana and other gear raise, summed: theirs against this one's.
+  assert.deepEqual(
+    plan.boosts.arcana.map(b => [b.name, b.players, b.level, b.mine]),
+    [
+      ['Bolt', 10, 8, 3],
+      ['Storm', 6, 3, 0],
+      ['Heal', 0, 0, 1],
+    ],
+  );
+  assert.deepEqual(
+    plan.boosts.gear.map(b => [b.name, b.level, b.mine]),
+    [['Bolt', 2, 2]],
+  );
+  assert.deepEqual([plan.group, plan.sample, plan.excluded], ['next', 10, 2]);
+  // Its place: below the three named, among ten.
+  assert.deepEqual([plan.place, plan.below], [4, false]);
   assert.deepEqual(
     [plan.combatPower.mine, plan.combatPower.gap, plan.itemLevel.gap],
     [107458, 120000 - 107458, 1750 - 1671],
   );
   assert.deepEqual(
-    plan.sets.map(s => [s.name, s.mine]),
-    [
-      ['Primal Vigor', 2],
-      ['Storm', 0],
-    ],
-  );
-  assert.deepEqual(
-    plan.boards.map(b => [b.name, b.mine, b.gap]),
-    [
-      ['Triniel', 0, 20],
-      ['Nezekan', 12, 18],
-    ],
-  );
-  assert.deepEqual(
     plan.skills.map(s => [s.name, s.equipped, s.acquired, s.mine]),
     [
       ['Bolt', true, true, 13],
+      ['Heal', false, true, 5],
       ['Absolution', false, false, 0],
     ],
   );
-  // Weaker than them all; among many more than are listed by name, its place by their combat power.
-  const weak = upgradePlan({ ...profile, combatPower: 1 }, reference);
-  assert.deepEqual([weak.place, weak.below], [4, true]);
-  const many = upgradePlan(profile, {
-    ...reference,
-    sample: 500,
-    combatPowers: Array.from({ length: 500 }, (_, i) => 500000 - i * 1000),
-  });
-  assert.deepEqual([many.sample, many.place, many.below], [500, 394, false]);
-  // Too few to compare with; an empty place few of the strongest fill counts for nothing.
-  assert.equal(upgradePlan(profile, { ...reference, players: reference.players.slice(0, 2) }), null);
+  // A backend without ladders: the items worn most, the highest item level first.
+  const old = { ...reference.slots[0], ladder: undefined };
+  assert.deepEqual(
+    ladderOf(old).map(r => r.name),
+    ['Dragon Lord Mace', 'Enraged Kromede Rod', 'Old Rod'],
+  );
+  assert.equal(slotAdvice(upgraded.gear[0], old, 10).next.name, 'Dragon Lord Mace');
+  // Few of them moved on: the best they wear is a goal, and the item is taken further.
+  const few = {
+    ...reference.slots[0],
+    items: 100,
+    ladder: [{ ...dragonLord, count: 5 }, ...reference.slots[0].ladder.slice(1)],
+  };
+  const kept = slotAdvice({ ...upgraded.gear[0], exceed: 3 }, few, 10);
+  assert.deepEqual(
+    kept.actions.map(a => [a.kind, a.target?.name || a.to || a.empty]),
+    [
+      ['exceed', 5],
+      ['stones', 1],
+      ['goal', 'Dragon Lord Mace'],
+    ],
+  );
+  // Too few to compare with; an empty place few of the group fill counts for nothing.
   assert.equal(upgradePlan(profile, { ...reference, sample: 2 }), null);
   assert.equal(upgradePlan(profile, null), null);
-  assert.equal(compareSlot(null, reference.slots[3], 3).score, 0);
-  // Wearing what the strongest wear most, enchanted further than they do: on par.
-  const same = compareSlot(
-    {
-      slot: 'MainHand',
-      name: 'Dragon Lord Mace',
-      grade: 'Mythic',
-      enchant: 15,
-      exceed: 5,
-      detail: { itemLevel: 120, stoneSlots: 2, stones: [{}, {}] },
-    },
-    reference.slots[0],
-    3,
+  assert.equal(slotAdvice(null, reference.slots[6], 10).score, 0);
+  // Some items come in two grades under one name: the Unique one is a step up from the Legend one.
+  const belts = slotOf('Belt', 10, 10, [
+    rung('Noble Belt', 'Unique', 65, 9, { enchant: 10 }),
+    rung('Noble Belt', 'Legend', 36, 1),
+  ]);
+  assert.deepEqual(
+    slotAdvice(
+      { slot: 'Belt', name: 'Noble Belt', grade: 'Legend', enchant: 0, detail: { itemLevel: 36, maxEnchant: 10 } },
+      belts,
+      10,
+    ).actions.map(a => [a.kind, a.itemLevel]),
+    [['replace', { from: 36, to: 65 }]],
   );
-  assert.deepEqual([same.score, same.state, same.wearsBest], [0, 'even', true]);
-  // Rolled stats: as many as theirs or more, summed when rolled twice ("1,200" is a number), are on
-  // par; an item without them misses them all; too few of the strongest's known compare nothing.
+  // Rolled stats: values as PLAYNC writes them.
   assert.deepEqual(['13%', '+120', '1,200', '-2.5%', '?', undefined].map(rolledValue), [
     { value: 13, percent: true },
     { value: 120, percent: false },
@@ -771,35 +929,11 @@ test('the upgrade plan ranks the slots by how far the gear is behind the stronge
     null,
     null,
   ]);
-  const rolls = sub => compareSlot({ ...same.item, detail: { ...same.item.detail, sub } }, reference.slots[0], 3);
-  assert.equal(
-    rolls([
-      { name: 'Combat Speed', value: '9%' },
-      { name: 'Combat Speed', value: '6%' },
-      { name: 'Critical Hit', value: '1,200' },
-    ]).score,
-    0,
-  );
-  assert.deepEqual([rolls([]).score, rolls([]).gaps.rolled.map(r => r.name)], [6, ['Combat Speed', 'Critical Hit']]);
-  assert.deepEqual(
-    rolls([
-      { name: 'Critical Hit', value: '1200%' },
-      { name: 'Combat Speed', value: '15%' },
-    ]).gaps.rolled,
-    [{ name: 'Critical Hit', percent: false, theirs: 1200, mine: null }],
-  );
-  assert.equal(
-    compareSlot(
-      { ...same.item, detail: { ...same.item.detail, sub: [] } },
-      { ...reference.slots[0], rolledItems: 2 },
-      3,
-    ).score,
-    0,
-  );
 });
 
-test('the upgrade tab shows the best upgrades, every slot, the sets, boards and skills of the strongest', async () => {
-  const view = upgrade => armoryProfile(answer(), now, false, false, { images, tab: 'upgrade', upgrade });
+test('the upgrade tab shows the plan, the arcana, the skills gear raises, every slot, boards and skill bars', async () => {
+  const view = (upgrade, upgradeGroup = 'next', p = upgraded) =>
+    armoryProfile(answer({ profile: p }), now, false, false, { images, tab: 'upgrade', upgrade, upgradeGroup });
   assert.ok(profileTabs(profile).some(([key]) => key === 'upgrade'));
   assert.ok(
     !profileTabs({ ...profile, class: '' }).some(([key]) => key === 'upgrade'),
@@ -810,95 +944,129 @@ test('the upgrade tab shows the best upgrades, every slot, the sets, boards and 
     html,
     /<a href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=\/upgrade" aria-current="page">Upgrade<\/a>/,
   );
+  // The group: the next step, chosen; the strongest a button away.
   assert.match(
     html,
-    /<h2>Upgrades<\/h2><\/div><p>Compared with the 3 strongest Chanter characters the armory keeps, from every Global region, by combat power\.<\/p>/,
+    /<div class="upgrade-groups" role="group" aria-label="Compare with"><button type="button" class="is-active" data-armory-upgrade-group="next" aria-pressed="true">The next step<\/button><button type="button" class="" data-armory-upgrade-group="top" aria-pressed="false">The strongest<\/button><\/div>/,
+  );
+  assert.match(
+    html,
+    /<p>Compared with 10 Chanter characters a step above, from every Global region: what they did that this character has not yet\.<\/p>/,
   );
   assert.match(
     html,
     /<dt>Combat power<\/dt><dd><strong>107,458<\/strong><small>their median 120,000 \(−12,542\)<\/small>/,
   );
-  assert.match(html, /<dt>Item level<\/dt><dd><strong>1,671<\/strong><small>their median 1,750 \(−79\)<\/small>/);
-  assert.match(html, /<dt>Your place<\/dt><dd><strong>#3<\/strong><small>with the 3 strongest<\/small>/);
-  // The strongest, escaped, each linking its profile.
+  assert.match(html, /<dt>The next step<\/dt><dd><strong>110,000–150,000<\/strong><small>combat power<\/small>/);
+  assert.match(html, /2 characters left out: their combat power does not match their item level\./);
   assert.match(
     html,
-    /<summary>The 3 strongest Chanter characters<\/summary><ol class="upgrade-players"><li><a href="#\/armory\/nae\/1101\/VG9wVG9wVG9wVG9wVG9w1A=="><span class="armory-mini" aria-hidden="true">TO<\/span><strong>Top&lt;i&gt;<\/strong><span>Siel · 150,000 CP<\/span>/,
+    /<summary>The strongest 3 of them<\/summary><ol class="upgrade-players"><li><a href="#\/armory\/nae\/1101\/VG9wVG9wVG9wVG9wVG9w1A=="><span class="armory-mini" aria-hidden="true">TO<\/span><strong>Top&lt;i&gt;<\/strong>/,
   );
-  assert.doesNotMatch(html, /<i>/);
-  // The best upgrades: the missing earrings first, then the main hand with what it is behind by.
-  const picks = html
-    .match(/<ol class="upgrade-picks">([\s\S]*?)<\/ol><\/section>/)[1]
-    .split('<li class="upgrade-pick ')
-    .slice(1);
-  assert.equal(picks.length, 3);
+  assert.doesNotMatch(html, /Top<i>/);
+  // The plan, part by part.
+  const part = name =>
+    html.match(new RegExp(`<div class="upgrade-part is-${name}">([\\s\\S]*?)</ol>(?:<details|</div>)`))?.[1] || '';
+  assert.match(part('quick'), /<h3>Quick wins <span>3<\/span><\/h3>/);
   assert.match(
-    picks[0],
-    /^is-big"><div class="upgrade-pick-head"><span class="upgrade-rank" aria-hidden="true">1<\/span><h3>Earring<\/h3><span class="upgrade-badge">Big upgrade<\/span>/,
+    part('quick'),
+    /<li class="upgrade-step is-big is-fill"><div class="upgrade-step-head"><small>Earring · 2×<\/small><h4>Fill it: Berk Earrings<\/h4><span class="upgrade-badge">Big upgrade<\/span><\/div>[\s\S]*?<strong>Empty<\/strong>[\s\S]*?<strong>Berk Earrings<\/strong><small>100 % of them · usually \+10 · item level 54<\/small>[\s\S]*?<li>How to obtain: Expedition<\/li>/,
   );
   assert.match(
-    picks[0],
-    /<strong>Empty<\/strong>[\s\S]*<strong>Berk Earrings<\/strong><small>100 % of the strongest · usually \+10 · item level 54<\/small>/,
+    part('quick'),
+    /<h4>Engrave 2 empty stone slots<\/h4>[\s\S]*?<li>They engrave: Attack, Critical Hit<\/li>/,
   );
   assert.match(
-    picks[0],
-    /<li>3 of the 3 strongest wear something here<\/li>[\s\S]*<dt>How to obtain<\/dt><dd>Expedition<\/dd>/,
+    part('quick'),
+    /<h4>Put Heal on your skill bar<\/h4>[\s\S]*?<li>80 % of them keep it on their bar, level 9; yours is level 5<\/li>/,
   );
   assert.match(
-    picks[2],
-    /<h3>Main hand<\/h3>[\s\S]*<strong>\+15 Enraged Kromede Rod<\/strong><small>Unique · item level 102<\/small>[\s\S]*<strong>Dragon Lord Mace<\/strong><small>67 % of the strongest · usually \+15 · item level 120<\/small>/,
+    part('gear'),
+    /<small>Main hand<\/small><h4>Replace with Dragon Lord Mace<\/h4>[\s\S]*?<strong>\+15 Enraged Kromede Rod<\/strong><small>Unique · item level 102<\/small>[\s\S]*?<strong>Dragon Lord Mace<\/strong><small>40 % of them · usually \+15 · item level 120<\/small>/,
   );
   assert.match(
-    picks[2],
-    /<ul class="upgrade-reasons"><li>Item level 102 → 120<\/li><li>Grade Unique → Mythic<\/li><li>Exceed 3 → 5<\/li><li>1 empty stone slot<\/li><li>Rolled Combat Speed 13% → 15%<\/li><li>Rolled Critical Hit: none → 1,200<\/li><\/ul>/,
+    part('gear'),
+    /<li>Item level 102 → 120 \(\+18\)<\/li><li>Grade Unique → Mythic<\/li><li>As they have it: Attack \+156<\/li><li>They enchant it to \+15 of \+15<\/li><li>How to obtain: Crafting, Dragon Lord&#39;s Refuge<\/li>/,
   );
+  assert.match(part('gear'), /src="\/api\/odyle\/armory-images\/Icon_Mace.png"/);
   assert.match(
-    picks[2],
-    /<dt>How to obtain<\/dt><dd>Crafting, Dragon Lord&#39;s Refuge<\/dd><\/div><div><dt>Stats they roll<\/dt><dd>Combat Speed 15%, Critical Hit 1,200<\/dd><\/div><div><dt>Stones they engrave<\/dt><dd>Attack, Critical Hit<\/dd><\/div><div><dt>Also worn<\/dt><dd>Enraged Kromede Rod<\/dd>/,
+    part('enchant'),
+    /<h4>Enchant \+10 → \+13<\/h4>[\s\S]*?<span class="upgrade-meter" role="img" aria-label="Enchantment \+10 → \+13 of \+15">(<i class="is-have"><\/i>){10}(<i class="is-to"><\/i>){3}(<i><\/i>){2}<\/span><b>\+10 → \+13<\/b>[\s\S]*?<li>About Attack \+9<\/li>/,
   );
-  assert.match(picks[2], /src="\/api\/odyle\/armory-images\/Icon_Mace.png"/);
-  // Every slot, the sets, the boards furthest behind first and the skills on the strongest's bars.
+  assert.match(part('enchant'), /<h4>Exceed 0 → 2<\/h4>/);
   assert.match(
-    html,
-    /<li class="upgrade-row is-even"><div class="upgrade-row-slot"><small>Helmet<\/small>[\s\S]*?<span class="upgrade-badge">On par<\/span><\/div><\/li>/,
+    part('polish'),
+    /<h4>Reroll the soul binding<\/h4>[\s\S]*?<li>Critical Hit: none → 40 \(67 % of them\)<\/li>/,
   );
-  assert.match(
-    html,
-    /<strong>Primal Vigor<\/strong><span>3 of the 3 strongest, usually 4 pieces<\/span><small>Yours: 2 pieces<\/small>/,
-  );
+  assert.match(part('polish'), /<h4>Swap 1 stone for Unique<\/h4>/);
+  assert.match(part('goal'), /<h4>Open more of Nezekan<\/h4>[\s\S]*?<li>12 of 40 nodes · they open 30<\/li>/);
+  // The arcana: their sets, this one's, the bonuses, the swaps and each arcana's skills.
   assert.match(
     html,
-    /<strong>Storm<\/strong><span>1 of the 3 strongest, usually 2 pieces<\/span><small>Not worn<\/small>/,
+    /<h3>They wear<\/h3><ul class="upgrade-chips"><li><b>3×<\/b> Primal Vigor <small>100 % of them<\/small><\/li><li><b>2×<\/b> Magic Armor <small>60 % of them<\/small><\/li><\/ul>/,
   );
   assert.match(
     html,
-    /<ul class="upgrade-boards"><li class="is-behind"><span><strong>Triniel<\/strong><small>0 of 116 nodes · the strongest 20<\/small>[\s\S]*?<i style="width:0%"><\/i><b style="left:17%"><\/b>/,
+    /<ul class="upgrade-chips is-mine"><li><b>2×<\/b> Primal Vigor<\/li><li><b>2×<\/b> Magic Armor<\/li><\/ul>/,
+  );
+  assert.match(html, /<span class="is-next">2 more pieces \(4 pieces\): \+150 PvE Attack<\/span>/);
+  assert.match(html, /<li>Arcana 1: Chalice of Magic \(Magic Armor\) → Chalice of Vigor \(Primal Vigor\)<\/li>/);
+  assert.match(
+    html,
+    /<ul class="upgrade-boost-list" aria-label="Skills it raises"><li class="is-behind"><span>Bolt<\/span><small>\+4 · 100 % of them<\/small><b>\+3<\/b><\/li><li class="is-missing"><span>Storm<\/span><small>\+2 · 56 % of them<\/small><b>–<\/b><\/li>/,
+  );
+  // The skills gear raises.
+  assert.match(
+    html,
+    /<h2>Skills raised by gear<\/h2>[\s\S]*?<h3>From arcana<\/h3>[\s\S]*?<li class="is-extra"><span>Heal<\/span><small>only yours<\/small><b>\+1<\/b><\/li>[\s\S]*?<h3>From other gear<\/h3><ul class="upgrade-boost-list"><li class="is-even"><span>Bolt<\/span><small>\+2 · 80 % of them<\/small><b>\+2<\/b>/,
+  );
+  // Every slot, the boards and the skill bars.
+  assert.match(
+    html,
+    /<li class="upgrade-row is-big"><div class="upgrade-row-slot"><small>Main hand<\/small>[\s\S]*?<small>Next step<\/small>[\s\S]*?<small>Replace with Dragon Lord Mace<\/small><\/div><\/li>/,
   );
   assert.match(
     html,
-    /<strong>Nezekan<\/strong><small>12 of 40 nodes · the strongest 30<\/small>[\s\S]*?<i style="width:30%"><\/i><b style="left:75%"><\/b>/,
+    /<ul class="upgrade-boards"><li class="is-behind"><span><strong>Triniel<\/strong><small>0 of 116 nodes · they open 20<\/small>/,
   );
   assert.match(
     html,
-    /<li class="is-equipped">[\s\S]*?<strong>Bolt<\/strong><small>3 of the 3 strongest, level 15 · on your bar, level 13<\/small>/,
-  );
-  assert.match(
-    html,
-    /<li class="is-locked">[\s\S]*?<strong>Absolution<\/strong><small>2 of the 3 strongest, level 10 · Not learned yet<\/small>/,
+    /<li class="is-equipped">[\s\S]*?<strong>Bolt<\/strong><small>10 of 10, level 15 · on your bar, level 13<\/small>/,
   );
   assert.doesNotMatch(html, /Seldom/);
-  assert.match(html, /those Odyle's scout finds with PLAYNC's character search/);
+  assert.match(html, /The next step is the nearest characters 5 to 100 % stronger than this one\./);
   assert.match(html, /<a class="text-button" href="#\/armory\/top\/Chanter">All top Chanter players /);
+  // The strongest: their place; asked for the next step but given the strongest, it says so.
+  const top = view({ ...reference, group: 'top', excluded: 0 }, 'top');
+  assert.match(top, /<dt>Your place<\/dt><dd><strong>#4<\/strong><small>with the 10 strongest<\/small>/);
+  assert.match(top, /Compared with the 10 strongest Chanter characters the armory keeps/);
+  assert.doesNotMatch(top, /characters left out|upgrade-fallback/);
+  assert.match(
+    view({ ...reference, group: 'top' }, 'next'),
+    /<p class="upgrade-fallback">[\s\S]*?Odyle knows too few Chanter characters a step above this one yet, so this compares with the strongest\./,
+  );
   // While it loads, when it did not, and while the armory keeps too few of the class.
-  assert.match(view(null), /Comparing with the strongest Chanter characters the armory keeps…/);
+  assert.match(view(null), /Comparing with the Chanter characters a step above…/);
+  assert.match(view(null, 'top'), /Comparing with the strongest Chanter characters the armory keeps…/);
   assert.match(view({ error: true }), /The comparison did not load\. Odyle tries again when you open this tab\./);
   assert.match(
-    view({ ...reference, players: reference.players.slice(0, 2) }),
+    view({ ...reference, sample: 2, players: reference.players.slice(0, 2) }),
     /The armory keeps too few Chanter characters to compare with yet \(2 of 3\)\./,
   );
-  // On par everywhere: nothing to pick.
-  const even = { ...reference, slots: [reference.slots[1]], boards: [], sets: [], skills: [] };
-  assert.match(view(even), /The gear is on par with the strongest Chanter characters in every slot\./);
+  // On par everywhere: nothing to do.
+  const even = {
+    ...reference,
+    slots: [reference.slots[6]],
+    boards: [],
+    sets: [],
+    skills: [],
+    arcanaPlayers: 0,
+    gearPlayers: 0,
+  };
+  assert.match(
+    view(even, 'next', profile),
+    /The gear is on par with the Chanter characters a step above in every slot\./,
+  );
 });
 
 test('the top players page lists the strongest of a class, with a tab for each class', async () => {

@@ -359,7 +359,10 @@ function arcanaPlan(profile, reference, rows, sample) {
     .filter(r => r.item?.detail?.set?.name && r.common?.set && r.common.set !== r.item.detail.set.name)
     .map(r => ({ slot: r.item.slot, from: r.item, to: r.common }));
   return {
-    places: places.map(r => ({ ...r, boosts: (r.ref.boostItems || 0) >= upgradeLeast ? slotBoosts(r.ref, r.item) : [] })),
+    places: places.map(r => ({
+      ...r,
+      boosts: (r.ref.boostItems || 0) >= upgradeLeast ? slotBoosts(r.ref, r.item) : [],
+    })),
     sets,
     swaps,
     usual: sets.filter(s => s.usual),
@@ -439,7 +442,12 @@ export function upgradePlan(profile, reference) {
       .map(s => ({
         kind: 'skill',
         slot: '',
-        entries: [{ row: null, action: { kind: 'skill', skill: s, share: s.players / sample, value: weights.skill * (s.players / sample) } }],
+        entries: [
+          {
+            row: null,
+            action: { kind: 'skill', skill: s, share: s.players / sample, value: weights.skill * (s.players / sample) },
+          },
+        ],
       })),
     ...boards
       .filter(b => b.gap > 0)
@@ -479,4 +487,7 @@ export function upgradePlan(profile, reference) {
 }
 // The pieces of a set the character wears.
 const arcanaMine = (profile, name) =>
-  Math.max(0, ...(profile.gear || []).filter(g => g.detail?.set?.name === name).map(g => Number(g.detail.set.equipped) || 0));
+  Math.max(
+    0,
+    ...(profile.gear || []).filter(g => g.detail?.set?.name === name).map(g => Number(g.detail.set.equipped) || 0),
+  );
