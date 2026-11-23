@@ -1,0 +1,368 @@
+/* The armory profile's details (armorydetail.js): the gear summary, the paper doll tiles' meters,
+   where the stats come from, all Daevanion boards together and the skill levels from gear. */
+
+/* Gear summary above the paper doll */
+.gear-summary {
+  margin: 0 0 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.gear-summary dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.gear-summary dl div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #121916;
+}
+.gear-summary dt {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #7f9285;
+}
+.gear-summary dd {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 0;
+}
+.gear-summary dd strong {
+  font-size: 16px;
+  font-weight: 650;
+  color: #e5efe8;
+}
+.gear-summary dd small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.gear-summary dd .armory-track {
+  margin-top: 3px;
+}
+.gear-summary-sets {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.gear-summary-sets li {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #121916;
+  font-size: 12px;
+  color: #d3e0d7;
+}
+.gear-summary-sets span {
+  color: var(--muted);
+}
+.gear-summary-sets small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.gear-summary-sets small.is-close {
+  color: #e7d36f;
+}
+.gear-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.gear-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The meters on each paper doll tile */
+.gear-meters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 9px;
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #9fb1a5;
+  font-variant-numeric: tabular-nums;
+}
+.armory-gear-text .gear-meters span {
+  overflow: visible;
+}
+.gear-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.gear-meter.is-full {
+  color: var(--mint);
+}
+.gear-meter.is-stones {
+  gap: 2px;
+}
+.gear-meter.is-stones i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid #6d8174;
+}
+.gear-meter.is-stones i.is-on {
+  border-color: transparent;
+  background: #9fb1a5;
+}
+.gear-meter.is-stones.is-full i.is-on {
+  background: var(--mint);
+}
+.gear-meter.is-soul {
+  color: #c9b8ef;
+}
+.gear-bar {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #2c3931;
+}
+.gear-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #6fcf97, var(--mint));
+}
+.gear-meter:not(.is-full) .gear-bar i {
+  background: #8fb39c;
+}
+
+/* Where stats come from */
+.stat-sources-intro {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 900px;
+}
+.stat-sources-wrap {
+  overflow-x: auto;
+}
+.stat-sources {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-sources th,
+.stat-sources td {
+  padding: 5px 8px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid #ffffff0a;
+}
+.stat-sources thead th {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #7f9285;
+  font-weight: 650;
+  border-bottom-color: var(--border);
+}
+.stat-sources th[scope='row'],
+.stat-sources thead th:first-child {
+  text-align: left;
+}
+.stat-sources th[scope='row'] {
+  font-weight: 550;
+  color: #d8e1db;
+  white-space: normal;
+}
+.stat-sources th[scope='row'] small {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.stat-sources td {
+  color: #b9c8be;
+}
+.stat-sources td.is-none {
+  color: #4b5a51;
+}
+.stat-sources .stat-total {
+  font-weight: 650;
+  color: var(--mint);
+}
+.stat-sources .stat-group th {
+  padding-top: 14px;
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #8fa697;
+  font-weight: 650;
+  border-bottom-color: var(--border);
+}
+.stat-sources tbody tr:not(.stat-group):hover {
+  background: #ffffff06;
+}
+.stat-sources-panel h3 {
+  margin-top: 16px;
+}
+.stat-godstones {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+.stat-godstones li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #121916;
+  font-size: 12px;
+}
+.stat-godstones strong {
+  color: #e8c27a;
+  font-weight: 600;
+}
+.stat-godstones small {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #7f9285;
+}
+.stat-godstones span {
+  color: #b9c8be;
+  line-height: 1.45;
+}
+.stat-skipped {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.stat-skipped summary {
+  cursor: pointer;
+  color: #b9c8be;
+}
+.stat-skipped p {
+  margin: 6px 0;
+}
+.stat-skipped ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+}
+.stat-skipped li small {
+  margin-right: 6px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #7f9285;
+}
+
+/* All Daevanion boards together */
+.board-totals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 4px 16px;
+  font-size: 12px;
+}
+.board-totals li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #ffffff0a;
+  color: #cfe2d5;
+}
+.board-totals b {
+  color: var(--mint);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Skill levels from gear and Daevanion */
+.skill-boosts {
+  max-width: 640px;
+}
+
+/* Phones: each table row becomes a block, its shares labelled */
+@media (max-width: 640px) {
+  .gear-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stat-sources thead {
+    display: none;
+  }
+  .stat-sources,
+  .stat-sources tbody,
+  .stat-sources tr,
+  .stat-sources th,
+  .stat-sources td {
+    display: block;
+  }
+  .stat-sources tr:not(.stat-group) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid #ffffff0a;
+  }
+  .stat-sources tr:not(.stat-group) th,
+  .stat-sources tr:not(.stat-group) td {
+    padding: 0;
+    border: 0;
+  }
+  .stat-sources th[scope='row'] {
+    flex: 1 1 60%;
+    font-size: 12.5px;
+  }
+  .stat-sources .stat-total {
+    order: -1;
+    margin-left: auto;
+    font-size: 13px;
+  }
+  .stat-sources th[scope='row'] {
+    order: -2;
+  }
+  .stat-sources td {
+    font-size: 11px;
+  }
+  .stat-sources td.is-none {
+    display: none;
+  }
+  .stat-sources td:not(.stat-total)::before {
+    content: attr(data-label) ' ';
+    color: #7f9285;
+  }
+  .stat-sources td:not(.stat-total) {
+    flex: 0 0 auto;
+    order: 1;
+  }
+  /* The shares start on a line of their own, under the name and the total. */
+  .stat-sources tr:not(.stat-group)::after {
+    content: '';
+    order: 0;
+    flex-basis: 100%;
+    height: 0;
+  }
+}

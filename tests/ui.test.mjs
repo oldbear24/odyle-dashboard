@@ -1285,8 +1285,13 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     assert.equal(await items.count(), 4);
     assert.match(
       await items.first().locator('.armory-gear-text').innerText(),
-      /Main hand · Mace\s+Enraged Kromede Rod\s+item level 102 · 1 stone/i,
+      /Main hand · Mace\s+Enraged Kromede Rod\s+item level 102\s+\+15\/15\s+✦3\/5\s+◈1/i,
     );
+    // The gear summary above the doll, and where the stats come from below it: the rod's attack as
+    // its range plus the enchantment, and its manastone.
+    assert.match(await page.locator('.gear-summary').innerText(), /Average enchantment\s+\+15[\s\S]*Stones\s+1 \/ 2/i);
+    const attack = await page.locator('.stat-sources tr', { hasText: 'Attack' }).first().innerText();
+    assert.ok(/489–804/.test(attack) && /499–814/.test(attack), attack);
     assert.match(await items.last().innerText(), /Pet\s+Pagati/i);
     assert.match(await page.locator('.armory-stats').first().innerText(), /Might\s+45\s+Attack increase \+4.5%/);
     assert.match(await page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+s ago$/);

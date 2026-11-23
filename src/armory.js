@@ -15,6 +15,15 @@ import { icon } from './icons.js';
 import { link } from './routes.js';
 import { armoryRoute, profilePath, topPath, imageUrl, classBadge } from './armorylinks.js';
 import { upgradePlan, upgradeLeast, planParts, shareOf } from './upgrade.js';
+import {
+  tileMeters,
+  tileLabel,
+  tipFacts,
+  gearSummaryStrip,
+  statSourcesPanel,
+  boardTotalsPanel,
+  skillBoostPanel,
+} from './armorydetail.js';
 
 export const regionNames = () => ({
   GLOBAL_NA: t('North America East'),
@@ -302,6 +311,7 @@ function itemTip(images, g, loading) {
         d.maxEnchant ? [t('Enchantment'), `+${number(g.enchant)} / ${number(d.maxEnchant)}`] : null,
         d.maxExceed ? [t('Exceed'), `${number(g.exceed)} / ${number(d.maxExceed)}`] : null,
         d.equipLevel ? [t('Equip level'), number(d.equipLevel)] : null,
+        ...tipFacts(g),
         d.classes?.length ? [t('Class'), d.classes.join(', ')] : null,
         d.race && d.race !== 'All' ? [t('Faction'), d.race] : null,
       ].filter(Boolean)
@@ -355,16 +365,13 @@ function slotTile(images, slot, g, loading) {
     return `<li class="armory-gear-slot is-empty"><span class="armory-icon is-empty" aria-hidden="true"></span><span class="armory-gear-text"><small>${esc(label)}</small><strong>${t('Empty')}</strong></span></li>`;
   const d = g.detail,
     extra = d
-      ? [
-          d.itemLevel ? t('item level {n}', { n: number(d.itemLevel) }) : '',
-          d.stones?.length ? tn(d.stones.length, '{n} stone', '{n} stones') : '',
-        ]
-          .filter(Boolean)
-          .join(' · ')
+      ? d.itemLevel
+        ? t('item level {n}', { n: number(d.itemLevel) })
+        : ''
       : [gradeName(g.grade), g.exceed ? t('exceed {n}', { n: g.exceed }) : ''].filter(Boolean).join(' · ');
   // Weapons and arcana say what they are (Orb, Chalice); other slots' types repeat the slot.
   const kind = d?.category && /^(MainHand|SubHand|Arcana\d)$/.test(slot) ? ` · ${esc(d.category)}` : '';
-  return `<li class="armory-gear-slot ${gradeClass(g.grade)}" tabindex="0" aria-label="${esc(`${label}: ${g.enchant ? `+${g.enchant} ` : ''}${g.name}`)}">${itemIcon(images, g)}<span class="armory-gear-text"><small>${esc(label)}${kind}</small><strong>${esc(g.name)}</strong>${extra ? `<span>${esc(extra)}</span>` : ''}</span>${itemTip(images, g, loading)}</li>`;
+  return `<li class="armory-gear-slot ${gradeClass(g.grade)}" tabindex="0" aria-label="${esc([`${label}: ${g.enchant ? `+${g.enchant} ` : ''}${g.name}`, tileLabel(g)].filter(Boolean).join(', '))}">${itemIcon(images, g)}<span class="armory-gear-text"><small>${esc(label)}${kind}</small><strong>${esc(g.name)}</strong>${extra ? `<span>${esc(extra)}</span>` : ''}${tileMeters(g)}</span>${itemTip(images, g, loading)}</li>`;
 }
 
 function statsPanel(p) {
@@ -400,7 +407,7 @@ function gearTab(p, images, loading) {
   const arcana = arcanaSlots.some(s => bySlot.has(s))
     ? `<div class="armory-doll-row"><h3>${t('Arcana')}</h3><ul class="armory-gear is-row">${arcanaSlots.map(tile).join('')}</ul>${setList}</div>`
     : '';
-  return `<div class="armory-loadout"><section class="armory-panel armory-doll"><div class="armory-doll-columns">${column(t('Weapons and armour'), armourSlots)}${column(t('Accessories'), [...accessorySlots, ...others])}</div>${arcana}<div class="armory-doll-row"><h3>${t('Pet and wings')}</h3><ul class="armory-gear is-row">${companionSlots.map(tile).join('')}</ul></div></section>${statsPanel(p)}</div>`;
+  return `<div class="armory-loadout"><section class="armory-panel armory-doll">${gearSummaryStrip(p, slotLabel)}<div class="armory-doll-columns">${column(t('Weapons and armour'), armourSlots)}${column(t('Accessories'), [...accessorySlots, ...others])}</div>${arcana}<div class="armory-doll-row"><h3>${t('Pet and wings')}</h3><ul class="armory-gear is-row">${companionSlots.map(tile).join('')}</ul></div></section>${statsPanel(p)}</div>${statSourcesPanel(p, slotLabel)}`;
 }
 
 // What the gear's soul bindings and the open Daevanion nodes add to each skill ("Bolt +1").
@@ -433,7 +440,7 @@ function skillsTab(p, images) {
     .filter(([, list]) => list.length);
   const others = p.skills.filter(s => !skillGroups().some(([category]) => category === s.category));
   if (others.length) groups.push([t('Other skills'), others]);
-  return `<p class="armory-legend"><span class="is-equipped"></span>${t('On the skill bar')}<span class="is-locked"></span>${t('Not learned yet')}</p>${groups.map(([title, list]) => `<section class="armory-panel"><div class="section-heading"><h2>${esc(title)} <span>${number(list.filter(s => s.acquired).length)} / ${number(list.length)}</span></h2></div><ul class="armory-skills">${list.map(tile).join('')}</ul></section>`).join('')}`;
+  return `${skillBoostPanel(p)}<p class="armory-legend"><span class="is-equipped"></span>${t('On the skill bar')}<span class="is-locked"></span>${t('Not learned yet')}</p>${groups.map(([title, list]) => `<section class="armory-panel"><div class="section-heading"><h2>${esc(title)} <span>${number(list.filter(s => s.acquired).length)} / ${number(list.length)}</span></h2></div><ul class="armory-skills">${list.map(tile).join('')}</ul></section>`).join('')}`;
 }
 
 function daevanionTab(p, images, chosen, loading) {
@@ -455,7 +462,7 @@ function daevanionTab(p, images, chosen, loading) {
   const open = p.boards.reduce((n, b) => n + b.open, 0),
     total = p.boards.reduce((n, b) => n + b.total, 0);
   return `<section class="armory-panel"><div class="section-heading"><h2>${t('Daevanion')} <span>${number(open)} / ${number(total)}</span></h2></div><div class="armory-board-picks">${p.boards.map(pick).join('')}</div></section>
-<section class="armory-panel armory-board"><div class="armory-board-view"><div><h3>${esc(board.name)} <span>${number(board.open)} / ${number(board.total)} · ${percent(board.open, board.total)} %</span></h3>${grid}<p class="armory-legend"><span class="is-open"></span>${t('Open')}<span></span>${t('Closed')}</p></div><aside class="armory-board-effects"><h3>${t('Board effect')}</h3>${effects(t('Stat effect'), board.statEffects)}${effects(t('Skill effect'), board.skillEffects)}${board.statEffects?.length || board.skillEffects?.length ? '' : `<p class="armory-empty">${t('No effect yet.')}</p>`}</aside></div></section>`;
+<section class="armory-panel armory-board"><div class="armory-board-view"><div><h3>${esc(board.name)} <span>${number(board.open)} / ${number(board.total)} · ${percent(board.open, board.total)} %</span></h3>${grid}<p class="armory-legend"><span class="is-open"></span>${t('Open')}<span></span>${t('Closed')}</p></div><aside class="armory-board-effects"><h3>${t('Board effect')}</h3>${effects(t('Stat effect'), board.statEffects)}${effects(t('Skill effect'), board.skillEffects)}${board.statEffects?.length || board.skillEffects?.length ? '' : `<p class="armory-empty">${t('No effect yet.')}</p>`}</aside></div></section>${boardTotalsPanel(p)}`;
 }
 
 function titlesTab(p) {
