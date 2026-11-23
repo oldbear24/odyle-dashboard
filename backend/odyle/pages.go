@@ -18,8 +18,8 @@ import (
 
 // The dashboard's pages as search engines and link previews see them (backend/web): each
 // public page (the start, the armory and its profiles, the timers, What's new, privacy, the
-// demo) is named for what it shows; signed-in pages, searches and profiles the armory does
-// not keep yet are kept out of search engines. The texts are English, like the addresses;
+// demo) is named for what it shows; signed-in pages, searches, comparisons and profiles the
+// armory does not keep yet are kept out of search engines. The texts are English, like the addresses;
 // the dashboard shows the page in the reader's language once it runs. robots.txt and
 // sitemap.xml list the public pages, profiles included, under the public address.
 
@@ -43,6 +43,8 @@ func DescribePage(e *core.RequestEvent, route, base string) web.Page {
 		return topPage(e.App, parts, base)
 	case parts[0] == "armory" && len(parts) > 1 && parts[1] == "find":
 		return web.Page{Title: "Character search · " + armorySite, Private: true}
+	case parts[0] == "armory" && len(parts) == 8 && parts[4] == "compare":
+		return comparePage(e.App, parts)
 	case parts[0] == "armory" && (len(parts) == 4 || len(parts) == 5):
 		return profilePage(e.App, parts, base)
 	case route == "/changelog":
@@ -116,6 +118,45 @@ func profilePage(app core.App, parts []string, base string) web.Page {
 	}
 	page.Data = []any{crumbs(base, trail...)}
 	return page
+}
+
+// comparePage names two armory profiles side by side (/armory/<region>/<server id>/<character
+// id>/compare/<region>/<server id>/<character id>, src/compare.js) after both kept copies, or by
+// server while one is not kept yet. Comparisons stay out of search engines; one with a profile
+// that is no page (hidden, a server outside its region) is none either.
+func comparePage(app core.App, parts []string) web.Page {
+	var names [2]string
+	for i, at := range [][]string{parts[1:4], parts[5:8]} {
+		name, ok := comparedName(app, at[0], at[1], at[2])
+		if !ok {
+			return web.Page{Missing: true}
+		}
+		names[i] = name
+	}
+	return web.Page{Title: names[0] + " vs " + names[1] + " · " + armorySite, Private: true,
+		Description: fmt.Sprintf("%s and %s side by side: combat power, item level, gear slot by slot, stats, Daevanion boards and skills, as PLAYNC's official character pages list them.", names[0], names[1])}
+}
+
+// comparedName is a compared profile's name as the armory keeps it, "a character on <server>"
+// while it keeps none, and false for a profile that is no page.
+func comparedName(app core.App, region, server, characterId string) (string, bool) {
+	serverId, err := strconv.Atoi(server)
+	name := serversOf(app).inRegion(region, serverId)
+	if err != nil || name == "" || !armoryIds.MatchString(characterId) {
+		return "", false
+	}
+	record, err := keptProfile(app, serverId, characterId)
+	if err != nil || record == nil {
+		return "a character on " + name, true
+	}
+	if record.GetBool("hidden") {
+		return "", false
+	}
+	var p armoryProfile
+	if err := record.UnmarshalJSONField("profile", &p); err != nil || p.Name == "" {
+		return "a character on " + name, true
+	}
+	return p.Name, true
 }
 
 // topPage names the top players page (/armory/top[/<class>], ranks.go): the first class, or the

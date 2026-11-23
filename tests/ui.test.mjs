@@ -62,6 +62,27 @@ async function send(path, body, auth, method) {
   return { status: res.status, data: await res.json() };
 }
 const account = async name => (await request('/__test__/account', { name })).data;
+// Six weeks of a character's history before today, a day in three, as the armory's readings
+// would have kept them (backend/odyle/armoryhistory.go), rising to the stand-in's 107,458 CP.
+async function seedHistory(characterId) {
+  const operator = (await request('/__test__/superuser', {})).data;
+  for (let back = 42; back >= 3; back -= 3) {
+    const day = new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+    const { status } = await request(
+      '/api/collections/armory_history/records',
+      {
+        serverId: 2304,
+        characterId,
+        day: day + ' 00:00:00.000Z',
+        combatPower: 95000 + (42 - back) * 290 + (back % 2) * 400,
+        itemLevel: 1600 + Math.round((42 - back) * 1.6),
+        level: 45,
+      },
+      operator,
+    );
+    assert.equal(status, 200);
+  }
+}
 // The PLAYNC stand-in's characters: id, name as the search lists it, level, class id (36: Chanter).
 const armorer = ['QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>', 45, 36],
   armorerAlt = ['QXJtb3Jlcnhfa2QwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>x', 12, 9];
@@ -107,6 +128,63 @@ before(async () => {
               region: q.get('region'),
             }))
           : [],
+      });
+    // The second "Armorer" is a weaker Templar with a rod enchanted less and a helmet, to compare with.
+    if (at.pathname === '/api/character/info' && q.get('characterId') === armorerAlt[0])
+      return json({
+        profile: {
+          characterName: 'Armorerx',
+          characterLevel: 12,
+          className: 'Templar',
+          pcId: 9,
+          raceName: 'Asmodians',
+          genderName: 'Male',
+          serverName: 'Lumiel',
+          combatPower: 52000,
+        },
+        stat: {
+          statList: [
+            { type: 'STR', name: 'Might', value: 30 },
+            { type: 'ItemLevel', name: 'ItemLevel', value: 900 },
+          ],
+        },
+        title: { ownedCount: 40, totalCount: 304, titleList: [] },
+        daevanion: { boardList: [{ id: 71, name: 'Nezekan', openNodeCount: 5, totalNodeCount: 40, open: 1 }] },
+      });
+    if (at.pathname === '/api/character/equipment' && q.get('characterId') === armorerAlt[0])
+      return json({
+        equipment: {
+          equipmentList: [
+            {
+              id: 110830051,
+              slotPos: 1,
+              slotPosName: 'MainHand',
+              name: 'Enraged Kromede Rod',
+              grade: 'Unique',
+              enchantLevel: 7,
+              exceedLevel: 0,
+              icon: icon('Icon_Rod.png'),
+            },
+            {
+              id: 210130099,
+              slotPos: 3,
+              slotPosName: 'Helmet',
+              name: 'Vakron Helm',
+              grade: 'Legend',
+              enchantLevel: 3,
+              exceedLevel: 0,
+              icon: icon('Icon_Helm.png'),
+            },
+          ],
+          skinList: [],
+        },
+        petwing: { pet: { name: 'Pagati', level: 1 }, wing: { name: 'Forest Spirit Wings', grade: 'Unique' } },
+        skill: {
+          skillList: [
+            { name: 'Bolt', category: 'Active', skillLevel: 9, needLevel: 1, acquired: 1, equip: 1 },
+            { name: 'Shield Bash', category: 'Active', skillLevel: 5, needLevel: 1, acquired: 1, equip: 1 },
+          ],
+        },
       });
     if (at.pathname === '/api/character/info')
       return json({
@@ -1285,8 +1363,13 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     assert.equal(await items.count(), 4);
     assert.match(
       await items.first().locator('.armory-gear-text').innerText(),
-      /Main hand · Mace\s+Enraged Kromede Rod\s+item level 102 · 1 stone/i,
+      /Main hand · Mace\s+Enraged Kromede Rod\s+item level 102\s+\+15\/15\s+✦3\/5\s+◈1/i,
     );
+    // The gear summary above the doll, and where the stats come from below it: the rod's attack as
+    // its range plus the enchantment, and its manastone.
+    assert.match(await page.locator('.gear-summary').innerText(), /Average enchantment\s+\+15[\s\S]*Stones\s+1 \/ 2/i);
+    const attack = await page.locator('.stat-sources tr', { hasText: 'Attack' }).first().innerText();
+    assert.ok(/489–804/.test(attack) && /499–814/.test(attack), attack);
     assert.match(await items.last().innerText(), /Pet\s+Pagati/i);
     assert.match(await page.locator('.armory-stats').first().innerText(), /Might\s+45\s+Attack increase \+4.5%/);
     assert.match(await page.locator('.armory-status').innerText(), /^Data from PLAYNC \d+s ago$/);
@@ -1339,9 +1422,60 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
       assert.match(await page.locator('.armory-tab').innerText(), text);
       await shot(page, 'armory-' + tab.toLowerCase());
     }
+    // The Upgrade tab compares with the next step until the strongest are chosen, which this
+    // browser remembers.
+    const group = key => page.locator(`[data-armory-upgrade-group="${key}"]`);
+    assert.equal(await group('next').getAttribute('aria-pressed'), 'true');
+    await group('top').click();
+    await page.locator('[data-armory-upgrade-group="top"][aria-pressed="true"]').waitFor();
+    await page.reload();
+    await page.locator('[data-armory-upgrade-group="top"][aria-pressed="true"]').waitFor();
+    await group('next').click();
+    await page.locator('[data-armory-upgrade-group="next"][aria-pressed="true"]').waitFor();
     await page.locator('.armory-tabs a', { hasText: 'Gear & stats' }).click();
     await page.waitForURL(/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
     await items.first().waitFor();
+    // Progress (armoryhistory.js): the first reading starts the character's history.
+    assert.match(
+      await page.locator('.armory-growth').innerText(),
+      /Progress\s+(1 day kept since .+\s+)?The history of this character starts with this reading\./,
+    );
+    assert.equal(await page.locator('.armory-power-change').count(), 0);
+    await shot(page, 'armory-progress-new');
+    // With six weeks kept, the hero says the change and the panel shows tiles, two charts on one
+    // time axis and every day as a table.
+    await seedHistory(armorer[0]);
+    await page.reload();
+    await page.locator('.growth-chart').waitFor();
+    assert.match(await page.locator('.armory-power-change').innerText(), /^\+\d+\.\d % in 30 days$/);
+    assert.match(await page.locator('.armory-growth .section-heading').innerText(), /Progress\s+15 days kept since/);
+    assert.match(
+      await page.locator('.growth-tiles').innerText(),
+      /Combat power, last 30 days\s+\+[\d,]+ CP\s+\+\d+\.\d %\s+Item level since .+\s+\+\d+\s+1,600 → 1,671\s+Highest combat power\s+107,458/i,
+    );
+    assert.match(
+      await page.locator('.growth-chart').getAttribute('aria-label'),
+      /^Combat power from 95,000 on .+ to 107,458 on .+; item level from 1,600 to 1,671\./,
+    );
+    assert.equal(await page.locator('.growth-plot').count(), 2);
+    // The arrow keys read each day: Home is the first, the tooltip lists both measures.
+    const readout = page.locator('.growth-tip');
+    await page.locator('.growth-chart').focus();
+    assert.match(await readout.innerText(), /107,458\s+Combat power\s+1,671\s+Item level/);
+    await page.keyboard.press('Home');
+    assert.match(await readout.innerText(), /95,000\s+Combat power\s+1,600\s+Item level/);
+    await page.keyboard.press('ArrowRight');
+    assert.match(await readout.innerText(), /1,605\s+Item level/);
+    // The pointer picks the nearest day too.
+    const box = await page.locator('.is-power .growth-area').boundingBox();
+    await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2);
+    assert.match(await readout.innerText(), /107,458/);
+    await page.locator('.growth-table summary').click();
+    assert.equal(await page.locator('.growth-table tbody tr').count(), 15);
+    await page.locator('.growth-table summary').click();
+    await page.mouse.move(1, 1);
+    await page.locator('.growth-chart').blur();
+    await shot(page, 'armory-progress');
     // The top players by class: the first class, then the Chanters, where the looked-up character is.
     await page.locator('.armory-back').click();
     await page.locator('.heading-actions a', { hasText: 'Top players by class' }).click();
@@ -2275,6 +2409,7 @@ test('the main pages pass the axe accessibility check, signed out and in', async
     [null, profileAt + '/titles'],
     [null, profileAt + '/upgrade'],
     [null, profileAt + '/card'],
+    [null, profileAt + '/compare/eu/2304/' + armorer[0]],
     [null, '#/armory/top/Chanter'],
     [null, '#/changelog'],
     [null, '#/privacy'],
@@ -4193,6 +4328,88 @@ test('a tab whose account another tab replaced reloads as the new one, and clear
     await page.locator('[data-action="discord"]').waitFor({ timeout: 5000 });
     await toast(page).filter({ hasText: 'You signed out in another tab.' }).waitFor();
     assert.equal(await page.locator('.personal-characters').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('a profile compares with another character side by side, picked from a search, and the sides trade places', async () => {
+  const left = '/armory/eu/2304/' + armorer[0],
+    both = left + '/compare/eu/2304/' + armorerAlt[0];
+  const { page, errors, close } = await open(null, '#' + left);
+  try {
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor({ timeout: 15000 });
+    // Compare opens the picker: the strongest of the class (never the character itself) and a search.
+    await page.locator('[data-action="armory-compare"]').click();
+    const picker = page.locator('#modal[open] .compare-picker');
+    await picker.waitFor();
+    assert.equal(await page.locator('#modal-title').innerText(), 'Compare Armorer with…');
+    await picker.locator('.compare-picker-top .armory-spinner').waitFor({ state: 'detached' });
+    assert.match(await picker.locator('.compare-picker-top').innerText(), /Strongest Chanter characters/i);
+    await picker.locator('select[name="region"]').selectOption('GLOBAL_EU');
+    await picker.locator('select[name="server"]').selectOption('Lumiel');
+    await picker.locator('input[name="name"]').fill('Armorer');
+    await picker.locator('[type="submit"]').click();
+    const hit = picker.locator('.compare-picker-results [data-compare-pick]');
+    await hit.first().waitFor();
+    // The search lists the other Armorer, not the one compared.
+    assert.equal(await hit.count(), 1);
+    assert.equal(await hit.getAttribute('data-compare-pick'), 'eu/2304/' + armorerAlt[0]);
+    await shot(page, 'armory-compare-picker');
+    await hit.click();
+    // The compare page: its own path, the second character fetched from PLAYNC while it shows.
+    await page.waitForURL(url + both);
+    await page.getByRole('heading', { name: 'Compare characters' }).waitFor();
+    await page.locator('.compare-side h2', { hasText: 'Armorerx' }).waitFor({ timeout: 15000 });
+    await page.locator('.compare-summary').waitFor();
+    assert.equal(await page.title(), 'Armorer vs Armorerx · Odyle Armory');
+    assert.match(
+      await page.locator('.compare-summary tr', { hasText: 'Combat power' }).innerText(),
+      /107,458\s*\+55,458\s*52,000/,
+    );
+    assert.equal(
+      await page.locator('.compare-summary tr', { hasText: 'Combat power' }).locator('td.is-better').count(),
+      1,
+    );
+    // Gear slot by slot: the same rod, better enchanted on the left, with its card on focus.
+    const rod = page.locator('.compare-slot', { hasText: 'Main hand' });
+    assert.match(await rod.locator('.compare-slot-head').innerText(), /Same item/i);
+    assert.equal(
+      await rod.locator('.compare-item').first().locator('.compare-chip.is-better').first().innerText(),
+      '+15',
+    );
+    await rod.locator('.compare-item').first().focus();
+    assert.ok(await rod.locator('.compare-item').first().locator('.armory-tip').isVisible());
+    await page.keyboard.press('Escape');
+    assert.match(
+      await page.locator('.compare-slot', { hasText: 'Helmet' }).locator('.compare-slot-head').innerText(),
+      /Only Armorerx/i,
+    );
+    assert.match(await page.locator('.compare-skills').innerText(), /Bolt[\s\S]*Shield Bash/);
+    // Shared as a path, named after both and kept out of search engines.
+    const served = await (await fetch(page.url())).text();
+    assert.match(served, /<title>Armorer vs Armorerx · Odyle Armory<\/title>/);
+    assert.match(served, /<meta name="robots" content="noindex">/);
+    await shot(page, 'armory-compare');
+    // The sides trade places.
+    await page.locator('[data-action="compare-swap"]').click();
+    await page.waitForURL(url + '/armory/eu/2304/' + armorerAlt[0] + '/compare/eu/2304/' + armorer[0]);
+    await page.locator('.compare-side h2').first().filter({ hasText: 'Armorerx' }).waitFor();
+    assert.equal(await page.title(), 'Armorerx vs Armorer · Odyle Armory');
+    // Either side can be picked again; the other one stays.
+    await page.locator('[data-compare-change="1"]').click();
+    await picker.waitFor();
+    assert.equal(await page.locator('#modal-title').innerText(), 'Compare Armorerx with…');
+    await page.locator('#modal [data-action="close-dialog"]').click();
+    // Back to the profile: its own page again, not the comparison under its address.
+    await page.goBack();
+    await page.waitForURL(url + both);
+    await page.goBack();
+    await page.waitForURL(url + left);
+    await page.locator('main.armory-profile').waitFor();
+    assert.equal(await page.locator('.compare-side').count(), 0);
+    assert.doesNotMatch(await page.title(), / vs /);
     assert.deepEqual(errors, []);
   } finally {
     await close();

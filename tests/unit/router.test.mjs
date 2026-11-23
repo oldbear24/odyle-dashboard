@@ -24,6 +24,7 @@ test('pageOf names the pages the dashboard has and nothing else', () => {
     '/armory/top',
     profile,
     profile + '/card',
+    profile + '/compare' + profile.slice('/armory'.length),
     findPath('GLOBAL_EU', 'Lumiel', 'Ka'),
   ])
     assert.equal(pageOf(path), path, path);
@@ -55,6 +56,7 @@ test('pageTitle gives each page the title the backend gives it', async () => {
   // A profile names itself once it is fetched: until then it keeps the title shown.
   assert.equal(pageTitle(profile, 'Kept'), 'Kept');
   assert.equal(pageTitle(profile + '/card', 'Kept'), 'Kept');
+  assert.equal(pageTitle(profile + '/compare' + profile.slice('/armory'.length), 'Kept'), 'Kept');
   try {
     await useLanguage('cs');
     assert.notEqual(pageTitle('/privacy'), 'Privacy · Odyle');

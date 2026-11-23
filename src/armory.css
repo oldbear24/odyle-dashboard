@@ -1320,16 +1320,19 @@ i.armory-stone-art {
   white-space: nowrap;
 }
 .is-big > * > .upgrade-badge,
+.upgrade-step.is-big .upgrade-badge,
 .upgrade-row.is-big .upgrade-badge {
   color: #ffd0a0;
   background: #ee6c2a33;
 }
 .is-some > * > .upgrade-badge,
+.upgrade-step.is-some .upgrade-badge,
 .upgrade-row.is-some .upgrade-badge {
   color: #fbd47a;
   background: #fb980026;
 }
 .is-small > * > .upgrade-badge,
+.upgrade-step.is-small .upgrade-badge,
 .upgrade-row.is-small .upgrade-badge {
   color: #b9dcc5;
   background: #6fcf9721;
@@ -1338,53 +1341,6 @@ i.armory-stone-art {
   color: #8fd3aa;
   background: transparent;
   border: 1px solid #3c5546;
-}
-.upgrade-picks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 10px;
-}
-.upgrade-pick {
-  display: grid;
-  align-content: start;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid #ffffff10;
-  background: #121916;
-}
-.upgrade-pick.is-big {
-  border-color: #ee6c2a55;
-}
-.upgrade-pick.is-some {
-  border-color: #fb980040;
-}
-.upgrade-pick-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.upgrade-pick-head h3 {
-  flex: 1;
-  margin: 0;
-  font-size: 13px;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #e3ece6;
-}
-.upgrade-rank {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  font-size: 11px;
-  font-weight: 800;
-  color: #0d1210;
-  background: var(--mint);
 }
 .upgrade-compare {
   display: grid;
@@ -1437,11 +1393,6 @@ i.armory-stone-art {
 .upgrade-item.grade-mythic strong {
   color: #e35b5b;
 }
-.upgrade-same {
-  margin: 0;
-  font-size: 11.5px;
-  color: #8fd3aa;
-}
 .upgrade-reasons {
   list-style: none;
   margin: 0;
@@ -1456,24 +1407,6 @@ i.armory-stone-art {
   border-radius: 6px;
   background: #ffffff0a;
   color: #d3e0d7;
-}
-.upgrade-facts {
-  display: grid;
-  gap: 3px;
-  margin: 0;
-  font-size: 11px;
-}
-.upgrade-facts div {
-  display: grid;
-  grid-template-columns: 130px minmax(0, 1fr);
-  gap: 8px;
-}
-.upgrade-facts dt {
-  color: var(--muted);
-}
-.upgrade-facts dd {
-  margin: 0;
-  color: #cfe2d5;
 }
 .upgrade-rows {
   list-style: none;
@@ -1510,37 +1443,6 @@ i.armory-stone-art {
 .upgrade-row-gap small {
   font-size: 10.5px;
   color: #a9b8ae;
-}
-.upgrade-sets {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 6px;
-}
-.upgrade-sets li {
-  display: grid;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid #ffffff08;
-  background: #121916;
-  font-size: 12px;
-}
-.upgrade-sets span {
-  font-size: 11px;
-  color: var(--muted);
-}
-.upgrade-sets small {
-  font-size: 11px;
-  color: #7f9285;
-}
-.upgrade-sets .is-mine {
-  border-color: #3c5546;
-}
-.upgrade-sets .is-mine small {
-  color: #8fd3aa;
 }
 .upgrade-boards {
   list-style: none;
@@ -1679,12 +1581,11 @@ i.armory-stone-art {
     align-items: center;
     gap: 6px;
   }
-  .upgrade-facts div {
-    grid-template-columns: 1fr;
-  }
 }
 @media (max-width: 640px) {
-  .upgrade-picks {
+  .upgrade-steps,
+  .upgrade-arcana-places,
+  .upgrade-boost-columns {
     grid-template-columns: 1fr;
   }
   .upgrade-row {
@@ -1695,6 +1596,392 @@ i.armory-stone-art {
   }
   .upgrade-arrow {
     display: none;
+  }
+}
+/* The Upgrade tab's group: the next step or the strongest. */
+.upgrade-intro .section-heading {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.upgrade-groups {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  border: 1px solid #ffffff12;
+  background: #0e1412;
+}
+.upgrade-groups button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  color: #9fb0a5;
+  background: transparent;
+  cursor: pointer;
+}
+.upgrade-groups button:hover {
+  color: #e3ece6;
+}
+.upgrade-groups button.is-active {
+  color: #0d1210;
+  background: var(--mint);
+}
+.upgrade-groups button:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+.upgrade-fallback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #fbd47a;
+  background: #fb980014;
+}
+.upgrade-fallback svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.upgrade-excluded {
+  display: block;
+  margin-top: 8px;
+  font-size: 10.5px;
+  color: #7f9285;
+}
+/* The plan: its parts, each a list of steps. */
+.upgrade-part + .upgrade-part {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #ffffff0a;
+}
+.upgrade-part h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #cfe2d5;
+}
+.upgrade-part h3 span {
+  font-size: 10px;
+  border: 1px solid #3c4941;
+  color: #a2b1a7;
+  border-radius: 4px;
+  padding: 1px 6px;
+  letter-spacing: 0;
+}
+.upgrade-part > p {
+  margin: 2px 0 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.upgrade-part.is-quick h3 {
+  color: #8fd3aa;
+}
+.upgrade-part.is-gear h3 {
+  color: #ffd0a0;
+}
+.upgrade-part.is-goal h3 {
+  color: #b9b4f0;
+}
+.upgrade-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+.upgrade-step {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #ffffff10;
+  background: #121916;
+}
+.upgrade-step.is-big {
+  border-color: #ee6c2a55;
+}
+.upgrade-step.is-some {
+  border-color: #fb980040;
+}
+.upgrade-step.is-goal,
+.upgrade-step.is-board {
+  border-style: dashed;
+}
+.upgrade-step-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 8px;
+}
+.upgrade-step-head small {
+  grid-column: 1/-1;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #7f9285;
+}
+.upgrade-step-head h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e3ece6;
+}
+.upgrade-more {
+  margin-top: 8px;
+}
+.upgrade-more summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9fb0a5;
+}
+.upgrade-more summary:hover {
+  color: #e3ece6;
+}
+.upgrade-more[open] .upgrade-steps {
+  margin-top: 10px;
+}
+/* Enchantment or exceed levels: those the item has, those to go, its limit. */
+.upgrade-meters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.upgrade-meters li {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #a9b8ae;
+}
+.upgrade-meters b {
+  font-weight: 700;
+  color: #e3ece6;
+  white-space: nowrap;
+}
+.upgrade-meter {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: 8px;
+}
+.upgrade-meter i {
+  border-radius: 2px;
+  background: #ffffff10;
+}
+.upgrade-meter i.is-have {
+  background: #6fcf97;
+}
+.upgrade-meter i.is-to {
+  background: #fbd47a;
+}
+/* The arcana: the sets they wear against yours, the bonuses, each arcana and its skills. */
+.upgrade-arcana-sets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.upgrade-arcana h3 {
+  margin: 0 0 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #7f9285;
+}
+.upgrade-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.upgrade-chips li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #e3ece6;
+  background: #ffffff0d;
+}
+.upgrade-chips b {
+  color: #fbd47a;
+}
+.upgrade-chips small {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.upgrade-chips.is-mine li {
+  border: 1px solid #3c5546;
+  background: transparent;
+}
+.upgrade-set-bonuses {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.upgrade-set-bonuses li {
+  display: grid;
+  gap: 2px;
+  font-size: 11.5px;
+}
+.upgrade-set-bonuses span {
+  color: var(--muted);
+}
+.upgrade-set-bonuses .is-on {
+  color: #8fd3aa;
+}
+.upgrade-set-bonuses .is-next {
+  color: #fbd47a;
+}
+.upgrade-arcana > h3 {
+  margin-top: 14px;
+}
+.upgrade-arcana-places {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.upgrade-arcana-place {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #ffffff10;
+  background: #121916;
+}
+.upgrade-arcana-place.is-big {
+  border-color: #ee6c2a55;
+}
+.upgrade-arcana-place h4 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #9fb0a5;
+}
+.upgrade-compare.is-small {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.upgrade-compare.is-small .armory-icon {
+  --size: 32px;
+}
+.upgrade-swaps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.upgrade-swaps li {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff06;
+}
+.upgrade-swaps h5 {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #9fb0a5;
+}
+/* Skills raised by gear: theirs (the median, how many) against yours. */
+.upgrade-boosts > p {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.upgrade-boost-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.upgrade-boosts h3 {
+  margin: 0 0 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #7f9285;
+}
+.upgrade-boost-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.upgrade-boost-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 36px;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #ffffff06;
+}
+.upgrade-boost-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upgrade-boost-list small {
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.upgrade-boost-list b {
+  text-align: right;
+  color: #8fd3aa;
+}
+.upgrade-boost-list .is-behind b {
+  color: #fbd47a;
+}
+.upgrade-boost-list .is-missing b,
+.upgrade-boost-list .is-missing span {
+  color: #ee9a6a;
+}
+.upgrade-boost-list .is-extra {
+  opacity: 0.7;
+}
+.armory-legend .is-behind {
+  background: #fbd47a;
+  border-color: #fbd47a;
+}
+.armory-legend .is-missing {
+  background: #ee9a6a;
+  border-color: #ee9a6a;
+}
+@media (max-width: 640px) {
+  .upgrade-meters li {
+    grid-template-columns: 70px minmax(0, 1fr) auto;
   }
 }
 /* The top players by class (src/armory.js armoryTop). */

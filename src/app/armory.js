@@ -15,6 +15,7 @@ import { armoryPart, cardPart, cardImagePart } from './parts.js';
 import { shell } from './shell.js';
 import { go } from './router.js';
 import { failure } from './session.js';
+import { compareShow, compareShown, compareRender, leaveCompare } from './compare.js';
 
 let armoryServers = null,
   armoryAnswer = null,
@@ -23,8 +24,8 @@ let armoryServers = null,
   armoryTimer = 0,
   armoryTab = '',
   armoryBoard = '';
-const armoryKey = 'odyle.armory';
-function armoryChoice() {
+export const armoryKey = 'odyle.armory';
+export function armoryChoice() {
   try {
     return JSON.parse(storage.getItem(armoryKey)) || {};
   } catch {
@@ -33,7 +34,7 @@ function armoryChoice() {
 }
 // Bookmarked characters (#72), in this browser only: no account needed, nothing sent anywhere.
 const bookmarksKey = 'odyle.armory.bookmarks';
-const bookmarks = () => armoryPart.loaded()?.readBookmarks(storage.getItem(bookmarksKey)) || [];
+export const bookmarks = () => armoryPart.loaded()?.readBookmarks(storage.getItem(bookmarksKey)) || [];
 function keepBookmarks(list) {
   try {
     storage.setItem(bookmarksKey, JSON.stringify(list));
@@ -66,12 +67,17 @@ function toggleBookmark() {
       : t('Bookmarked {name}. The armory page lists it.', { name }),
   );
 }
-// The Upgrade tab's comparison of a profile with the strongest other characters of its class
-// (backend/odyle/upgrades.go), kept here by profile for five minutes; one that did not load is
-// asked for again after half a minute.
-const armoryUpgrades = new Map();
+// The Upgrade tab's comparison of a profile with other characters of its class
+// (backend/odyle/upgrades.go): its next step or the strongest, as last chosen in this browser.
+// Kept here by profile and group for five minutes; one that did not load is asked for again after
+// half a minute.
+const armoryUpgrades = new Map(),
+  upgradeGroupKey = 'odyle.armory.upgradeGroup';
+let armoryUpgradeGroup = storage.getItem(upgradeGroupKey) === 'top' ? 'top' : 'next';
 const upgradeKey = answer =>
-  answer?.profile?.class ? `${answer.profile.class}|${answer.serverId}|${answer.characterId}` : '';
+  answer?.profile?.class
+    ? `${answer.profile.class}|${answer.serverId}|${answer.characterId}|${armoryUpgradeGroup}`
+    : '';
 function armoryUpgrade() {
   const kept = armoryUpgrades.get(upgradeKey(armoryAnswer));
   return kept?.answer || (kept?.error ? { error: true } : null);
@@ -94,13 +100,34 @@ async function loadUpgrade(ticket) {
     armoryUpgrades.set(key, {
       at: Date.now(),
       answer: await pb.send(`/api/odyle/armory/upgrades/${encodeURIComponent(profile.class)}`, {
-        query: { serverId, characterId },
+        query: { serverId, characterId, group: armoryUpgradeGroup },
       }),
     });
   } catch {
     armoryUpgrades.set(key, { at: Date.now(), answer: kept?.answer, error: !kept?.answer });
   }
-  if (ticket === state.navigation && armoryTab === 'upgrade' && upgradeKey(armoryAnswer) === key) armoryRender();
+  if (ticket === state.navigation && armoryTab === 'upgrade' && upgradeKey(armoryAnswer) === key && !picking())
+    armoryRender();
+}
+// Whether the Compare picker (compare.js) is open over the page: drawing the page again would
+// close it, so the page is drawn once the picker closes instead (unless that leaves the page).
+let pickerWait = false;
+function picking() {
+  const dialog = document.querySelector('#modal[open]');
+  if (!dialog?.querySelector('.compare-picker')) return false;
+  if (!pickerWait) {
+    const ticket = state.navigation;
+    pickerWait = true;
+    dialog.addEventListener(
+      'close',
+      () => {
+        pickerWait = false;
+        if (ticket === state.navigation) armoryRender();
+      },
+      { once: true },
+    );
+  }
+  return true;
 }
 const armoryRefreshable = () =>
   armoryAnswer?.state === 'fresh' &&
@@ -108,6 +135,9 @@ const armoryRefreshable = () =>
   Date.now() + state.serverOffset - timestamp(armoryAnswer.fetchedAt) > 15 * 60000;
 // The armory's images (the game's icons, portraits) come from the backend (armoryimages.go).
 export const armoryImages = () => pb.buildURL('/api/odyle/armory-images/');
+// The regions with their servers, once fetched, and the profile on screen (app/compare.js).
+export const armoryRegions = () => armoryServers || [];
+export const armoryShown = () => armoryAnswer;
 // The top players page (armory.js armoryTop): the class it shows ('' for the first, null on the
 // armory's other pages) and the backend's answer for it (backend/odyle/ranks.go).
 let armoryTopClass = null,
@@ -115,6 +145,7 @@ let armoryTopClass = null,
 export function armoryRender(searching = false) {
   const armory = armoryPart.loaded();
   if (!armory) return;
+  if (compareShown()) return compareRender();
   if (armoryTopClass !== null) {
     shell(armory.armoryTop(armoryTopAnswer, armoryImages(), armoryTopClass), 'armory');
     return retitle(topTitle(armoryTopAnswer?.class || armoryTopClass));
@@ -129,10 +160,12 @@ export function armoryRender(searching = false) {
           board: armoryBoard,
           images: armoryImages(),
           upgrade: armoryUpgrade(),
+          upgradeGroup: armoryUpgradeGroup,
         })
       : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()),
     'armory',
   );
+  armory.bindProgress(document.querySelector('.growth-chart'));
   retitle(armoryTitle(armoryAnswer, armoryTab));
 }
 // While a profile waits for PLAYNC, it is asked for again when the backend says to.
@@ -145,8 +178,11 @@ function armoryPoll(path, ticket) {
       Math.max(2, armoryAnswer.retryAfter || 5) * 1000,
     );
 }
-// Leaving the armory stops asking for a profile that waits.
-export const stopArmory = () => clearTimeout(armoryTimer);
+// Leaving the armory stops asking for a profile or a comparison that waits.
+export const stopArmory = () => {
+  clearTimeout(armoryTimer);
+  leaveCompare();
+};
 // A profile's player card (card.js): a page of its own, without the sidebar. The look shown
 // is the saved one until its player tries another (cardLook), the picker on the tab last
 // opened (cardTab); the card turns until the page is left (animateCard).
@@ -268,25 +304,23 @@ async function profileShow(path, target, ticket, refresh, armory) {
     return toast(t(error.message));
   }
   if (ticket !== state.navigation) return;
-  // The same profile again (a lookup's progress): only the status line changes, so an item
-  // card open on hover or focus stays.
+  // The same profile again (a lookup's progress), on its own page (not back from a comparison,
+  // whose sides have status lines too): only the status line changes, so an item card open on
+  // hover or focus stays. While the Compare picker is open over it, the page waits to be drawn
+  // again, so the picker stays.
+  const status = document.querySelector('main.armory-profile .armory-status');
   const unchanged =
     same &&
     !refresh &&
-    document.querySelector('.armory-status') &&
+    status &&
     answer.partial === armoryAnswer.partial &&
     JSON.stringify(answer.profile) === JSON.stringify(armoryAnswer.profile);
   state.online = true;
   armoryAnswer = answer;
   if (answer.profile && !answer.partial && armory.isBookmarked(bookmarks(), answer))
     keepBookmarks(armory.refreshBookmark(bookmarks(), answer));
-  if (unchanged)
-    document.querySelector('.armory-status').outerHTML = armory.lookupStatus(
-      answer,
-      Date.now() + state.serverOffset,
-      armoryRefreshable(),
-    );
-  else armoryRender();
+  if (unchanged) status.outerHTML = armory.lookupStatus(answer, Date.now() + state.serverOffset, armoryRefreshable());
+  else if (!(status && picking())) armoryRender();
   loadUpgrade(ticket).catch(failure);
   return armoryPoll(path, ticket);
 }
@@ -329,6 +363,8 @@ export async function armoryPage(path, ticket, refresh = false) {
   if (ticket !== state.navigation) return;
   const target = armoryTarget(path);
   armoryTopClass = target.top ? target.top.class : null;
+  if (target.compare) return compareShow(target.compare, ticket);
+  leaveCompare();
   if (target.top) return topShow(target.top.class, ticket);
   if (target.card) return cardShow(path, target.card, ticket);
   if (target.profile) return profileShow(path, target.profile, ticket, refresh, armory);
@@ -378,6 +414,18 @@ onData({
   armoryUnmark: el => {
     keepBookmarks(armoryPart.loaded().removeBookmark(bookmarks(), el.dataset.armoryUnmark));
     return armoryRender();
+  },
+  // The Upgrade tab's group: the next step or the strongest.
+  armoryUpgradeGroup: el => {
+    armoryUpgradeGroup = el.dataset.armoryUpgradeGroup === 'top' ? 'top' : 'next';
+    try {
+      storage.setItem(upgradeGroupKey, armoryUpgradeGroup);
+    } catch {
+      /* storage full or blocked */
+    }
+    armoryRender();
+    loadUpgrade(state.navigation).catch(failure);
+    return document.querySelector(`[data-armory-upgrade-group="${armoryUpgradeGroup}"]`)?.focus();
   },
   armoryBoard: el => {
     armoryBoard = el.dataset.armoryBoard;

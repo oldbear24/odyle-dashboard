@@ -93,11 +93,16 @@ export function pageOf(route) {
   return match ? match[1] : '';
 }
 // The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
-// armory names its profiles once they are fetched, so they keep the title shown (shownTitle).
+// armory names its profiles and comparisons once they are fetched, so they keep the title shown
+// (shownTitle).
 export function pageTitle(path, shownTitle = '') {
   if (path.startsWith('/armory')) {
     const target = armoryTarget(path);
-    return target.top ? topTitle(target.top.class) : target.profile || target.card ? shownTitle : armoryTitle(null);
+    return target.top
+      ? topTitle(target.top.class)
+      : target.profile || target.card || target.compare
+        ? shownTitle
+        : armoryTitle(null);
   }
   return (
     {

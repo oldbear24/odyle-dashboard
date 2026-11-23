@@ -202,6 +202,12 @@ func armoryRoute(e *core.RequestEvent) error {
 		return err
 	}
 	out.set("card", card)
+	// How the character progressed (armoryhistory.go), the oldest day first.
+	history, err := armoryHistoryOf(e.App, serverId, characterId)
+	if err != nil {
+		return err
+	}
+	out.set("history", history)
 	return e.JSON(200, out.set("state", state.State).set("position", state.Position).set("wait", state.Wait).set("retryAfter", state.RetryAfter).set("lookupError", state.Error).set("progress", state.Progress))
 }
 

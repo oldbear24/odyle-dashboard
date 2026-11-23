@@ -24,10 +24,11 @@ const (
 )
 
 // slimmed is a copy of the profile with only what the Upgrade tab compares (its build): each
-// item's slot, name, grade, enchantment, exceed level, icon, type, item level, rolled stats (soul
-// binding) by name and value, stones by name, stone slots, set and where it comes from; the
-// Daevanion boards' open nodes; the skills on the skill bar. Some 8 KB for a character at the
-// level cap.
+// item's slot, name, grade, enchantment, exceed level, icon, type, item level and limits, main
+// stats and rolled stats (soul binding) by name and value, the skills it raises (an arcana's four,
+// a soul binding's), stones by name and grade, stone slots,
+// set (with its bonuses on the first of its pieces) and where it comes from; the Daevanion boards'
+// open nodes; the skills on the skill bar. Some 12 KB for a character at the level cap.
 func slimmed(p armoryProfile) armoryProfile {
 	var out armoryProfile
 	if raw, err := json.Marshal(p); err == nil {
@@ -43,6 +44,7 @@ func (p *armoryProfile) slim() {
 	for i := range p.Boards {
 		p.Boards[i].Icon, p.Boards[i].Nodes, p.Boards[i].StatEffects, p.Boards[i].SkillEffects = "", []armoryNode{}, []string{}, []string{}
 	}
+	sets := map[string]bool{} // the sets whose bonuses an earlier piece keeps
 	for i := range p.Gear {
 		d := p.Gear[i].Detail
 		if d == nil {
@@ -52,12 +54,24 @@ func (p *armoryProfile) slim() {
 		for _, line := range d.Sub {
 			rolled = append(rolled, armoryLine{Name: line.Name, Value: line.Value})
 		}
-		d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc, d.Race = []armoryLine{}, rolled, []armorySubSkill{}, []armoryStone{}, []string{}, []string{}, "", ""
+		main := make([]armoryLine, 0, len(d.Main))
+		for _, line := range d.Main {
+			main = append(main, armoryLine{Name: line.Name, Value: line.Value, Extra: line.Extra, Exceed: line.Exceed})
+		}
+		raised := make([]armorySubSkill, 0, len(d.SubSkills))
+		for _, s := range d.SubSkills {
+			raised = append(raised, armorySubSkill{Name: s.Name, Level: s.Level, Icon: s.Icon})
+		}
+		d.Main, d.Sub, d.SubSkills, d.GodStones, d.Skins, d.Classes, d.Desc, d.Race = main, rolled, raised, []armoryStone{}, []string{}, []string{}, "", ""
 		for j := range d.Stones {
-			d.Stones[j] = armoryStone{Name: d.Stones[j].Name}
+			d.Stones[j] = armoryStone{Name: d.Stones[j].Name, Grade: d.Stones[j].Grade}
 		}
 		if d.Set != nil {
-			d.Set = &armorySet{Name: d.Set.Name, Equipped: d.Set.Equipped, Items: []armorySetItem{}, Bonuses: []armorySetBonus{}}
+			bonuses := []armorySetBonus{}
+			if !sets[d.Set.Name] && d.Set.Bonuses != nil {
+				sets[d.Set.Name], bonuses = true, d.Set.Bonuses
+			}
+			d.Set = &armorySet{Name: d.Set.Name, Equipped: d.Set.Equipped, Items: []armorySetItem{}, Bonuses: bonuses}
 		}
 	}
 	skills := []armorySkill{}
@@ -70,8 +84,8 @@ func (p *armoryProfile) slim() {
 }
 
 // keepRank keeps a character's row as PLAYNC's pages list it now: its name, class, level, combat
-// power and item level, and with built (its gear was read too) its build and portrait. A hidden
-// row keeps its switch.
+// power and item level, and with built (its gear was read too) its build and portrait, and today's
+// point of its history. A hidden row keeps its switch and gets no history.
 func keepRank(app core.App, region string, serverId int, characterId string, p armoryProfile, built bool) error {
 	record, err := app.FindFirstRecordByFilter("armory_ranks", "serverId = {:server} && characterId = {:id}", dbx.Params{"server": serverId, "id": characterId})
 	if isNoRows(err) {
@@ -111,7 +125,19 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 		}
 		record.Set("builtAt", iso(builtAt))
 	}
-	return app.Save(record)
+	// A profile hidden while the lookup ran keeps the row hidden: saving the row read before would
+	// show it again.
+	if hidden, _ := app.CountRecords("armory_profiles", dbx.HashExp{"serverId": serverId, "characterId": characterId, "hidden": true}); hidden > 0 {
+		record.Set("hidden", true)
+	}
+	if err := app.Save(record); err != nil {
+		return err
+	}
+	// Today's point of its history (armoryhistory.go), unless it is hidden.
+	if record.GetBool("hidden") {
+		return nil
+	}
+	return keepHistory(app, serverId, characterId, p)
 }
 
 // forgetRank deletes a character's row (PLAYNC no longer lists it), unless it is hidden.
@@ -121,12 +147,16 @@ func forgetRank(app core.App, serverId int, characterId string) error {
 }
 
 // watchArmoryProfiles hides a character's row with its profile: a superuser hiding a profile
-// keeps the character out of the top players and the scout too.
+// keeps the character out of the top players and the scout too, and deletes its history.
 func watchArmoryProfiles(app core.App) {
 	hide := func(e *core.RecordEvent) error {
 		if e.Record.GetBool("hidden") {
+			serverId, characterId := e.Record.GetInt("serverId"), e.Record.GetString("characterId")
 			if _, err := e.App.DB().NewQuery("UPDATE armory_ranks SET hidden = TRUE WHERE serverId = {:server} AND characterId = {:id}").
-				Bind(dbx.Params{"server": e.Record.GetInt("serverId"), "id": e.Record.GetString("characterId")}).Execute(); err != nil {
+				Bind(dbx.Params{"server": serverId, "id": characterId}).Execute(); err != nil {
+				return err
+			}
+			if err := forgetHistory(e.App, serverId, characterId); err != nil {
 				return err
 			}
 		}

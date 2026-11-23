@@ -81,7 +81,7 @@ func TestUpgradesCompareTheStrongestOfAClass(t *testing.T) {
 	if earring := ref.Slots[1]; earring.Players != 2 || earring.Items != 3 || earring.Popular[0].Name != "Ear X" || earring.Popular[0].Count != 2 || earring.Popular[0].Enchant != 7 || earring.Grade != "Unique" {
 		t.Fatalf("earrings %+v", earring)
 	}
-	if len(ref.Sets) != 1 || ref.Sets[0] != (upgradeSet{Name: "Primal Vigor", Players: 1, Pieces: 2}) {
+	if len(ref.Sets) != 1 || ref.Sets[0].Name != "Primal Vigor" || ref.Sets[0].Players != 1 || ref.Sets[0].Pieces != 2 || ref.Sets[0].Bonuses == nil || len(ref.Sets[0].Bonuses) != 0 {
 		t.Fatalf("sets %+v", ref.Sets)
 	}
 	if len(ref.Boards) != 1 || ref.Boards[0] != (upgradeBoard{Name: "Nezekan", Players: 2, Open: 40, Total: 40}) {
@@ -173,10 +173,10 @@ func TestUpgradeComparisonsAreWorkedOutOnceAndMakeRoom(t *testing.T) {
 	cache := newUpgradeCache()
 	var builds atomic.Int32
 	t.Cleanup(func() { workOutUpgrades = buildUpgrades })
-	workOutUpgrades = func(app core.App, class string, serverId int, characterId string) (upgradeReference, map[string]bool, error) {
+	workOutUpgrades = func(app core.App, ask upgradeAsk) (upgradeReference, map[string]bool, error) {
 		builds.Add(1)
 		time.Sleep(50 * time.Millisecond) // the others ask meanwhile
-		return buildUpgrades(app, class, serverId, characterId)
+		return buildUpgrades(app, ask)
 	}
 	var wg sync.WaitGroup
 	refs := make([]upgradeReference, 20)
@@ -184,7 +184,7 @@ func TestUpgradeComparisonsAreWorkedOutOnceAndMakeRoom(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ref, err := cache.of(app, "Chanter", 0, "")
+			ref, err := cache.of(app, "Chanter", 0, "", false)
 			if err != nil {
 				t.Error(err)
 			}
@@ -205,7 +205,7 @@ func TestUpgradeComparisonsAreWorkedOutOnceAndMakeRoom(t *testing.T) {
 		cache.keep(fmt.Sprintf("Filler%d|", i), upgradeKept{ref: upgradeReference{Sample: 1}, at: time.Now()})
 	}
 	cache.keep("Empty|", upgradeKept{at: time.Now()})
-	if _, err := cache.of(app, "Chanter", 0, ""); err != nil { // read again: the newest
+	if _, err := cache.of(app, "Chanter", 0, "", false); err != nil { // read again: the newest
 		t.Fatal(err)
 	}
 	cache.keep("New1|", upgradeKept{ref: upgradeReference{Sample: 1}, at: time.Now()})

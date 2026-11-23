@@ -2,6 +2,41 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.1.0 · 2026-11-23
+
+### New
+- The armory's **Upgrade** tab now says what to do next, slot by slot. It sorts the advice into quick wins, new gear, enchanting, polish and goals.
+  - **New gear** names the next item a good share of stronger players moved on to (not only the endgame one), with the item level, grade and stats it adds and where it comes from.
+  - **Enchanting** goes only as far as the item can go and stops suggesting more enchanting on an item worth replacing. It shows about what each step adds, and exceed levels once an item is at its limit.
+  - **Quick wins and polish**: empty stone slots, weaker stones, missing soul binding stats, and skills most of them keep on their bar.
+- The Upgrade tab compares with **the next step** by default: the characters of your class a little stronger than you. **The strongest** are one click away, and the browser remembers the choice.
+- The Upgrade tab looks at the **arcana** together:
+  - the set combination stronger players run against yours;
+  - the bonus you are one piece away from;
+  - which arcana to swap for their set;
+  - the skills each arcana raises and at what level, against yours.
+- The Upgrade tab shows **the skills gear raises**: what stronger players' arcana and other gear add to each skill, against what yours adds.
+- **Compare two characters side by side.** **Compare** on a profile picks a bookmarked character, one of the strongest of the class or anyone you search for, and opens a page you can share. It shows:
+  - combat power, item level, Daevanion, titles and skills;
+  - the gear slot by slot (item level, enchantment, exceed, stones, soul binding and set);
+  - stats, Daevanion boards, skill bars and arcana sets.
+  
+  The better value of each pair is marked. Either side can be swapped for another character, and the two can trade places.
+- Armory profiles show **how a character progressed**:
+  - a Progress panel on Gear & stats charts combat power and item level over the last 180 days, with the change over the last 30 days, the item level gained, the highest combat power, and every day as a table;
+  - the combat power at the top of a profile shows how much it changed in the last 30 days.
+- A **Where stats come from** table on Gear & stats shows what the gear's properties, soul binding, stones, set bonuses, Daevanion and the titles worn add to each stat. Weapon attack is shown as a range. Effects that cannot be counted are listed separately.
+- A **gear summary** above the paper doll shows average enchantment, items at max, exceed, stones, soul binding, empty slots, and which set bonus is one piece away. Each item on the paper doll shows its enchantment, exceed level, stones and soul binding lines at a glance.
+- The Daevanion tab sums the stat effects of all boards. The Skills tab shows the skill levels gear and Daevanion add.
+
+### Changed
+- The Upgrade tab leaves out characters whose combat power their item level does not give. PLAYNC lists a few with far more combat power than their gear, and they no longer count as the strongest.
+- Items that come in two grades under one name (Noble Belt, say) are told apart, so the better grade shows as an upgrade.
+- For server operators:
+  - the scout also reads the gear of a few characters of each band of combat power below the top 500, for the next step: about 2,000 more PLAYNC pages a day once the top's gear is read;
+  - builds now keep main stats, the skills items raise, stone grades and set bonuses (some 12 KB a character at the level cap);
+  - a new collection `armory_history` keeps one point a day per character for 180 days (migration 1791763288).
+
 ## 1.0.0 · 2026-11-22
 
 ### Changed

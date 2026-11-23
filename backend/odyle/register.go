@@ -160,6 +160,7 @@ func Register(app core.App) {
 	watchCharacters(app)
 	watchMembership(app)
 	watchArmoryProfiles(app)
+	watchArmoryRanks(app)
 	watchRunPosts(app)
 	scheduleJobs(app)
 }

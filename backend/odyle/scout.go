@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"net/url"
 	"slices"
@@ -23,7 +24,8 @@ import (
 // pages, scoutStep apart, one per step:
 //
 //   - while no reader's lookup waits, it queues the scout's lookups of the strongest characters of
-//     a class's top rankLimit whose gear is unknown or scoutRebuild old, as many as its lanes
+//     a class's top rankLimit whose gear is unknown or scoutRebuild old (once none is, of characters
+//     below the top, a few of each band of combat power: pendingPeers), as many as its lanes
 //     (scoutLanes under Server controls) have free, each lane one every scoutBuildGap at most,
 //     passing over the characters whose gear is read already or whose lookup failed lately: the
 //     armory's queue runs them beside the readers' (armoryqueue.go), reading the info and equipment
@@ -98,6 +100,10 @@ type armoryScout struct {
 	pages map[string]int
 	level int64
 	built []time.Time
+	// How many characters below the top pendingPeers lists, as Server status last counted them
+	// (counted again after a minute: it reads every row of each class).
+	peers   int
+	peersAt time.Time
 }
 
 func newArmoryScout() *armoryScout {
@@ -450,13 +456,95 @@ func pendingBuilds(app core.App, old string) ([]topRow, error) {
 	return pending, nil
 }
 
-// nextBuilds are the strongest characters in their class's top whose gear is unknown or old, up
-// to scoutPicks, strongest first: the armory's queue takes the first it may (armoryWork.scout),
-// passing over those whose gear it reads already or whose lookup failed lately.
+// The characters below the top whose gear the scout reads for the Upgrade tab's next step
+// (upgrades.go): in bands of combat power peerBand wide, up to peerPerBand of each band read in
+// the last peerRebuild. A build below the top is read again after peerRebuild, before cleanRanks
+// forgets its row rankKeep after it was read.
+const (
+	peerBand    = 1.1
+	peerPerBand = 12
+	peerRebuild = 25 * 24 * time.Hour
+)
+
+// peerBandOf is the band of a combat power below the top: its logarithm in peerBand, rounded down.
+func peerBandOf(power int64) int {
+	return int(math.Floor(math.Log(float64(max(power, 1))) / math.Log(peerBand)))
+}
+
+// pendingPeers are the characters below their class's top whose gear the scout reads once no top
+// character's is due: of the highest level the armory knows of the class, in the bands of combat
+// power with fewer than peerPerBand builds read in the last peerRebuild, those whose gear is
+// unknown or older; the band with the fewest first, the strongest of a band first. The builds
+// readers' lookups keep count for their bands too.
+func pendingPeers(app core.App) ([]topRow, error) {
+	classes := []string{}
+	if err := app.DB().NewQuery(rankedClasses).Column(&classes); err != nil {
+		return nil, err
+	}
+	type peer struct {
+		row        topRow
+		band, have int
+	}
+	recent := ago(peerRebuild)
+	peers := []peer{}
+	for _, class := range classes {
+		rows := []struct {
+			topRow
+			Level int64 `db:"level"`
+		}{}
+		if err := app.DB().NewQuery("SELECT id, combatPower, builtAt, level FROM armory_ranks WHERE class = {:class} AND hidden = FALSE ORDER BY combatPower DESC, id").
+			Bind(dbx.Params{"class": class}).All(&rows); err != nil {
+			return nil, err
+		}
+		if len(rows) <= rankLimit {
+			continue
+		}
+		var levelCap int64
+		for _, r := range rows {
+			levelCap = max(levelCap, r.Level)
+		}
+		have, waiting := map[int]int{}, []peer{}
+		for _, r := range rows[rankLimit:] {
+			if r.Level != levelCap || r.CombatPower <= 0 {
+				continue
+			}
+			band := peerBandOf(r.CombatPower)
+			if r.BuiltAt != "" && r.BuiltAt >= recent {
+				have[band]++
+			} else {
+				waiting = append(waiting, peer{row: r.topRow, band: band})
+			}
+		}
+		for _, p := range waiting {
+			if have[p.band] < peerPerBand {
+				p.have = have[p.band]
+				peers = append(peers, p)
+			}
+		}
+	}
+	slices.SortStableFunc(peers, func(a, b peer) int { return cmp.Or(a.have-b.have, cmp.Compare(b.row.CombatPower, a.row.CombatPower)) })
+	out := make([]topRow, len(peers))
+	for i, p := range peers {
+		out[i] = p.row
+	}
+	return out, nil
+}
+
+// nextBuilds are the strongest characters in their class's top whose gear is unknown or old, then
+// those below the top it reads the gear of (pendingPeers), up to scoutPicks: the armory's queue
+// takes the first it may (armoryWork.scout), passing over those whose gear it reads already or
+// whose lookup failed lately.
 func nextBuilds(app core.App) ([]scoutHit, error) {
 	pending, err := pendingBuilds(app, ago(scoutRebuild))
 	if err != nil {
 		return nil, err
+	}
+	if len(pending) < scoutPicks {
+		peers, err := pendingPeers(app)
+		if err != nil {
+			return nil, err
+		}
+		pending = append(pending, peers...)
 	}
 	pending = pending[:min(len(pending), scoutPicks)]
 	rows := []struct {
@@ -499,7 +587,8 @@ type scoutPending struct {
 
 // scoutStatus is the scout's part of the Server status page: what it still reads of PLAYNC.
 // builds counts the top players whose gear it reads (neverBuilt of them never read, the others
-// scoutRebuild old) and buildQueue names the first scoutShown in the order it reads them; checks
+// scoutRebuild old) and buildQueue names the first scoutShown in the order it reads them; peers
+// counts the characters below the top whose gear it reads next (pendingPeers); checks
 // counts the characters its search pages and name searches found whose combat power it reads next
 // (in server memory, so a restart forgets them) and checkQueue names the first scoutShown, as far
 // as the armory knows them. own counts the characters Odyle's accounts play it checks next, names
@@ -557,7 +646,18 @@ func scoutStatus(app core.App) map[string]any {
 	for i, n := range waiting {
 		nameQueue[i] = map[string]any{"name": n.name, "server": n.server, "region": n.region}
 	}
-	return map[string]any{"builds": total, "neverBuilt": never, "buildQueue": builds, "checks": checks, "checkQueue": queue,
+	s.mu.Lock()
+	peers, counted := s.peers, time.Since(s.peersAt) < time.Minute
+	s.mu.Unlock()
+	if !counted {
+		if list, err := pendingPeers(app); err == nil {
+			peers = len(list)
+			s.mu.Lock()
+			s.peers, s.peersAt = peers, time.Now()
+			s.mu.Unlock()
+		}
+	}
+	return map[string]any{"builds": total, "neverBuilt": never, "buildQueue": builds, "peers": peers, "checks": checks, "checkQueue": queue,
 		"own": pendingOwn(app, level), "names": names, "nameQueue": nameQueue, "level": level, "buildEvery": every, "lastBuildAt": isoTime(builtAt)}
 }
 
