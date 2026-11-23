@@ -212,7 +212,9 @@ func TestUpgradesCountTheSkillsGearRaises(t *testing.T) {
 	raises := func(slot, name string, skills ...armorySubSkill) armoryGear {
 		return gearOf(slot, name, "Unique", 0, 80, func(d *armoryItem) { d.SubSkills = skills })
 	}
-	slam := func(level int64) armorySubSkill { return armorySubSkill{Name: "Overhead Slam", Level: level, Icon: "slam.png"} }
+	slam := func(level int64) armorySubSkill {
+		return armorySubSkill{Name: "Overhead Slam", Level: level, Icon: "slam.png"}
+	}
 	blow := func(level int64) armorySubSkill { return armorySubSkill{Name: "Rending Blow", Level: level} }
 	profiles := []armoryProfile{
 		{Gear: []armoryGear{raises("Arcana1", "Chalice", slam(4), blow(2)), raises("Arcana2", "Parchment", slam(1)), raises("Ring1", "Ring", slam(1)), raises("Ring2", "Ring", blow(1))}},

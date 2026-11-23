@@ -558,7 +558,7 @@ type upgradeTally struct {
 	skills   map[string]*skillTally
 	skillIds []string
 	// The skills raised by the characters' arcana and other gear, each character's levels summed.
-	arcana, gear                boostTally
+	arcana, gear               boostTally
 	arcanaPlayers, gearPlayers int
 }
 
