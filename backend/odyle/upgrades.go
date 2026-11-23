@@ -92,7 +92,14 @@ type upgradeReference struct {
 	Sets         []upgradeSet    `json:"sets"`
 	Boards       []upgradeBoard  `json:"boards"`
 	Skills       []upgradeSkill  `json:"skills"`
-	BuiltAt      string          `json:"builtAt"`
+	// The skills the characters' arcana and their other gear raise, summed per character: how many
+	// of them raise each and by how much (the median), of those whose arcana or gear raise any
+	// (ArcanaPlayers, GearPlayers; builds kept before 1.1.0 left them out).
+	ArcanaPlayers int            `json:"arcanaPlayers"`
+	ArcanaSkills  []upgradeBoost `json:"arcanaSkills"`
+	GearPlayers   int            `json:"gearPlayers"`
+	GearSkills    []upgradeBoost `json:"gearSkills"`
+	BuiltAt       string         `json:"builtAt"`
 }
 
 // A character of the comparison, strongest first, as the tab links its profile.
@@ -134,6 +141,11 @@ type upgradeGear struct {
 	Ladder     []upgradeItem `json:"ladder"`
 	StoneNames []upgradeName `json:"stoneNames"`
 	StoneGrade string        `json:"stoneGrade"` // the usual grade of the stones engraved, of those whose grade is known
+	// The skills the slot's items raise (an arcana's four, a soul binding's), most raised first
+	// (upgradeBoosts of them), of the items that raise any (BoostItems; builds kept before 1.1.0
+	// left them out).
+	BoostItems int            `json:"boostItems"`
+	Boosts     []upgradeBoost `json:"boosts"`
 	// The items whose rolled stats are known: those of builds kept before 0.64.0 are not.
 	RolledItems int             `json:"rolledItems"`
 	Rolled      []upgradeRolled `json:"rolled"`
@@ -179,6 +191,52 @@ type upgradeItem struct {
 	Main       []upgradeStat `json:"main"`
 	Sources    []string      `json:"sources"`
 }
+
+// A skill items raise (PLAYNC's subSkills): on how many items of a slot, or how many characters
+// raise it with their arcana or their other gear, and by how much (the median: a slot's items' own
+// levels, a character's levels summed).
+type upgradeBoost struct {
+	Name  string `json:"name"`
+	Icon  string `json:"icon"`
+	Count int    `json:"count"`
+	Level int64  `json:"level"`
+}
+
+// boostTally counts the skills raised, in the order they first came up.
+type boostTally struct {
+	icons  map[string]string
+	levels map[string][]int64
+	order  []string
+}
+
+func (b *boostTally) add(name, icon string, level int64) {
+	if b.levels == nil {
+		b.icons, b.levels = map[string]string{}, map[string][]int64{}
+	}
+	if b.levels[name] == nil {
+		b.order = append(b.order, name)
+	}
+	b.levels[name] = append(b.levels[name], level)
+	if b.icons[name] == "" {
+		b.icons[name] = icon
+	}
+}
+
+// top is the n skills raised most often, the higher median level first of a tie.
+func (b *boostTally) top(n int) []upgradeBoost {
+	out := make([]upgradeBoost, 0, len(b.order))
+	for _, name := range b.order {
+		out = append(out, upgradeBoost{Name: name, Icon: b.icons[name], Count: len(b.levels[name]), Level: median(b.levels[name])})
+	}
+	slices.SortStableFunc(out, func(a, b upgradeBoost) int { return cmp.Or(b.Count-a.Count, cmp.Compare(b.Level, a.Level)) })
+	return out[:min(n, len(out))]
+}
+
+// The skills listed: of a slot, and of the arcana or the other gear of the characters.
+const (
+	upgradeBoosts      = 8
+	upgradeBoostsTotal = 24
+)
 
 // A main stat of an item (its value and what its enchantment and exceed level add, summed): the
 // median on the items whose main stats are known (builds kept before 1.1.0 left them out).
@@ -310,6 +368,8 @@ type slotTally struct {
 	rolledItems                                    int
 	rolled                                         map[string]*rolledTally
 	rolledOrder                                    []string
+	boostItems                                     int
+	boosts                                         boostTally
 }
 
 type rolledTally struct {
@@ -341,11 +401,13 @@ func (s *slotTally) add(player int, g armoryGear) {
 	s.items++
 	s.grades.add(g.Grade)
 	s.enchants, s.exceeds = append(s.enchants, g.Enchant), append(s.exceeds, g.Exceed)
-	worn := s.worn[g.Name]
+	// An item by name and grade: some come in two grades under one name (Noble Belt, Legend and Unique).
+	key := g.Name + "|" + g.Grade
+	worn := s.worn[key]
 	if worn == nil {
 		worn = &itemTally{item: upgradeItem{Name: g.Name, Grade: g.Grade, Icon: g.Icon, Sources: []string{}}}
-		s.worn[g.Name] = worn
-		s.order = append(s.order, g.Name)
+		s.worn[key] = worn
+		s.order = append(s.order, key)
 	}
 	worn.item.Count++
 	worn.enchants, worn.exceeds = append(worn.enchants, g.Enchant), append(worn.exceeds, g.Exceed)
@@ -379,6 +441,14 @@ func (s *slotTally) add(player int, g armoryGear) {
 		}
 	}
 	s.addRolled(d.Sub)
+	if len(d.SubSkills) > 0 {
+		s.boostItems++
+	}
+	for _, raised := range d.SubSkills {
+		if raised.Name != "" {
+			s.boosts.add(raised.Name, raised.Icon, raised.Level)
+		}
+	}
 	sums, order := mainStats(d.Main)
 	for _, key := range order {
 		if worn.main == nil {
@@ -439,7 +509,8 @@ func (s *slotTally) addRolled(lines []armoryLine) {
 
 func (s *slotTally) gear(slot string) upgradeGear {
 	out := upgradeGear{Slot: slot, Players: len(s.players), Items: s.items, Grade: s.grades.usual(), ItemLevel: median(s.levels), Enchant: median(s.enchants), Exceed: median(s.exceeds),
-		Stones: median(s.engraved), StoneSlots: median(s.stoneRoom), Popular: []upgradeItem{}, Ladder: []upgradeItem{}, StoneNames: s.stones.top(5), StoneGrade: s.stoneGrades.usual()}
+		Stones: median(s.engraved), StoneSlots: median(s.stoneRoom), Popular: []upgradeItem{}, Ladder: []upgradeItem{}, StoneNames: s.stones.top(5), StoneGrade: s.stoneGrades.usual(),
+		BoostItems: s.boostItems, Boosts: s.boosts.top(upgradeBoosts)}
 	worn := []upgradeItem{}
 	for _, name := range s.order {
 		w := s.worn[name]
@@ -486,6 +557,9 @@ type upgradeTally struct {
 	boardIds []string
 	skills   map[string]*skillTally
 	skillIds []string
+	// The skills raised by the characters' arcana and other gear, each character's levels summed.
+	arcana, gear                boostTally
+	arcanaPlayers, gearPlayers int
 }
 
 type setTally struct {
@@ -541,6 +615,38 @@ func (t *upgradeTally) add(player upgradePlayer, p *armoryProfile) {
 	for name, pieces := range worn {
 		t.sets[name].players++
 		t.sets[name].pieces = append(t.sets[name].pieces, pieces)
+	}
+	// The skills its arcana and its other gear raise, each summed.
+	var arcana, gear boostTally
+	for _, g := range p.Gear {
+		if g.Detail == nil || upgradeSlot(g.Slot) == "" {
+			continue
+		}
+		into := &gear
+		if strings.HasPrefix(g.Slot, "Arcana") {
+			into = &arcana
+		}
+		for _, raised := range g.Detail.SubSkills {
+			if raised.Name != "" {
+				into.add(raised.Name, raised.Icon, raised.Level)
+			}
+		}
+	}
+	for _, sum := range []struct {
+		from    *boostTally
+		into    *boostTally
+		players *int
+	}{{&arcana, &t.arcana, &t.arcanaPlayers}, {&gear, &t.gear, &t.gearPlayers}} {
+		if len(sum.from.order) > 0 {
+			*sum.players++
+		}
+		for _, name := range sum.from.order {
+			var total int64
+			for _, level := range sum.from.levels[name] {
+				total += level
+			}
+			sum.into.add(name, sum.from.icons[name], total)
+		}
 	}
 	for _, b := range p.Boards {
 		if b.Name == "" {
@@ -605,6 +711,8 @@ func (t *upgradeTally) reference(class, group string, excluded int, at time.Time
 	}
 	slices.SortStableFunc(ref.Skills, func(a, b upgradeSkill) int { return cmp.Or(b.Players-a.Players, cmp.Compare(b.Level, a.Level)) })
 	ref.Skills = ref.Skills[:min(24, len(ref.Skills))]
+	ref.ArcanaPlayers, ref.ArcanaSkills = t.arcanaPlayers, t.arcana.top(upgradeBoostsTotal)
+	ref.GearPlayers, ref.GearSkills = t.gearPlayers, t.gear.top(upgradeBoostsTotal)
 	return ref
 }
 

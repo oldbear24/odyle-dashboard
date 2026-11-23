@@ -14,7 +14,7 @@ import { age, escape as esc, number } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
 import { armoryRoute, profilePath, topPath, imageUrl, classBadge } from './armorylinks.js';
-import { upgradePlan, upgradeLeast, usualRolls } from './upgrade.js';
+import { upgradePlan, upgradeLeast, planParts, shareOf } from './upgrade.js';
 
 export const regionNames = () => ({
   GLOBAL_NA: t('North America East'),
@@ -482,106 +482,302 @@ const stateNames = () => ({
   small: t('Small upgrade'),
   even: t('On par'),
 });
-// A rolled stat's value: a share ("13%") or a number.
-const rolledText = (value, inPercent) => number(value) + (inPercent ? '%' : '');
-// What a piece of gear is behind the strongest by, in words.
-function upgradeReasons(row, sample) {
-  const g = row.item,
-    d = g?.detail,
-    ref = row.ref,
-    gaps = row.gaps;
-  if (!g)
-    return [t('{n} of the {total} strongest wear something here', { n: number(ref.players), total: number(sample) })];
-  return [
-    gaps.itemLevel > 0
-      ? t('Item level {mine} → {theirs}', { mine: number(d.itemLevel), theirs: number(ref.itemLevel) })
-      : '',
-    gaps.grade > 0 ? t('Grade {mine} → {theirs}', { mine: gradeName(g.grade), theirs: gradeName(ref.grade) }) : '',
-    gaps.enchant > 0
-      ? t('Enchantment +{mine} → +{theirs}', { mine: number(g.enchant), theirs: number(ref.enchant) })
-      : '',
-    gaps.exceed > 0 ? t('Exceed {mine} → {theirs}', { mine: number(g.exceed), theirs: number(ref.exceed) }) : '',
-    gaps.stones > 0 ? tn(gaps.stones, '{n} empty stone slot', '{n} empty stone slots') : '',
-    ...(gaps.rolled || []).map(r =>
-      r.mine === null
-        ? t('Rolled {stat}: none → {theirs}', { stat: r.name, theirs: rolledText(r.theirs, r.percent) })
-        : t('Rolled {stat} {mine} → {theirs}', {
-            stat: r.name,
-            mine: rolledText(r.mine, r.percent),
-            theirs: rolledText(r.theirs, r.percent),
-          }),
-    ),
-  ].filter(Boolean);
+// A value: a share ("13%", to a tenth) or a number (whole).
+const rolledText = (value, inPercent) =>
+  inPercent ? number(Math.round(value * 10) / 10) + '%' : number(Math.round(value));
+// A stat with what it gains ("Attack +120").
+const gainText = s => `${s.name} +${rolledText(s.value, s.percent)}`;
+const shareText = share => t('{p} % of them', { p: Math.round(share * 100) });
+// A place of the gear as the plan names it: the slot, with how many places a step covers.
+function stepSlot(step) {
+  if (step.kind === 'skill' || step.kind === 'board') return '';
+  const label = slotLabel(step.slot);
+  return step.entries.length > 1 ? `${label} · ${number(step.entries.length)}×` : label;
 }
-// The item the strongest wear most in a slot: how many of them, how far they enchant it, where it comes from.
-function popularItem(images, item, total) {
-  const facts = [
-    t('{p} % of the strongest', { p: percent(item.count, total) }),
+// An item as the plan shows it: its icon in its grade's frame, its name and a line of facts.
+function planItem(images, item, facts) {
+  if (!item)
+    return `<div class="upgrade-item is-empty"><span class="armory-icon is-empty" aria-hidden="true"></span><span><strong>${t('Empty')}</strong></span></div>`;
+  return `<div class="upgrade-item ${gradeClass(item.grade)}">${itemIcon(images, item)}<span><strong>${item.enchant ? `+${number(item.enchant)} ` : ''}${esc(item.name)}</strong>${facts.length ? `<small>${esc(facts.filter(Boolean).join(' · '))}</small>` : ''}</span></div>`;
+}
+// The character's own item: its grade and item level.
+const yourItem = (images, g) =>
+  planItem(images, g, g ? [gradeName(g.grade), g.detail?.itemLevel ? t('item level {n}', { n: number(g.detail.itemLevel) }) : ''] : []);
+// An item the group wears: how many of them, how far they enchant it, its item level.
+const theirItem = (images, item, share) =>
+  planItem(images, { ...item, enchant: 0, exceed: 0 }, [
+    share ? shareText(share) : '',
     item.enchant ? t('usually +{n}', { n: number(item.enchant) }) : '',
     item.itemLevel ? t('item level {n}', { n: number(item.itemLevel) }) : '',
-  ].filter(Boolean);
-  return `<div class="upgrade-item ${gradeClass(item.grade)}">${itemIcon(images, { ...item, enchant: 0, exceed: 0 })}<span><strong>${esc(item.name)}</strong><small>${esc(facts.join(' · '))}</small></span></div>`;
+  ]);
+// Enchantment or exceed levels as a meter: those the item has, those to go, and the item's limit.
+function levelMeter(from, to, max, label) {
+  const top = Math.max(max, to, 1);
+  const cells = Array.from({ length: top }, (_, i) =>
+    i < from ? '<i class="is-have"></i>' : i < to ? '<i class="is-to"></i>' : '<i></i>',
+  ).join('');
+  return `<span class="upgrade-meter" role="img" aria-label="${esc(label)}">${cells}</span>`;
 }
-function yourItem(images, g) {
-  if (!g)
-    return `<div class="upgrade-item is-empty"><span class="armory-icon is-empty" aria-hidden="true"></span><span><strong>${t('Empty')}</strong></span></div>`;
-  const facts = [
-    gradeName(g.grade),
-    g.detail?.itemLevel ? t('item level {n}', { n: number(g.detail.itemLevel) }) : '',
-  ].filter(Boolean);
-  return `<div class="upgrade-item ${gradeClass(g.grade)}">${itemIcon(images, g)}<span><strong>${g.enchant ? `+${number(g.enchant)} ` : ''}${esc(g.name)}</strong><small>${esc(facts.join(' · '))}</small></span></div>`;
+
+// What a step says to do, in a few words.
+function stepTitle(step) {
+  const a = step.entries[0].action;
+  switch (step.kind) {
+    case 'fill':
+      return t('Fill it: {item}', { item: a.target.name });
+    case 'replace':
+      return t('Replace with {item}', { item: a.target.name });
+    case 'enchant':
+      return step.entries.length > 1
+        ? tn(step.entries.length, 'Enchant {n} item further', 'Enchant {n} items further')
+        : t('Enchant +{from} → +{to}', { from: number(a.from), to: number(a.to) });
+    case 'exceed':
+      return step.entries.length > 1
+        ? tn(step.entries.length, 'Exceed {n} item', 'Exceed {n} items')
+        : t('Exceed {from} → {to}', { from: number(a.from), to: number(a.to) });
+    case 'stones': {
+      const n = step.entries.reduce((sum, e) => sum + e.action.empty, 0);
+      return tn(n, 'Engrave {n} empty stone slot', 'Engrave {n} empty stone slots');
+    }
+    case 'stoneGrade': {
+      const n = step.entries.reduce((sum, e) => sum + e.action.count, 0);
+      return tn(n, 'Swap {n} stone for {grade}', 'Swap {n} stones for {grade}', { grade: gradeName(a.grade) });
+    }
+    case 'reroll':
+      return t('Reroll the soul binding');
+    case 'goal':
+      return t('Later: {item}', { item: a.target.name });
+    case 'skill':
+      return t('Put {skill} on your skill bar', { skill: a.skill.name });
+    case 'board':
+      return t('Open more of {board}', { board: a.board.name });
+  }
+  return '';
 }
-function upgradePick(images, row, index, sample) {
-  const ref = row.ref,
-    best = row.best,
-    reasons = upgradeReasons(row, sample);
-  const others = ref.popular
-    .slice(1)
-    .map(i => esc(i.name))
-    .join(', ');
-  const rolls = usualRolls(ref)
-    .map(r => esc(`${r.name} ${rolledText(r.value, r.percent)}`))
-    .join(', ');
-  const target =
-    best && !row.wearsBest
-      ? popularItem(images, best, ref.items)
-      : `<p class="upgrade-same">${row.wearsBest ? t('The strongest wear this item most too; take it further.') : t('No item stands out here.')}</p>`;
+// What a step is about, shown under its title: the item worn and the one to get, a meter, facts.
+function stepBody(images, step) {
+  const first = step.entries[0],
+    a = first.action,
+    facts = [];
+  const where = e => (step.entries.length > 1 ? `${slotLabel(e.row.item?.slot || e.row.slot)}: ` : '');
+  let visual = '';
+  switch (step.kind) {
+    case 'fill':
+    case 'replace':
+    case 'goal': {
+      visual = `<div class="upgrade-compare"><div><small>${t('Yours')}</small>${yourItem(images, first.row.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div><small>${step.kind === 'goal' ? t('The best of them wear') : t('They wear')}</small>${theirItem(images, a.target, a.share)}</div></div>`;
+      if (a.itemLevel?.from && a.itemLevel.to > a.itemLevel.from)
+        facts.push(
+          t('Item level {mine} → {theirs} ({gain})', {
+            mine: number(a.itemLevel.from),
+            theirs: number(a.itemLevel.to),
+            gain: signed(a.itemLevel.to - a.itemLevel.from),
+          }),
+        );
+      if (a.grade > 0)
+        facts.push(t('Grade {mine} → {theirs}', { mine: gradeName(first.row.item.grade), theirs: gradeName(a.target.grade) }));
+      if (a.stats?.length) facts.push(t('As they have it: {stats}', { stats: a.stats.map(gainText).join(', ') }));
+      if (step.kind !== 'goal' && a.target.maxEnchant && a.target.enchant)
+        facts.push(t('They enchant it to +{n} of +{max}', { n: number(a.target.enchant), max: number(a.target.maxEnchant) }));
+      if (a.target.sources?.length) facts.push(`${t('How to obtain')}: ${a.target.sources.join(', ')}`);
+      break;
+    }
+    case 'enchant':
+    case 'exceed': {
+      const label = e =>
+        step.kind === 'enchant'
+          ? t('Enchantment +{from} → +{to} of +{max}', {
+              from: number(e.action.from),
+              to: number(e.action.to),
+              max: number(e.action.max || e.action.to),
+            })
+          : t('Exceed {from} → {to} of {max}', {
+              from: number(e.action.from),
+              to: number(e.action.to),
+              max: number(e.action.max || e.action.to),
+            });
+      visual = `<ul class="upgrade-meters">${step.entries
+        .map(
+          e =>
+            `<li><span>${esc(slotLabel(e.row.item.slot))}</span>${levelMeter(e.action.from, e.action.to, e.action.max, label(e))}<b>${step.kind === 'enchant' ? `+${number(e.action.from)} → +${number(e.action.to)}` : `${number(e.action.from)} → ${number(e.action.to)}`}</b></li>`,
+        )
+        .join('')}</ul>`;
+      if (step.kind === 'enchant' && step.entries.length === 1 && a.stats?.length)
+        facts.push(t('About {stats}', { stats: a.stats.map(gainText).join(', ') }));
+      if (step.kind === 'exceed' && a.after) facts.push(t('Once it is at its enchantment limit'));
+      break;
+    }
+    case 'stones':
+      if (step.entries.length > 1)
+        facts.push(...step.entries.map(e => `${where(e)}${tn(e.action.empty, '{n} empty', '{n} empty')}`));
+      if (a.names?.length) facts.push(t('They engrave: {stones}', { stones: a.names.join(', ') }));
+      break;
+    case 'stoneGrade':
+      facts.push(t('Most of their stones here are {grade}', { grade: gradeName(a.grade) }));
+      break;
+    case 'reroll':
+      for (const e of step.entries)
+        for (const r of e.action.stats)
+          facts.push(
+            `${where(e)}${
+              r.mine === null
+                ? t('{stat}: none → {theirs} ({share})', {
+                    stat: r.name,
+                    theirs: rolledText(r.theirs, r.percent),
+                    share: shareText(r.share),
+                  })
+                : t('{stat}: {mine} → {theirs} ({share})', {
+                    stat: r.name,
+                    mine: rolledText(r.mine, r.percent),
+                    theirs: rolledText(r.theirs, r.percent),
+                    share: shareText(r.share),
+                  })
+            }`,
+          );
+      break;
+    case 'skill':
+      facts.push(
+        t('{share} keep it on their bar, level {level}; yours is level {mine}', {
+          share: shareText(a.share),
+          level: number(a.skill.level),
+          mine: number(a.skill.mine),
+        }),
+      );
+      break;
+    case 'board':
+      visual = `<span class="armory-track upgrade-track" role="img" aria-label="${esc(t('{mine} of {total} nodes · they open {theirs}', { mine: number(a.board.mine), total: number(a.board.total), theirs: number(a.board.open) }))}"><i style="width:${percent(a.board.mine, a.board.total)}%"></i><b style="left:${percent(a.board.open, a.board.total)}%"></b></span>`;
+      facts.push(
+        t('{mine} of {total} nodes · they open {theirs}', {
+          mine: number(a.board.mine),
+          total: number(a.board.total),
+          theirs: number(a.board.open),
+        }),
+      );
+      break;
+  }
+  return `${visual}${facts.length ? `<ul class="upgrade-reasons">${facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}`;
+}
+function planStep(images, step) {
+  const slot = stepSlot(step);
+  return `<li class="upgrade-step is-${step.state} is-${step.kind}"><div class="upgrade-step-head">${slot ? `<small>${esc(slot)}</small>` : ''}<h4>${esc(stepTitle(step))}</h4>${step.part === 'goal' ? '' : `<span class="upgrade-badge">${esc(stateNames()[step.state])}</span>`}</div>${stepBody(images, step)}</li>`;
+}
+const partNames = () => ({
+  quick: [t('Quick wins'), t('Cheap steps you can take now.')],
+  gear: [t('New gear'), t('Items a good share of them moved on to.')],
+  enchant: [t('Enchanting'), t('Items worth keeping, taken as far as they take theirs.')],
+  polish: [t('Polish'), t('Stones and soul binding, once the rest is done.')],
+  goal: [t('Goals'), t('The best items a few of them wear, and the Daevanion boards.')],
+});
+// The plan: each part with its first steps, the rest behind a summary.
+function upgradePlanList(images, plan) {
+  const shown = 4,
+    names = partNames();
+  const parts = planParts
+    .filter(part => plan.steps[part].length)
+    .map(part => {
+      const steps = plan.steps[part],
+        [title, about] = names[part];
+      const more = steps.length > shown
+        ? `<details class="upgrade-more"><summary>${esc(tn(steps.length - shown, '{n} more', '{n} more'))}</summary><ol class="upgrade-steps">${steps.slice(shown).map(s => planStep(images, s)).join('')}</ol></details>`
+        : '';
+      return `<div class="upgrade-part is-${part}"><h3>${esc(title)} <span>${number(steps.length)}</span></h3><p>${esc(about)}</p><ol class="upgrade-steps">${steps.slice(0, shown).map(s => planStep(images, s)).join('')}</ol>${more}</div>`;
+    });
+  return parts.length ? parts.join('') : '';
+}
+
+// The arcana together: the sets most of them wear pieces of against the character's, each set's
+// bonuses on and the next one, the arcana to swap for another set, and each arcana with the skills
+// it raises against theirs.
+function arcanaSection(images, plan) {
+  const arcana = plan.arcana;
+  if (!arcana) return '';
+  const chip = (pieces, name, extra = '') =>
+    `<li><b>${number(pieces)}×</b> ${esc(name)}${extra ? ` <small>${esc(extra)}</small>` : ''}</li>`;
+  const usual = arcana.usual.length
+    ? `<div><h3>${t('They wear')}</h3><ul class="upgrade-chips">${arcana.usual.map(s => chip(s.pieces, s.name, shareText(s.players / plan.sample))).join('')}</ul></div>`
+    : '';
+  const mineSets = arcana.sets.filter(s => s.mine);
+  const yours = `<div><h3>${t('Yours')}</h3>${mineSets.length ? `<ul class="upgrade-chips is-mine">${mineSets.map(s => chip(s.mine, s.name)).join('')}</ul>` : `<p class="armory-empty">${t('No set')}</p>`}</div>`;
+  const bonuses = mineSets
+    .map(
+      s =>
+        `<li><strong>${esc(s.name)}</strong>${s.on.map(b => `<span class="is-on">${esc(t('{n} pieces', { n: b.count }))}: ${b.effects.map(esc).join(', ')}</span>`).join('')}${s.next ? `<span class="is-next">${esc(tn(s.next.count - s.mine, 'One more piece', '{n} more pieces'))} (${esc(t('{n} pieces', { n: s.next.count }))}): ${s.next.effects.map(esc).join(', ')}</span>` : ''}</li>`,
+    )
+    .join('');
+  const swaps = arcana.swaps.length
+    ? `<h3>${t('Swap for their sets')}</h3><ul class="upgrade-reasons">${arcana.swaps.map(s => `<li>${esc(t('{slot}: {mine} ({mineSet}) → {theirs} ({theirSet})', { slot: slotLabel(s.slot), mine: s.from.name, mineSet: s.from.detail.set.name, theirs: s.to.name, theirSet: s.to.set }))}</li>`).join('')}</ul>`
+    : '';
+  const boost = b =>
+    `<li class="${b.players ? (b.mine >= b.level ? 'is-even' : b.mine ? 'is-behind' : 'is-missing') : 'is-extra'}"><span>${esc(b.name)}</span><small>${b.players ? esc(t('+{level} · {share}', { level: number(b.level), share: shareText(b.share) })) : esc(t('only yours'))}</small><b>${b.mine ? `+${number(b.mine)}` : '–'}</b></li>`;
+  const places = arcana.places
+    .map(
+      r =>
+        `<li class="upgrade-arcana-place is-${r.state}"><h4>${esc(slotLabel(r.item?.slot || r.slot))}</h4><div class="upgrade-compare is-small"><div>${yourItem(images, r.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div>${r.common ? theirItem(images, r.common, shareOf(r.common, r.ref)) : ''}</div></div>${r.boosts.length ? `<ul class="upgrade-boost-list" aria-label="${esc(t('Skills it raises'))}">${r.boosts.slice(0, 6).map(boost).join('')}</ul>` : ''}</li>`,
+    )
+    .join('');
+  return `<section class="armory-panel upgrade-arcana"><div class="section-heading"><h2>${t('Arcana')}</h2></div><div class="upgrade-arcana-sets">${usual}${yours}</div>${bonuses ? `<ul class="upgrade-set-bonuses">${bonuses}</ul>` : ''}${swaps}<ul class="upgrade-arcana-places">${places}</ul></section>`;
+}
+
+// The skills the group's arcana and other gear raise against the character's.
+function boostSection(plan) {
+  const { arcana, gear } = plan.boosts;
+  if (!arcana.length && !gear.length) return '';
+  const row = b =>
+    `<li class="${b.players ? (b.mine >= b.level ? 'is-even' : b.mine ? 'is-behind' : 'is-missing') : 'is-extra'}"><span>${esc(b.name)}</span><small>${b.players ? esc(t('+{level} · {share}', { level: number(b.level), share: shareText(b.share) })) : esc(t('only yours'))}</small><b>${b.mine ? `+${number(b.mine)}` : '–'}</b></li>`;
+  const column = (title, list) =>
+    list.length
+      ? `<div><h3>${esc(title)}</h3><ul class="upgrade-boost-list">${list.slice(0, 16).map(row).join('')}</ul></div>`
+      : '';
+  return `<section class="armory-panel upgrade-boosts"><div class="section-heading"><h2>${t('Skills raised by gear')}</h2></div><p>${t('What their arcana and other gear add to their skills (the median of each one’s sum), and what yours add.')}</p><div class="upgrade-boost-columns">${column(t('From arcana'), arcana)}${column(t('From other gear'), gear)}</div><p class="armory-legend"><span class="is-behind"></span>${t('Below theirs')}<span class="is-missing"></span>${t('Missing')}</p></section>`;
+}
+
+// One place in the table of every slot: the item worn, the next step there and what to do.
+function upgradeRow(images, row) {
+  const first = row.actions[0],
+    target = row.next || (row.item ? null : row.common);
+  const todo = first
+    ? stepTitle({ kind: first.kind, entries: [{ row, action: first }] })
+    : row.item
+      ? t('On par with them')
+      : t('Few of them wear something here');
   return (
-    `<li class="upgrade-pick is-${row.state}"><div class="upgrade-pick-head"><span class="upgrade-rank" aria-hidden="true">${index + 1}</span><h3>${esc(slotLabel(row.slot))}</h3><span class="upgrade-badge">${esc(stateNames()[row.state])}</span></div>` +
-    `<div class="upgrade-compare"><div><small>${t('Yours')}</small>${yourItem(images, row.item)}</div><span class="upgrade-arrow" aria-hidden="true">→</span><div><small>${t('The strongest wear')}</small>${target}</div></div>` +
-    `<ul class="upgrade-reasons">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` +
-    `<dl class="upgrade-facts">${best?.sources?.length ? `<div><dt>${t('How to obtain')}</dt><dd>${best.sources.map(esc).join(', ')}</dd></div>` : ''}${rolls ? `<div><dt>${t('Stats they roll')}</dt><dd>${rolls}</dd></div>` : ''}${ref.stoneNames?.length ? `<div><dt>${t('Stones they engrave')}</dt><dd>${ref.stoneNames.map(s => esc(s.name)).join(', ')}</dd></div>` : ''}${others ? `<div><dt>${t('Also worn')}</dt><dd>${others}</dd></div>` : ''}</dl></li>`
-  );
-}
-function upgradeRow(images, row, sample) {
-  const best = row.best,
-    reasons = upgradeReasons(row, sample);
-  return (
-    `<li class="upgrade-row is-${row.state}"><div class="upgrade-row-slot"><small>${esc(slotLabel(row.slot))}</small>${yourItem(images, row.item)}</div><div class="upgrade-row-best"><small>${t('Worn most by the strongest')}</small>${best ? popularItem(images, best, row.ref.items) : ''}</div>` +
-    `<div class="upgrade-row-gap"><span class="upgrade-badge">${esc(stateNames()[row.state])}</span>${row.score > 0 ? `<small>${esc(reasons.join(' · '))}</small>` : ''}</div></li>`
+    `<li class="upgrade-row is-${row.state}"><div class="upgrade-row-slot"><small>${esc(slotLabel(row.item?.slot || row.slot))}</small>${yourItem(images, row.item)}</div><div class="upgrade-row-best"><small>${row.next ? t('Next step') : t('Worn most')}</small>${target ? theirItem(images, target, shareOf(target, row.ref)) : row.common ? theirItem(images, row.common, shareOf(row.common, row.ref)) : ''}</div>` +
+    `<div class="upgrade-row-gap"><span class="upgrade-badge">${esc(stateNames()[row.state])}</span><small>${esc(todo)}</small></div></li>`
   );
 }
 
-// The Upgrade tab: where the profile's gear falls furthest behind the strongest characters of its
-// class the armory keeps, and what they wear there (upgrade.js); upgrade is the backend's
-// comparison, null while it loads.
-function upgradeTab(answer, p, images, upgrade) {
+// The Upgrade tab: what to do to catch up with the next step (the nearest characters a little
+// stronger) or with the strongest characters of the class the armory keeps (upgrade.js); upgrade
+// is the backend's comparison (null while it loads), group the one asked for.
+function upgradeTab(answer, p, images, upgrade, group = 'next') {
   const of = { class: p.class || t('this class') };
+  const switcher = `<div class="upgrade-groups" role="group" aria-label="${esc(t('Compare with'))}">${[
+    ['next', t('The next step')],
+    ['top', t('The strongest')],
+  ]
+    .map(
+      ([key, label]) =>
+        `<button type="button" class="${key === group ? 'is-active' : ''}" data-armory-upgrade-group="${key}" aria-pressed="${key === group}">${esc(label)}</button>`,
+    )
+    .join('')}</div>`;
+  const heading = `<div class="section-heading"><h2>${t('Upgrades')}</h2>${switcher}</div>`;
   if (!upgrade)
-    return `<section class="armory-panel"><p class="armory-empty upgrade-wait"><span class="armory-spinner" aria-hidden="true"></span>${esc(t('Comparing with the strongest {class} characters the armory keeps…', of))}</p></section>`;
+    return `<section class="armory-panel upgrade-intro">${heading}<p class="armory-empty upgrade-wait"><span class="armory-spinner" aria-hidden="true"></span>${esc(group === 'next' ? t('Comparing with the {class} characters a step above…', of) : t('Comparing with the strongest {class} characters the armory keeps…', of))}</p></section>`;
   if (upgrade.error)
-    return `<section class="armory-panel"><p class="armory-empty">${t('The comparison did not load. Odyle tries again when you open this tab.')}</p></section>`;
+    return `<section class="armory-panel upgrade-intro">${heading}<p class="armory-empty">${t('The comparison did not load. Odyle tries again when you open this tab.')}</p></section>`;
   const plan = upgradePlan(p, upgrade);
-  const note = `<p class="armory-note">${icon('info')}<span>${t("The strongest are the characters of the class with the most combat power whose gear Odyle knows, from every Global region: those anyone looked up and those Odyle's scout finds with PLAYNC's character search, which lists no combat power, so the list grows more complete over time. The comparison is worked out again every 10 minutes.")}</span></p>`;
+  const note = `<p class="armory-note">${icon('info')}<span>${t("Odyle compares with the characters of the class whose gear it knows, from every Global region: those anyone looked up and those its scout reads from PLAYNC's pages, so the comparison grows more complete over time. The next step is the nearest characters 5 to 100 % stronger than this one. Characters whose combat power their item level does not give are left out. The comparison is worked out again every 10 minutes.")}</span></p>`;
   if (!plan)
-    return `<section class="armory-panel"><div class="section-heading"><h2>${t('Upgrades')}</h2></div><p class="armory-empty">${esc(t('The armory keeps too few {class} characters to compare with yet ({n} of {least}). Every character anyone looks up joins the comparison.', { ...of, n: number(upgrade.players?.length || 0), least: upgradeLeast }))}</p></section>${note}`;
+    return `<section class="armory-panel upgrade-intro">${heading}<p class="armory-empty">${esc(t('The armory keeps too few {class} characters to compare with yet ({n} of {least}). Every character anyone looks up joins the comparison.', { ...of, n: number(upgrade.players?.length || 0), least: upgradeLeast }))}</p></section>${note}`;
   const n = plan.sample,
     cp = plan.combatPower,
-    il = plan.itemLevel;
-  // Its place by combat power among the strongest (the backend leaves the profile out of them).
-  const place = plan.below
-    ? [t('Your place'), t('below them'), t('of the {n} strongest', { n: number(n) })]
-    : [t('Your place'), `#${number(plan.place)}`, t('with the {n} strongest', { n: number(n) })];
+    il = plan.itemLevel,
+    next = plan.group === 'next';
+  const third = next
+    ? [t('The next step'), `${number(cp.low)}–${number(cp.high)}`, t('combat power')]
+    : plan.below
+      ? [t('Your place'), t('below them'), t('of the {n} strongest', { n: number(n) })]
+      : [t('Your place'), `#${number(plan.place)}`, t('with the {n} strongest', { n: number(n) })];
   const metrics = [
     [
       t('Combat power'),
@@ -589,33 +785,37 @@ function upgradeTab(answer, p, images, upgrade) {
       t('their median {value} ({gap})', { value: number(cp.median), gap: signed(-cp.gap) }),
       true,
     ],
-    [
-      t('Item level'),
-      number(il.mine),
-      t('their median {value} ({gap})', { value: number(il.median), gap: signed(-il.gap) }),
-    ],
-    place,
+    [t('Item level'), number(il.mine), t('their median {value} ({gap})', { value: number(il.median), gap: signed(-il.gap) })],
+    third,
   ];
   const player = q =>
     `<li><a href="${esc(link(profilePath(q)))}"><span class="armory-mini" aria-hidden="true">${esc(initials(q.name))}${picture(images, q.portrait)}</span><strong>${esc(q.name)}</strong><span>${esc([q.server, `${number(q.combatPower)} CP`].filter(Boolean).join(' · '))}</span></a></li>`;
-  const intro =
-    `<section class="armory-panel upgrade-intro"><div class="section-heading"><h2>${t('Upgrades')}</h2></div><p>${esc(t('Compared with the {n} strongest {class} characters the armory keeps, from every Global region, by combat power.', { ...of, n: number(n) }))}</p>` +
-    `<dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl>` +
-    `<details class="upgrade-players-box"><summary>${esc(t('The {n} strongest {class} characters', { ...of, n: number(upgrade.players.length) }))}</summary><ol class="upgrade-players">${upgrade.players.map(player).join('')}</ol><a class="text-button" href="${esc(link(topPath(p.class)))}">${esc(t('All top {class} players', of))} ${icon('arrow')}</a></details></section>`;
-  const picks = `<section class="armory-panel"><div class="section-heading"><h2>${t('Best upgrades')}</h2></div>${plan.picks.length ? `<ol class="upgrade-picks">${plan.picks.map((row, i) => upgradePick(images, row, i, n)).join('')}</ol>` : `<p class="armory-empty">${esc(t('The gear is on par with the strongest {class} characters in every slot.', of))}</p>`}</section>`;
-  const rows = plan.rows.length
-    ? `<section class="armory-panel"><details class="upgrade-all"><summary><h2>${t('Every slot')} <span>${number(plan.rows.length)}</span></h2></summary><ul class="upgrade-rows">${plan.rows.map(row => upgradeRow(images, row, n)).join('')}</ul></details></section>`
+  const about = next
+    ? t('Compared with {n} {class} characters a step above, from every Global region: what they did that this character has not yet.', { ...of, n: number(n) })
+    : t('Compared with the {n} strongest {class} characters the armory keeps, from every Global region, by combat power.', { ...of, n: number(n) });
+  const fallback =
+    group === 'next' && !next
+      ? `<p class="upgrade-fallback">${icon('info')}<span>${esc(t('Odyle knows too few {class} characters a step above this one yet, so this compares with the strongest.', of))}</span></p>`
+      : '';
+  const excluded = plan.excluded
+    ? `<small class="upgrade-excluded">${esc(tn(plan.excluded, '{n} character left out: its combat power does not match its item level.', '{n} characters left out: their combat power does not match their item level.'))}</small>`
     : '';
-  const sets = plan.sets.length
-    ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Arcana and sets')}</h2></div><ul class="upgrade-sets">${plan.sets.map(s => `<li class="${s.mine ? 'is-mine' : ''}"><strong>${esc(s.name)}</strong><span>${esc(t('{n} of the {total} strongest, usually {pieces} pieces', { n: number(s.players), total: number(n), pieces: number(s.pieces) }))}</span><small>${s.mine ? esc(t('Yours: {n} pieces', { n: number(s.mine) })) : t('Not worn')}</small></li>`).join('')}</ul></section>`
+  const intro =
+    `<section class="armory-panel upgrade-intro">${heading}<p>${esc(about)}</p>${fallback}` +
+    `<dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl>` +
+    `<details class="upgrade-players-box"><summary>${esc(next ? t('The strongest {n} of them', { n: number(upgrade.players.length) }) : t('The {n} strongest {class} characters', { ...of, n: number(upgrade.players.length) }))}</summary><ol class="upgrade-players">${upgrade.players.map(player).join('')}</ol><a class="text-button" href="${esc(link(topPath(p.class)))}">${esc(t('All top {class} players', of))} ${icon('arrow')}</a></details>${excluded}</section>`;
+  const steps = upgradePlanList(images, plan);
+  const planBox = `<section class="armory-panel upgrade-plan"><div class="section-heading"><h2>${t('What to do next')}</h2></div>${steps || `<p class="armory-empty">${esc(next ? t('The gear is on par with the {class} characters a step above in every slot.', of) : t('The gear is on par with the strongest {class} characters in every slot.', of))}</p>`}</section>`;
+  const rows = plan.rows.length
+    ? `<section class="armory-panel"><details class="upgrade-all"><summary><h2>${t('Every slot')} <span>${number(plan.rows.length)}</span></h2></summary><ul class="upgrade-rows">${plan.rows.map(row => upgradeRow(images, row)).join('')}</ul></details></section>`
     : '';
   const boards = plan.boards.length
-    ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Daevanion')}</h2></div><ul class="upgrade-boards">${plan.boards.map(b => `<li class="${b.gap > 0 ? 'is-behind' : ''}"><span><strong>${esc(b.name)}</strong><small>${esc(t('{mine} of {total} nodes · the strongest {theirs}', { mine: number(b.mine), total: number(b.total), theirs: number(b.open) }))}</small></span><span class="armory-track upgrade-track" role="img" aria-label="${esc(t('{mine} of {total} nodes · the strongest {theirs}', { mine: number(b.mine), total: number(b.total), theirs: number(b.open) }))}"><i style="width:${percent(b.mine, b.total)}%"></i><b style="left:${percent(b.open, b.total)}%"></b></span></li>`).join('')}</ul><p class="armory-legend"><span class="is-open"></span>${t('Yours')}<span class="is-mark"></span>${t('Median of the strongest')}</p></section>`
+    ? `<section class="armory-panel"><div class="section-heading"><h2>${t('Daevanion')}</h2></div><ul class="upgrade-boards">${plan.boards.map(b => `<li class="${b.gap > 0 ? 'is-behind' : ''}"><span><strong>${esc(b.name)}</strong><small>${esc(t('{mine} of {total} nodes · they open {theirs}', { mine: number(b.mine), total: number(b.total), theirs: number(b.open) }))}</small></span><span class="armory-track upgrade-track" role="img" aria-label="${esc(t('{mine} of {total} nodes · they open {theirs}', { mine: number(b.mine), total: number(b.total), theirs: number(b.open) }))}"><i style="width:${percent(b.mine, b.total)}%"></i><b style="left:${percent(b.open, b.total)}%"></b></span></li>`).join('')}</ul><p class="armory-legend"><span class="is-open"></span>${t('Yours')}<span class="is-mark"></span>${t('Their median')}</p></section>`
     : '';
   const skills = plan.skills.length
-    ? `<section class="armory-panel"><div class="section-heading"><h2>${t('On the skill bars of the strongest')}</h2></div><ul class="upgrade-skills">${plan.skills.map(s => `<li class="${s.equipped ? 'is-equipped' : s.acquired ? '' : 'is-locked'}"><span class="armory-icon is-skill${imageUrl(images, s.icon) ? '' : ' is-empty'}" aria-hidden="true">${picture(images, s.icon)}</span><span><strong>${esc(s.name)}</strong><small>${esc([t('{n} of the {total} strongest, level {level}', { n: number(s.players), total: number(n), level: number(s.level) }), s.equipped ? t('on your bar, level {level}', { level: number(s.mine) }) : s.acquired ? t('learned, not on your bar') : t('Not learned yet')].join(' · '))}</small></span></li>`).join('')}</ul></section>`
+    ? `<section class="armory-panel"><div class="section-heading"><h2>${t('On their skill bars')}</h2></div><ul class="upgrade-skills">${plan.skills.map(s => `<li class="${s.equipped ? 'is-equipped' : s.acquired ? '' : 'is-locked'}"><span class="armory-icon is-skill${imageUrl(images, s.icon) ? '' : ' is-empty'}" aria-hidden="true">${picture(images, s.icon)}</span><span><strong>${esc(s.name)}</strong><small>${esc([t('{n} of {total}, level {level}', { n: number(s.players), total: number(n), level: number(s.level) }), s.equipped ? t('on your bar, level {level}', { level: number(s.mine) }) : s.acquired ? t('learned, not on your bar') : t('Not learned yet')].join(' · '))}</small></span></li>`).join('')}</ul></section>`
     : '';
-  return intro + picks + rows + sets + boards + skills + note;
+  return intro + planBox + arcanaSection(images, plan) + boostSection(plan) + rows + boards + skills + note;
 }
 
 // The tabs a profile has: gear and stats always, the others once the kept copy holds them; the
@@ -701,7 +901,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
           : tab === 'appearance'
             ? appearanceTab(profile, images)
             : tab === 'upgrade'
-              ? upgradeTab(answer, profile, images, view.upgrade)
+              ? upgradeTab(answer, profile, images, view.upgrade, view.upgradeGroup)
               : gearTab(profile, images, loading);
   return `<main class="dashboard armory armory-profile">${hero}${status}${nav}<div class="armory-tab">${content}</div>${back}</main>`;
 }

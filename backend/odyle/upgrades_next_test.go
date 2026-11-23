@@ -205,3 +205,36 @@ func TestScoutReadsTheGearBelowTheTop(t *testing.T) {
 		t.Fatalf("status peers %v builds %v", st["peers"], st["builds"])
 	}
 }
+
+// The skills items raise: per slot, on how many of its items and at what level; and per character,
+// those its arcana and its other gear raise, summed, with how many raise each.
+func TestUpgradesCountTheSkillsGearRaises(t *testing.T) {
+	raises := func(slot, name string, skills ...armorySubSkill) armoryGear {
+		return gearOf(slot, name, "Unique", 0, 80, func(d *armoryItem) { d.SubSkills = skills })
+	}
+	slam := func(level int64) armorySubSkill { return armorySubSkill{Name: "Overhead Slam", Level: level, Icon: "slam.png"} }
+	blow := func(level int64) armorySubSkill { return armorySubSkill{Name: "Rending Blow", Level: level} }
+	profiles := []armoryProfile{
+		{Gear: []armoryGear{raises("Arcana1", "Chalice", slam(4), blow(2)), raises("Arcana2", "Parchment", slam(1)), raises("Ring1", "Ring", slam(1)), raises("Ring2", "Ring", blow(1))}},
+		{Gear: []armoryGear{raises("Arcana1", "Chalice", slam(3)), raises("Ring1", "Ring")}},
+		{Gear: []armoryGear{raises("Arcana1", "Chalice")}}, // a build kept before 1.1.0
+	}
+	players := []upgradePlayer{{CombatPower: 3}, {CombatPower: 2}, {CombatPower: 1}}
+	ref := compareUpgrades("Gladiator", players, profiles, time.Now())
+	var chalice upgradeGear
+	for _, s := range ref.Slots {
+		if s.Slot == "Arcana1" {
+			chalice = s
+		}
+	}
+	if chalice.Slot != "Arcana1" || chalice.BoostItems != 2 || len(chalice.Boosts) != 2 || chalice.Boosts[0] != (upgradeBoost{Name: "Overhead Slam", Icon: "slam.png", Count: 2, Level: 4}) || chalice.Boosts[1].Name != "Rending Blow" {
+		t.Fatalf("arcana 1 %+v", chalice)
+	}
+	// Overhead Slam: 4 + 1 from the first's arcana, 3 from the second's.
+	if ref.ArcanaPlayers != 2 || len(ref.ArcanaSkills) != 2 || ref.ArcanaSkills[0] != (upgradeBoost{Name: "Overhead Slam", Icon: "slam.png", Count: 2, Level: 5}) || ref.ArcanaSkills[1] != (upgradeBoost{Name: "Rending Blow", Count: 1, Level: 2}) {
+		t.Fatalf("arcana skills %d %+v", ref.ArcanaPlayers, ref.ArcanaSkills)
+	}
+	if ref.GearPlayers != 1 || len(ref.GearSkills) != 2 || ref.GearSkills[0].Count != 1 || ref.GearSkills[0].Level != 1 {
+		t.Fatalf("gear skills %d %+v", ref.GearPlayers, ref.GearSkills)
+	}
+}

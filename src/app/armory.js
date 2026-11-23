@@ -66,12 +66,17 @@ function toggleBookmark() {
       : t('Bookmarked {name}. The armory page lists it.', { name }),
   );
 }
-// The Upgrade tab's comparison of a profile with the strongest other characters of its class
-// (backend/odyle/upgrades.go), kept here by profile for five minutes; one that did not load is
-// asked for again after half a minute.
-const armoryUpgrades = new Map();
+// The Upgrade tab's comparison of a profile with other characters of its class
+// (backend/odyle/upgrades.go): its next step or the strongest, as last chosen in this browser.
+// Kept here by profile and group for five minutes; one that did not load is asked for again after
+// half a minute.
+const armoryUpgrades = new Map(),
+  upgradeGroupKey = 'odyle.armory.upgradeGroup';
+let armoryUpgradeGroup = storage.getItem(upgradeGroupKey) === 'top' ? 'top' : 'next';
 const upgradeKey = answer =>
-  answer?.profile?.class ? `${answer.profile.class}|${answer.serverId}|${answer.characterId}` : '';
+  answer?.profile?.class
+    ? `${answer.profile.class}|${answer.serverId}|${answer.characterId}|${armoryUpgradeGroup}`
+    : '';
 function armoryUpgrade() {
   const kept = armoryUpgrades.get(upgradeKey(armoryAnswer));
   return kept?.answer || (kept?.error ? { error: true } : null);
@@ -94,7 +99,7 @@ async function loadUpgrade(ticket) {
     armoryUpgrades.set(key, {
       at: Date.now(),
       answer: await pb.send(`/api/odyle/armory/upgrades/${encodeURIComponent(profile.class)}`, {
-        query: { serverId, characterId },
+        query: { serverId, characterId, group: armoryUpgradeGroup },
       }),
     });
   } catch {
@@ -129,6 +134,7 @@ export function armoryRender(searching = false) {
           board: armoryBoard,
           images: armoryImages(),
           upgrade: armoryUpgrade(),
+          upgradeGroup: armoryUpgradeGroup,
         })
       : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()),
     'armory',
@@ -378,6 +384,18 @@ onData({
   armoryUnmark: el => {
     keepBookmarks(armoryPart.loaded().removeBookmark(bookmarks(), el.dataset.armoryUnmark));
     return armoryRender();
+  },
+  // The Upgrade tab's group: the next step or the strongest.
+  armoryUpgradeGroup: el => {
+    armoryUpgradeGroup = el.dataset.armoryUpgradeGroup === 'top' ? 'top' : 'next';
+    try {
+      storage.setItem(upgradeGroupKey, armoryUpgradeGroup);
+    } catch {
+      /* storage full or blocked */
+    }
+    armoryRender();
+    loadUpgrade(state.navigation).catch(failure);
+    return document.querySelector(`[data-armory-upgrade-group="${armoryUpgradeGroup}"]`)?.focus();
   },
   armoryBoard: el => {
     armoryBoard = el.dataset.armoryBoard;
