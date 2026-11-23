@@ -62,6 +62,27 @@ async function send(path, body, auth, method) {
   return { status: res.status, data: await res.json() };
 }
 const account = async name => (await request('/__test__/account', { name })).data;
+// Six weeks of a character's history before today, a day in three, as the armory's readings
+// would have kept them (backend/odyle/armoryhistory.go), rising to the stand-in's 107,458 CP.
+async function seedHistory(characterId) {
+  const operator = (await request('/__test__/superuser', {})).data;
+  for (let back = 42; back >= 3; back -= 3) {
+    const day = new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+    const { status } = await request(
+      '/api/collections/armory_history/records',
+      {
+        serverId: 2304,
+        characterId,
+        day: day + ' 00:00:00.000Z',
+        combatPower: 95000 + (42 - back) * 290 + (back % 2) * 400,
+        itemLevel: 1600 + Math.round((42 - back) * 1.6),
+        level: 45,
+      },
+      operator,
+    );
+    assert.equal(status, 200);
+  }
+}
 // The PLAYNC stand-in's characters: id, name as the search lists it, level, class id (36: Chanter).
 const armorer = ['QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>', 45, 36],
   armorerAlt = ['QXJtb3Jlcnhfa2QwMDAwMDAwMDAwMDAwMDAwMDA=', '<strong>Armorer</strong>x', 12, 9];
@@ -1414,6 +1435,47 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
     await page.locator('.armory-tabs a', { hasText: 'Gear & stats' }).click();
     await page.waitForURL(/QXJtb3JlcklkMDAwMDAwMDAwMDAwMDAwMDAwMDA=$/);
     await items.first().waitFor();
+    // Progress (armoryhistory.js): the first reading starts the character's history.
+    assert.match(
+      await page.locator('.armory-growth').innerText(),
+      /Progress\s+(1 day kept since .+\s+)?The history of this character starts with this reading\./,
+    );
+    assert.equal(await page.locator('.armory-power-change').count(), 0);
+    await shot(page, 'armory-progress-new');
+    // With six weeks kept, the hero says the change and the panel shows tiles, two charts on one
+    // time axis and every day as a table.
+    await seedHistory(armorer[0]);
+    await page.reload();
+    await page.locator('.growth-chart').waitFor();
+    assert.match(await page.locator('.armory-power-change').innerText(), /^\+\d+\.\d % in 30 days$/);
+    assert.match(await page.locator('.armory-growth .section-heading').innerText(), /Progress\s+15 days kept since/);
+    assert.match(
+      await page.locator('.growth-tiles').innerText(),
+      /Combat power, last 30 days\s+\+[\d,]+ CP\s+\+\d+\.\d %\s+Item level since .+\s+\+\d+\s+1,600 → 1,671\s+Highest combat power\s+107,458/i,
+    );
+    assert.match(
+      await page.locator('.growth-chart').getAttribute('aria-label'),
+      /^Combat power from 95,000 on .+ to 107,458 on .+; item level from 1,600 to 1,671\./,
+    );
+    assert.equal(await page.locator('.growth-plot').count(), 2);
+    // The arrow keys read each day: Home is the first, the tooltip lists both measures.
+    const readout = page.locator('.growth-tip');
+    await page.locator('.growth-chart').focus();
+    assert.match(await readout.innerText(), /107,458\s+Combat power\s+1,671\s+Item level/);
+    await page.keyboard.press('Home');
+    assert.match(await readout.innerText(), /95,000\s+Combat power\s+1,600\s+Item level/);
+    await page.keyboard.press('ArrowRight');
+    assert.match(await readout.innerText(), /1,605\s+Item level/);
+    // The pointer picks the nearest day too.
+    const box = await page.locator('.is-power .growth-area').boundingBox();
+    await page.mouse.move(box.x + box.width - 1, box.y + box.height / 2);
+    assert.match(await readout.innerText(), /107,458/);
+    await page.locator('.growth-table summary').click();
+    assert.equal(await page.locator('.growth-table tbody tr').count(), 15);
+    await page.locator('.growth-table summary').click();
+    await page.mouse.move(1, 1);
+    await page.locator('.growth-chart').blur();
+    await shot(page, 'armory-progress');
     // The top players by class: the first class, then the Chanters, where the looked-up character is.
     await page.locator('.armory-back').click();
     await page.locator('.heading-actions a', { hasText: 'Top players by class' }).click();

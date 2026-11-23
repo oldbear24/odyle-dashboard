@@ -3,5 +3,7 @@
 import '../armory.css';
 import '../armorydetail.css';
 import '../compare.css';
+import '../armoryhistory.css';
 export * from '../armory.js';
 export * from '../compare.js';
+export { bindProgress } from '../armoryhistory.js';

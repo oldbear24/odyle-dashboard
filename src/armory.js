@@ -24,6 +24,7 @@ import {
   boardTotalsPanel,
   skillBoostPanel,
 } from './armorydetail.js';
+import { progressPanel, powerChange } from './armoryhistory.js';
 
 export const regionNames = () => ({
   GLOBAL_NA: t('North America East'),
@@ -912,7 +913,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
   const boardsOpen = profile.boards.reduce((n, b) => n + b.open, 0),
     boardsTotal = profile.boards.reduce((n, b) => n + b.total, 0);
   const metrics = [
-    [t('Combat power'), number(profile.combatPower), 'CP', true],
+    [t('Combat power'), number(profile.combatPower), 'CP', true, powerChange(answer.history)],
     [t('Item level'), number(profile.itemLevel), t('of the equipped gear')],
     boardsTotal
       ? [
@@ -943,7 +944,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
       '',
     )}${profile.legion ? `<span class="armory-legion" title="${esc(t('Legion'))}">${icon('people')}${esc(profile.legion)}</span>` : ''}</p></div>
 <div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><button class="button secondary armory-compare" data-action="armory-compare" aria-haspopup="dialog">${icon('swords')} ${t('Compare')}</button><a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
-<dl class="armory-power">${metrics.map(([label, value, small, main]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd></div>`).join('')}</dl></section>`;
+<dl class="armory-power">${metrics.map(([label, value, small, main, change]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd>${change ? `<dd class="armory-power-change">${esc(change)}</dd>` : ''}</div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
   const content =
     tab === 'skills'
@@ -956,6 +957,6 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
             ? appearanceTab(profile, images)
             : tab === 'upgrade'
               ? upgradeTab(answer, profile, images, view.upgrade, view.upgradeGroup)
-              : gearTab(profile, images, loading);
+              : progressPanel(answer.history) + gearTab(profile, images, loading);
   return `<main class="dashboard armory armory-profile">${hero}${status}${nav}<div class="armory-tab">${content}</div>${back}</main>`;
 }
