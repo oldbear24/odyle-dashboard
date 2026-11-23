@@ -269,7 +269,7 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
   // The paper doll: every slot, empty ones said so; weapons and arcana name their type.
   assert.match(
     html,
-    /<small>Main hand · Mace<\/small><strong>Enraged Kromede Rod<\/strong><span>item level 102 · 1 stone<\/span>/,
+    /<small>Main hand · Mace<\/small><strong>Enraged Kromede Rod<\/strong><span>item level 102<\/span><span class="gear-meters"/,
   );
   assert.match(html, /<small>Helmet<\/small><strong>Vakron Helm<\/strong><span>Legend<\/span>/);
   assert.match(html, /<small>Shoulders<\/small><strong>Empty<\/strong>/);
