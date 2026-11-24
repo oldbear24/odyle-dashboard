@@ -10,12 +10,13 @@ import { armoryTarget, armoryTitle, topTitle, profilePath, findPath } from '../a
 import { state, storage } from './state.js';
 import { pb, send } from './server.js';
 import { app, toast } from './ui.js';
-import { onData, onAction, onSubmit } from './actions.js';
+import { onData, onAction, onSubmit, onChange } from './actions.js';
 import { armoryPart, cardPart, cardImagePart } from './parts.js';
 import { shell } from './shell.js';
 import { go } from './router.js';
 import { failure } from './session.js';
 import { compareShow, compareShown, compareRender, leaveCompare } from './compare.js';
+import { aiAccess, aiAllowed, aiShow, aiRender, askAbout } from './armoryai.js';
 
 let armoryServers = null,
   armoryAnswer = null,
@@ -141,10 +142,12 @@ export const armoryShown = () => armoryAnswer;
 // The top players page (armory.js armoryTop): the class it shows ('' for the first, null on the
 // armory's other pages) and the backend's answer for it (backend/odyle/ranks.go).
 let armoryTopClass = null,
-  armoryTopAnswer = null;
+  armoryTopAnswer = null,
+  armoryAi = false;
 export function armoryRender(searching = false) {
   const armory = armoryPart.loaded();
   if (!armory) return;
+  if (armoryAi) return aiRender();
   if (compareShown()) return compareRender();
   if (armoryTopClass !== null) {
     shell(armory.armoryTop(armoryTopAnswer, armoryImages(), armoryTopClass), 'armory');
@@ -161,8 +164,18 @@ export function armoryRender(searching = false) {
           images: armoryImages(),
           upgrade: armoryUpgrade(),
           upgradeGroup: armoryUpgradeGroup,
+          ai: aiAllowed(),
         })
-      : armory.armorySearch(armoryServers || [], chosen, armoryResults, searching, marks, now, armoryImages()),
+      : armory.armorySearch(
+          armoryServers || [],
+          chosen,
+          armoryResults,
+          searching,
+          marks,
+          now,
+          armoryImages(),
+          aiAllowed(),
+        ),
     'armory',
   );
   armory.bindProgress(document.querySelector('.growth-chart'));
@@ -324,7 +337,9 @@ async function profileShow(path, target, ticket, refresh, armory) {
   loadUpgrade(ticket).catch(failure);
   return armoryPoll(path, ticket);
 }
-// A search by name; exactly one character of that very name opens its profile instead.
+// A search: the text typed (a name or part of one, perhaps with its server or region) in the region
+// chosen, on the server chosen or every server; exactly one character of that very name opens its
+// profile instead.
 async function findShow(target, ticket) {
   const { region, server, name } = target;
   armoryChosen = target;
@@ -334,9 +349,11 @@ async function findShow(target, ticket) {
     /* storage full or blocked */
   }
   armoryRender(true);
-  let results;
+  let answer;
   try {
-    results = (await pb.send('/api/odyle/armory/search', { query: { name, server, region } })).results;
+    answer = await pb.send('/api/odyle/armory/search', {
+      query: server ? { q: name, server, region } : { q: name, region },
+    });
   } catch (error) {
     if (ticket !== state.navigation) return;
     armoryRender();
@@ -345,10 +362,20 @@ async function findShow(target, ticket) {
   if (ticket !== state.navigation) return;
   state.online = true;
   // Exactly one character of that very name: its profile, in place of the search.
-  const exact = results.filter(hit => hit.name.toLowerCase() === name.toLowerCase());
+  const named = (answer.query?.name || name).toLowerCase(),
+    exact = answer.results.filter(hit => hit.name.toLowerCase() === named);
   if (exact.length === 1) return go(profilePath(exact[0]), true);
-  armoryResults = results;
+  armoryResults = answer.results;
   armoryRender();
+}
+// Whether the signed-in account may ask the AI, asked once a session: the page shows the way to it then.
+function aiLink(ticket) {
+  if (aiAllowed() || !pb.authStore.isValid) return;
+  aiAccess()
+    .then(status => {
+      if (status?.allowed && ticket === state.navigation && !armoryAi) armoryRender();
+    })
+    .catch(() => {});
 }
 export async function armoryPage(path, ticket, refresh = false) {
   clearTimeout(armoryTimer);
@@ -363,6 +390,12 @@ export async function armoryPage(path, ticket, refresh = false) {
   if (ticket !== state.navigation) return;
   const target = armoryTarget(path);
   armoryTopClass = target.top ? target.top.class : null;
+  armoryAi = Boolean(target.ai);
+  if (target.ai) {
+    leaveCompare();
+    return aiShow(ticket);
+  }
+  aiLink(ticket);
   if (target.compare) return compareShow(target.compare, ticket);
   leaveCompare();
   if (target.top) return topShow(target.top.class, ticket);
@@ -406,6 +439,96 @@ window.addEventListener('storage', e => {
     armoryRender();
 });
 
+// ---------------------------------------------------------------- Suggestions
+
+// The search box's suggestions (backend/odyle/armoryfind.go): the characters Odyle knows whose name
+// holds the text, asked a quarter of a second after it last changed; an answer to older text is
+// dropped. The arrow keys move through them, Enter opens the one picked and Escape closes them.
+let suggestTimer = 0,
+  suggested = [],
+  suggestActive = -1,
+  suggestFor = '';
+const searchBox = () => document.querySelector('#armory-form input[name="name"]');
+function showSuggestions() {
+  const input = searchBox(),
+    list = document.getElementById('armory-suggestions'),
+    armory = armoryPart.loaded();
+  if (!input || !list || !armory) return;
+  const open = suggested.length > 0 && document.activeElement === input;
+  list.innerHTML = open ? armory.suggestionList(suggested, armoryImages(), suggestActive) : '';
+  list.hidden = !open;
+  input.setAttribute('aria-expanded', String(open));
+  if (open && suggestActive >= 0) input.setAttribute('aria-activedescendant', 'armory-suggestion-' + suggestActive);
+  else input.removeAttribute('aria-activedescendant');
+}
+function closeSuggestions() {
+  clearTimeout(suggestTimer);
+  suggested = [];
+  suggestActive = -1;
+  suggestFor = '';
+  showSuggestions();
+}
+async function suggest(text, region) {
+  suggestFor = text;
+  if (text.trim().length < 2) {
+    suggested = [];
+    suggestActive = -1;
+    return showSuggestions();
+  }
+  let results = [];
+  try {
+    results = (await pb.send('/api/odyle/armory/suggest', { query: { q: text, region } })).results || [];
+  } catch {
+    /* no suggestions this time */
+  }
+  if (suggestFor !== text) return;
+  suggested = results;
+  suggestActive = -1;
+  showSuggestions();
+}
+document.addEventListener('input', e => {
+  if (e.target !== searchBox()) return;
+  clearTimeout(suggestTimer);
+  const text = e.target.value,
+    region = e.target.form?.elements.region?.value || '';
+  suggestTimer = setTimeout(() => suggest(text, region), 250);
+});
+document.addEventListener('keydown', e => {
+  if (e.target !== searchBox() || !suggested.length || document.getElementById('armory-suggestions')?.hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const n = suggested.length;
+    suggestActive = e.key === 'ArrowDown' ? (suggestActive + 1) % n : (suggestActive - 1 + n) % n;
+    showSuggestions();
+  } else if (e.key === 'Enter' && suggestActive >= 0) {
+    e.preventDefault();
+    const hit = suggested[suggestActive];
+    closeSuggestions();
+    go(profilePath(hit)).catch(failure);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeSuggestions();
+  }
+});
+// A press on a suggestion keeps the focus in the box, so the list stays until the link opens.
+document.addEventListener('mousedown', e => {
+  if (e.target.closest?.('#armory-suggestions')) e.preventDefault();
+});
+document.addEventListener('focusin', e => {
+  if (e.target === searchBox() && suggested.length) showSuggestions();
+});
+document.addEventListener('focusout', e => {
+  if (e.target === searchBox()) setTimeout(() => document.activeElement !== searchBox() && showSuggestions(), 100);
+});
+
+onChange({
+  // The search lists the servers of the region chosen, any server first.
+  armoryRegion: el => {
+    const region = armoryServers?.find(r => r.region === el.value),
+      server = el.form?.elements.server;
+    if (server && region) server.innerHTML = armoryPart.loaded().serverOptions(region, server.value);
+  },
+});
 onData({
   cardTab: el => {
     cardTab = el.dataset.cardTab;
@@ -435,6 +558,10 @@ onData({
 });
 onAction({
   'armory-refresh': () => armoryPage(state.shown, state.navigation, true),
+  'ai-ask-about': () => askAbout(armoryAnswer),
+  // The Upgrade tab's: the AI's plan for this character, its question waiting to be asked.
+  'ai-upgrade-plan': () =>
+    askAbout(armoryAnswer, t('What should {name} upgrade first?', { name: armoryAnswer?.profile?.name || '' })),
   'armory-bookmark': () => toggleBookmark(),
   'card-flip': () => cardFlip?.(),
   'card-image': async () => {
@@ -446,7 +573,10 @@ onAction({
   },
 });
 onSubmit({
-  'armory-form': (form, data) => go(findPath(data.region, data.server, data.name.trim())),
+  'armory-form': (form, data) => {
+    closeSuggestions();
+    return go(findPath(data.region, data.server || '', data.name.trim()));
+  },
   'card-form': async form => {
     if (!armoryAnswer) return;
     const look = cardPart.loaded().formLook(form);

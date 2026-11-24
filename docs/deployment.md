@@ -132,6 +132,16 @@ A new Windows release reaches players without a restart: the **Release check** j
 - Links shared in Discord and chat apps unfurl with each page's own Open Graph title, text and picture (an armory profile's portrait), and search engines get each public page's title, description and canonical address. Set **Settings → Application → Application URL** in the PocketBase dashboard to the dashboard's public address (for example `https://odyle.example.com`): pages then name their canonical address and picture by absolute addresses, which link previews need, and `/sitemap.xml` lists the public pages and every armory profile Odyle keeps (`/robots.txt` names it). While it is PocketBase's default (`http://localhost:8090`) pictures stay relative to the page and there is no sitemap. A reverse proxy must pass every path to the backend (not only `/` and `/api/`): pages have paths such as `/armory/eu/2304/…`.
 - Browser sign-ins are stored in localStorage, shared by all tabs and kept across browser restarts until sign-out. Account tokens last seven days and are renewed each time the dashboard opens. Sign in again with the same Discord account to recover owned rooms and characters. There is no automatic inactivity deletion of rooms.
 
+## Armory AI
+
+The armory's AI ([Armory](armory.md#the-ai)) asks Anthropic's Claude, with the operators' own Anthropic API key, for every question; it is off until a key is saved. To set it up:
+
+1. Create an API key in the [Anthropic Console](https://console.anthropic.com) (**API keys**). A workspace of its own for Odyle, with a monthly spend limit, keeps what the AI costs in view and capped.
+2. In the superuser dashboard, open **Odyle → Server controls → Armory AI**, paste the key, choose the model and how many questions an account may ask in 24 hours, and save. The key is kept in `odyle_settings` (a hidden field), never sent back to a browser or written to the audit log: the page and the log show only its end.
+3. Under **Accounts** in the same section, find the players who may use it by their display name and let them. Everyone else never sees the AI.
+
+The server needs to reach `api.anthropic.com` over HTTPS (with a proxy that limits outgoing hosts, allow it). **Pause the armory AI** stops it at once without removing the key. What each question took (tokens, web searches) is listed per account in the same section for 30 days; Anthropic's Console shows the bill. A key Anthropic refuses is logged as a warning (*Anthropic refused the armory AI's API key*) and players are told to tell the operator.
+
 ## Dungeon catalog
 
 A deploy leaves the catalog as it is, and a new server starts with none, so wishlists and runs take any name until a superuser fills it under **Game settings → Dungeon catalog**. Each dungeon has its own Odyle per cube (empty uses the server-wide Odyle per cube), party size, category and an **Unconfirmed** mark that rooms show next to the cost. A catalog of names from before these entries keeps its names, each at Odyle per cube with nothing else set.

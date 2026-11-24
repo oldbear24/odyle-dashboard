@@ -49,6 +49,7 @@ type state struct {
 	armory       *armoryWork     // has its own lock
 	armorySearch *armorySearches // has its own lock
 	upgrades     *upgradeCache   // has its own lock (upgrades.go)
+	ai           *aiWork         // has its own lock (armoryai.go)
 	scout        *armoryScout    // has its own lock (scout.go)
 
 	serverBook atomic.Pointer[serverBook] // the Global servers (servers.go), nil until read
@@ -86,7 +87,7 @@ type state struct {
 
 func stateOf(app core.App) *state {
 	return app.Store().GetOrSet("odyle.state", func() any {
-		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]jobRun{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), scout: newArmoryScout(),
+		return &state{traffic: newTraffic(), jobs: map[string]*jobRecord{}, running: map[string]jobRun{}, vacuums: map[string]*vacuumRecord{}, portraits: newPortraitWork(), armory: newArmoryWork(), armorySearch: newArmorySearches(), upgrades: newUpgradeCache(), ai: newAiWork(), scout: newArmoryScout(),
 			changes: newOutbox(changesDelay), sightings: newOutbox(presenceDelay), presence: newPresence(), health: newHealth()}
 	}).(*state)
 }

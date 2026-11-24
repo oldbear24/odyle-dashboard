@@ -87,7 +87,7 @@ func TestPagesAreNamedForWhatTheyShow(t *testing.T) {
 			t.Errorf("%s is a page", route)
 		}
 	}
-	for _, route := range []string{"/tasks", "/account", "/slots", "/achievements", "/week", "/room/abc123", "/armory/find/GLOBAL_EU/Lumiel/Kai"} {
+	for _, route := range []string{"/tasks", "/account", "/slots", "/achievements", "/week", "/room/abc123", "/armory/find/GLOBAL_EU/Lumiel/Kai", "/armory/find/GLOBAL_EU/Kai", "/armory/ai"} {
 		if _, _, private, missing, _ := describe(route); !private || missing {
 			t.Errorf("%s: private %v, missing %v", route, private, missing)
 		}

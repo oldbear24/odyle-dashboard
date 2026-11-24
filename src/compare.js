@@ -26,6 +26,7 @@ import {
   accessorySlots,
   arcanaSlots,
   companionSlots,
+  serverOptions,
 } from './armory.js';
 
 // ---------------------------------------------------------------- What differs
@@ -379,13 +380,8 @@ export function comparePage(sides, view = {}) {
 
 // ---------------------------------------------------------------- The picker
 
-// The servers of a region for the picker's search, the chosen one selected.
-export function compareServerOptions(region, chosen = '') {
-  if (!region) return '';
-  const group = (label, list = []) =>
-    `<optgroup label="${esc(label)}">${list.map(s => `<option ${s === chosen ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>`;
-  return group(t('Elyos'), region.elyos) + group(t('Asmodians'), region.asmodian);
-}
+// The servers of a region for the picker's search, any server first, the chosen one selected.
+export const compareServerOptions = (region, chosen = '') => serverOptions(region, chosen);
 
 // A character to pick: a bookmark, a top player or a search hit.
 function candidate(c, images, power = true) {
@@ -418,7 +414,7 @@ export function comparePickerResults(view) {
       ? ''
       : list.length
         ? `<ul class="compare-candidates">${list.map(c => candidate(c, images, false)).join('')}</ul>`
-        : `<p class="armory-empty">${t('PLAYNC lists no character of that name on this server.')}</p>`;
+        : `<p class="armory-empty">${view.chosen?.server ? t('PLAYNC lists no character of that name on this server.') : t('PLAYNC lists no character with that name in this region.')}</p>`;
   return `<div class="compare-picker-results" aria-live="polite">${body}</div>`;
 }
 
@@ -431,7 +427,7 @@ export function comparePicker(view) {
     regions.find(r => r.region === chosen.region) || regions.find(r => r.region === 'GLOBAL_EU') || regions[0];
   const names = regionNames();
   const form = region
-    ? `<form id="compare-search" class="armory-form compare-form"><label>${t('Region')}<select name="region" data-compare-region="1">${regions.map(r => `<option value="${esc(r.region)}" ${r === region ? 'selected' : ''}>${esc(names[r.region] || r.region)}</option>`).join('')}</select></label><label>${t('Server')}<select name="server">${compareServerOptions(region, chosen.server)}</select></label><label>${t('Character name')}<input name="name" required minlength="2" maxlength="16" pattern="[\\p{L}\\p{N}]{2,16}" autocomplete="off"></label><button class="button primary" type="submit">${t('Search')}</button></form>`
+    ? `<form id="compare-search" class="armory-form compare-form"><label>${t('Region')}<select name="region" data-compare-region="1">${regions.map(r => `<option value="${esc(r.region)}" ${r === region ? 'selected' : ''}>${esc(names[r.region] || r.region)}</option>`).join('')}</select></label><label>${t('Server')}<select name="server">${compareServerOptions(region, chosen.server)}</select></label><label>${t('Character')}<input name="name" type="search" required minlength="2" maxlength="40" autocomplete="off" spellcheck="false" placeholder="${esc(t('A name or part of it, e.g. Kai or Kai Lumiel'))}"></label><button class="button primary" type="submit">${t('Search')}</button></form>`
     : '';
   return `<div class="compare-picker"><p class="compare-picker-intro">${esc(base.name ? t('Pick a character to put next to {name}.', { name: base.name }) : t('Pick a character to compare with.'))}</p>${marks.length ? `<section class="compare-picker-marks"><h3>${t('Bookmarked characters')}</h3><ul class="compare-candidates">${marks.map(c => candidate(c, images)).join('')}</ul></section>` : ''}${comparePickerTop(view)}<section class="compare-picker-search"><h3>${t('Look up a character')}</h3>${form}${comparePickerResults(view)}</section></div>`;
 }

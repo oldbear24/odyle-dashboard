@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.2.0 · 2026-11-24
+
+### New
+- **One search box in the armory.** Type a name or just part of it. The server is optional: without one, Odyle searches every server of the region. You can also type the server or region with the name, like `Kai Lumiel` or `Kai eu`.
+- **Suggestions as you type**: the characters Odyle already knows, from every region, with their class, server and combat power. The arrow keys and Enter open one.
+- Search results show each character's server and, when Odyle knows it, its combat power and portrait.
+
+### Changed
+- The search in the **Compare** picker works like the armory's: part of a name is enough and the server is optional.
+- For server operators:
+  - migration 1791763289 indexes the armory's known characters by name for the suggestions and adds rate limits for them; see docs/deployment.md for what else this release can do once you set it up under Server controls;
+  - `GET /api/odyle/armory/search` takes the search box's text as `q`, and the server may be left out.
+
 ## 1.1.0 · 2026-11-23
 
 ### New

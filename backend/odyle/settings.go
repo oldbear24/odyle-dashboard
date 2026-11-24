@@ -182,6 +182,16 @@ type settings struct {
 	HistoryDays  int64 `json:"historyDays"`
 	LocationDays int64 `json:"locationDays"`
 	PvpDays      int64 `json:"pvpDays"`
+	// The armory's AI (armoryai.go): the Claude model it asks, how many questions an account may
+	// ask in 24 hours, whether it is paused and whether it may search the web. The Anthropic API key
+	// is never sent to a browser or written to the audit log: only its end (AiKeyHint, "sk-ant-…x7Qa"
+	// or "" for none) is.
+	AiModel     string `json:"aiModel"`
+	AiQuestions int64  `json:"aiQuestions"`
+	AiPaused    bool   `json:"aiPaused"`
+	AiWeb       bool   `json:"aiWeb"`
+	AiKeyHint   string `json:"aiKeyHint"`
+	aiKey       string
 }
 
 // slotRules are the slot machine's spins: free spins every account has each daily period (unused
@@ -235,7 +245,7 @@ func checkMaintenance(value any) (maintenanceWindow, error) {
 }
 
 func defaultSettings() settings {
-	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, PvpDays: defaultPvpDays, ArmoryLanes: defaultArmoryLanes, ScoutLanes: defaultScoutLanes, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
+	return settings{OdylePerCube: 40, DailyResetHour: 7, WeeklyResetDay: "wednesday", HistoryDays: defaultKeptDays, LocationDays: defaultKeptDays, PvpDays: defaultPvpDays, ArmoryLanes: defaultArmoryLanes, ScoutLanes: defaultScoutLanes, AiModel: defaultAiModel, AiQuestions: defaultAiQuestions, AiWeb: true, Dungeons: []dungeonEntry{}, TaskTemplates: []taskTemplate{}, WindowsBlocked: []string{}, AnnouncementLevel: "info", Adapters: adapterLists{Extra: []string{}, Disabled: []string{}}, Clock: defaultClock(), ClassRoles: defaultClassRoles(), Slots: defaultSlots(), Maps: []gameMap{}}
 }
 
 func findSettings(app core.App) *core.Record {
@@ -340,7 +350,20 @@ func loadSettings(app core.App) settings {
 		AnnouncementFrom: isoOf(s.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(s.GetDateTime("announcementUntil")),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused"),
 		ArmoryLanes: s.GetInt64("armoryLanes"), ScoutLanes: s.GetInt64("scoutLanes"),
-		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays"), PvpDays: s.GetInt64("pvpDays")}
+		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays"), PvpDays: s.GetInt64("pvpDays"),
+		AiModel: s.GetString("aiModel"), AiQuestions: s.GetInt64("aiQuestions"), AiPaused: s.GetBool("aiPaused"), AiWeb: s.GetBool("aiWeb"), aiKey: s.GetString("aiKey")}
+	// An AI model or limit never saved (or no longer offered) is the default; a key that no longer
+	// checks out (edited under Collections) is none.
+	if aiModelOf(out.AiModel) == nil {
+		out.AiModel = defaultAiModel
+	}
+	if out.AiQuestions < 1 || out.AiQuestions > maxAiQuestions {
+		out.AiQuestions = defaultAiQuestions
+	}
+	if !aiKeyPattern.MatchString(out.aiKey) {
+		out.aiKey = ""
+	}
+	out.AiKeyHint = aiKeyHint(out.aiKey)
 	if out.OdylePerCube == 0 {
 		out.OdylePerCube = 40
 	}
@@ -702,7 +725,7 @@ func writeSettings(app core.App, b body) (settings, error) {
 	for _, s := range []struct {
 		key    string
 		target *bool
-	}{{"portraitsPaused", &next.PortraitsPaused}, {"remindersPaused", &next.RemindersPaused}, {"pairingPaused", &next.PairingPaused}, {"readerPaused", &next.ReaderPaused}, {"armoryPaused", &next.ArmoryPaused}} {
+	}{{"portraitsPaused", &next.PortraitsPaused}, {"remindersPaused", &next.RemindersPaused}, {"pairingPaused", &next.PairingPaused}, {"readerPaused", &next.ReaderPaused}, {"armoryPaused", &next.ArmoryPaused}, {"aiPaused", &next.AiPaused}, {"aiWeb", &next.AiWeb}} {
 		if b.has(s.key) {
 			on, ok := b.boolean(s.key)
 			if !ok {
@@ -720,6 +743,28 @@ func writeSettings(app core.App, b body) (settings, error) {
 		if next.ScoutLanes, err = integer(b["scoutLanes"], "Scout lookups at once", 0, maxScoutLanes); err != nil {
 			return settings{}, err
 		}
+	}
+	if b.has("aiModel") {
+		model, _ := b.text("aiModel")
+		if aiModelOf(model) == nil {
+			return settings{}, badRequest("Choose one of the AI models offered.")
+		}
+		next.AiModel = model
+	}
+	if b.has("aiQuestions") {
+		if next.AiQuestions, err = integer(b["aiQuestions"], "AI questions per account in 24 hours", 1, maxAiQuestions); err != nil {
+			return settings{}, err
+		}
+	}
+	// The key is replaced by one sent, and removed by "" (or null).
+	if b.has("aiKey") {
+		key, _ := b.text("aiKey")
+		key = trim(key)
+		if key != "" && !aiKeyPattern.MatchString(key) {
+			return settings{}, badRequest("Paste an Anthropic API key: it starts with sk-ant-.")
+		}
+		next.aiKey = key
+		next.AiKeyHint = aiKeyHint(key)
 	}
 	if b.has("adapters") {
 		if next.Adapters, err = adapterSettings(b["adapters"]); err != nil {
@@ -783,6 +828,11 @@ func writeSettings(app core.App, b body) (settings, error) {
 	record.Set("classRoles", next.ClassRoles)
 	record.Set("slots", next.Slots)
 	record.Set("maps", next.Maps)
+	record.Set("aiModel", next.AiModel)
+	record.Set("aiQuestions", next.AiQuestions)
+	record.Set("aiPaused", next.AiPaused)
+	record.Set("aiWeb", next.AiWeb)
+	record.Set("aiKey", next.aiKey)
 	if err := app.Save(record); err != nil {
 		return settings{}, err
 	}

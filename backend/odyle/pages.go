@@ -43,6 +43,9 @@ func DescribePage(e *core.RequestEvent, route, base string) web.Page {
 		return topPage(e.App, parts, base)
 	case parts[0] == "armory" && len(parts) > 1 && parts[1] == "find":
 		return web.Page{Title: "Character search · " + armorySite, Private: true}
+	case route == "/armory/ai":
+		// Named after the armory: only the accounts that may use the AI learn of it.
+		return web.Page{Title: armorySite, Private: true}
 	case parts[0] == "armory" && len(parts) == 8 && parts[4] == "compare":
 		return comparePage(e.App, parts)
 	case parts[0] == "armory" && (len(parts) == 4 || len(parts) == 5):

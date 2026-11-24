@@ -396,8 +396,15 @@ test('the picker lists bookmarks, the strongest of the class and a search, never
     comparePickerResults({ ...view, results: [] }),
     /PLAYNC lists no character of that name on this server\./,
   );
+  // Searched on every server of the region, it says so.
+  assert.match(
+    comparePickerResults({ ...view, chosen: { region: 'GLOBAL_EU', server: '' }, results: [] }),
+    /PLAYNC lists no character with that name in this region\./,
+  );
+  // Any server first (since 1.2.0), then each race's.
   assert.equal(
     compareServerOptions(regions[0], 'Siel'),
-    '<optgroup label="Elyos"><option selected>Siel</option></optgroup><optgroup label="Asmodians"><option >Israphel</option></optgroup>',
+    '<option value="" >Any server</option><optgroup label="Elyos"><option selected>Siel</option></optgroup><optgroup label="Asmodians"><option >Israphel</option></optgroup>',
   );
+  assert.match(compareServerOptions(regions[0]), /^<option value="" selected>Any server<\/option>/);
 });

@@ -3733,14 +3733,92 @@ export function controlsPage() {
       'armoryPaused',
       'armoryLanes',
       'scoutLanes',
+      'aiPaused',
+      'aiModel',
+      'aiQuestions',
+      'aiWeb',
       'adapters',
       'windowsBlocked',
     ],
     form => {
       text.extra = form.adapters.extra.join('\n');
       text.blocked = (form.windowsBlocked || []).join('\n');
+      ai.key = '';
     },
   );
+  // The armory AI (backend/odyle/armoryai.go, aiaccess.go): the API key typed (sent with the other
+  // changes, never shown again), the accounts that may use it with what they asked, and the search
+  // for accounts to let use it. Access changes at once, apart from Save changes.
+  const ai = store({ key: '', data: null, query: '', found: null, busy: '' });
+  const keyHint = () => state.data?.settings?.aiKeyHint || '';
+  const typedKey = value => {
+    ai.key = value;
+    if (value.trim()) state.form.aiKey = value.trim();
+    else delete state.form.aiKey;
+  };
+  async function loadAi() {
+    try {
+      ai.data = await app.pb.send('/api/odyle/admin/ai', { requestKey: null });
+    } catch (error) {
+      if (!error.isAbort) app.checkApiError(error);
+    }
+  }
+  async function findAccounts() {
+    const query = ai.query.trim();
+    if (!query) return (ai.found = null);
+    try {
+      ai.found = (
+        await app.pb.send('/api/odyle/admin/ai/accounts', { query: { q: query }, requestKey: null })
+      ).accounts;
+    } catch (error) {
+      app.checkApiError(error);
+    }
+  }
+  async function setAccess(account, allowed) {
+    if (ai.busy) return;
+    ai.busy = account.id;
+    try {
+      ai.data = await app.pb.send('/api/odyle/admin/ai/access', {
+        method: 'POST',
+        body: { user: account.id, allowed },
+        requestKey: null,
+      });
+      if (ai.found) ai.found = ai.found.map(a => (a.id === account.id ? { ...a, allowed } : a));
+      app.toasts.success(
+        allowed
+          ? account.displayName + ' may use the armory AI.'
+          : account.displayName + ' may no longer use the armory AI.',
+      );
+    } catch (error) {
+      app.checkApiError(error);
+    }
+    ai.busy = '';
+  }
+  const tokens = n => (typeof n === 'number' ? (n >= 1e6 ? (n / 1e6).toFixed(1) + ' M' : number(n)) : '—');
+  const accessButton = a =>
+    t.button(
+      {
+        type: 'button',
+        className: () =>
+          'btn sm ' + (a.allowed ? 'transparent danger' : 'secondary') + (ai.busy === a.id ? ' loading' : ''),
+        disabled: () => Boolean(ai.busy),
+        onclick: () => setAccess(a, !a.allowed),
+      },
+      t.span({ className: 'txt' }, a.allowed ? 'Remove access' : 'Let use the AI'),
+    );
+  const accountRow = a =>
+    t.tr(
+      { rid: a.id + a.allowed + a.asked30d },
+      t.td(null, a.displayName, a.allowed ? null : ' ', t.span({ className: 'label sm' }, 'no access')),
+      t.td({ className: 'txt-right' }, number(a.asked24h)),
+      t.td({ className: 'txt-right' }, number(a.asked30d)),
+      t.td({ className: 'txt-right txt-nowrap' }, tokens(a.inputTokens30d) + ' / ' + tokens(a.outputTokens30d)),
+      t.td(
+        { className: 'txt-nowrap', title: when(a.lastAt) },
+        a.lastAt ? ago(a.lastAt, timestamp(state.data?.serverNow)) : '—',
+      ),
+      t.td({ className: 'txt-right' }, accessButton(a)),
+    );
   // The announcement's schedule as the form holds it, saved or not: shown now, waiting for its
   // start, over, or impossible.
   const shortTime = ms =>
@@ -3816,6 +3894,7 @@ export function controlsPage() {
       ),
     );
   load();
+  loadAi();
   return layout('#/odyle/controls', null, () =>
     state.loading
       ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' }))
@@ -3973,6 +4052,190 @@ export function controlsPage() {
               },
             }),
             "The Armory scout's reads of top players' gear, 0 to 5 (1 by default), beside the readers' and only while none of theirs waits; it reads one every 3 minutes divided among them. 0 reads no gear, while the scout still finds characters and their combat power.",
+          ),
+          section(
+            'Armory AI',
+            "Signed-in players you let use it ask about AION 2 characters in their own words on the armory's AI page, and Anthropic's Claude answers with the armory's data and, if you allow it, the web. Anthropic bills the API key below for every question, so let only players you trust use it and keep the questions per account low.",
+          ),
+          switchField(
+            'aiPaused',
+            'Pause the armory AI',
+            'Players with access see that it is paused; nothing is sent to Anthropic meanwhile.',
+          ),
+          switchField(
+            'aiWeb',
+            'Let the AI search the web',
+            'For game knowledge the armory does not hold (patch notes, guides, where items drop). Anthropic bills each web search on top of the tokens.',
+          ),
+          t.div({ className: 'col-lg-4' }),
+          field(
+            'odyle-ai-key',
+            'Anthropic API key',
+            t.input({
+              id: 'odyle-ai-key',
+              type: 'password',
+              autocomplete: 'off',
+              spellcheck: false,
+              placeholder: () => (keyHint() ? 'Saved: ' + keyHint() + ' · paste a new key to replace it' : 'sk-ant-…'),
+              value: () => ai.key,
+              oninput: e => typedKey(e.target.value),
+            }),
+            () =>
+              state.form.aiKey === ''
+                ? 'The saved key is removed when you save the changes.'
+                : keyHint()
+                  ? 'A key is saved (' +
+                    keyHint() +
+                    '). It is never shown again, only its end. Create keys in the Anthropic Console (console.anthropic.com) under API keys; a key of its own for Odyle, with a spend limit on its workspace, keeps the costs in view.'
+                  : 'No key is saved, so the AI cannot answer. Create one in the Anthropic Console (console.anthropic.com) under API keys and paste it here.',
+            6,
+          ),
+          t.div({ className: 'col-lg-2' }, () =>
+            keyHint() && state.form.aiKey !== ''
+              ? t.button(
+                  {
+                    type: 'button',
+                    className: 'btn sm transparent danger m-t-base',
+                    onclick: () => {
+                      ai.key = '';
+                      state.form.aiKey = '';
+                    },
+                  },
+                  t.span({ className: 'txt txt-nowrap' }, 'Remove key'),
+                )
+              : null,
+          ),
+          field(
+            'odyle-ai-model',
+            'Model',
+            app.components.select({
+              id: 'odyle-ai-model',
+              required: true,
+              options: [
+                { label: 'Claude Opus 5.5 (best answers)', value: 'claude-opus-5-5' },
+                { label: 'Claude Sonnet 5.5 (half the price)', value: 'claude-sonnet-5-5' },
+                { label: 'Claude Haiku 5.5 (cheapest, simpler answers)', value: 'claude-haiku-5-5' },
+              ],
+              value: () => state.form.aiModel,
+              onchange: e => (state.form.aiModel = e?.[0]?.value || 'claude-opus-5-5'),
+            }),
+            'Opus answers comparisons best. A question takes some 20,000 to 150,000 tokens, most of them read from the cache, depending on how much it looks up.',
+          ),
+          field(
+            'odyle-ai-questions',
+            'Questions per account in 24 hours',
+            t.input({
+              id: 'odyle-ai-questions',
+              type: 'number',
+              min: 1,
+              max: 500,
+              step: 1,
+              required: true,
+              value: () => state.form.aiQuestions ?? '',
+              oninput: e => {
+                const n = parseInt(e.target.value, 10);
+                state.form.aiQuestions = Number.isNaN(n) ? null : n;
+              },
+            }),
+            'Each account that may use the AI asks up to this many questions in any 24 hours, 1 to 500 (20 by default). Questions that took no tokens do not count.',
+          ),
+          t.div({ className: 'col-lg-12' }, () => {
+            const totals = ai.data?.totals;
+            return totals
+              ? t.div(
+                  { className: 'odyle-stats' },
+                  stat('Questions', number(totals.asked24h), 'in 24 hours'),
+                  stat(
+                    'Questions',
+                    number(totals.asked30d),
+                    totals.failed30d ? 'in 30 days, ' + number(totals.failed30d) + ' failed' : 'in 30 days',
+                  ),
+                  stat(
+                    'Input tokens',
+                    tokens(totals.inputTokens30d),
+                    tokens(totals.cachedTokens30d) + ' from the cache, 30 days',
+                  ),
+                  stat('Output tokens', tokens(totals.outputTokens30d), 'in 30 days'),
+                  stat('Web searches', number(totals.webSearches30d), 'in 30 days'),
+                )
+              : t.div({ className: 'txt-hint txt-sm' }, 'Loading what the AI took…');
+          }),
+          t.div(
+            { className: 'col-lg-12' },
+            t.div({ className: 'txt-bold m-b-xs' }, 'Accounts'),
+            t.div(
+              { className: 'odyle-table m-b-sm' },
+              t.table(
+                null,
+                t.thead(
+                  null,
+                  t.tr(
+                    null,
+                    t.th(null, 'Account'),
+                    t.th({ className: 'txt-right' }, 'Questions, 24 h'),
+                    t.th({ className: 'txt-right' }, '30 days'),
+                    t.th({ className: 'txt-right' }, 'Tokens in / out, 30 days'),
+                    t.th(null, 'Last asked'),
+                    t.th(null, ''),
+                  ),
+                ),
+                t.tbody(null, () =>
+                  ai.data?.accounts?.length
+                    ? ai.data.accounts.map(accountRow)
+                    : t.tr(
+                        null,
+                        t.td({ colSpan: 6, className: 'txt-hint txt-center' }, () =>
+                          ai.data ? 'No account may use the AI yet. Find one below.' : 'Loading…',
+                        ),
+                      ),
+                ),
+              ),
+            ),
+            t.div(
+              { className: 'flex' },
+              t.input({
+                type: 'search',
+                placeholder: 'Find an account by its display name',
+                value: () => ai.query,
+                oninput: e => (ai.query = e.target.value),
+                onkeydown: e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    findAccounts();
+                  }
+                },
+              }),
+              t.button(
+                { type: 'button', className: 'btn secondary', onclick: findAccounts },
+                t.span({ className: 'txt' }, 'Find'),
+              ),
+            ),
+            () =>
+              ai.found
+                ? ai.found.length
+                  ? t.div(
+                      { className: 'odyle-table m-t-sm' },
+                      t.table(
+                        null,
+                        t.tbody(
+                          null,
+                          ai.found.map(a =>
+                            t.tr(
+                              { rid: a.id + a.allowed },
+                              t.td(null, a.displayName),
+                              t.td({ className: 'txt-hint' }, a.allowed ? 'may use the AI' : 'no access'),
+                              t.td({ className: 'txt-right' }, accessButton(a)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : t.div({ className: 'txt-hint txt-sm m-t-sm' }, 'No account has a display name holding that.')
+                : null,
+            t.div(
+              { className: 'field-help' },
+              'Letting an account use the AI, or no longer, takes effect at once and is written to the audit log. You can also switch armoryAi on an account under Collections → users. Odyle keeps who asked, when and the tokens it took for 30 days, never the questions or the answers.',
+            ),
           ),
           section(
             'Packet adapters',
@@ -4173,8 +4436,15 @@ const auditKinds = [
   { id: 'job', label: 'Jobs' },
   { id: 'update-apps', label: 'App updates' },
   { id: 'vacuum', label: 'Vacuums' },
+  { id: 'ai-access', label: 'AI access' },
 ];
-const auditLabels = { settings: 'settings', job: 'job run', 'update-apps': 'update all apps', vacuum: 'vacuum' };
+const auditLabels = {
+  settings: 'settings',
+  job: 'job run',
+  'update-apps': 'update all apps',
+  vacuum: 'vacuum',
+  'ai-access': 'AI access',
+};
 const auditClass = { settings: 'info', 'update-apps': 'warning' };
 const isoMoment = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
 // A value an entry keeps, in words: switches on and off, nothing as none, moments in local time

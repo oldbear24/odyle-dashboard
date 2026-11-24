@@ -3804,6 +3804,115 @@ test('superusers set the announcement with its schedule, the switches and the ad
     );
   }
 });
+test('superusers set up the armory AI and let accounts use it on the Server controls page', async () => {
+  const { operator, page, errors, close } = await superuser();
+  const aiko = await account('Aiko Asks');
+  try {
+    await page.goto(url + '/_/#/odyle/controls');
+    await page.locator('#odyle-ai-key').waitFor();
+    assert.equal(await page.locator('#odyle-ai-key').getAttribute('placeholder'), 'sk-ant-…');
+    await page.locator('#odyle-ai-key').fill('sk-ant-api03-ui-test-0123456789abcdefWXYZ');
+    await page.locator('#odyle-ai-questions').fill('5');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await page.getByText('Saved the Odyle server controls.').waitFor();
+    // The key is never shown again, only its end.
+    assert.equal(await page.locator('#odyle-ai-key').inputValue(), '');
+    assert.match(await page.locator('#odyle-ai-key').getAttribute('placeholder'), /^Saved: sk-ant-…WXYZ/);
+    const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
+    assert.deepEqual([saved.aiKeyHint, saved.aiQuestions, saved.aiModel], ['sk-ant-…WXYZ', 5, 'claude-opus-5-5']);
+    assert.equal(JSON.stringify(saved).includes('0123456789'), false);
+    // An account found by its name may use the AI at once, and then knows it.
+    await page.getByPlaceholder('Find an account by its display name').fill('aiko');
+    await page.getByPlaceholder('Find an account by its display name').press('Enter');
+    await page.getByRole('button', { name: 'Let use the AI' }).click();
+    await page.getByText('Aiko Asks may use the armory AI.').waitFor();
+    await shot(page, 'admin-ai');
+    const status = await request('/api/odyle/armory/ai', undefined, aiko, 'GET');
+    assert.deepEqual([status.data.allowed, status.data.ready, status.data.limit], [true, true, 5]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+    await request('/api/odyle/admin/ai/access', { user: aiko.record.id, allowed: false }, operator);
+    await request('/api/odyle/admin/settings', { aiKey: '', aiQuestions: 20 }, operator);
+  }
+});
+test('nobody without access to the armory AI sees it: its address opens the armory', async () => {
+  for (const who of [null, await account('No Access')]) {
+    const { page, errors, close } = await open(who, 'armory/ai');
+    try {
+      await page.locator('#armory-form').waitFor();
+      assert.equal(new URL(page.url()).pathname, '/armory');
+      assert.equal(await page.locator('.armory-ai-link, [data-action="ai-ask-about"], #armory-ai-form').count(), 0);
+      assert.doesNotMatch(await page.locator('main').innerText(), /\bAI\b/);
+      assert.doesNotMatch(await page.title(), /\bAI\b/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  }
+});
+test('the armory search box suggests the characters Odyle knows while a name is typed', async () => {
+  const operator = (await request('/__test__/superuser', {})).data,
+    rows = [];
+  for (const [name, serverId, combatPower] of [
+    ['Suggestia', 2304, 101000],
+    ['Suggestor', 1305, 99000],
+  ])
+    rows.push(
+      (
+        await request(
+          '/api/collections/armory_ranks/records',
+          {
+            region: 'eu',
+            serverId,
+            characterId: name + 'AAAAAAAAAAAAAAAAAAAA',
+            name,
+            class: 'Chanter',
+            level: 45,
+            combatPower,
+            itemLevel: 1650,
+            checkedAt: new Date().toISOString(),
+          },
+          operator,
+        )
+      ).data.id,
+    );
+  const { page, errors, close } = await open(null, 'armory');
+  try {
+    const box = page.locator('#armory-form input[name="name"]');
+    await box.pressSequentially('sugges', { delay: 30 });
+    await page.locator('#armory-suggestions li').nth(1).waitFor();
+    assert.equal(await box.getAttribute('aria-expanded'), 'true');
+    assert.match(
+      await page.locator('#armory-suggestions li').first().innerText(),
+      /Suggestia[\s\S]*Lumiel · Europe[\s\S]*101,000 CP/,
+    );
+    await shot(page, 'armory-suggestions');
+    // The arrow keys pick one and Enter opens its profile; its lookup is answered here, so the armory's
+    // queue stays empty for the tests after this one.
+    await page.route(/\/api\/odyle\/armory\/eu\/1305\//, route =>
+      route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 404, message: 'This character is not in the armory.', data: {} }),
+      }),
+    );
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await box.getAttribute('aria-activedescendant'), 'armory-suggestion-1');
+    await page.keyboard.press('Enter');
+    await page.waitForURL(/\/armory\/eu\/1305\/SuggestorA+$/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+    // The top players and the scout's list are as the tests after this one expect them.
+    for (const id of rows)
+      await fetch(url + '/api/collections/armory_ranks/records/' + id, {
+        method: 'DELETE',
+        headers: { Authorization: operator.token },
+      });
+  }
+});
 test('superusers read who changed what in the audit log, narrow it and see new entries arrive', async () => {
   const { operator, page, errors, close } = await superuser();
   let before = null;
