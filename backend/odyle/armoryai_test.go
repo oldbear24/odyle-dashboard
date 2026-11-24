@@ -273,18 +273,18 @@ func TestTheAiAnswersWithTheArmorysTools(t *testing.T) {
 	if !strings.Contains(strings.Join(headers.Values("Anthropic-Beta"), ","), "server-side-fallback-2026-07-01") {
 		t.Fatalf("headers %v", headers)
 	}
-	if effort := first["output_config"].(map[string]any)["effort"]; effort != "medium" || first["cache_control"] == nil {
+	if effort := first["output_config"].(map[string]any)["effort"]; effort != "high" || first["cache_control"] == nil {
 		t.Fatalf("request %v", first)
 	}
 	system, _ := json.Marshal(first["system"])
-	if !strings.Contains(string(system), "Lumiel") || !strings.Contains(string(system), "cannot search the web") {
+	if !strings.Contains(string(system), "Lumiel") || !strings.Contains(string(system), "cannot search the web") || !strings.Contains(string(system), "How to plan upgrades") {
 		t.Fatalf("system %s", system)
 	}
 	names := []string{}
 	for _, tool := range first["tools"].([]any) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "search_characters,get_character,top_players,compare_with_class" {
+	if strings.Join(names, ",") != "my_characters,search_characters,get_character,top_players,compare_with_class" {
 		t.Fatalf("tools %v", names)
 	}
 	messages := first["messages"].([]any)
@@ -344,5 +344,37 @@ func TestARefusedKeyEndsTheAnswerWithoutCountingIt(t *testing.T) {
 	// Haiku has no server-side fallback.
 	if len(stand.requests) == 0 || stand.requests[0]["fallbacks"] != nil {
 		t.Fatalf("requests %v", stand.requests)
+	}
+}
+
+// "My character" is one of the account's own: the AI lists them, the main one first, with their
+// armory ids once Odyle found them on PLAYNC and what the armory knows of them; nobody else's.
+func TestTheAiKnowsTheAccountsOwnCharacters(t *testing.T) {
+	stand := &claudeStand{turns: []claudeTurn{
+		{blocks: []map[string]any{{"type": "tool_use", "id": "toolu_1", "name": "my_characters", "input": map[string]any{}}}, stop: "tool_use"},
+		{blocks: []map[string]any{{"type": "text", "text": "Your main is Kai."}}, stop: "end_turn"},
+	}}
+	stand.serve(t)
+	app := newTestApp(t)
+	player, other := newUser(t, app, "Player"), newUser(t, app, "Other")
+	allowAi(t, app, player)
+	aiReady(t, app, nil)
+	id := "KaiKaiKaiKaiKaiKaiKai="
+	saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Alt", "server": "Siel", "region": "GLOBAL_EU", "className": "Cleric", "level": 30})
+	saved(t, app, "characters", map[string]any{"user": player.Id, "characterName": "Kai", "server": "Lumiel", "region": "GLOBAL_EU", "className": "Chanter", "level": 45, "main": true,
+		"officialId": id, "officialRegion": "eu", "officialServerId": 2304})
+	saved(t, app, "characters", map[string]any{"user": other.Id, "characterName": "Stranger", "server": "Lumiel", "region": "GLOBAL_EU"})
+	saved(t, app, "armory_ranks", map[string]any{"region": "eu", "serverId": 2304, "characterId": id, "name": "Kai", "class": "Chanter", "level": 45, "combatPower": 107458, "itemLevel": 1671, "checkedAt": now()})
+	text, _ := aiAnswerOf(askAI(t, app, tokenOf(t, player), `{"messages":[{"role":"user","text":"What should I upgrade?"}]}`, 200))
+	if text != "Your main is Kai." || len(stand.requests) != 2 {
+		t.Fatalf("answer %q after %d requests", text, len(stand.requests))
+	}
+	messages := stand.requests[1]["messages"].([]any)
+	raw, _ := json.Marshal(messages[len(messages)-1])
+	found := string(raw)
+	kai, alt := strings.Index(found, `\"name\":\"Kai\"`), strings.Index(found, `\"name\":\"Alt\"`)
+	if kai < 0 || alt < kai || !strings.Contains(found, `\"path\":\"/armory/eu/2304/`+id) || !strings.Contains(found, `\"combatPower\":107458`) || strings.Contains(found, "Stranger") ||
+		!strings.Contains(found, "were not found on PLAYNC yet") {
+		t.Fatalf("my characters %s", found)
 	}
 }

@@ -92,6 +92,7 @@ function view() {
     signedIn: signedIn(),
     turns: c.turns,
     focus: c.focus,
+    draft: c.draft,
     streaming,
     statusLine,
     now: Date.now() + state.serverOffset,
@@ -121,6 +122,13 @@ function drawAnswer() {
 
 export async function aiShow(ticket) {
   aiRender();
+  const ready = () => {
+    const box = app.querySelector('#ai-question');
+    if (box && !box.disabled && load().draft) {
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+  };
   if (!signedIn()) return;
   try {
     await aiAccess(true);
@@ -129,18 +137,21 @@ export async function aiShow(ticket) {
     aiStatus = { error: error?.message || 'Request could not be completed.' };
     statusFor = account();
   }
-  if (ticket === state.navigation) aiRender();
+  if (ticket === state.navigation) {
+    aiRender();
+    ready();
+  }
 }
 
-// The AI about a profile (its page's Ask the AI): a new conversation about it, unless one is open.
-export function askAbout(answer) {
+// The AI about a profile (its page's Ask the AI, or the Upgrade tab's, with a question to ask
+// waiting in the box): a new conversation about it, unless one is open.
+export function askAbout(answer, draft = '') {
   if (!answer?.profile) return go(aiPath);
   const c = load(),
     path = profilePath(answer);
-  if (c.focus?.path !== path) {
-    conversation = { turns: [], focus: { name: answer.profile.name, path } };
-    save();
-  }
+  if (c.focus?.path !== path) conversation = { turns: [], focus: { name: answer.profile.name, path }, draft: '' };
+  if (draft) conversation.draft = draft;
+  save();
   return go(aiPath);
 }
 
@@ -183,6 +194,7 @@ async function ask(question) {
   const focus = c.focus?.path.split('/');
   if (focus?.length === 5) body.profile = { region: focus[2], serverId: Number(focus[3]), characterId: focus[4] };
   c.turns.push({ role: 'user', text: question }, { role: 'assistant', text: '', error: '', sources: [] });
+  c.draft = '';
   const turn = c.turns.at(-1);
   streaming = true;
   statusLine = { text: 'Thinking…', params: {} };
@@ -244,12 +256,12 @@ onData({
 onAction({
   'ai-new': () => {
     if (streaming) return;
-    conversation = { turns: [], focus: load().focus };
+    conversation = { turns: [], focus: load().focus, draft: '' };
     save();
     aiRender();
   },
   'ai-unfocus': () => {
-    conversation = { turns: [], focus: null };
+    conversation = { turns: [], focus: null, draft: '' };
     save();
     aiRender();
   },

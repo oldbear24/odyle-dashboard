@@ -52,6 +52,8 @@ func aiTools(web bool) []anthropic.BetaToolUnionParam {
 	compare := character()
 	compare["group"] = map[string]any{"type": "string", "enum": []string{"next", "top"}, "description": `"next": the characters a step above in combat power (what to upgrade next); "top": the strongest of the class.`}
 	tools := []anthropic.BetaToolUnionParam{
+		aiTool("my_characters", "The user's own characters: those Odyle's Windows app read for their account, their main character marked, each with its class, level and, once Odyle found it on PLAYNC, its region, serverId and characterId for get_character and compare_with_class. Call it when the user speaks of their own character (\"my character\", \"my Chanter\", \"what should I upgrade\") and names none.",
+			map[string]any{}),
 		aiTool("search_characters", "Find AION 2 Global characters by name. Part of a name finds every name holding it. Lists the characters Odyle already knows (with their combat power) in every region, and those PLAYNC's official character search finds in the region (on the server, when given). Each comes with its region, serverId and characterId for the other tools, and its Odyle profile path to link.",
 			map[string]any{
 				"query":  map[string]any{"type": "string", "description": `The name or part of it, 2 to 16 letters or digits. It may name the server or region too, for example "Kai Lumiel" or "Kai eu".`},
@@ -67,7 +69,7 @@ func aiTools(web bool) []anthropic.BetaToolUnionParam {
 				"server": map[string]any{"type": "string", "description": "Only this server (with region, or on every region)."},
 				"limit":  map[string]any{"type": "integer", "description": "How many, 1 to 50 (15 when left out)."},
 			}, "class"),
-		aiTool("compare_with_class", "What the stronger characters of a character's class wear, as its profile's Upgrade tab shows: for each slot how many wear something there, the usual grade and the medians of item level, enchantment, exceed level and stones, the items worn and stones engraved most and the stats rolled most; their sets, Daevanion boards, skills and the skills their gear raises; the spread of their combat power and item level. Read the character with get_character too, to say what to upgrade first.",
+		aiTool("compare_with_class", "The basis of every upgrade plan: what the stronger characters of a character's class wear, as its profile's Upgrade tab shows. For each slot: how many wear something there, the usual grade and the medians of item level, enchantment, exceed level and stones, the items worn and stones engraved most and the stats rolled most on them; their arcana and other sets with their bonuses, Daevanion boards, skill bars and the skills their gear raises; the spread of their combat power and item level. group \"next\" compares with the characters a step above in combat power (the realistic next upgrades), \"top\" with the strongest of the class (the long-term goal). Read the character with get_character too, and compare its items slot by slot.",
 			compare, "region", "serverId", "characterId", "group"),
 	}
 	if web {
@@ -99,7 +101,7 @@ func aiInstructions(app core.App, s settings) string {
 	if s.AiWeb {
 		web = "You may search the web for game knowledge the armory does not hold: patch notes, guides, where items come from, how mechanics work. Prefer official sources (PLAYNC, NCSOFT) and well-known community sites, say where an answer comes from, and say when it may be outdated or about the Korean or Taiwanese servers rather than Global."
 	}
-	return `You are the AI of Odyle Armory, the character armory of Odyle, a player-made dashboard for AION 2 Global (the North American, European, South American and Asian servers that NCSOFT runs through PLAYNC). You help players find characters, read their gear and compare characters with each other and with the strongest players of their class.
+	return `You are the AI of Odyle Armory, the character armory of Odyle, a player-made dashboard for AION 2 Global (the North American, European, South American and Asian servers that NCSOFT runs through PLAYNC). Your main job is to help players upgrade their characters' gear: you read a character's gear, compare it with the stronger players of its class and say what to upgrade, in what order and how. You also find characters and compare them with each other.
 
 Where the armory's data comes from:
 - PLAYNC's official character pages. Odyle reads them and keeps a copy for everyone; each profile says when it was read. Odyle asks PLAYNC slowly, one character at a time, so reading a character Odyle does not keep yet can take a minute.
@@ -107,11 +109,17 @@ Where the armory's data comes from:
 - ` + web + `
 
 How to work:
-- Use search_characters to find a character by name (part of a name works). When several match and the conversation does not make clear which one is meant, list them briefly and ask.
+- Know whose gear it is first. The character the conversation was opened from is meant unless the user names another; when the user speaks of their own character and names none, call my_characters (with several, take the main one, or ask which one when it is unclear). Otherwise use search_characters (part of a name works); when several match and nothing makes clear which one is meant, list them briefly and ask.
 - Read a character with get_character before saying anything about its gear, stats or skills, and never make up numbers. Read each character of a comparison.
-- Use top_players for the strongest of a class, and compare_with_class to see what stronger characters of the class wear (group "next" for the next step up, "top" for the strongest).
-- When you compare, be concrete: slot by slot, the grade, enchantment, exceed level, item level, stones and rolled stats that differ, and what matters most for combat power.
+- Use top_players for the strongest of a class, and compare_with_class to see what stronger characters of the class wear.
 - If a tool fails or PLAYNC is slow, say so plainly and suggest trying again.
+
+How to plan upgrades:
+- Read the character, then compare_with_class with group "next" (the characters a step above it: the realistic next upgrades); add group "top" when the user asks about the long term or the character is already among the strongest.
+- Go slot by slot (weapons and armour, accessories, arcana, wings and pet): grade, item level, enchantment against the item's maximum, exceed level, empty stone slots and weaker stones, soul binding stats, set pieces and bonuses. Name the item the stronger players moved on to and where it comes from when the comparison or the item says so.
+- Order the plan by what it gains for what it costs: first quick wins (empty stone slots, missing soul binding, stones below the usual grade, a set bonus one piece away, cheap enchantment levels), then the slots furthest behind, then long-term goals. For each step say what to do, from what to what ("enchant the weapon from +12 to +15") and why (how many of the stronger players do so, what it adds).
+- Weigh the stats the stronger players of the class roll and engrave most: those are what the class values. Mention Daevanion boards and skills when the character is clearly behind there too.
+- Keep it to the steps that matter most (five to eight at most), unless the user asks for everything. Say when the comparison has few characters, so it is a rough guide.
 
 Regions (region codes): eu Europe, nae North America East, naw North America West, la South America, as Asia.
 Servers (every region uses these names, though not every region has all of them):
@@ -150,6 +158,8 @@ func (q *aiQuestion) runTool(ctx context.Context, name string, input json.RawMes
 	var out any
 	var err error
 	switch name {
+	case "my_characters":
+		out, err = q.myCharacters()
 	case "search_characters":
 		out, err = q.searchCharacters(in.Query, in.Region, in.Server)
 	case "get_character":
@@ -592,6 +602,58 @@ func (q *aiQuestion) compareWithClass(code string, serverId int, id, group strin
 	out["players"] = players
 	if ref.Sample == 0 {
 		out["notes"] = []string{"Odyle has read the gear of no stronger " + class + " character yet."}
+	}
+	return out, nil
+}
+
+// myCharacters lists the account's own characters (those its Windows app read), its main one first,
+// with what the armory knows of each and, once the daily lookup found it on PLAYNC, its profile.
+func (q *aiQuestion) myCharacters() (map[string]any, error) {
+	rows := []struct {
+		Name             string `db:"characterName"`
+		Server           string `db:"server"`
+		Region           string `db:"region"`
+		Class            string `db:"className"`
+		Level            int64  `db:"level"`
+		Main             bool   `db:"main"`
+		OfficialId       string `db:"officialId"`
+		OfficialRegion   string `db:"officialRegion"`
+		OfficialServerId int    `db:"officialServerId"`
+		CombatPower      int64  `db:"combatPower"`
+		ItemLevel        int64  `db:"itemLevel"`
+	}{}
+	if err := q.app.DB().NewQuery("SELECT c.characterName, c.server, c.region, c.className, c.level, c.main, c.officialId, c.officialRegion, c.officialServerId, " +
+		"COALESCE(r.combatPower, 0) AS combatPower, COALESCE(r.itemLevel, 0) AS itemLevel FROM characters c " +
+		"LEFT JOIN armory_ranks r ON r.serverId = c.officialServerId AND r.characterId = c.officialId AND r.hidden = FALSE " +
+		"WHERE c.user = {:user} ORDER BY c.main DESC, c.lastSeenAt DESC, c.characterName LIMIT 30").Bind(dbx.Params{"user": q.user}).All(&rows); err != nil {
+		return nil, err
+	}
+	q.out.status("Looking up your characters…", nil)
+	book, list := serversOf(q.app), []map[string]any{}
+	for _, r := range rows {
+		c := map[string]any{"name": r.Name, "server": r.Server, "region": regionNamed(r.Region).title, "class": r.Class, "level": r.Level}
+		if r.Main {
+			c["main"] = true
+		}
+		if r.OfficialId != "" && book.inRegion(r.OfficialRegion, r.OfficialServerId) != "" {
+			c["armory"] = map[string]any{"region": r.OfficialRegion, "serverId": r.OfficialServerId, "characterId": r.OfficialId, "path": profilePathOf(r.OfficialRegion, r.OfficialServerId, r.OfficialId)}
+		}
+		if r.CombatPower > 0 {
+			c["combatPower"], c["itemLevel"] = r.CombatPower, r.ItemLevel
+		}
+		list = append(list, c)
+	}
+	out := map[string]any{"characters": list}
+	switch {
+	case len(list) == 0:
+		out["notes"] = []string{"The user has no characters in Odyle: they are added when Odyle's Windows app reads them. Ask for the character's name and server instead."}
+	default:
+		for _, c := range list {
+			if c["armory"] == nil {
+				out["notes"] = []string{"Characters without armory ids were not found on PLAYNC yet: search_characters finds them by name and server."}
+				break
+			}
+		}
 	}
 	return out, nil
 }

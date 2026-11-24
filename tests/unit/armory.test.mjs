@@ -980,6 +980,17 @@ test('the upgrade tab shows the plan, the arcana, the skills gear raises, every 
     html,
     /<a href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=\/upgrade" aria-current="page">Upgrade<\/a>/,
   );
+  // The AI makes a plan of it, for the accounts that may ask it.
+  assert.doesNotMatch(html, /data-action="ai-upgrade-plan"/);
+  assert.match(
+    armoryProfile(answer({ profile: upgraded }), now, false, false, {
+      images,
+      tab: 'upgrade',
+      upgrade: reference,
+      ai: true,
+    }),
+    /<h2>Upgrades<\/h2><div class="upgrade-groups"[^]*?<\/div><button type="button" class="button secondary armory-ai-link" data-action="ai-upgrade-plan">[^]*Ask the AI for a plan<\/button><\/div>/,
+  );
   // The group: the next step, chosen; the strongest a button away.
   assert.match(
     html,

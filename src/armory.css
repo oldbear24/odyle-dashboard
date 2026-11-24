@@ -2206,3 +2206,13 @@ i.armory-stone-art {
     grid-column: 1/-1;
   }
 }
+/* The Upgrade tab's heading with the AI's plan beside the group: it wraps on narrow screens. */
+.section-heading:has(> .armory-ai-link) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.section-heading > .armory-ai-link {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 12px;
+}

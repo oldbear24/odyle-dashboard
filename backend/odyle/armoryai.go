@@ -19,12 +19,13 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// The armory's AI (/armory/ai, src/armoryai.js): signed-in players a superuser lets use it ask
-// questions about AION 2 Global characters in their own words, and Anthropic's Claude answers
-// them with the armory's own data: it finds characters (armoryfind.go), reads the profiles the
-// armory keeps or looks them up at PLAYNC (armory.go), lists the strongest of a class (ranks.go)
-// and compares a character with them (upgrades.go), and, when Server controls allow it, searches
-// the web (armoryaitools.go). A superuser saves the Anthropic API key, the model and how many
+// The armory's AI (/armory/ai, src/armoryai.js): signed-in players a superuser lets use it ask, in
+// their own words, how to upgrade their characters' gear (and about AION 2 Global characters at
+// all), and Anthropic's Claude answers them with the armory's own data: it knows the account's own
+// characters, finds characters (armoryfind.go), reads the profiles the armory keeps or looks them
+// up at PLAYNC (armory.go), lists the strongest of a class (ranks.go) and compares a character with
+// the stronger characters of its class as the Upgrade tab does (upgrades.go), and, when Server
+// controls allow it, searches the web (armoryaitools.go). A superuser saves the Anthropic API key, the model and how many
 // questions an account may ask in 24 hours under Server controls (settings.go), and lets accounts
 // use it (users.armoryAi, aiaccess.go).
 //
@@ -231,7 +232,7 @@ func (f aiFocus) note(book serverBook) string {
 		if f.name != "" {
 			who = f.name
 		}
-		lines = append(lines, "The user opened this conversation from the profile of "+who+" on "+book.name(f.serverId)+" (region "+f.code+", serverId "+strconv.Itoa(f.serverId)+", characterId "+f.characterId+", path "+f.profile+"). \"This character\" or \"my character\" most likely means it.")
+		lines = append(lines, "The user opened this conversation from the profile of "+who+" on "+book.name(f.serverId)+" (region "+f.code+", serverId "+strconv.Itoa(f.serverId)+", characterId "+f.characterId+", path "+f.profile+"). \"This character\" means it, and so does a question about upgrades that names no other.")
 	}
 	if r := regionNamed(f.region); r.digit != 0 {
 		lines = append(lines, "The region last chosen in the armory's search: "+r.title+" (region code "+r.code+"). Search there when the user names no region.")
@@ -443,12 +444,13 @@ func (q *aiQuestion) messages(conversation []aiTurn) []anthropic.BetaMessagePara
 func (q *aiQuestion) ask(ctx context.Context, conversation []aiTurn) error {
 	client := q.client()
 	params := anthropic.BetaMessageNewParams{
-		Model:        q.model.Id,
-		MaxTokens:    aiMaxTokens,
-		System:       []anthropic.BetaTextBlockParam{{Text: aiInstructions(q.app, q.settings)}},
-		Messages:     q.messages(conversation),
-		Tools:        aiTools(q.settings.AiWeb),
-		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffortMedium},
+		Model:     q.model.Id,
+		MaxTokens: aiMaxTokens,
+		System:    []anthropic.BetaTextBlockParam{{Text: aiInstructions(q.app, q.settings)}},
+		Messages:  q.messages(conversation),
+		Tools:     aiTools(q.settings.AiWeb),
+		// An upgrade plan weighs many slots against the stronger players of the class: high effort.
+		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffortHigh},
 		// The instructions, tools and conversation so far are cached for the next request.
 		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
 	}

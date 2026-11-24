@@ -493,7 +493,7 @@ The superuser status answer carries `armory`: `{ profiles, hidden, waiting, fetc
 
 ### Armory AI
 
-Signed-in accounts a superuser lets use it (dashboard 1.2.0, `users.armoryAi`, see [Superuser monitor and settings](#superuser-monitor-and-settings)) ask the armory's AI about characters ([Armory](armory.md#the-ai)). Both routes need a `users` token (401 without).
+Signed-in accounts a superuser lets use it (dashboard 1.2.0, `users.armoryAi`, see [Superuser monitor and settings](#superuser-monitor-and-settings)) ask the armory's AI, above all how to upgrade their characters' gear ([Armory](armory.md#the-ai)); its tools read the account's own characters when it asks about them. Both routes need a `users` token (401 without).
 
 `GET /api/odyle/armory/ai` answers `{ allowed: false }` for any other account, and for one that may: `{ allowed: true, ready, configured, paused, limit, used, remaining, freeAt, web, model }`: whether it answers now (`ready`: an Anthropic API key is saved, `configured`, and it is not `paused`), how many questions an account may ask in any 24 hours (`limit`), how many of them the account asked (`used`, those that took tokens) and has left (`remaining`), once none is left when the next one may be asked (`freeAt`, ISO time, else `""`), whether it may search the web (`web`) and the model's name (`Claude Opus 5.5`).
 

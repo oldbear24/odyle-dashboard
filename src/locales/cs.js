@@ -2381,16 +2381,7 @@ export default {
   'Ask the AI': 'Zeptat se AI',
   'Armory AI · Odyle Armory': 'AI armory · Odyle Armory',
   'Ask the armory AI': 'Zeptej se AI armory',
-  'Ask about any AION 2 Global character in your own words: find someone without the exact name or server, compare characters, or see what the strongest of a class wear.':
-    'Ptej se vlastními slovy na kteroukoli postavu z AION 2 Global: najdi někoho bez přesného jména a serveru, porovnej postavy nebo zjisti, co nosí nejsilnější hráči třídy.',
   'What should {name} upgrade first?': 'Co by měl(a) {name} vylepšit jako první?',
-  'Compare {name} with the strongest characters of the class.':
-    'Porovnej {name} s nejsilnějšími postavami stejné třídy.',
-  'How did {name} progress lately?': 'Jak se {name} v poslední době zlepšil(a)?',
-  'Who are the strongest Templars in Europe?': 'Kdo jsou nejsilnější Templaři v Evropě?',
-  'Compare Kai on Lumiel with the strongest Chanter Odyle knows.':
-    'Porovnej Kaie z Lumielu s nejsilnějším Chanterem, kterého Odyle zná.',
-  'Find characters whose name starts with Lumi.': 'Najdi postavy, jejichž jméno začíná na Lumi.',
   'Where does the best Gladiator weapon drop?': 'Kde padá nejlepší zbraň pro Gladiatora?',
   'Sign in to ask the armory AI. Only the accounts the server’s operator lets use it can ask.':
     'Přihlas se, abys mohl(a) využít AI armory. Ptát se mohou jen účty, kterým to správce serveru povolí.',
@@ -2407,7 +2398,6 @@ export default {
   'For example:': 'Například:',
   'You can ask again from {time}.': 'Znovu se můžeš zeptat od {time}.',
   'Your question': 'Tvoje otázka',
-  'Ask about a character…': 'Zeptej se na postavu…',
   'No questions left for now.': 'Teď ti nezbývají žádné otázky.',
   'Answering…': 'Odpovídá…',
   Ask: 'Zeptat se',
@@ -2457,4 +2447,16 @@ export default {
     'Za posledních 24 hodin už jsi AI položil(a) všechny povolené otázky. Zkus to později.',
   'Choose one of the AI models offered.': 'Vyber jeden z nabízených modelů AI.',
   'Paste an Anthropic API key: it starts with sk-ant-.': 'Vlož API klíč Anthropicu: začíná na sk-ant-.',
+  'Ask the AI for a plan': 'Požádat AI o plán',
+  'Make an upgrade plan for {name}, step by step.': 'Sestav pro {name} plán upgradů krok za krokem.',
+  'Which stones and stats should {name} aim for?': 'Na jaké kameny a statistiky by se měl(a) {name} zaměřit?',
+  'What should my character upgrade first?': 'Co by moje postava měla vylepšit jako první?',
+  'Which stats do the strongest Chanters roll on their gear?': 'Jaké statistiky mají nejsilnější Chanteři na výbavě?',
+  'Which arcana sets do the strongest Templars run?': 'Jaké sety arcan používají nejsilnější Templaři?',
+  'Where do the items {name} should get next come from?':
+    'Odkud získat předměty, které by měl(a) {name} pořídit jako další?',
+  'Ask in your own words how to upgrade your gear: what to improve first, which items, stones and stats the stronger players of your class use, and where they come from. It finds and compares other characters too.':
+    'Zeptej se vlastními slovy, jak vylepšit výbavu: co vylepšit nejdřív, jaké předměty, kameny a statistiky používají silnější hráči tvé třídy a kde je získat. Umí také najít a porovnat další postavy.',
+  'Ask about your gear or a character…': 'Zeptej se na výbavu nebo na postavu…',
+  'Looking up your characters…': 'Hledá tvoje postavy…',
 };

@@ -153,13 +153,14 @@ export function conversationOf(turns, question) {
   return [...kept, { role: 'user', text: question }];
 }
 
-// A conversation kept in the tab, as far as it still makes sense.
+// A conversation kept in the tab, as far as it still makes sense: its messages, the profile it is
+// about and a question waiting to be asked (draft).
 export function readConversation(raw) {
   let kept;
   try {
     kept = JSON.parse(raw);
   } catch {
-    return { turns: [], focus: null };
+    return { turns: [], focus: null, draft: '' };
   }
   const turns = (Array.isArray(kept?.turns) ? kept.turns : [])
     .filter(turn => turn && (turn.role === 'user' || turn.role === 'assistant') && typeof turn.text === 'string')
@@ -174,25 +175,32 @@ export function readConversation(raw) {
     .slice(-60);
   const f = kept?.focus;
   const focus = f && typeof f.name === 'string' && armoryRoute.test(f.path || '') ? f : null;
-  return { turns, focus };
+  const draft = typeof kept?.draft === 'string' ? kept.draft.slice(0, aiQuestionLength) : '';
+  return { turns, focus, draft };
 }
 
 // ---------------------------------------------------------------- Page
 
-// The examples an empty conversation offers, about the profile it was opened from when there is one.
+// The examples an empty conversation offers: upgrades first, about the profile it was opened from
+// when there is one.
 export function examples(focus, web) {
   const list = focus
     ? [
         t('What should {name} upgrade first?', { name: focus.name }),
-        t('Compare {name} with the strongest characters of the class.', { name: focus.name }),
-        t('How did {name} progress lately?', { name: focus.name }),
+        t('Make an upgrade plan for {name}, step by step.', { name: focus.name }),
+        t('Which stones and stats should {name} aim for?', { name: focus.name }),
       ]
     : [
-        t('Who are the strongest Templars in Europe?'),
-        t('Compare Kai on Lumiel with the strongest Chanter Odyle knows.'),
-        t('Find characters whose name starts with Lumi.'),
+        t('What should my character upgrade first?'),
+        t('Which stats do the strongest Chanters roll on their gear?'),
+        t('Which arcana sets do the strongest Templars run?'),
       ];
-  if (web) list.push(t('Where does the best Gladiator weapon drop?'));
+  if (web)
+    list.push(
+      focus
+        ? t('Where do the items {name} should get next come from?', { name: focus.name })
+        : t('Where does the best Gladiator weapon drop?'),
+    );
   return list;
 }
 
@@ -230,7 +238,7 @@ export function aiTurn(turn, last, view) {
 export function aiPage(view) {
   const { status, signedIn, turns = [], focus = null, streaming = false } = view;
   const blocked = closed(status, signedIn);
-  const heading = `<div class="heading"><div><h1>${icon('spark')} ${t('Ask the armory AI')}</h1><p>${t('Ask about any AION 2 Global character in your own words: find someone without the exact name or server, compare characters, or see what the strongest of a class wear.')}</p></div><div class="heading-actions">${turns.length && !blocked ? `<button class="button secondary" data-action="ai-new" ${streaming ? 'disabled' : ''}>${t('New conversation')}</button>` : ''}<a class="button secondary" href="${esc(link('/armory'))}">${icon('search')} ${t('Search the armory')}</a></div></div>`;
+  const heading = `<div class="heading"><div><h1>${icon('spark')} ${t('Ask the armory AI')}</h1><p>${t('Ask in your own words how to upgrade your gear: what to improve first, which items, stones and stats the stronger players of your class use, and where they come from. It finds and compares other characters too.')}</p></div><div class="heading-actions">${turns.length && !blocked ? `<button class="button secondary" data-action="ai-new" ${streaming ? 'disabled' : ''}>${t('New conversation')}</button>` : ''}<a class="button secondary" href="${esc(link('/armory'))}">${icon('search')} ${t('Search the armory')}</a></div></div>`;
   if (blocked)
     return `<main class="dashboard armory armory-ai">${heading}<section class="armory-panel ai-closed">${blocked}</section></main>`;
   const about = focus
@@ -249,7 +257,7 @@ export function aiPage(view) {
     !left && status.freeAt
       ? ' ' + t('You can ask again from {time}.', { time: changedAt(status.freeAt, view.now || Date.now()) })
       : '';
-  const form = `<form id="armory-ai-form" class="ai-form"><label class="sr-only" for="ai-question">${t('Your question')}</label><textarea id="ai-question" name="question" rows="2" maxlength="2000" required placeholder="${esc(left ? t('Ask about a character…') : t('No questions left for now.'))}" ${left && !streaming ? '' : 'disabled'}></textarea><button class="button primary" type="submit" ${left && !streaming ? '' : 'disabled'}>${streaming ? t('Answering…') : t('Ask')}</button></form>`;
+  const form = `<form id="armory-ai-form" class="ai-form"><label class="sr-only" for="ai-question">${t('Your question')}</label><textarea id="ai-question" name="question" rows="2" maxlength="2000" required placeholder="${esc(left ? t('Ask about your gear or a character…') : t('No questions left for now.'))}" ${left && !streaming ? '' : 'disabled'}>${esc(view.draft || '')}</textarea><button class="button primary" type="submit" ${left && !streaming ? '' : 'disabled'}>${streaming ? t('Answering…') : t('Ask')}</button></form>`;
   const note = `<p class="armory-note">${icon('info')}<span>${t('{n} of {limit} questions left in 24 hours.', { n: number(Math.max(0, status.remaining)), limit: number(status.limit) })}${freeAt} ${esc(status.web ? t('{model} by Anthropic answers with the armory’s data and the web. Answers can be wrong: check the profiles they link.', { model: status.model || 'Claude' }) : t('{model} by Anthropic answers with the armory’s data. Answers can be wrong: check the profiles they link.', { model: status.model || 'Claude' }))} ${t('Your questions go to Anthropic to be answered; Odyle keeps only that you asked, and this tab the conversation.')}</span></p>`;
   return `<main class="dashboard armory armory-ai">${heading}${about}<section class="ai-log" aria-live="polite" aria-busy="${streaming}">${log}</section>${form}${note}</main>`;
 }

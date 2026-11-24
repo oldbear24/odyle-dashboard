@@ -104,8 +104,9 @@ test('a question is sent with the latest of the conversation, failed answers lef
 });
 
 test('a kept conversation is read as far as it makes sense', () => {
-  assert.deepEqual(readConversation('nonsense'), { turns: [], focus: null });
-  assert.deepEqual(readConversation(null), { turns: [], focus: null });
+  assert.deepEqual(readConversation('nonsense'), { turns: [], focus: null, draft: '' });
+  assert.deepEqual(readConversation(null), { turns: [], focus: null, draft: '' });
+  assert.equal(readConversation(JSON.stringify({ draft: 'x'.repeat(3000) })).draft.length, 2000);
   const read = readConversation(
     JSON.stringify({
       turns: [
@@ -166,11 +167,22 @@ test('the page says why an account cannot ask, or shows the conversation and the
   );
   assert.match(
     empty,
-    /<textarea id="ai-question" name="question"[^>]*required placeholder="Ask about a character…" ><\/textarea>/,
+    /<textarea id="ai-question" name="question"[^>]*required placeholder="Ask about your gear or a character…" ><\/textarea>/,
   );
   assert.match(empty, /17 of 20 questions left in 24 hours\./);
   assert.match(empty, /Claude Opus 5\.5 by Anthropic answers with the armory’s data and the web\./);
-  assert.equal(examples(null, false).length, 3);
+  // Upgrades first, about the profile when there is one; the web's example only with the web on.
+  assert.deepEqual(examples(null, false), [
+    'What should my character upgrade first?',
+    'Which stats do the strongest Chanters roll on their gear?',
+    'Which arcana sets do the strongest Templars run?',
+  ]);
+  assert.equal(examples({ name: 'Kai' }, true).at(-1), 'Where do the items Kai should get next come from?');
+  // A question waiting to be asked (the Upgrade tab's) is in the box, escaped.
+  assert.match(
+    aiPage({ status, signedIn: true, turns: [], draft: 'What should <Kai> upgrade first?' }),
+    /<textarea id="ai-question"[^>]*>What should &lt;Kai&gt; upgrade first\?<\/textarea>/,
+  );
   const turns = [
     { role: 'user', text: 'Who is <Kai>?' },
     { role: 'assistant', text: 'Kai is **strong**', sources: [{ url: 'https://example.com', title: 'Guide' }] },

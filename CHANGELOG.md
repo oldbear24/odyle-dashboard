@@ -8,12 +8,13 @@ What changed in each release of the Odyle dashboard and server, newest first, wr
 - **One search box in the armory.** Type a name or just part of it. The server is optional: without one, Odyle searches every server of the region. You can also type the server or region with the name, like `Kai Lumiel` or `Kai eu`.
 - **Suggestions as you type**: the characters Odyle already knows, from every region, with their class, server and combat power. The arrow keys and Enter open one.
 - Search results show each character's server and, when Odyle knows it, its combat power and portrait.
-- **Ask the armory AI**, for the players the server's operator lets use it. Ask about characters in your own words, in Czech or English:
-  - it finds characters without the exact name or server;
-  - it reads their profiles and compares them with each other and with the strongest players of their class;
-  - it says what to upgrade first and, when the operator allows it, looks things up on the web, with the pages it used.
+- **The armory AI helps you upgrade your gear**, for the players the server's operator lets use it. Ask in your own words, in Czech or English, what your character should upgrade:
+  - it reads your character's gear and compares it slot by slot with the stronger players of your class;
+  - it makes a plan in order: quick wins first (empty stone slots, missing soul binding, weaker stones, a set bonus one piece away), then the slots furthest behind and the long-term goals, with what to do and why;
+  - it knows your own characters, so "my character" is enough, and finds and compares any other character too;
+  - when the operator allows it, it looks up where items come from on the web, with the pages it used.
 
-  Answers appear as they are written and link every character they name. Open it from the armory page, or with **Ask the AI** on a profile to ask about that character.
+  Answers appear as they are written and link every character they name. Open it from the armory page, with **Ask the AI** on a profile, or with **Ask the AI for a plan** on the Upgrade tab.
 
 ### Changed
 - The search in the **Compare** picker works like the armory's: part of a name is enough and the server is optional.

@@ -835,7 +835,7 @@ function upgradeRow(images, row) {
 // The Upgrade tab: what to do to catch up with the next step (the nearest characters a little
 // stronger) or with the strongest characters of the class the armory keeps (upgrade.js); upgrade
 // is the backend's comparison (null while it loads), group the one asked for.
-function upgradeTab(answer, p, images, upgrade, group = 'next') {
+function upgradeTab(answer, p, images, upgrade, group = 'next', ai = false) {
   const of = { class: p.class || t('this class') };
   const switcher = `<div class="upgrade-groups" role="group" aria-label="${esc(t('Compare with'))}">${[
     ['next', t('The next step')],
@@ -846,7 +846,11 @@ function upgradeTab(answer, p, images, upgrade, group = 'next') {
         `<button type="button" class="${key === group ? 'is-active' : ''}" data-armory-upgrade-group="${key}" aria-pressed="${key === group}">${esc(label)}</button>`,
     )
     .join('')}</div>`;
-  const heading = `<div class="section-heading"><h2>${t('Upgrades')}</h2>${switcher}</div>`;
+  // The armory's AI makes a plan of these, for the accounts that may ask it (armoryai.js).
+  const askAi = ai
+    ? `<button type="button" class="button secondary armory-ai-link" data-action="ai-upgrade-plan">${icon('spark')} ${t('Ask the AI for a plan')}</button>`
+    : '';
+  const heading = `<div class="section-heading"><h2>${t('Upgrades')}</h2>${switcher}${askAi}</div>`;
   if (!upgrade)
     return `<section class="armory-panel upgrade-intro">${heading}<p class="armory-empty upgrade-wait"><span class="armory-spinner" aria-hidden="true"></span>${esc(group === 'next' ? t('Comparing with the {class} characters a step above…', of) : t('Comparing with the strongest {class} characters the armory keeps…', of))}</p></section>`;
   if (upgrade.error)
@@ -997,7 +1001,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
           : tab === 'appearance'
             ? appearanceTab(profile, images)
             : tab === 'upgrade'
-              ? upgradeTab(answer, profile, images, view.upgrade, view.upgradeGroup)
+              ? upgradeTab(answer, profile, images, view.upgrade, view.upgradeGroup, view.ai)
               : progressPanel(answer.history) + gearTab(profile, images, loading);
   return `<main class="dashboard armory armory-profile">${hero}${status}${nav}<div class="armory-tab">${content}</div>${back}</main>`;
 }

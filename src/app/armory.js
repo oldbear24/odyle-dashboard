@@ -559,6 +559,9 @@ onData({
 onAction({
   'armory-refresh': () => armoryPage(state.shown, state.navigation, true),
   'ai-ask-about': () => askAbout(armoryAnswer),
+  // The Upgrade tab's: the AI's plan for this character, its question waiting to be asked.
+  'ai-upgrade-plan': () =>
+    askAbout(armoryAnswer, t('What should {name} upgrade first?', { name: armoryAnswer?.profile?.name || '' })),
   'armory-bookmark': () => toggleBookmark(),
   'card-flip': () => cardFlip?.(),
   'card-image': async () => {
