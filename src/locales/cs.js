@@ -2431,6 +2431,13 @@ export default {
   'The AI service did not answer. Try again in a minute.': 'Služba AI neodpověděla. Zkus to za minutu.',
   'The AI gave no answer. Try again.': 'AI neodpověděla. Zkus to znovu.',
   'Say whether the account may use the AI.': 'Uveď, zda účet může používat AI.',
+  'Choose whether the entry is a best practice or a guide.': 'Vyber, zda je záznam osvědčený postup, nebo průvodce.',
+  'The name is how the AI asks for a guide: lower-case letters, digits and dashes, like soul-binding (up to 60).':
+    'Podle názvu si AI průvodce vyžádá: malá písmena, číslice a pomlčky, třeba soul-binding (nejvýš 60).',
+  'Give the guide a summary: the AI picks the guides to read by it.':
+    'Dej průvodci shrnutí: podle něj AI vybírá, které průvodce si přečte.',
+  "Write the entry's text.": 'Napiš text záznamu.',
+  'This entry no longer exists: someone deleted it.': 'Tento záznam už neexistuje: někdo ho smazal.',
   'This account no longer exists.': 'Tento účet už neexistuje.',
   'The AI is still answering your last question. Wait for its answer.':
     'AI ještě odpovídá na tvou předchozí otázku. Počkej na odpověď.',
