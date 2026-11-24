@@ -6,8 +6,8 @@ cloud.google.com/go/compute/metadata v0.5.0 h1:Zr0eK8JbFv6+Wi4ilXAR8FJ3wyNdpxHKJ
 cloud.google.com/go/compute/metadata v0.5.0/go.mod h1:aHnloV2TPI38yx4s9+wAZhHykWvVCfu7hQbF+9CWoiY=
 ganigeorgiev.com/fexpr v0.7.0 h1:Os5bP9dU13UNo5qDTsTPTTkodLM96kO52WIEmMmCt30=
 ganigeorgiev.com/fexpr v0.7.0/go.mod h1:XrG5iYw+AGq55zq2+QY1zQvO+ovbEca08u7q0hucPdY=
-ganigeorgiev.com/pocketbase/dbx v1.13.0 h1:t8S5CaMv93tEOqaOToFaVQ994zldshdhIrVHKmxRjwc=
-ganigeorgiev.com/pocketbase/dbx v1.13.0/go.mod h1:QefEiWbbE/YoSipLGg33FbNc/GAX/2f3ymz02j2MGKo=
+ganigeorgiev.com/pocketbase/dbx v1.14.0 h1:7d0AFRC6X1/vWf7Z9KsPkFbhRDCDu6gUoxXdTS7JB7s=
+ganigeorgiev.com/pocketbase/dbx v1.14.0/go.mod h1:QefEiWbbE/YoSipLGg33FbNc/GAX/2f3ymz02j2MGKo=
 ganigeorgiev.com/pocketbase/ozzo-validation/v4 v4.4.1 h1:teL3Lw7HCGZRdIQdqE/gV5DueFaN5Wj+/r4Ewg3M2WA=
 ganigeorgiev.com/pocketbase/ozzo-validation/v4 v4.4.1/go.mod h1:oV1SPPkS3PlKYYj+r9YDs48ooAWgC736cuFanXDXxbM=
 ganigeorgiev.com/pocketbase/pocketbase v0.42.3 h1:4NE29QTH5mugPdgDreJrgJxNpsr+1GVB1wTpmx8lrg4=
