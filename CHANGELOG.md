@@ -2,6 +2,13 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.3.0 · 2026-11-24
+
+### Changed
+- For server operators:
+  - the armory's AI now follows a **knowledge base** of AION 2's gear. Its best practices go into every plan, and it reads the guides on enchanting, exceed, stones, soul binding, arcana and the other mechanics when a question needs them. Migration 1791763290 starts it with researched entries, each with its sources. On the new **AI knowledge** page of the Odyle pages you read every entry as the AI reads it, correct it as patches change the game, add your own, switch one off or delete it. Changes are written to the audit log;
+  - `GET /api/odyle/admin/ai` also answers what the knowledge base holds, and `/api/odyle/admin/ai/knowledge` lists, saves and deletes its entries.
+
 ## 1.2.0 · 2026-11-24
 
 ### New

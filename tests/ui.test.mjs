@@ -3826,6 +3826,15 @@ test('superusers set up the armory AI and let accounts use it on the Server cont
     await page.getByPlaceholder('Find an account by its display name').press('Enter');
     await page.getByRole('button', { name: 'Let use the AI' }).click();
     await page.getByText('Aiko Asks may use the armory AI.').waitFor();
+    // The knowledge base the AI follows, kept under Collections.
+    await page.getByText(/The AI follows \d+ best practices in every answer and reads the \d+ guides/).waitFor();
+    assert.equal(
+      await page
+        .locator('p', { hasText: 'The AI follows' })
+        .getByRole('link', { name: 'AI knowledge' })
+        .getAttribute('href'),
+      '#/odyle/knowledge',
+    );
     await shot(page, 'admin-ai');
     const status = await request('/api/odyle/armory/ai', undefined, aiko, 'GET');
     assert.deepEqual([status.data.allowed, status.data.ready, status.data.limit], [true, true, 5]);
@@ -3834,6 +3843,64 @@ test('superusers set up the armory AI and let accounts use it on the Server cont
     await close();
     await request('/api/odyle/admin/ai/access', { user: aiko.record.id, allowed: false }, operator);
     await request('/api/odyle/admin/settings', { aiKey: '', aiQuestions: 20 }, operator);
+  }
+});
+test('superusers read, edit, switch off, add and delete the armory AI knowledge on its page', async () => {
+  const { operator, page, errors, close } = await superuser();
+  const knowledge = async () => (await request('/api/odyle/admin/ai/knowledge', undefined, operator, 'GET')).data;
+  const guide = (await knowledge()).entries.find(e => e.kind === 'guide' && !e.disabled);
+  try {
+    await page.goto(url + '/_/#/odyle/knowledge');
+    await page.locator('.odyle-kb-row').first().waitFor();
+    assert.ok((await page.locator('.odyle-kb-list').first().locator('.odyle-kb-row').count()) > 1);
+    await shot(page, 'admin-ai-knowledge');
+    // A guide opens as the AI reads it: its Markdown drawn, its sources as links.
+    await page.locator('.odyle-kb-open', { hasText: guide.title }).first().click();
+    await page.locator('.odyle-md').waitFor();
+    assert.ok((await page.locator('.odyle-md > *').count()) > 1);
+    assert.ok((await page.locator('.odyle-kb-sources a[href^="https://"]').count()) > 0);
+    await shot(page, 'admin-ai-knowledge-guide');
+    // Edited, it is saved and written to the audit log.
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.locator('#odyle-kb-summary').fill(guide.summary + ' Checked.');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByText('Saved the guide ' + guide.title + '. The AI uses it from the next question.').waitFor();
+    assert.equal((await knowledge()).entries.find(e => e.id === guide.id).summary, guide.summary + ' Checked.');
+    const audit = (await request('/api/odyle/admin/audit?kind=ai-knowledge', undefined, operator, 'GET')).data.entries;
+    assert.equal(audit[0].summary, 'Changed the AI guide ' + guide.title);
+    // A new best practice takes its name from its title and comes last.
+    await page.getByRole('button', { name: 'All entries' }).click();
+    await page.getByRole('button', { name: 'New best practice' }).click();
+    await page.locator('#odyle-kb-title').fill('UI test rule');
+    assert.equal(await page.locator('#odyle-kb-name').inputValue(), 'ui-test-rule');
+    await page.locator('#odyle-kb-body').fill('Check the armory before you buy.');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByText('Saved the best practice UI test rule.', { exact: false }).waitFor();
+    const rules = (await knowledge()).entries.filter(e => e.kind === 'rule');
+    assert.equal(rules.at(-1).name, 'ui-test-rule');
+    // Switched off from the list, the AI leaves it out.
+    await page.getByRole('button', { name: 'All entries' }).click();
+    await page.locator('label', { hasText: 'Switch off UI test rule' }).click();
+    await page.getByText('Switched off the best practice UI test rule.', { exact: false }).waitFor();
+    assert.equal((await knowledge()).entries.find(e => e.name === 'ui-test-rule').disabled, true);
+    // Deleted after confirming.
+    await page.locator('.odyle-kb-open', { hasText: 'UI test rule' }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete' }).click();
+    const confirm = page.locator('.modal.popup', { hasText: 'Delete the best practice UI test rule?' });
+    await confirm.getByRole('button', { name: 'Delete' }).click();
+    await page.getByText('Deleted the best practice UI test rule.').waitFor();
+    assert.equal(
+      (await knowledge()).entries.some(e => e.name === 'ui-test-rule'),
+      false,
+    );
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+    const { entries } = await knowledge();
+    const left = entries.find(e => e.name === 'ui-test-rule');
+    if (left) await request('/api/odyle/admin/ai/knowledge/' + left.id, undefined, operator, 'DELETE');
+    await request('/api/odyle/admin/ai/knowledge', { ...guide, id: guide.id }, operator);
   }
 });
 test('nobody without access to the armory AI sees it: its address opens the armory', async () => {

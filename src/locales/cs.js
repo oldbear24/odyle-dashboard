@@ -2418,6 +2418,8 @@ export default {
   'Reading a character from PLAYNC…': 'Načítá postavu z PLAYNC…',
   'Listing the strongest {class} characters…': 'Vypisuje nejsilnější postavy třídy {class}…',
   'Comparing with the stronger {class} characters…': 'Porovnává se silnějšími postavami třídy {class}…',
+  'Reading the guide {title}…': 'Čte průvodce {title}…',
+  'Reading {n} guides…': 'Čte průvodce ({n})…',
   'The AI declined to answer this question. Ask it differently.':
     'AI odmítla na tuto otázku odpovědět. Zeptej se jinak.',
   'The answer took too long. Ask a narrower question.': 'Odpověď trvala příliš dlouho. Polož užší otázku.',

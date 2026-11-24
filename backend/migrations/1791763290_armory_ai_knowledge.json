@@ -1,0 +1,468 @@
+[
+  {
+    "name": "read-caps-from-the-item",
+    "kind": "rule",
+    "title": "Read caps from the item",
+    "summary": "",
+    "body": "Read caps from the item itself (maxEnchantLevel, maxExceedEnchantLevel), never from the grade or a Korean guide: Amplify caps differ per item (1, 3 or 5 on Global) and patches change them.",
+    "sources": [
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet",
+      "https://patchbot.io/games/aion-2/articles/2081-notice-patch-notes-nov-3-pst-nov-4-cet",
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide"
+    ],
+    "position": 10
+  },
+  {
+    "name": "grade-names",
+    "kind": "rule",
+    "title": "Name the grade players see",
+    "summary": "",
+    "body": "Name the grade players see in the game: PLAYNC's grade key \"Legend\", which the armory's pages show, is called \"Epic\" in the Global client, so say \"Epic (Legend on the armory)\". PLAYNC's \"Epic\" and \"Mythic\" keys are the Korean Hero tier and above, which Global gear does not have yet.",
+    "sources": [
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026",
+      "https://metabot.gg/en/aion-2/guides/manastone-guide"
+    ],
+    "position": 20
+  },
+  {
+    "name": "global-not-korea",
+    "kind": "rule",
+    "title": "Global numbers, not Korean ones",
+    "summary": "",
+    "body": "Say which region a number comes from, and never apply KR-only systems, caps or item levels to Global characters: Hero gear, breakthrough 7, +20 belts/amulets, Scales and stat arcana, the Marchutan/Yustiel/Lumiel boards, Devotion Runes, level 55.",
+    "sources": [
+      "https://www.gamemeca.com/view.php?gid=1783197",
+      "https://metabot.gg/en/aion-2/arcana",
+      "https://metabot.gg/en/aion-2/guides/daevanion-guide"
+    ],
+    "position": 30
+  },
+  {
+    "name": "stones-before-enchanting",
+    "kind": "rule",
+    "title": "Fill stone slots before enchanting",
+    "summary": "",
+    "body": "Fill empty manastone/soulstone slots before spending on enchant levels. Engraving costs 500–2,000 Kina per item and always succeeds, while a single +11 attempt on endgame gear costs 360,000 Kina.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/manastone-guide",
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide"
+    ],
+    "position": 40
+  },
+  {
+    "name": "enchant-to-10-freely",
+    "kind": "rule",
+    "title": "Enchant to +10 freely, past it only keepers",
+    "summary": "",
+    "body": "Enchant to +10 freely: it is guaranteed and cheap. Do not push gear you will replace within a few clears past +10; save +11–15 for pieces you will keep.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide",
+      "https://www.inven.co.kr/board/aion2/6444/359",
+      "https://www.inven.co.kr/board/aion2/6444/650"
+    ],
+    "position": 50
+  },
+  {
+    "name": "enchant-failures",
+    "kind": "rule",
+    "title": "What a failed enchantment costs",
+    "summary": "",
+    "body": "Failing an enchant from +11 to +15 only costs materials (no downgrade, no break), and +5% pity per failure caps each step at 8–17 tries. Budget about 15 attempts for +10→+15 before starting.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide",
+      "https://gamewith.ai/aion2/en/enhancement-simulator"
+    ],
+    "position": 60
+  },
+  {
+    "name": "amplify-the-weapon-first",
+    "kind": "rule",
+    "title": "Amplify the weapon first",
+    "summary": "",
+    "body": "Amplify (exceed) only max-enchanted Unique pieces you will keep. Do the weapon first: about +1% Damage Boost per level at item level 102, versus about 0.5% on armour and accessories. Steps 1–2 give the best value; +5 is poor value at 20% base odds.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide",
+      "https://aion2hub.com/database/items/110630105",
+      "https://www.inven.co.kr/board/aion2/6444/820"
+    ],
+    "position": 70
+  },
+  {
+    "name": "transfer-before-replacing",
+    "kind": "rule",
+    "title": "Check Transfer before replacing",
+    "summary": "",
+    "body": "Before replacing or extracting an enchanted piece, check Transfer. It moves enhancement and soul binding to a same-slot Unique item, and Global added Expedition-to-Crafted paths on 28 Oct 2026. Extraction returns Enhance Stones but never Kina.",
+    "sources": [
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet",
+      "https://metabot.gg/en/aion-2/enhancement",
+      "https://www.inven.co.kr/board/aion2/6444/1174"
+    ],
+    "position": 80
+  },
+  {
+    "name": "belt-and-amulet",
+    "kind": "rule",
+    "title": "The belt and amulet upgrade in place",
+    "summary": "",
+    "body": "The Noble Belt and Revelation Amulet upgrade in place (Substance Morph, Rare to Epic to Unique, +10 each, always succeeding), so stones spent on them are never wasted.",
+    "sources": [
+      "https://allthings.how/aion-2-gear-progression-guide-rarity-tiers-enhancement-and-item-level/",
+      "https://mein-mmo.de/en/aion-2-11-mistakes-you-must-definitely-avoid-at-launch,1586538/"
+    ],
+    "position": 90
+  },
+  {
+    "name": "soul-binding-order",
+    "kind": "rule",
+    "title": "Fix soul binding lines before binding",
+    "summary": "",
+    "body": "In soul binding, fix the lines first (Sync one bad line, Reset only when most are wrong), then Bind to raise values. Reset sets the Soul Binding Rate back to 0, so binding first wastes Soul Codex.",
+    "sources": [
+      "https://games.gg/aion-2/guides/aion-2-soul-binding-guide/",
+      "https://m.inven.co.kr/board/aion2/6444/523"
+    ],
+    "position": 100
+  },
+  {
+    "name": "soul-binding-key-lines",
+    "kind": "rule",
+    "title": "Judge soul binding by the slot's key line",
+    "summary": "",
+    "body": "Judge soul binding by each slot's key line: Combat Speed on weapon, guard and gloves; Damage Boost on the chest; Crit Damage Boost on the shoulders; a key skill on accessories. Stop once a piece has its 2–3 key lines.",
+    "sources": [
+      "https://www.inven.co.kr/board/aion2/6444/1205",
+      "https://gamewith.ai/aion2/ko/items/115030127"
+    ],
+    "position": 110
+  },
+  {
+    "name": "combat-speed-sources",
+    "kind": "rule",
+    "title": "Where Combat Speed and cooldown come from",
+    "summary": "",
+    "body": "Combat Speed and cooldown reduction never roll on manastones. Point players to soul binding, arcana (Chalice of Vigor, Mirror of Vigor) and Nezekan corners for them instead.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/manastone-guide",
+      "https://metabot.gg/en/aion-2/guides/arcana-guide",
+      "https://metabot.gg/en/aion-2/guides/daevanion-guide"
+    ],
+    "position": 120
+  },
+  {
+    "name": "arcana-to-5",
+    "kind": "rule",
+    "title": "Max arcana to +5",
+    "summary": "",
+    "body": "Max arcana to +5: enhancing them cannot fail on Global and each level adds a skill level. Value a card that raises the class's rotation skills above a better deity stat or a set bonus.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/arcana-guide",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 130
+  },
+  {
+    "name": "wings-at-zero",
+    "kind": "rule",
+    "title": "+0 wings are normal",
+    "summary": "",
+    "body": "Do not call a +0 wing under-enhanced. On Global, wing enhancement only raises the owned effect (mostly Flight Power), and top players wear +0 wings. Recommend the equipped pair by its stats (e.g. Forest Spirit for bosses) and collecting pairs before enhancing.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/wing-enhancement-guide",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 140
+  },
+  {
+    "name": "clash-rune-risk",
+    "kind": "rule",
+    "title": "Clash Rune enchanting is risky",
+    "summary": "",
+    "body": "Treat Clash Rune enchanting past +1 as risky: from +2 a failure drops a level (some guides say worse), with no pity. Top players stop around +3 to +6; push only with spare scrolls.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide",
+      "https://wikily.gg/aion-2/accessories/clash-rune/enhancement",
+      "https://www.inven.co.kr/board/aion2/6444/650"
+    ],
+    "position": 150
+  },
+  {
+    "name": "theostones-are-permanent",
+    "kind": "rule",
+    "title": "Theostone swaps are permanent",
+    "summary": "",
+    "body": "Treat theostone swaps as permanent: removal can destroy the old stone. Damage theostones add little (about 0.2% of damage in KR tests); control procs such as Paralyze or Stun are the better pick, especially for PvP.",
+    "sources": [
+      "https://m.inven.co.kr/board/aion2/6444/290",
+      "https://m.inven.co.kr/board/aion2/6444/1743",
+      "https://metabot.gg/en/aion-2/guides/theostone-guide"
+    ],
+    "position": 160
+  },
+  {
+    "name": "item-level-gates",
+    "kind": "rule",
+    "title": "Plan for the next Item Level gate",
+    "summary": "",
+    "body": "Plan upgrades toward the next Item Level gate rather than maxing one slot. On Global, Hard Expeditions open at 2,600/2,700/2,800 and Ludra at 2,800 (Easy/Normal) and 3,000 (Hard), and those drop the next tier of gear and materials.",
+    "sources": [
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet",
+      "https://patchbot.io/games/aion-2/articles/2081-notice-patch-notes-nov-3-pst-nov-4-cet",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11"
+    ],
+    "position": 170
+  },
+  {
+    "name": "weekly-entries",
+    "kind": "rule",
+    "title": "Spend weekly entries before the reset",
+    "summary": "",
+    "body": "Remind players to spend weekly-capped entries (Sanctuary attempts, Ascension Trial, daily dungeon, Exploration) and Odyle Energy before the Wednesday reset. Unused weekly entries are lost.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/daily-weekly-checklist"
+    ],
+    "position": 180
+  },
+  {
+    "name": "no-dungeon-fighter-advice",
+    "kind": "rule",
+    "title": "No Dungeon & Fighter advice",
+    "summary": "",
+    "body": "Never use the \"percent vs fixed damage dealer\" or \"enhance vs re-forge (재련)\" split. It comes from Dungeon & Fighter, not AION 2.",
+    "sources": [
+      "https://www.inven.co.kr/board/df/4307/2045"
+    ],
+    "position": 190
+  },
+  {
+    "name": "no-purchase-required",
+    "kind": "rule",
+    "title": "No purchase is required",
+    "summary": "",
+    "body": "Never present a purchase as required. AION 2's cash shop sells no gear, and every upgrade path above can be earned in play. Mention the membership only where it matters, such as Market access.",
+    "sources": [
+      "https://allthings.how/aion-2-cash-shops-every-store-and-the-currency-it-uses/",
+      "general"
+    ],
+    "position": 200
+  },
+  {
+    "name": "gear-progression-overview",
+    "kind": "guide",
+    "title": "Gear progression overview: item level, grades and where gear comes from (Global)",
+    "summary": "What item level and grade mean on PLAYNC pages, and the path from levelling gear to the current Global endgame sets, with where each tier comes from.",
+    "body": "**Two different \"item levels\".** Each item has its own item level (PLAYNC field `level`: e.g. 45, 54, 70, 86, 102). The character's **Item Level** on the profile is a separate total score of the equipped gear, its upgrades and stones (roughly 1,000 when a character first reaches level 45). **Combat Power (CP)** also counts Daevanion boards, arcana, skills, titles, wings and more, so the two can disagree. Content gates on Global use the character Item Level.\n\n**Grades: PLAYNC key vs. what the Global client shows.** PLAYNC's `grade` is an internal key; its `gradeName` is the name players see. Checked on live Global items (24 Nov 2026): Common = \"Common\", Rare = \"Rare\", **Legend = \"Epic\"** (blue), Unique = \"Unique\" (orange), Special = \"Special\" (Clash Rune). The keys **Epic** and **Mythic** match the Korean Hero (영웅) and higher grades. No Global character we sampled wore gear with those keys, and NC has not announced Hero-grade gear for Global yet. So say \"Epic\" to a player when the API says Legend.\n\n**Enchant caps seen on live Global items.** Epic-display (Legend) gear goes to +10 and Unique gear to +15. Unique items from item level 54 up can also exceed (Amplify) 1, 3 or 5 levels, depending on the item. The Noble Belt and Revelation Amulet cap at +10 at every grade. Clash Runes cap at +10, arcana at +2 (Common) to +5 (Unique).\n\n**Path on Global (Season 1, level cap 45):**\n1. **Levelling to 45:** story and side quests. The quest weapon (Spiritforged, Unique, item level 45) and the Epic Liberator accessories (quest/crafting) carry you there. Reaching Item Level 1,000 opens the Abyss and the story finale.\n2. **Item Level 1,000–1,600:** Strongholds give Noble Belt scrolls. Feathers/Empyrean Traces upgrade the Revelation Amulet. Rare → Epic → Unique for both comes through Substance Morph. Expedition (Conquest) dungeons Krao Cave and Draupnir drop item level 54 gear. Daily dungeons give Enhance Stones. The Ascension Trial gives the Ascension Bracelet (Unique, 51).\n3. **Item Level 1,600+:** Transcendence dungeons (they need 1,600) give arcana. Vakron Sky Island and Urugugu Canyon drop item level 70 gear (Vakron set). Fire Temple and Ferocious Horn Den drop item level 86 gear: Enraged Kromede weapons and accessories, Nuakum armour.\n4. **Hard modes and raid:** Hard Krao/Draupnir need 2,600, Hard Urugugu/Vakron 2,700, Hard Fire Temple/Ferocious Horn Den 2,800. The Sanctuary raid Abyssal Forge: Ludra needs 2,800 for Easy/Normal and 3,000 for Hard. It gives item level 102 weapons and guards, the Abyssal Bracelet (Amplify 3) and Ludra's Bracelet (Amplify 5). Gear Change Vouchers turn into a weapon selection chest.\n5. **Crafting:** the Dragon Lord line climbs True/Star (62) → Splendent (70) → White/Dark (78) → Splendent (86) → Wise/Ebony (94) → **Splendent Wise/Ebony Dragon Lord (102)**. The last is the only item level 102 armour and accessory source. A Splendent piece comes from a 25% great success or from an upgrade recipe. The materials (Wrathful Mind/Will/Ego, refining stones) drop in party dungeons.\n\n**What strong Global players wear (PLAYNC, 24 Nov 2026).** The top 500 per class sit at a median Item Level of about 2,960–3,070 (Gladiator, Sorcerer and Cleric checked). They typically wear an Enraged Kromede weapon and accessories at +15 (exceed 1–5), Nuakum armour +12–15, Revelation Amulet +10, Noble Belt, Ascension + Liberator bracelets, Clash Runes +3–6 and five Unique arcana +5. The highest (about 3,700–3,800) wear full Splendent Ebony/Wise Dragon Lord +15/exceed 5 with Abyssal Bracelets +15/exceed 3.\n\n**Trading and shop.** Most endgame gear is bound (PLAYNC `tradable: false`). Trading happens only on the Market, which needs the Special Quai Membership and a level 45 character. Direct player trade is off on Global. The cash shop sells cosmetics, membership and the Daeva Pass, not gear.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- Which Global display names the PLAYNC keys Epic and Mythic will get (probably Heroic/Hero and Mythic), and when Hero-grade gear arrives on Global.\n- How the character Item Level is calculated exactly.\n- Abyss (PvP) gear tiers and item levels on Global; secondary sources name Decanus/Centurion/Tribunus/High Commander lines but no reliable Global numbers were found.\n- Whether a Global Season 2 starts on 16 Dec 2026 (reported, not officially confirmed) and what gear it adds.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/crafting-guide METABOT AION 2 Crafting Guide (Global client data) (2026-11, GLOBAL)",
+      "https://mein-mmo.de/en/aion-2-itemlevel-guide-how-to-quickly-obtain-the-best-gear-in-pve,1586095/ Mein-MMO: Item level guide (2026-10, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet Official Global patch notes Oct 27/28 2026 (mirror) (2026-10, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2081-notice-patch-notes-nov-3-pst-nov-4-cet Official Global patch notes Nov 3/4 2026 (mirror) (2026-11, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11 Official Global patch notes Nov 11 2026 (mirror) (2026-11, GLOBAL)",
+      "https://mein-mmo.de/en/aion-2-servers-are-live-status-duration-patch-notes-and-more-about-the-server-maintenance-on-november-18-2026-in-the-live-ticker,1596857/2/ Mein-MMO: Global patch notes Nov 18 2026 (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/patch-notes METABOT: Global patch list (2026-11, GLOBAL)",
+      "https://allthings.how/aion-2-gear-progression-guide-rarity-tiers-enhancement-and-item-level/ AllThings.How: gear progression, rarity tiers and item level (2026-10, GLOBAL)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 10
+  },
+  {
+    "name": "enchanting",
+    "kind": "guide",
+    "title": "Enchanting (Enhance): materials, odds, failure rules, caps and transfer",
+    "summary": "How gear enchanting works on Global: what it costs, the success odds and pity, what happens on failure, the caps per item, sensible stopping points, and whether enchant levels carry over to new gear.",
+    "body": "**Materials.** Each attempt costs **Enhance Stones** (강화석) plus **Kina**. Costs grow with the item's own item level; the odds do not. Example, a Unique item level 102 piece (Global client):\n\n| Step | Kina per attempt | Stones per attempt | Success |\n|---|---|---|---|\n| +0→+1 | 12,800 | 510 | 100% |\n| +9→+10 | 202,000 | 8,070 | 100% |\n| +10→+11 | 360,000 | 9,310 | 65% |\n| +11→+12 | 540,000 | 10,610 | 50% |\n| +12→+13 | 860,000 | 11,960 | 35% |\n| +13→+14 | 1,340,000 | 13,360 | 25% |\n| +14→+15 | 1,860,000 | 14,820 | 20% |\n\n**Odds and pity.** On Unique gear, +1 to +10 always succeed. From +11, each failure adds **+5%** to the next try at the same step; the bonus resets after a success. So a step takes at most 8 / 11 / 14 / 16 / 17 attempts (+11…+15). Getting from +10 to +15 averages about 15 attempts. Three independent datamine/disclosure sources agree (Global client and NC's KR probability disclosure).\n\n**Failure.** A failed attempt on weapons, armour or accessories **only uses up the materials**: no level is lost and the item does not break. No protection items exist or are needed. The exception is the Clash Rune, which loses a level on failure from +2 up (see the wings/pets/runes article).\n\n**Caps.** Always read the item's `maxEnchantLevel`. Seen on live Global items:\n- Epic gear (API \"Legend\"): +10.\n- Unique gear: +15.\n- Noble Belt and Revelation Amulet: +10 at every grade. Every step succeeds and needs that item's scroll.\n- Clash Rune: +10.\n- Arcana: +2 to +5.\n\nThe Global client lists Common/Rare at +5. KR Hero (영웅) gear goes to +20, but Global has none yet.\n\n**Total cost** (Unique item level 102, averages): +0→+10 is a fixed ~920,000 Kina and ~36,700 stones. +0→+15 averages ~15 M Kina and ~190,700 stones; worst-case luck from +10 to +15 is ~74 M Kina.\n\n**Usual stopping points:**\n- **+10** on anything you'll replace soon: guaranteed and cheap.\n- **+12–13** on good pieces you'll wear for a while (KR community).\n- **+15** on keepers. +15 is also the entry point for Amplify (exceed). Armour often stays at +10–12 until it is final.\n\nPLAYNC data (24 Nov 2026) matches: the middle of the Global top 500 per class runs weapons and accessories at +15 and armour at +12–15.\n\n**Carrying enchant levels over:**\n- **Transfer (KR 계승):** moves the enhancement level and soul binding onto another Unique item of the same slot. The Global client datamine says it always succeeds, costs no Kina and uses Transfer Stone (Unique)(Bound): 1 for the same tier, 2 into tier 3. The 28 Oct 2026 Global patch added Expedition → Crafted paths: tier 3 Expedition to tier 2 Crafted, tier 2 Expedition to tier 1 Crafted (e.g. Enraged Kromede Necklace → White Dragon Lord Necklace). In KR, manastones and theostones do not move. Whether Amplify levels move on Global is unconfirmed (they do in KR).\n- **Extraction (추출):** returns the Enhance Stones (KR: 100% of a +10 item's stones) but never the Kina. Claims of 70% for Abyss gear are unsourced.\n- **Upgrading in place:** the Noble Belt and Revelation Amulet go Rare → Epic → Unique through Substance Morph, so stones spent on them are never wasted.\n\n**Enhance Stone sources (Global):** the daily dungeon (Daeva Bio-Research Base), Expeditions, quests, Sealed Dungeons, the Daeva Pass and Substance Morph (1 Ariel Fragment → 5 Enhance Stones, no limit).\n\n**How sure:** high. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- An official Global English rate table (NC probability pages could not be read; rates rest on datamines and the KR disclosure).\n- Common/Rare caps on Global (+5 per the client datamine; one KR source says Rare +10).\n- Global Transfer details: limits per season, and whether Amplify (exceed) levels carry over.\n- Exact extraction return rates and Kina cost on Global.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide METABOT: Gear enhancement guide (Global client datamine) (2026-11, GLOBAL)",
+      "https://gamewith.ai/aion2/en/enhancement-simulator GameWith: enhancement simulator (from NC KR probability disclosure, 2026-09-30) (2026-09, KR)",
+      "https://aion2hub.com/tools/gear-forge aion2hub: Gear Forge (datamined enchant rates and materials) (2026-11, GLOBAL)",
+      "https://allthings.how/aion-2-enhancement-success-chance-and-cost-of-every-step-to-15-by-grade/ AllThings.How: enhancement success chance and cost of every step to +15 (2026-10, GLOBAL)",
+      "https://metabot.gg/en/aion-2/enhancement METABOT: Enhancement calculator and transfer FAQ (Global) (2026-11, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet Official Global patch notes Oct 27/28 2026 (mirror) (2026-10, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11 Official Global patch notes Nov 11 2026 (mirror) (2026-11, GLOBAL)",
+      "https://www.inven.co.kr/board/aion2/6444/1174 Inven: gear succession (계승) overview (KR) (2026-01, KR)",
+      "https://www.inven.co.kr/board/aion2/6444/650 Inven: enhancement stopping points (KR) (2025-12, KR)",
+      "https://www.inven.co.kr/board/aion2/6444/2439 Inven: amulet and belt enhancement guide (KR) (2026-11, KR)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 20
+  },
+  {
+    "name": "exceed-amplify",
+    "kind": "guide",
+    "title": "Exceed (Amplify / 돌파): levels past +15, costs and when it pays",
+    "summary": "What exceedLevel is, which items can do it, what it costs and adds, and when it is worth spending on.",
+    "body": "**One system, three names.** PLAYNC's `exceedLevel` / `maxExceedEnchantLevel` is **\"Amplify\"** in Global patch notes and the client, **돌파 (breakthrough)** in Korean, and \"Exceed\" in datamines. The Global Amplify table and the KR 돌파 table match exactly. Don't confuse it with **Potential** (잠재력): a separate PvP track that always succeeds, goes to +4 and adds +0.5% PvP Damage Boost or Tolerance per level. PLAYNC's `surpassStats` lines (e.g. \"PvP Damage Boost 1%\") appear to be Potential, not exceed (inferred).\n\n**Requirements.** Unique (or higher) gear at its enchant maximum: **+15** for Unique. Each item has its own cap; read `maxExceedEnchantLevel`. On Global:\n- item level 36–51: none (quest Unique weapon, Ascension Bracelet)\n- item level 54–56: **1**\n- item level 62–70: **3** (Vakron gear, Abyssal Bracelet)\n- item level 78–102: **5** (Nuakum, Enraged Kromede, Dragon Lord 86+, Ludra gear, Ludra's Bracelet)\n\nThe 28 Oct 2026 patch raised crafted True/Star Dragon Lord gear from 1 to 3 and White/Dark Dragon Lord from 3 to 5, so crafted and Expedition gear of similar stats share caps.\n\n**Odds and cost per attempt (Unique, Global = KR):**\n\n| Step | Success | Pity per failure | Kina | Amplify Stones |\n|---|---|---|---|---|\n| +1 | 66% | +5% | 600,000 | 6 |\n| +2 | 50% | +4% | 900,000 | 9 |\n| +3 | 33% | +3% | 1,400,000 | 12 |\n| +4 | 25% | +2% | 2,000,000 | 15 |\n| +5 | 20% | +1% | 3,000,000 | 20 |\n\nA failure keeps the level. A flawless +0→+5 costs 7.9 M Kina and 62 stones; the average is about 13.8 attempts, ~26 M Kina and ~196 Amplify Stones. The +5 step alone can take up to 81 attempts.\n\n**Materials.** Amplify Stone (Unique) is made in Substance Morph from Amplify Stone Fragments (Unique)(Bound). Fragments come from Transcendence bosses, Krao Cave, Expedition (Exploration) since 4 Nov 2026, and the Ludra raid. One guide says 4 fragments plus 2,500 Enhance Stones make a stone (unconfirmed).\n\n**What it adds** (Global client data, at +5, so about a fifth per level):\n- **Item level 102 weapon** (Splendent Ebony Dragon Lord Orb, Ludra's Blade): Attack +84 and **Damage Boost +5%**, about +1% per level.\n- **Item level 86 necklace:** Attack +35, Defense +103, Damage Boost +2.5%.\n- **Item level 86 greaves:** Defense +210, HP +210, Damage Tolerance +2.5%, HP +2.5%.\n\nSo weapon levels are worth about twice an armour or accessory level.\n\n**When it is worth it:**\n- Only on max-enchanted pieces you will keep. Weapon (and guard) first, then accessories; armour last (KR players mostly amplify armour for PvP).\n- KR community value curve: steps 1–2 are the most cost-efficient, 3–4 are fine, and **5 is poor value** (20% base, +1% pity).\n- Global top 500 (PLAYNC, 24 Nov 2026): the middle runs weapon/guard at 2–5 and accessories at 1–2, with most armour at 0–2. Only the very top have everything at 5.\n- Check Transfer before amplifying a piece you might swap: crafted upgrades (Splendent Wise/Ebony, item level 102) cap at 5 like Expedition 86 gear.\n\n**KR differences:** KR raised the breakthrough cap to **7** in Nov 2026. KR Hero gear breaks through after +20 at half the Unique rates. Abyss gear got its own breakthrough stone. None of this is on Global yet.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- The Amplify Stone recipe (fragments plus Enhance Stones) on Global.\n- How much character Item Level each Amplify level adds (one SEO source says 5 per level, unverified).\n- PLAYNC item pages show no separate exceed stat line for exceeded items we sampled; the per-level bonuses above come from the client datamine.\n- Whether Amplify levels survive Transfer on Global.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/gear-enhancement-guide METABOT: Gear enhancement guide (Global client datamine) (2026-11, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet Official Global patch notes Oct 27/28 2026 (mirror) (2026-10, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2081-notice-patch-notes-nov-3-pst-nov-4-cet Official Global patch notes Nov 3/4 2026 (mirror) (2026-11, GLOBAL)",
+      "https://aion2hub.com/database/items/110630105 aion2hub: Splendent Ebony Dragon Lord Orb (Global client, exceed lines) (2026-09, GLOBAL)",
+      "https://aion2hub.com/database/items/210230018 aion2hub: Splendent White Dragon Lord Greaves (Global client, exceed lines) (2026-09, GLOBAL)",
+      "https://buson2.com/enhance buson2: enhancement and breakthrough tables (from NC KR disclosure) (KR)",
+      "https://allthings.how/aion-2-amplifying-success-odds-and-amplify-stone-costs-past-15/ AllThings.How: Amplify odds and stone costs past +15 (2026-10, GLOBAL)",
+      "https://allthings.how/aion-2-how-to-craft-the-splendent-wise-and-ebony-dragon-lord-weapons/ AllThings.How: Splendent Wise/Ebony Dragon Lord (enchant and amplify costs) (2026-10, KR)",
+      "https://www.inven.co.kr/board/aion2/6444/820 Inven: breakthrough priorities (KR) (2025-12, KR)",
+      "https://v.daum.net/v/2kkWtDjJTh Inven via Daum: breakthrough value and stones (KR) (2026-01, KR)",
+      "https://www.gamemeca.com/view.php?gid=1783197 GameMeca: KR 1st anniversary (breakthrough cap 7) (2026-11, KR)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 30
+  },
+  {
+    "name": "manastones-soulstones-theostones",
+    "kind": "guide",
+    "title": "Manastones, soulstones and theostones: slots, grades, engraving and what to engrave",
+    "summary": "How many stone slots each item has, what the stone sizes and roll tiers mean, how engraving and removal work, and which stats and theostones are worth engraving per role.",
+    "body": "**Which stone goes where.** **Manastones** (마석) go on weapons, guards and armour. **Soulstones** (영석) go on accessories (necklace, earrings, rings, bracelets). PLAYNC lists both as `magicStoneStat`. Amulet, belt, runes and arcana take none. **Theostones** (신석, KR \"godstone\"; PLAYNC `godStoneStat`) go only in weapons and guards (Epic and up), 1 slot each; confirmed on live Global items, including Nuakum Guard and Ludra's Heart.\n\n**Slots by gear grade:** Common 1, Rare 2, Epic (API \"Legend\") 3, Unique 4. Engraving costs 500 / 1,000 / 1,500 / 2,000 Kina. KR Hero gear has 5. Filling an empty slot is among the cheapest upgrades there are.\n\n**Stone sizes and roll tiers.** Global has Lesser, Intermediate and Superior sizes of Manastone, Soulstone and their Abyssal (PvP) versions. A stone rolls a value tier per slot:\n- **Lesser:** Common 70% / Rare 30%\n- **Intermediate:** Common 50 / Rare 35 / Epic 15\n- **Superior:** Rare 50 / Epic 35 / Unique 15\n\nPLAYNC's stone `grade` (e.g. \"Attack +10, Unique\") is this **roll tier**, not the stone size. \"Legend\" there means the Epic tier. Example values: Superior Attack +3 / +5 / +10 and Superior Crit +7 / +10 / +15 (Rare/Epic/Unique tier).\n\n**What can roll:**\n- **Every size:** Attack, Defense, Accuracy, Evasion, Critical Hit, Crit Resist, Block (10% each), plus HP and MP.\n- **Superior only:** five damage lines at 0.5% each (Damage Boost, Weapon Damage Boost, Critical Damage Boost, Back and Front Attack Damage Boost), about 2.5% for any of them per slot.\n- **Abyssal stones:** add PvP lines (PvP Attack, PvP Block, PvP Crit…).\n- **Never on stones:** Combat Speed, cooldown reduction or primary stats.\n\n**Engraving and removal:**\n- Engraving always succeeds; no success rate is published.\n- A new stone overwrites the old line; there is no removal that returns the stone.\n- Sources disagree on whether you can protect lines. The Global UI text (quoted by metabot) says \"only the checked slots will have their effects changed\", while players and a KR calculator say a stone rerolls every slot. Check in game before advising.\n- Manastones do not move with Transfer (KR).\n- **Theostones:** removing one destroys it in KR (\"cannot be recovered once socketed\"); the Global dialog says whether it is returned or destroyed. Treat it as permanent.\n\n**Where stones come from (Global):**\n- **Lesser:** level-45 named monsters and the Abyss.\n- **Bound Lesser/Intermediate:** Hard Transcendence, Ludra, achievements.\n- **Superior:** achievements and the battle pass, or Alchemy: 30 Intermediate + powder + ink at mastery 85/90. Making an Intermediate has a 20% great success that yields a Superior.\n- **Abyssal:** the Abyss Trade Shop (Lesser Abyssal Manastone 1,000 AP, Soulstone 2,000 AP, 50 a week).\n- **Theostones:** chests from regional quests, Arena and Season shops, the Daeva Pass, a 35,000 AP selection chest, Black Cloud Merchants and the Market (Rare only is tradable). Combining upgrades Rare→Epic 11.1% and Epic→Unique 9.1%.\n\n**What to engrave:**\n- **Damage dealers:** Attack and Crit first (most common on Global top players), Accuracy if short, plus any Superior damage line. Front/Back Attack Damage Boost suit Gladiator/Assassin-style kits. KR players chase Unique-tier Attack +10 or one of each damage line; Attack can repeat across slots, damage-line types cannot.\n- **Tanks:** Block > Defense > HP > Crit Resist. **Healers:** HP, Defense, MP, Crit Resist (Global top-player popularity).\n- **PvP:** Abyssal stones with PvP Attack/Block/Crit lines. The top Global characters mix these in heavily.\n- Use cheap Intermediate stones for common stats and save Superior for long-term pieces (KR: from Enraged Kromede-tier weapons on).\n- On Global, top players' stones look close to random rolls, so don't call a decent roll \"wrong\".\n\n**Theostones.** 17 effects × 3 grades (Rare/Epic/Unique). The same theostone twice does not stack. Damage procs are flat (e.g. Fire 1%: 5k/10k/15k; Earth 5%: 1k/2k/3k) and don't scale with Attack. KR dummy tests found them worth about 0.2% of damage. **Control procs** (Paralyze, Stun, Seal, Root, −50% Combat Speed) are the better pick, especially in PvP.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- Whether Global re-engraving rerolls only checked slots or every slot.\n- Whether 100% soul binding adds a manastone slot (one low-confidence source).\n- Global theostone cooldowns (5 s on Global data vs 15 s after KR Jan 2026 changes).\n- Slot-by-slot stone priorities for tanks and healers beyond top-player popularity.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/manastone-guide METABOT: Manastone guide (Global client data) (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/guides/theostone-guide METABOT: Theostone guide (Global client data) (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/guides/class-builds-guide METABOT: class builds (top-player socket shares) (2026-11, GLOBAL)",
+      "https://m.inven.co.kr/board/aion2/6444/2354 Inven: Superior manastone/soulstone EV calculator (KR) (2026-10, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/1308 Inven: manastone tier odds and Intermediate vs Superior (KR) (2026-02, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/325 Inven: manastone sizes and colours (KR) (2025-11, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/290 Inven: godstones cannot be recovered once socketed (KR) (2025-11, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/1743 Inven: godstone damage test after buff (KR) (2026-04, KR)",
+      "https://expcarry.com/aion-2-manastone-guide ExpCarry: manastone guide (2026-10, GLOBAL)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 40
+  },
+  {
+    "name": "soul-binding",
+    "kind": "guide",
+    "title": "Soul binding: rolled sub stats, Bind/Sync/Reset and what to roll for",
+    "summary": "How soul binding (soulBindRate, subStats) works on Global, what each reroll tool costs, which lines to aim for per slot, and when to stop.",
+    "body": "**Terms.** Global \"Soul Binding\" (PLAYNC `soulBindRate`, `subStats`) is KR **영혼 각인**. KR **영혼 결속** is a different feature: the extra line. Some English translations of KR notes swap the two.\n\n**Lines.** A soul-bound item has random lines from a slot-specific pool. KR data gives Common 1, Rare 2, Epic 3, Unique 3–5 (fixed per item) and Hero 4–6. A line never repeats on one item.\n- About 80% of draws are stats and 20% are **class skill levels**. Weapons, guards and rings roll active skills; armour, earrings and necklaces roll passives. PLAYNC shows the skill lines as `subSkills` (e.g. a ring with Ankle Slice 1, Overhead Slam 1).\n- On Global only Unique gear can be soul-bound, and binding makes the item untradable.\n\n**Bind (각인) raises the Soul Binding Rate.** It spends Soul Codex + Kina. Each attempt raises line values by a random amount, and the rate reaches **100% when every line is at its maximum**. That is what `soulBindRate` means; the exact formula is unknown. Global cost on Unique gear runs from about 30,000 Kina + 10 Codex for the first step to about 632,000 Kina + 102 Codex for the last. Sources disagree on 9 or 10 steps, and costs probably vary by item. Sampled top Global items sit at 67–100%.\n\n**Rerolling lines:**\n- **Sync (조율):** rerolls one chosen line into a random line not already on the item. It uses a Sync Stone (Unique)(Bound) or, in KR, a sacrificed Unique item. Global Sync Stones come from Expeditions, conversion, the battle pass and up to 3 a week from Transcendence season missions (since 11 Nov 2026); wing enhancement uses them too.\n- **Reset (초기화):** rerolls all lines and sets the rate back to 0. Cost: Soul Codex: Reset + 300,000 Kina. Sources disagree whether a Unique needs 1 or 3 scrolls. Scrolls come from the Nightmare shop, Season Shop, quests, monoliths, Hidden Cubes, achievements, the battle pass and attendance.\n- **Extra line (KR 결속):** on a 100% Unique, 2 Philosopher's Stone: Revelation + 1,000,000 Kina add one random line at full value. It is not inherited when gear is replaced. Global drops these stones in Hard Expeditions. PLAYNC marks such lines `added: true`; sampled top Global weapons, chests and necklaces carry one, e.g. Damage Boost 6.8% on a weapon.\n\n**What to roll for** (KR PvE damage-dealer tiers, Jan 2026; several lines exist only on one slot):\n\n| Slot | Aim for |\n|---|---|\n| Weapon / guard | **Combat Speed**, then Weapon Damage Boost, Might, Precision, then Damage Boost / Multi-hit |\n| Gloves | **Combat Speed** (the only armour piece that rolls it) |\n| Chest | **Damage Boost** (only armour source) |\n| Shoulder | **Critical Damage Boost** (only source) |\n| Helmet / cape | Attack increase, Smite (강타, only here) |\n| Pants | Attack increase or Damage Tolerance |\n| Boots | Move Speed |\n| Earrings / necklace | your key passive skill |\n| Ring | your key active skill |\n\nAccuracy, then Attack or Crit are the filler everywhere; defensive lines are low priority for damage dealers. On the item level 86–102 weapons we sampled, Combat Speed rolls about 12–13%. No reliable slot tables exist for tanks and healers.\n\n**Order and stopping:**\n1. Fix the lines first (Sync for one bad line, Reset only if most are wrong).\n2. Then Bind to raise values. Binding first and resetting later wastes the Codex.\n3. If a piece dropped with its slot-exclusive line, keep that line and Sync the others.\n4. Stop once a piece has its 2–3 key lines; perfecting one slot costs more than fixing the next.\n5. KR players keep a weapon with both Weapon Damage Boost and Combat Speed even over a higher-level weapon they would have to reroll. Transfer carries soul binding to the new item, but the new item clamps values to its own ranges and the extra line is lost.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- The exact soulBindRate formula, and whether Global Bind has 9 or 10 steps.\n- Whether Reset on a Global Unique takes 1 or 3 Soul Codex: Reset.\n- Global Sync rules when the stone or material is a lower grade, and whether a sacrificed Unique item works on Global.\n- The Global client name of the extra line (KR 결속).\n- Soul binding priorities for tanks and healers.",
+    "sources": [
+      "https://games.gg/aion-2/guides/aion-2-soul-binding-guide/ games.gg: AION 2 soul binding guide (Global) (2026-10, GLOBAL)",
+      "https://metabot.gg/en/aion-2/guides/gear-progression-guide METABOT: gear progression guide (soul binding costs, Global) (2026-11, GLOBAL)",
+      "https://m.inven.co.kr/board/aion2/6444/523 Inven: soul engraving basics, reset cost (KR) (2025-11, KR)",
+      "https://www.inven.co.kr/board/aion2/6444/1205 Inven: recommended soul binding per slot for PvE (KR) (2026-01, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/1336 Inven: 영혼 결속 extra line (KR) (2026-02, KR)",
+      "https://gamewith.ai/aion2/ko/items/115030127 GameWith (KR): Unique guard soul-binding pool and odds (2026-10, KR)",
+      "https://aion2hub.com/database/items/536630001 aion2hub: Sync Stone (Unique)(Bound) (Global) (2026-09, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11 Official Global patch notes Nov 11 2026 (mirror) (2026-11, GLOBAL)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 50
+  },
+  {
+    "name": "arcana",
+    "kind": "guide",
+    "title": "Arcana: slots, grades, sets, skill options and how to get them (Global)",
+    "summary": "What the five arcana are, what each grade gives, how the two Global sets and the skill options (subSkills) work, how to obtain and enhance them, and what strong players wear.",
+    "body": "**What they are.** Arcana are five card slots that unlock at level 45. PLAYNC lists them in a fixed order: **Arcana1 Chalice, Arcana2 Parchment, Arcana3 Compass, Arcana4 Bell, Arcana5 Mirror**. Each slot comes in a **Vigor** and a **Magic** version. Each card gives one Empyrean Lord (deity) stat plus class skill levels (PLAYNC `subSkills`).\n\n**Grades (Global client).**\n\n| Grade | Deity stat | Item level | Skill options | Max enchant |\n|---|---|---|---|---|\n| Common | 8 | 20 | 1 | +2 |\n| Rare | 12 | 40 | 2 | +3 |\n| Epic (API \"Legend\") | 16 | 60 | 3 | +4 |\n| Unique | 20 | 80 | 4 | +5 |\n\nEach enchant level also adds +1 item level.\n\n**Deity stat by card:**\n\n| Card | Vigor | Magic |\n|---|---|---|\n| Chalice | Time [Siel]: Combat Speed / Double Resist | Space [Israphel]: Move Speed / Block |\n| Parchment | Life [Yustiel]: HP / Regeneration | Destiny [Marchutan]: MP / Endurance |\n| Compass | Freedom [Vaizel]: Accuracy / Evasion | Death [Triniel]: Critical Hit / Regeneration Penetration |\n| Bell | Justice [Nezekan]: Defense / Perfect | Destruction [Zikel]: Attack / Perfect Resist |\n| Mirror | Illusion [Kaisinel]: Cooldown / Endurance Penetration | Wisdom [Lumiel]: MP Cost / Double Chance |\n\nEach deity stat point gives +0.1% to each of its effects.\n\n**Sets (Global has two):**\n- **Primal Vigor** (Vigor cards): 2-piece +60 PvE Attack while HP ≥ 70%; 4-piece +150.\n- **Magic Armor** (Magic cards): 2-piece restores 1,500 MP at ≤ 20% MP (30 s cooldown); 4-piece +1,000 PvE Defense while MP ≥ 50%.\n\n**Skill options (subSkills).** Each card rolls skill options from the class's own pool; Stigma skills never roll.\n- **Chalice:** any of the class's 22 skills.\n- **Parchment and Compass:** active skills.\n- **Bell and Mirror:** passive skills.\n\nOptions start at level 1 and cap at level 4. **Every enchant level adds +1 to one random option.** On PLAYNC, a Unique card at +2 shows option levels summing to 6, and one at +5 sums to 9 (e.g. 2/1/4/2). A gladiator's +5 Chalice raising Ankle Slice to 4 is worth more than a better deity stat on a card that raises skills they don't use.\n\n**Getting them on Global:**\n- **Transcendence:** Deus Research Base drops Chalice/Compass/Bell; Shattered Arkanis drops Chalice/Parchment/Mirror. Tier 1 needs Item Level 1,600, tier 2 1,900, tier 3 2,200, tier 4 2,500. Unique cards come from tier 3. A Unique Chalice comes only from tier 4.\n- **Other sources:** battle pass and coin shops.\n- **Transmutation:** builds a Unique card of a chosen slot and set for 5 Mysterious Crystals (from extracting spare cards) + 2,000,000 Kina. Each fixed skill option (up to 2) adds 10 crystals + 3,000,000 Kina. The in-game tutorial says transmutation resets each season.\n\n**Enhancing.** On Global this fills an EXP bar and cannot fail. A Unique card needs 93,000 EXP to reach +5. Feed it Training Arcana or spare cards; enhanced cards return more EXP. Because it never fails, maxing arcana is a safe upgrade. Most sampled top Global players run five Unique arcana at +4/+5.\n\n**What strong Global players wear (PLAYNC, 24 Nov 2026, 18 top-500 characters of all classes):**\n- **Bell of Magic** (Destruction = Attack %) in 16 of 18.\n- **Chalice of Vigor** (Combat Speed) and **Parchment of Vigor** in most.\n- **The set split:** most run 3+2 or 2+3, taking both 2-piece bonuses, rather than a 4-piece set.\n\n**KR/TW only (not on Global as of Nov 2026):**\n- a sixth slot, Scales (천칭, Jan–Feb 2026)\n- stat arcana (Key, Hourglass, Dice, Lantern), retired again in Nov 2026\n- seven sets (Frenzy, Pure, Punishment, Protection, Indomitable among them)\n- enhancement that can fail\n- arcana redistribution (100,000 Kina)\n- the \"Origin of the Deity\" system\n\nIgnore KR set recommendations such as Punishment 4 + Protection 2 for Global players.\n\n**How sure:** high. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- Whether the Global Epic-grade arcana really caps at +4 (Common +2, Rare +3 and Unique +5 confirmed on PLAYNC; Epic from metabot only).\n- Whether enhancement order or materials can steer which skill option gains the level (it appears random).\n- When KR-only arcana features (Scales, more sets) arrive on Global.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/arcana METABOT: AION 2 Arcana database (Global client build 0.0.4387.0) (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/guides/arcana-guide METABOT: Arcana guide (Global) (2026-11, GLOBAL)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026",
+      "https://gamewith.ai/aion2/ko/arcana GameWith AION2 (KR): Arcana data from NC probability disclosure (2026-09, KR)",
+      "https://aion2hub.com/updates/aion-2-update-2026-11-11 aion2hub: KR update 2026-11-11 (arcana redistribution, stat arcana retired) (2026-11, KR)",
+      "https://www.gamemeca.com/view.php?gid=1783197 GameMeca: KR 1st anniversary update (2026-11, KR)",
+      "https://www.inven.co.kr/board/aion2/6444/359 Inven: beginner spec-up guide (arcana bells, KR) (2025-11, KR)"
+    ],
+    "position": 60
+  },
+  {
+    "name": "wings-pets-runes",
+    "kind": "guide",
+    "title": "Wings, pets and runes: what they give and how to upgrade them (Global)",
+    "summary": "What wings, pets and the two Clash Rune slots contribute, how each is upgraded on Global, and where an advisor should and should not tell players to spend.",
+    "body": "**Wings.** Every wing has an **equipped effect** (while worn) and an **owned effect** (counts just for owning it). The Global client has 29 pairs: 13 Unique, 7 Epic, 4 Rare, 1 Common and 4 cosmetic Special.\n- **Enhancement:** up to +10. Each attempt costs Kina, a Sync Stone (Unique)(Bound) and Enhance Stones.\n- **Odds:** Rare and Epic wings always succeed. Unique wings succeed 100% to +3, then 90/80/50/50/50/40/30%. Failure keeps the level. Sources disagree on what improves the odds: +10% pity per failure (metabot, Global) or optional extra materials (gamewith, KR).\n- **Cost to +10:** Rare about 3.5 M Kina / 34 Sync Stones / 13,440 Enhance Stones. Epic about 6.0 M / 53 / 23,040. Unique about 16.7 M / 137 / 66,000 expected.\n- **What enhancement raises (Global):** only the owned effect, not the equipped stats. Every wing gains +10 Flight Power per level. Unique wings gain only Flight Power; many Epic/Rare wings gain one extra owned stat (e.g. HP +50 → +500). A new pair gives more owned Flight Power (+200) than maxing one (+100), so collecting comes before enhancing.\n- **What to wear:** sampled top Global characters (PLAYNC, 24 Nov 2026) all wear +0 wings: Talisra, Dark Veil, Abyssal Waves, Forest Spirit, Ultimate Daeva. **Don't call a +0 wing \"under-enhanced\".** For bosses, metabot rates Forest Spirit Wings best (Damage Tolerance +2.5%, Defense +400, Boss Attack +95, Boss Damage Boost +3.5%) along with Nightmare Wings. For PvP it picks Brawler or Warrior Wings.\n- **Sync Stones** are also used for soul binding. Sources: Expedition dungeons, the battle pass, and up to 3 a week from Transcendence season missions.\n- **KR differs:** Unique wings have +10 effects there.\n\n**Pets.** Pets double as mounts; the Global client lists 209.\n- **Unlocking:** from a pet item or 5 souls dropped by the matching monster.\n- **Level cap:** level 3 on Global, so a level-3 pet on PLAYNC is maxed. KR caps higher.\n- **Owned effects:** maxed pets give them account-wide per server, whether or not the pet is out.\n- **Genus Insight:** each type (Fera, Natura, Varian, Cogni) levels 1–10 and unlocks up to 9 option lines. A roll costs 4 Soul Crystals + 1,000 Kina and rerolls all unlocked lines; locking a line costs more. At level 10 the line grades roll 20% Common / 30% Rare / 30% Epic / 15% Unique / 5% Heroic.\n- **Where progress comes from:** collecting pets and Genus Insight rolls, not the active pet.\n\n**Runes (Rune1–2).** Global has one rune, the **Clash Rune** (Special grade, item level 40, max +10).\n- **Base stats:** Combat Speed 1%, Penetration 100, Multi-hit 1%, PvE Damage Boost 0.5%, PvE Damage Tolerance 0.5%.\n- **What enchanting adds:** PLAYNC shows a +6 rune with Penetration +100 more, PvE Damage Boost +2% and PvE Damage Tolerance +3%. Data sites list up to +5%/+5%, Penetration +400 and +4% Combat Speed/Multi-hit at +10.\n- **Odds:** each attempt needs a Clash Rune Enhance Scroll plus Kina and Enhance Stones, with no pity: +1 100%, +2 80%, +3 66%, +4 50%, +5 33%, +6 25%, +7 20%, +8 15%, +9 12%, +10 10%.\n- **Failure:** from +2 up, a failed attempt **drops one level** (metabot, wikily). Some guides say it destroys the rune; that is unconfirmed.\n- **What players run:** sampled top Global players sit at +3 to +6.\n- **KR-only:** a PvP twin, the Devotion Rune.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- Whether wing enhancement on Global has a +10% pity per failure or only optional extra materials.\n- Whether a failed Clash Rune attempt drops one level (best evidence) or destroys the rune; check the in-game tooltip.\n- Whether wing enhancement adds item level on Global.\n- Equipped-pet effects beyond mounting and looting.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/wing-enhancement-guide METABOT: Wing enhancement guide (Global) (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/guides/mounts-wings-guide METABOT: Mounts and wings guide (Global) (2026-11, GLOBAL)",
+      "https://gamewith.ai/aion2/ko/wing-enhancement GameWith (KR): wing enhancement data (2026-09, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/2434 Inven: wing enhancement guide (KR) (2026-11, KR)",
+      "https://gamewith.ai/aion2/en/items/310900001 GameWith: Clash Rune item data (2026-10)",
+      "https://wikily.gg/aion-2/accessories/clash-rune/enhancement Wikily: Clash Rune enhancement (2026-11)",
+      "https://metabot.gg/en/aion-2/enhancement METABOT: Enhancement calculator and FAQ (Global) (2026-11, GLOBAL)",
+      "https://gamewith.ai/aion2/ko/pets GameWith (KR): pets and Genus Insight (2026-09, KR)",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11 Official Global patch notes Nov 11 2026 (mirror): Sync Stones from season missions (2026-11, GLOBAL)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026"
+    ],
+    "position": 70
+  },
+  {
+    "name": "daevanion-boards",
+    "kind": "guide",
+    "title": "Daevanion boards: what they give and how to prioritise nodes (Global)",
+    "summary": "Which six Daevanion boards Global has, what their nodes give, how points are earned, and the usual order to open nodes.",
+    "body": "**Boards on Global (same for every class).** PLAYNC lists six:\n\n| Board | Unlocks at | Nodes | Unique corners (+1.5% each) | Full-board totals |\n|---|---|---|---|---|\n| Nezekan | lv 12 | 88 | Combat Speed ×2, Cooldown Reduction ×2 | +3% / +3%, HP +1,100, Defense +300 |\n| Zikel | lv 20 | 88 | Damage Boost ×2, Damage Tolerance ×2 | Defense +330, Attack +33 |\n| Vaizel | lv 30 | 88 | Critical Damage Boost ×2, Critical Damage Tolerance ×2 | Critical Hit +55 |\n| Triniel | lv 40 | 116 | Multi-hit Chance ×3, Multi-hit Resist ×3 | HP +1,500, Critical Hit +75 |\n| Ariel (PvE) | lv 45 | 152 | PvE Damage Boost ×4, PvE Damage Tolerance ×4 | Boss Damage Boost +4%, Boss Damage Tolerance +4% |\n| Azphel (PvP) | lv 45 | 152 | PvP Damage Boost ×4, PvP Damage Tolerance ×4 | Status Effect Chance +8%, Status Effect Resist +8% |\n\nAriel arrived with the 21 Oct 2026 Global patch. The PLAYNC node \"Combat Speed +1.5%\" on Nezekan is one of those Unique corners.\n\n**Nodes and costs.** Node grade sets the point cost: Common 1, Rare 2 (passive skill-level nodes), Epic 3 (active skill-level nodes), Unique 4 (corners). You can only open a node next to one you own. Each of the four white boards (Nezekan, Zikel, Vaizel, Triniel) holds 12 active and 10 passive skill-level nodes. Ariel and Azphel have none. Stat nodes are the same for every class; only the skill nodes differ.\n\n**Points:**\n- **White boards** share one Daevanion Crystal pool. Points come from levelling (about 136 by level 45), Sealed Dungeons (2 each), regional quests (1 each), the Nightmare and festival shops, and Substance Morph.\n- **Ariel** uses its own crystals. Each character can morph 100 Ariel Fragments into one Daevanion Crystal: Ariel, up to 30 times. Fragments come from Hard Expeditions (Krao Cave/Draupnir from Item Level 2,600, Urugugu/Vakron 2,700, Fire Temple/Ferocious Horn Den 2,800).\n- **Azphel** crystals come from Abyss, arena and battlefield shops and Monolith rewards.\n\nToday's points don't fill everything. The strongest sampled Global characters (PLAYNC, 24 Nov 2026) have about 56–77% of each white board, 70–74% of Ariel and 44–47% of Azphel.\n\n**Priorities (Global guide analysis plus KR community practice):**\n1. First path to the skill-level nodes for your main rotation skills.\n2. Then route to the Unique corners: +1.5% each is the best value per point early. Nezekan's Combat Speed/Cooldown and Zikel's Damage Boost suit damage dealers; tanks also value the tolerance corners.\n3. Filler stat nodes only add up once a board is nearly complete.\n4. Ariel and Azphel never compete with the white boards for points. PvE players should farm Ariel Fragments; PvP players should invest in Azphel.\n\nKR players plan routes with optimizers (e.g. a Daevanion optimizer posted on Inven): mark required special nodes, then fill by priority.\n\n**Reset.** No source gives a Global reset cost. KR added rebuild resets and a Kina refund in July 2026.\n\n**KR/TW only:** Marchutan (Feb 2026), Yustiel (Apr 2026) and Lumiel (Nov 2026) boards, plus 128 extra points with level 55. Don't plan these for Global characters.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- Daevanion reset or refund cost on Global.\n- How many Ariel points one Daevanion Crystal: Ariel gives (30 crafts per character against a 232-point board).\n- Total white-board points obtainable on Global today.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/daevanion-guide METABOT: Daevanion guide (Global) (2026-11, GLOBAL)",
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026",
+      "https://aion2hub.com/updates/aion-2-global-update-2026-10-21 aion2hub: Global update 2026-10-21 (Ariel board) (2026-10, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11 Official Global patch notes Nov 11 2026 (mirror): Ariel Fragment morphs (2026-11, GLOBAL)",
+      "https://gamewith.ai/aion2/ko/daevanion-planner GameWith (KR): Daevanion planner (2026-09, KR)",
+      "https://m.inven.co.kr/board/aion2/6444/2394 Inven: Daevanion optimization (KR, Nov 2026) (2026-11, KR)",
+      "https://www.gamemeca.com/view.php?gid=1783197 GameMeca: KR 1st anniversary update (new board, +128 points) (2026-11, KR)"
+    ],
+    "position": 80
+  },
+  {
+    "name": "stat-priorities-per-class",
+    "kind": "guide",
+    "title": "Stat priorities per class (PvE and PvP), with what each stat does",
+    "summary": "What the main AION 2 stats do, the caps known for Global, and which stats each of the eight classes favours in PvE and PvP, with how sure each claim is.",
+    "body": "**Read first.** Few sources give reliable per-class stat orders for Global (level 45). Most numbers below are mechanics; class orders are medium or low confidence. On Global, top players' manastones look close to random rolls (metabot class pages, 24 Nov 2026), so don't present a strict \"best in slot\" engraving. The \"percent vs fixed damage dealer\" split some Korean posts mention comes from Dungeon & Fighter, not AION 2. Never use it.\n\n**What stats do** (PLAYNC Global, 24 Nov 2026; each point gives +0.1% per effect):\n- **Primary:** Might = Attack % for *every* class, casters and healers included. Precision = Accuracy and Critical Hit. Dexterity = Evasion, Block, Crit Resist. Constitution = HP. Willpower = Status Effect Resist.\n- **Deity stats:** Destruction [Zikel] = Attack, Perfect Resist. Illusion [Kaisinel] = Cooldown, Endurance Penetration. Time [Siel] = Combat Speed, Double Resist. Death [Triniel] = Critical Hit. Freedom [Vaizel] = Accuracy, Evasion. Wisdom [Lumiel] = MP Cost, Double Chance. Justice [Nezekan] = Defense, Perfect. Life [Yustiel] = HP, Regeneration. Destiny [Marchutan] = MP, Endurance. Space [Israphel] = Move Speed, Block.\n- **Combat Speed:** attack and cast speed, *not* cooldown; cap 200%. It pays off at per-skill breakpoints (KR-tested; untested on Global). Manastones never roll it. Sources: soul binding on weapon/guard/gloves/necklace (about 12–13% on an item level 86–102 weapon), Chalice of Vigor, Nezekan corners, Clash Rune, buffs.\n- **Cooldown reduction** caps at 60%: Mirror of Vigor (Illusion), Nezekan corners.\n- **Critical Hit:** base crit damage 150%. The Global client tooltip caps crit rate at 50% minus the target's Crit Resist. KR raised its cap to 80% in July 2026; verify on Global.\n- **Double (강타):** the hit deals 2×. Monsters don't resist it, so about +1% PvE DPS per 1%. Players do resist it in PvP (KR cut the PvP multiplier to 1.5×).\n- **Accuracy:** too little causes Parry, which halves damage even on crits. Secure it before stacking Crit or Double, especially in PvP.\n- **Damage Boost family:** Damage Boost, PvE, boss and race boosts add together, so each point is worth less as the total grows. Back/rear boosts are separate multipliers.\n- **Low value:** Perfect (max weapon roll) tests at about 0.06–0.1% DPS per 1%. Penetration adds about 10% of its value per hit, so it is good on fast multi-hit kits and weak on slow big hits.\n- **Damage over time** ignores Crit, Double, Penetration and Multi-hit.\n\nSoul-binding targets per slot are in the soul binding article.\n\n**Per class:**\n- **Gladiator:** Attack/Crit for burst. Some guides add Front Damage Boost > Double > Weapon Damage Boost (low). KR moved stones from Weapon to Front Damage Boost after a passive buff (KR-only). Top Global players keep Lunge Stance and Rage Burst and the highest Might of any class.\n- **Templar (tank):** Block, Defense, HP first, then Accuracy against blockers in PvP. Some add Front Damage Boost/Double for threat (low).\n- **Assassin:** Attack, Crit, Back Attack Damage Boost; needs less Accuracy because most hits land from behind (KR).\n- **Ranger:** Attack, Crit, Accuracy. Don't stack Crit far past the cap: Bow of Blessing adds +200 Crit for 10 s (low-medium).\n- **Sorcerer:** Weapon Damage Boost, Crit Damage, Cooldown (low). KR players are split on Double vs Front Damage Boost.\n- **Spiritmaster:** Double, Damage Boost (low). Corrode and Elemental Fusion lower elemental resistance, a separate multiplier; heavy DoT ignores Crit/Double.\n- **Cleric:** a KR Jan 2026 guide gives HP > Defense > Crit Resist > Attack > Crit > MP (tied to a passive needing HP ≥ 75%, later removed in KR). For damage it lists Accuracy, Crit, Cooldown in PvE and Accuracy plus Crit Resist in PvP. Heal Boost and Incoming Heal are separate stats.\n- **Chanter:** KR guide: Double, Crit Damage and passives Promise of Wind / Impact Hit / Attack Preparation; Undefeated Mantra and Power of the Storm (+20% Combat Speed, −20% cooldowns for 10 s) are near-universal on Global.\n\n**PvP vs PvE.**\n- **PvP stats:** PvP Attack/Defense, PvP Damage Boost/Tolerance, PvP Crit/Block lines (Abyss manastones, Azphel board, Fierce Battle Amulet's +20% PvP Damage Boost).\n- **Defensive lines:** Accuracy and Crit Resist matter more in PvP, and Double matters less.\n\n**How sure:** low: treat the class orders as rough. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- The real Global crit-rate cap (tooltip 50% vs KR 80%).\n- Combat Speed breakpoints on Global.\n- Reliable PvP stat orders for every class except Cleric.\n- Sorcerer and Spiritmaster priorities beyond a single low-confidence guide.\n- Accuracy targets on Global (KR targets such as 1,500 PvE are KR-only).",
+    "sources": [
+      "https://aion2.plaync.com PLAYNC character pages of Global top-500 characters, read 24 Nov 2026",
+      "https://metabot.gg/en/aion-2/stats METABOT: AION 2 stats and caps (Global client) (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/guides/manastone-guide METABOT: Manastone guide (Global) (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/classes/gladiator/build METABOT: Gladiator build tracker (top level-45 characters; other classes on sibling pages) (2026-11, GLOBAL)",
+      "https://www.inven.co.kr/board/aion2/6444/1138 Inven: Double (강타) and accuracy mechanics (KR) (2026-01, KR)",
+      "https://www.inven.co.kr/board/aion2/6444/902 Inven: damage formula tests (TW) (2025-12, TW)",
+      "https://www.inven.co.kr/board/aion2/6444/1205 Inven: recommended soul binding per slot for PvE (KR) (2026-01, KR)",
+      "https://www.inven.co.kr/board/aion2/6493/192 Inven: KR July 2026 update (crit cap 80%, stat caps) (2026-07, KR)",
+      "https://www.inven.co.kr/board/aion2/6452/657 Inven: Cleric guide (KR) (2026-01, KR)",
+      "https://www.inven.co.kr/board/aion2/6451/116 Inven: Chanter guide (KR) (2026-05, KR)",
+      "https://www.inven.co.kr/board/aion2/6449/10014 Inven: Assassin combat speed breakpoints (KR) (2026-04, KR)",
+      "https://odealo.com/articles/best-stats-manastones-for-every-class-aion-2-guide Odealo: best stats and manastones per class (2026-10, GLOBAL)",
+      "https://timesaver.gg/blog/aion-2-combat-speed Timesaver: combat speed (KR/TW breakpoint tables) (2026-11, GLOBAL)",
+      "https://www.inven.co.kr/board/df/4307/2045 Inven Dungeon & Fighter post (source of the percent/fixed dealer idea; NOT AION 2) (2026-11, KR)"
+    ],
+    "position": 90
+  },
+  {
+    "name": "resource-economy-best-practice",
+    "kind": "guide",
+    "title": "Resources and economy: Kina, weekly caps, premium currency and beginner mistakes",
+    "summary": "How to spend Kina, Enhance Stones and premium currency without waste, which weekly caps exist on Global, and the mistakes new players make most often.",
+    "body": "**Currencies.** **Kina** is the gold (patch notes spell it Kina; players also write Kinah). **Kina (Bound)** is a separate, non-tradable wallet. Global moved many sources to bound Kina: Krao/Draupnir Conquest and Lower Abyss monsters (11 Nov 2026), then all field monsters and the daily 1,000,000 Kina purchase limit (18 Nov 2026). Guides say bound Kina pays for your own progression costs but cannot go to other players. NC has published no full rule list for Global, so this is medium confidence. **Quna** is the premium currency bought with real money. Bought Quna is \"pending\" for 72 hours before it can go on the Quna Exchange for Kina.\n\n**Membership.** The Special Quai Membership (reported at $14.99 for 30 days, account-wide) is needed for the Market, the Quna Exchange, Remote Storage and the Wind Breeze Merchant. It also raises the Odyle Energy cap from 560 to 840 and Shugo Festival keys to 21, and adds an extra cube pick in Expedition, Transcendence and Sanctuary. Direct player trading is disabled on Global. The cash shop sells cosmetics, the membership and the Daeva Pass (premium track 1,000 Quna, which includes Battle Enhance Scrolls). It sells no gear.\n\n**Weekly and daily caps (Global client, Nov 2026).** The weekly reset is Wednesday (16:00 server clock in the client tables).\n- **Odyle Energy:** regenerates 15 every 3 hours and opens reward cubes (40 per cube, 20 for Krao Cave/Urugugu). Spend it before it caps.\n- **Conquest:** 1 reward count every 8 hours (cap 21). **Transcendence:** 1 every 12 hours (cap 14).\n- **Daily dungeon:** 14 entries a week per server.\n- **Sanctuary raids:** 4 attempts a week; Ludra allows 1 final-boss kill a week.\n- **Ascension Trial:** 3 a week.\n- **Expedition (Exploration):** 7 reward counts per dungeon. Kina from Exploration falls after 40 cumulative runs (80% at 41–50 runs, down to 20% after 70).\n- **Duty Missions:** 5 a day at 50,000 bound Kina each.\n\nUnused weekly entries are lost. Daily-refill counters bank for about a week.\n\n**Cost scaling to plan around** (Unique, item level 102 crafted gear):\n- Each enchant attempt from +11 to +15 costs 360,000 → 1,860,000 Kina at 65% → 20% success.\n- Amplify (exceed) +1 to +5 costs 600,000 → 3,000,000 Kina plus 6–20 Amplify Stones per attempt.\n- Below +10, enchanting is cheap and guaranteed.\n\n**Spend well:**\n- Don't push gear past +10 while a better item is a few clears away. The KR community advises spreading +5–7 evenly early on.\n- Extract replaced gear instead of vendoring it. Extraction returns Enhance Stones, not Kina.\n- The Noble Belt and Revelation Amulet are upgraded in place (Substance Morph) and never replaced, so stones spent on them are never wasted.\n- Hard modes and Ludra need Item Level 2,600–3,000. Plan enchant pushes toward the next gate rather than maxing one piece.\n- Turn spare Ariel Fragments into Enhance Stones (1 → 5, unlimited). Each character can make up to 30 Daevanion Crystals: Ariel (100 fragments each).\n\n**Common beginner mistakes** (Mein-MMO, Inven):\n- Selling or enchanting gear that will soon be replaced.\n- Opening the Shugo Festival early: rewards scale with level and keys are limited.\n- Running the Ascension Trial below Item Level 1,500, the gate for Normal.\n- Letting weekly entries and Odyle Energy expire.\n- Treating Item Level and CP as the same thing.\n- Skipping the Abyss: Abyss Points can be earned from PvE there too.\n\n**How sure:** medium. Researched 2026-11-24 for Global.\n\n**Not confirmed yet** (say so when a question turns on it):\n- An official Global rule list for what Kina (Bound) can and cannot pay for.\n- The real-world time zone of the 16:00 server reset on each Global region.\n- The official membership price per region (secondary sources say $14.99 / 30 days).\n- Weekly Abyss Point caps (PvE and PvP) on Global.",
+    "sources": [
+      "https://metabot.gg/en/aion-2/guides/daily-weekly-checklist METABOT: Daily and weekly checklist (Global client tables) (2026-11, GLOBAL)",
+      "https://allthings.how/aion-2-cash-shops-every-store-and-the-currency-it-uses/ AllThings.How: AION 2 cash shops and currencies (2026-10, GLOBAL)",
+      "https://mein-mmo.de/en/aion-2-11-mistakes-you-must-definitely-avoid-at-launch,1586538/ Mein-MMO: 11 mistakes to avoid at launch (2026-09, GLOBAL)",
+      "https://www.inven.co.kr/board/aion2/6444/359 Inven: Follow this to 1,600 (KR beginner spec-up guide) (2025-11, KR)",
+      "https://patchbot.io/games/aion-2/articles/2190-notice-patch-notes-nov-11 Official Global patch notes Nov 11 2026 (mirror) (2026-11, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/1977-notice-patch-notes-oct-27-pdt-oct-28-cet Official Global patch notes Oct 27/28 2026 (mirror) (2026-10, GLOBAL)",
+      "https://patchbot.io/games/aion-2/articles/2081-notice-patch-notes-nov-3-pst-nov-4-cet Official Global patch notes Nov 3/4 2026 (mirror) (2026-11, GLOBAL)",
+      "https://mein-mmo.de/en/aion-2-servers-are-live-status-duration-patch-notes-and-more-about-the-server-maintenance-on-november-18-2026-in-the-live-ticker,1596857/2/ Mein-MMO: Global patch notes Nov 18 2026 (2026-11, GLOBAL)",
+      "https://allthings.how/aion-2-how-to-craft-the-splendent-wise-and-ebony-dragon-lord-weapons/ AllThings.How: Splendent Wise/Ebony Dragon Lord crafting, enchant and amplify costs (2026-10, KR)",
+      "https://cyprus-mail.com/2026/11/11/aion-2-after-launch-server-transfers-player-numbers-and-the-october-update-copy Cyprus Mail: AION 2 after launch (membership, transfers, October update) (2026-11, GLOBAL)"
+    ],
+    "position": 100
+  },
+  {
+    "name": "global-vs-kr-tw-differences",
+    "kind": "guide",
+    "title": "Global vs. Korea/Taiwan: what differs and how to use KR guides",
+    "summary": "How far Global is behind KR/TW in patch content, how the cash shop and trading differ, and which KR facts an advisor must not apply to Global.",
+    "body": "**Timeline.**\n- **KR/TW:** launched 19 Nov 2025 on PC and mobile. KR raised the level cap to 50 with Chapter 1 (July 2026) and added a ninth class, the Brawler. The 1st-anniversary update (11 Nov 2026, \"Boundary of Light and Veil\") raised it to **55**.\n- **Global:** launched 5 Oct 2026, after Founder's early access from 30 Sep. It is PC-only on Steam and PURPLE, in the regions NA East, NA West, EU, South America and Asia. Global started on a modified Season 1 with a **level cap of 45**. PLAYNC's Global class list still has eight classes (no Brawler) as of 24 Nov 2026.\n- **Global patches so far:** Hard Krao Cave/Draupnir and the Ariel Daevanion board (21 Oct), Hard Urugugu/Vakron and higher Amplify caps on crafted gear (28 Oct), Abyssal Forge: Ludra (4 Nov), Hard Fire Temple/Ferocious Horn Den (11 Nov), and Ludra Easy plus bound field Kina (18 Nov).\n- **Global Season 2:** reported for 16 Dec 2026 but not officially confirmed. The current Abyss Points event and the Season 1 \"Spirit Stone of Rebirth\" sale both end at the 16 Dec maintenance.\n- **Pacing:** NC America says Global will follow the Korean timeline closely, timing updates to how Global players progress.\n\n**Gear systems KR has that Global does not (yet):**\n- **Hero-grade (영웅) gear:** all Global endgame gear is Unique for now.\n- **A breakthrough (exceed) cap of 7:** KR raised it in Nov 2026; Global items cap at 5.\n- **Hero belts and amulets** that enchant to +20 with 5 breakthroughs, and **Unique +20 pendants** convertible to Hero.\n- **The \"Divine Origin\" endgame stat system.**\n- **Retired stat arcana** and a redistribution option for skill arcana.\n- **One more Daevanion board** with 128 extra points.\n- **Abyss gear's own breakthrough stone.**\n\nTreat any KR number for these as KR-only.\n\n**What Global had first or differently.** Abyssal Forge: Ludra is Global content; KR gets a time-limited \"Ludra Challenge\" based on it (2 Dec 2026). The trust system (higher trust, higher trade limits) went live on Global before KR. Item level gates are set per region; Global's hard modes sit at 2,600–3,000.\n\n**Cash shop and trading.**\n- **Global:** one Special Quai Membership (reported at $14.99 / 30 days). It is needed for the Market and the Quna Exchange, and Founder's Packs each include 30 days of it. **Direct player-to-player trade is disabled** as an anti-bot measure. The Cross-Server Market was not open at launch.\n- **KR:** launched with several paid memberships and drew heavy criticism for its monetization. It merged them into one Special Quai Membership in June 2026 and split Kina into normal and bound in March 2026.\n- **Both:** bound Kina is used. Global extended it to field monsters on 18 Nov 2026.\n\n**Rates.** No source gives official drop or experience rate multipliers for either region. Drop rates are set per content in patch notes (e.g. Global Ludra gear drop 5% → 15%, 18 Nov 2026). Don't claim one region has \"higher rates\".\n\n**How an advisor should use KR sources.** Inven (Korean) is the deepest community source for mechanics: enchant odds, soul binding behaviour, arcana and Daevanion logic. These usually carry over. Caps, gates, costs, item names and which grades exist often differ. Say where a number comes from (\"on KR, Nov 2026\") unless a Global source or the player's own PLAYNC data confirms it.\n\n**How sure:** medium. Researched 2026-11-24 for Global and Korea/Taiwan.\n\n**Not confirmed yet** (say so when a question turns on it):\n- Official Global Season 2 date and which KR systems (Hero gear, breakthrough 7, Brawler, level 50) it brings.\n- Exact KR Season 2 date: sources disagree (Jan 2026 vs Jun 2026).\n- Official membership prices per Global region, and whether the Cross-Server Market has opened.",
+    "sources": [
+      "https://cyprus-mail.com/2026/11/11/aion-2-after-launch-server-transfers-player-numbers-and-the-october-update-copy Cyprus Mail: AION 2 after launch (2026-11, GLOBAL)",
+      "https://www.gamemeca.com/view.php?gid=1783197 GameMeca: AION 2 1st anniversary expands vertically and horizontally (KR) (2026-11, KR)",
+      "https://www.invenglobal.com/articles/28380/aion-2-raises-level-cap-to-55-in-1st-anniversary-update Inven Global: AION 2 raises level cap to 55 in 1st anniversary update (2026-11, KR)",
+      "https://www.invenglobal.com/articles/28104/aion-2s-merv-lee-kwai-on-400000-players-free-flight-and-pacing-the-global-launch Inven Global: Merv Lee Kwai on pacing the global launch (2026-11, GLOBAL)",
+      "https://expcarry.com/aion-2-global-vs-kr-tw-changes ExpCarry: Global vs KR/TW changes (cites NC notices) (2026-10, GLOBAL)",
+      "https://www.mtmmo.com/news/2357--aion-2-global-season-2-release-date--new-content MTMMO: Global Season 2 release date (unofficial) (2026-11, GLOBAL)",
+      "https://mein-mmo.de/en/aion-2-servers-are-live-status-duration-patch-notes-and-more-about-the-server-maintenance-on-november-18-2026-in-the-live-ticker,1596857/2/ Mein-MMO: Global patch notes Nov 18 2026 (2026-11, GLOBAL)",
+      "https://metabot.gg/en/aion-2/patch-notes METABOT: Global patch list (2026-11, GLOBAL)",
+      "https://insider-gaming.com/aion-2-monetization-explained-pay-to-win/ Insider Gaming: AION 2 monetization explained (2026-10, GLOBAL)",
+      "https://aion2.plaync.com/en-us/api/gameinfo/pcdata?lang=en PLAYNC Global class list (eight classes), checked 2026-11-24 (2026-11, GLOBAL)"
+    ],
+    "position": 110
+  }
+]

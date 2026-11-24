@@ -284,7 +284,8 @@ func TestTheAiAnswersWithTheArmorysTools(t *testing.T) {
 	for _, tool := range first["tools"].([]any) {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "my_characters,search_characters,get_character,top_players,compare_with_class" {
+	// read_guides too: the knowledge base starts with guides.
+	if strings.Join(names, ",") != "my_characters,search_characters,get_character,top_players,compare_with_class,read_guides" {
 		t.Fatalf("tools %v", names)
 	}
 	messages := first["messages"].([]any)
