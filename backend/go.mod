@@ -3,7 +3,7 @@ module github.com/oldbear24/odyle-dashboard/backend
 go 1.27.4
 
 require (
-	ganigeorgiev.com/pocketbase/dbx v1.13.0
+	ganigeorgiev.com/pocketbase/dbx v1.14.0
 	ganigeorgiev.com/pocketbase/pocketbase v0.42.3
 	github.com/anthropics/anthropic-sdk-go/v2 v2.14.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
