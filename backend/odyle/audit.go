@@ -105,6 +105,11 @@ var auditFields = []struct{ path, label string }{
 	{"adapters.extra", "Also accept (packet adapters)"},
 	{"adapters.disabled", "Switched-off packet adapters"},
 	{"windowsBlocked", "Held-back Windows versions"},
+	{"aiPaused", "Pause the armory AI"},
+	{"aiKeyHint", "Anthropic API key"},
+	{"aiModel", "Armory AI model"},
+	{"aiQuestions", "Armory AI questions per account in 24 hours"},
+	{"aiWeb", "Armory AI searches the web"},
 }
 
 // auditKeys name the entries of a list, so an entry whose details changed is one change

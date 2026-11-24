@@ -1,0 +1,243 @@
+/* The armory's AI (src/armoryai.js): the conversation, the answer as it is written, the question
+   box and the examples an empty conversation offers. Loaded with the armory (src/parts/armory.js). */
+.armory-ai {
+  max-width: 860px;
+}
+.armory-ai h1 svg {
+  width: 26px;
+  height: 26px;
+  vertical-align: -3px;
+  color: #f3d58a;
+}
+.ai-closed {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.ai-focus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-focus a {
+  font-weight: 700;
+  color: var(--mint);
+}
+.ai-log {
+  display: grid;
+  gap: 12px;
+}
+.ai-turn {
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.ai-turn.is-user {
+  justify-self: end;
+  max-width: 85%;
+  background: #1f3027;
+  border: 1px solid #335240;
+}
+.ai-turn.is-user p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.ai-turn.is-ai {
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.ai-answer > :first-child {
+  margin-top: 0;
+}
+.ai-answer > :last-child {
+  margin-bottom: 0;
+}
+.ai-answer p,
+.ai-answer ul,
+.ai-answer ol,
+.ai-answer blockquote,
+.ai-answer pre {
+  margin: 0 0 10px;
+}
+.ai-answer ul,
+.ai-answer ol {
+  padding-left: 22px;
+}
+.ai-answer h3,
+.ai-answer h4 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+}
+.ai-answer a {
+  color: var(--mint);
+}
+.ai-answer strong {
+  color: #f1f7f3;
+}
+/* The fonts have no italic and the page synthesizes none: emphasis shows in a lighter green. */
+.ai-answer em {
+  font-style: italic;
+  color: #cfe6d6;
+}
+.ai-answer code {
+  background: #0e1511;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
+.ai-answer pre {
+  background: #0e1511;
+  border-radius: 6px;
+  padding: 10px;
+  overflow-x: auto;
+}
+.ai-answer pre code {
+  padding: 0;
+}
+.ai-answer blockquote {
+  border-left: 3px solid #3c5546;
+  padding-left: 10px;
+  color: #b9c9bf;
+}
+.ai-answer hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.ai-table {
+  overflow-x: auto;
+  margin: 0 0 10px;
+}
+.ai-table table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 100%;
+}
+.ai-table th,
+.ai-table td {
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.ai-table th {
+  background: #1d2923;
+}
+.ai-turn.is-streaming .ai-answer:empty {
+  display: none;
+}
+.ai-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #b4c6b9;
+}
+.ai-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: #f2b8a8;
+}
+.ai-error svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+.ai-sources {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.ai-sources summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.ai-sources summary span {
+  color: var(--mint);
+}
+.ai-sources ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+.ai-sources a {
+  color: #cfe6d6;
+}
+.ai-examples p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-examples ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ai-example {
+  width: 100%;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #dce9df;
+  font-size: 13px;
+}
+.ai-example:hover {
+  border-color: #61866b;
+}
+.ai-form {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 14px;
+  padding: 10px 0;
+  background: linear-gradient(transparent, #101514 30%);
+}
+.ai-form textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 200px;
+  resize: vertical;
+  background: #111a14;
+  border: 1px solid #35463b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #e0ece3;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.ai-form textarea:focus {
+  border-color: #9bcea9;
+  box-shadow: 0 0 0 2px #b5f2cd14;
+}
+.ai-form textarea::placeholder {
+  color: #657c6c;
+}
+.ai-form .button {
+  min-height: 44px;
+}
+/* Above the bottom navigation phones and narrow windows show. */
+@media (max-width: 900px) {
+  .ai-form {
+    bottom: calc(58px + env(safe-area-inset-bottom));
+  }
+}
+@media (max-width: 640px) {
+  .ai-turn.is-user {
+    max-width: 100%;
+  }
+}

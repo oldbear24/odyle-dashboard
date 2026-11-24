@@ -8,6 +8,7 @@ import {
   waiting,
   playncPage,
   armorySearch,
+  suggestionList,
   addBookmark,
   lookupStatus,
   profileTabs,
@@ -238,6 +239,17 @@ test('armory paths say what they show', async () => {
   assert.deepEqual(armoryTarget(findPath('GLOBAL_NA', 'Siel', 'Žluťoučký')), {
     find: { region: 'GLOBAL_NA', server: 'Siel', name: 'Žluťoučký' },
   });
+  // A search on every server of a region leaves the server out; its text may name one itself.
+  assert.equal(findPath('GLOBAL_EU', '', 'Kai Lumiel'), '/armory/find/GLOBAL_EU/Kai%20Lumiel');
+  assert.ok(armoryRoute.test(findPath('GLOBAL_EU', '', 'Kai Lumiel')));
+  assert.deepEqual(armoryTarget(findPath('GLOBAL_EU', '', 'Kai, Lumiel')), {
+    find: { region: 'GLOBAL_EU', server: '', name: 'Kai, Lumiel' },
+  });
+  assert.deepEqual(armoryTarget('/armory/find/GLOBAL_EU/%E0%A4%A'), { search: true });
+  // The AI.
+  assert.ok(armoryRoute.test('/armory/ai'));
+  assert.ok(!armoryRoute.test('/armory/ai/x'));
+  assert.deepEqual(armoryTarget('/armory/ai'), { ai: true });
   assert.deepEqual(armoryTarget('/armory'), { search: true });
 });
 
@@ -1165,6 +1177,11 @@ test('the search form keeps the last region and server and lists what PLAYNC fou
   assert.match(form, /<option selected>Lumiel<\/option>/);
   assert.match(form, /value="Ka&quot;"/);
   assert.doesNotMatch(form, /armory-results|armory-empty/);
+  // One box takes the text, which suggests the characters Odyle knows; the server may stay any.
+  assert.match(form, /<input name="name" type="search"[^>]*role="combobox"[^>]*aria-controls="armory-suggestions"/);
+  assert.match(form, /<ul id="armory-suggestions" class="armory-suggestions" role="listbox"[^>]*hidden><\/ul>/);
+  assert.match(armorySearch(regions, { region: 'GLOBAL_EU' }), /<option value="" selected>Any server<\/option>/);
+  assert.match(form, /<option value="" >Any server<\/option>/);
   const found = armorySearch(regions, {}, [
     {
       name: 'Ka',
@@ -1174,13 +1191,55 @@ test('the search form keeps the last region and server and lists what PLAYNC fou
       serverId: 2304,
       region: 'eu',
       characterId: 'kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=',
+      combatPower: 107458,
     },
   ]);
   assert.match(
     found,
-    /href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="><strong>Ka<\/strong><span>Level 45 · Asmodians · Lumiel/,
+    /href="#\/armory\/eu\/2304\/kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4="><span class="armory-mini" aria-hidden="true">KA<\/span><strong>Ka<\/strong><span>Level 45 · Asmodians · Lumiel<\/span><b class="armory-hit-power">107,458 CP<\/b>/,
   );
-  assert.match(armorySearch(regions, {}, []), /PLAYNC lists no character of that name on this server\./);
+  assert.match(
+    armorySearch(regions, { server: 'Lumiel' }, []),
+    /PLAYNC lists no character of that name on this server\./,
+  );
+  assert.match(armorySearch(regions, {}, []), /PLAYNC lists no character with that name in this region\./);
+  // The way to the AI shows for the accounts that may ask it.
+  assert.doesNotMatch(form, /armory-ai-link/);
+  assert.match(
+    armorySearch(regions, {}, null, false, [], Date.now(), '', true),
+    /<a class="button secondary armory-ai-link" href="#\/armory\/ai">[\s\S]*Ask the AI<\/a>/,
+  );
+});
+
+test('suggestions link the characters Odyle knows, the one the arrow keys picked marked', async () => {
+  const list = suggestionList(
+    [
+      {
+        name: 'Kai',
+        level: 45,
+        class: 'Chanter',
+        server: 'Lumiel',
+        serverId: 2304,
+        region: 'eu',
+        characterId: 'S2FpS2FpS2FpS2Fp',
+        combatPower: 9000,
+      },
+      { name: 'Kaiden<', level: 12, server: 'Siel', serverId: 1101, region: 'nae', characterId: 'S2FpZGVuS2FpZGVu' },
+    ],
+    '',
+    1,
+  );
+  assert.match(
+    list,
+    /<li role="option" id="armory-suggestion-0" aria-selected="false"><a href="#\/armory\/eu\/2304\/S2FpS2FpS2FpS2Fp" tabindex="-1">/,
+  );
+  assert.match(
+    list,
+    /<strong>Kai<\/strong><small>Level 45 · Chanter · Lumiel · Europe<\/small><\/span><span class="armory-suggest-power">9,000 CP<\/span>/,
+  );
+  assert.match(list, /id="armory-suggestion-1" aria-selected="true" class="is-active">/);
+  assert.match(list, /<strong>Kaiden&lt;<\/strong><small>Level 12 · Siel · North America East<\/small><\/span><\/a>/);
+  assert.equal(suggestionList([]), '');
 });
 
 test('bookmarks keep characters in this browser, newest first, with their last opened numbers', async () => {

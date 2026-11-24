@@ -122,6 +122,8 @@ func TestTheFinalRateLimitRuleSet(t *testing.T) {
 	}
 	want := []core.RateLimitRule{
 		{Label: "/api/odyle/armory/search", MaxRequests: 20, Duration: 60},
+		{Label: "/api/odyle/armory/suggest", MaxRequests: 120, Duration: 60},
+		{Label: "/api/odyle/armory/ai", MaxRequests: 20, Duration: 60},
 		{Label: "/api/odyle/armory/", MaxRequests: 60, Duration: 60},
 		{Label: "/api/odyle/create", MaxRequests: 30, Duration: 60},
 		{Label: "/api/odyle/join", MaxRequests: 30, Duration: 60},

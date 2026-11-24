@@ -246,6 +246,10 @@ type armoryHit struct {
 	CharacterId string `json:"characterId"`
 	Class       string `json:"class"`
 	ClassIcon   string `json:"classIcon"`
+	// What the armory knows of the character (armory_ranks), 0 and "" when it knows nothing yet.
+	CombatPower int64  `json:"combatPower"`
+	ItemLevel   int64  `json:"itemLevel"`
+	Portrait    string `json:"portrait"`
 	classId     int64
 }
 
@@ -280,8 +284,9 @@ func (s *armorySearches) slot() error {
 	return nil
 }
 
-// find lists the characters the official search finds by a name on a server (searches),
-// those named exactly so first, at most 20.
+// find lists the characters the official search finds by a name (any name holding it) on a
+// server (searches), or with server "" on every server of the region, those named exactly so
+// first, at most 20 (30 on every server).
 func (s *armorySearches) find(book serverBook, name, server, region string) ([]armoryHit, error) {
 	key := region + "|" + server + "|" + strings.ToLower(name)
 	s.mu.Lock()
@@ -290,12 +295,24 @@ func (s *armorySearches) find(book serverBook, name, server, region string) ([]a
 		return kept.hits, nil
 	}
 	s.mu.Unlock()
-	hits := []armoryHit{}
-	for _, at := range book.searches(server, region) {
+	hits, limit := []armoryHit{}, 20
+	searches := book.searches(server, region)
+	if server == "" {
+		// Every server of the region: PLAYNC's search takes the region alone.
+		searches, limit = []search{}, 30
+		for _, r := range searchRegions(region) {
+			searches = append(searches, search{region: r.code})
+		}
+	}
+	for _, at := range searches {
 		if err := s.slot(); err != nil {
 			return nil, err
 		}
-		query := "keyword=" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20") + "&serverId=" + strconv.Itoa(at.serverId) + "&region=" + at.region + "&localeInfo=en-US&page=1&size=" + strconv.Itoa(searchPageSize)
+		onServer := ""
+		if at.serverId != 0 {
+			onServer = "&serverId=" + strconv.Itoa(at.serverId)
+		}
+		query := "keyword=" + strings.ReplaceAll(url.QueryEscape(name), "+", "%20") + onServer + "&region=" + at.region + "&localeInfo=en-US&page=1&size=" + strconv.Itoa(searchPageSize)
 		res, err := send(call{method: "GET", url: searchURL() + "?" + query, headers: map[string]string{"accept": "application/json", "user-agent": userAgent}, timeout: 10 * time.Second, limit: 1 << 20})
 		if err != nil {
 			return nil, err
@@ -307,17 +324,20 @@ func (s *armorySearches) find(book serverBook, name, server, region string) ([]a
 		for _, hit := range jsonList(found["list"]) {
 			id, err := url.QueryUnescape(jsonText(hit, "characterId", 200))
 			serverId := int(number(hit["serverId"]))
-			if err != nil || !armoryIds.MatchString(id) || serverId != at.serverId {
+			// A hit on another server than asked for, or (every server) of another region or on a
+			// server the book does not name, is left out.
+			named := book.inRegion(at.region, serverId)
+			if err != nil || !armoryIds.MatchString(id) || at.serverId != 0 && serverId != at.serverId || named == "" {
 				continue
 			}
-			hits = append(hits, armoryHit{Name: jsonText(hit, "name", 40), Level: whole(hit["level"]), Race: whole(hit["race"]), Server: server, ServerId: serverId, Region: at.region, CharacterId: id, classId: whole(hit["pcId"])})
+			hits = append(hits, armoryHit{Name: jsonText(hit, "name", 40), Level: whole(hit["level"]), Race: whole(hit["race"]), Server: named, ServerId: serverId, Region: at.region, CharacterId: id, classId: whole(hit["pcId"])})
 		}
 	}
 	exact := strings.ToLower(name)
 	slices.SortStableFunc(hits, func(a, b armoryHit) int {
 		return boolOrder(strings.ToLower(b.Name) == exact) - boolOrder(strings.ToLower(a.Name) == exact)
 	})
-	hits = hits[:min(len(hits), 20)]
+	hits = hits[:min(len(hits), limit)]
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.kept) >= 500 {
@@ -355,23 +375,42 @@ func armoryName(name string) bool {
 	return true
 }
 
-// armorySearchRoute answers GET /api/odyle/armory/search?name=&server=&region= (a server
-// name and an Odyle region, as characters keep them): the characters the official search
-// lists. Public; rate limited per address.
+// armorySearchRoute answers GET /api/odyle/armory/search?q=&region=&server= (the search box's
+// text, parseQuery, and the Odyle region and the server, optional, chosen beside it, which a region
+// or server named in the text overrides) or ?name=&server=&region= (a name, and a server name and
+// an Odyle region as characters keep them): the characters the official search lists whose name holds the name, on the server or,
+// without one, on every server of the region, with what the armory knows of each. Public; rate
+// limited per address.
 func armorySearchRoute(e *core.RequestEvent) error {
-	q := e.Request.URL.Query()
-	name, server, region := trim(q.Get("name")), q.Get("server"), q.Get("region")
-	if !armoryName(name) {
-		return badRequest("Search a character name of 2 to 16 letters or digits.")
+	q, book := e.Request.URL.Query(), serversOf(e.App)
+	var query armoryQuery
+	if text := q.Get("q"); text != "" {
+		var err error
+		if query, err = parseQuery(book, cut(text, 80)); err != nil {
+			return err
+		}
+	} else {
+		query = armoryQuery{name: trim(q.Get("name")), server: q.Get("server")}
+		if !armoryName(query.name) {
+			return badRequest("Search a character name of 2 to 16 letters or digits.")
+		}
 	}
-	book := serversOf(e.App)
-	if len(book.searches(server, region)) == 0 {
+	if query.region == "" {
+		query.region = q.Get("region")
+	}
+	if query.server == "" {
+		query.server = q.Get("server")
+	}
+	if !knownRegion(query.region) {
+		return badRequest("Choose the region of the character.")
+	}
+	if query.server != "" && len(book.searches(query.server, query.region)) == 0 {
 		return badRequest("Choose the region and server of the character.")
 	}
 	if readSettings(e.App).ArmoryPaused {
 		return unavailable("The armory is paused for now. Try again later.")
 	}
-	hits, err := stateOf(e.App).armorySearch.find(book, name, server, region)
+	hits, err := stateOf(e.App).armorySearch.find(book, query.name, query.server, query.region)
 	if errors.Is(err, errArmoryBusy) {
 		return unavailable("Many lookups at the moment. Try again in a minute.")
 	}
@@ -379,13 +418,52 @@ func armorySearchRoute(e *core.RequestEvent) error {
 		warn(e.App, "Odyle armory search failed", "error", message(err))
 		return unavailable("The official character search did not answer. Try again in a minute.")
 	}
-	// Each hit's class and emblem, as far as the server knows its class id.
-	classes, named := gameClasses(e.App), make([]armoryHit, len(hits))
+	named, err := knownHits(e.App, hits)
+	if err != nil {
+		return err
+	}
+	return e.JSON(200, map[string]any{"results": named, "query": map[string]string{"name": query.name, "server": query.server, "region": query.region}})
+}
+
+// knownHits are search hits with each one's class and emblem, as far as the server knows its
+// class id, and what the armory knows of the character: its combat power, item level and portrait
+// (none for one hidden).
+func knownHits(app core.App, hits []armoryHit) ([]armoryHit, error) {
+	classes, named := gameClasses(app), make([]armoryHit, len(hits))
+	type row struct {
+		ServerId    int    `db:"serverId"`
+		CharacterId string `db:"characterId"`
+		Class       string `db:"class"`
+		CombatPower int64  `db:"combatPower"`
+		ItemLevel   int64  `db:"itemLevel"`
+		Portrait    string `db:"portrait"`
+	}
+	known := map[string]row{}
+	if len(hits) > 0 {
+		ids := make([]any, len(hits))
+		for i, hit := range hits {
+			ids[i] = hit.CharacterId
+		}
+		rows, params := []row{}, dbx.Params{}
+		if err := app.DB().NewQuery("SELECT serverId, characterId, class, combatPower, itemLevel, portrait FROM armory_ranks WHERE hidden = FALSE AND " + inList("characterId", "id", ids, params)).Bind(params).All(&rows); err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			known[armoryKey(r.ServerId, r.CharacterId)] = r
+		}
+	}
+	icons := classIcons(app)
 	for i, hit := range hits {
 		hit.Class, hit.ClassIcon = classes[hit.classId].Name, classes[hit.classId].Icon
+		if r, ok := known[armoryKey(hit.ServerId, hit.CharacterId)]; ok {
+			hit.CombatPower, hit.ItemLevel, hit.Portrait = r.CombatPower, r.ItemLevel, r.Portrait
+			if hit.Class == "" && r.Class != "" {
+				hit.Class, hit.ClassIcon = r.Class, icons[r.Class]
+			}
+		}
 		named[i] = hit
 	}
-	return e.JSON(200, map[string]any{"results": named})
+	return named, nil
 }
 
 // armoryServersRoute answers GET /api/odyle/armory/servers: the servers of each region by

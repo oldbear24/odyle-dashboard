@@ -11,8 +11,10 @@ export const armoryTabs = ['skills', 'daevanion', 'titles', 'appearance', 'upgra
 // (regions.js). A profile's path may name a second profile to compare it with (/compare/…).
 const profileSource = String.raw`\/${profileRegionSource}\/[12]\d{3}\/[A-Za-z0-9_-]{8,90}={0,2}`;
 export const armoryRoute = new RegExp(
-  String.raw`^\/armory(?:\/top(?:\/[A-Za-z]{2,30})?|\/find\/${regionSource}\/${serverSource}\/[^/]{1,60}|${profileSource}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card)|\/compare${profileSource})?)?$`,
+  String.raw`^\/armory(?:\/ai|\/top(?:\/[A-Za-z]{2,30})?|\/find\/${regionSource}(?:\/${serverSource})?\/[^/]{1,120}|${profileSource}(?:\/(?:skills|daevanion|titles|appearance|upgrade|card)|\/compare${profileSource})?)?$`,
 );
+// The armory's AI (armoryai.js), for the accounts the server's operator lets use it.
+export const aiPath = '/armory/ai';
 export const profilePath = (hit, tab = '') =>
   `/armory/${hit.region}/${hit.serverId}/${hit.characterId}${armoryTabs.includes(tab) ? '/' + tab : ''}`;
 // A character's own profile, once the daily lookup found it on PLAYNC (officialId), else "".
@@ -28,16 +30,22 @@ export const topPath = (className = '') => '/armory/top' + (/^[A-Za-z]{2,30}$/.t
 // Two profiles side by side, the first on the left.
 export const comparePath = (a, b) =>
   `/armory/${a.region}/${a.serverId}/${a.characterId}/compare/${b.region}/${b.serverId}/${b.characterId}`;
-export const findPath = (region, server, name) => `/armory/find/${region}/${server}/${encodeURIComponent(name)}`;
-// What a path asks for: { search } (the form), { find: { region, server, name } }, { profile: { region, serverId, characterId, tab } },
+// A search: the text typed (a name or part of one, perhaps with a server or region) in a region, on
+// a server or (server '') on every server.
+export const findPath = (region, server, name) =>
+  `/armory/find/${region}/${server ? server + '/' : ''}${encodeURIComponent(name)}`;
+// What a path asks for: { search } (the form), { find: { region, server, name } } (server '' for every
+// server), { ai } (the AI), { profile: { region, serverId, characterId, tab } },
 // { card: { region, serverId, characterId } }, { compare: [left, right] } (each { region, serverId,
 // characterId }) or { top: { class } } ('' for the first).
 export function armoryTarget(path) {
   const parts = path.split('/').slice(2);
   if (parts[0] === 'top' && parts.length <= 2) return { top: { class: parts[1] || '' } };
-  if (parts[0] === 'find') {
+  if (parts[0] === 'ai' && parts.length === 1) return { ai: true };
+  if (parts[0] === 'find' && (parts.length === 3 || parts.length === 4)) {
+    const [region, server, name] = parts.length === 3 ? [parts[1], '', parts[2]] : parts.slice(1);
     try {
-      return { find: { region: parts[1], server: parts[2], name: decodeURIComponent(parts[3]) } };
+      return { find: { region, server, name: decodeURIComponent(name) } };
     } catch {
       return { search: true };
     }
@@ -69,6 +77,8 @@ export const classBadge = (base, file, name = '') => {
     : '';
 };
 
+// The AI's title, as the backend names it (backend/odyle/pages.go).
+export const aiTitle = () => t('Armory AI · Odyle Armory');
 // The top players page's title, as the backend names it (backend/odyle/pages.go).
 export const topTitle = className =>
   className

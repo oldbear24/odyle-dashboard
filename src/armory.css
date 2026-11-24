@@ -2118,3 +2118,91 @@ i.armory-stone-art {
     align-items: baseline;
   }
 }
+/* The one search box (src/armory.js armorySearch): the text first, the region and the server beside
+   it, and the characters Odyle knows suggested under it while it is typed. */
+.armory-find {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+.armory-combo {
+  position: relative;
+  display: block;
+}
+.armory-combo input::-webkit-search-cancel-button {
+  filter: grayscale(1);
+}
+.armory-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #16201a;
+  border: 1px solid #3c5546;
+  border-radius: 8px;
+  box-shadow: 0 14px 34px #000a;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.armory-suggestions a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+.armory-suggestions li.is-active a,
+.armory-suggestions a:hover {
+  background: #22322a;
+}
+.armory-suggest-who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.armory-suggest-who strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.armory-suggest-who small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.armory-suggest-power,
+.armory-hit-power {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mint);
+}
+.armory-hint {
+  margin: 8px 2px 0;
+  font-size: 11.5px;
+  color: #8d9d92;
+}
+.armory-ai-link svg {
+  color: #f3d58a;
+}
+@media (max-width: 800px) {
+  .armory-find .armory-query {
+    grid-column: 1/-1;
+  }
+  .armory-find label:nth-of-type(3) {
+    grid-column: auto;
+  }
+}
+@media (max-width: 640px) {
+  .armory-find label:nth-of-type(3) {
+    grid-column: 1/-1;
+  }
+}

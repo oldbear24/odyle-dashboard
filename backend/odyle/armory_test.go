@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -252,7 +253,12 @@ func (s *armoryStand) serve(t *testing.T) {
 				return
 			}
 			id := url.QueryEscape("kdPX-_ocYSqMloiCy7IXZ0CDm-uNeqFNcUjEyfl3We4=")
-			serverId, _ := json.Marshal(q.Get("serverId"))
+			// Asked for a whole region, the hits are on its Lumiel.
+			on := q.Get("serverId")
+			if on == "" {
+				on = strconv.Itoa(2004 + 100*map[string]int{"nae": 1, "naw": 2, "eu": 3, "la": 4, "as": 5}[q.Get("region")])
+			}
+			serverId, _ := json.Marshal(on)
 			json.NewEncoder(w).Encode(map[string]any{"list": []any{
 				map[string]any{"characterId": "longer" + id, "name": "<strong>" + q.Get("keyword") + "</strong>x", "level": 22, "race": 2, "serverId": json.RawMessage(serverId)},
 				map[string]any{"characterId": id, "name": "<strong>" + q.Get("keyword") + "</strong>", "level": 45, "race": 2, "pcId": 36, "serverId": json.RawMessage(serverId)},
@@ -695,12 +701,19 @@ func TestArmoryForgetsProfilesNobodyOpened(t *testing.T) {
 func TestArmoryRoutesHaveTheirOwnRateLimits(t *testing.T) {
 	app := newTestApp(t)
 	rules := app.Settings().RateLimits.Rules
-	if len(rules) < 3 || rules[0].Label != "/api/odyle/armory/search" || rules[1].Label != "/api/odyle/armory/" {
+	labels := []string{}
+	for _, r := range rules[:min(4, len(rules))] {
+		labels = append(labels, r.Label)
+	}
+	// The search box's suggestions and the AI (1791763289_armory_ai.go) come before the armory's.
+	if strings.Join(labels, " ") != "/api/odyle/armory/search /api/odyle/armory/suggest /api/odyle/armory/ai /api/odyle/armory/" {
 		t.Fatalf("rules %v", rules)
 	}
-	rule, ok := app.Settings().RateLimits.FindRateLimitRule([]string{"GET " + armoryPath("x"), armoryPath("x")})
-	if !ok || rule.Label != "/api/odyle/armory/" || rule.MaxRequests != 60 {
-		t.Fatalf("rule %v", rule)
+	for path, max := range map[string]int{armoryPath("x"): 60, "/api/odyle/armory/suggest": 120, "/api/odyle/armory/ai": 20, "/api/odyle/armory/search": 20} {
+		rule, ok := app.Settings().RateLimits.FindRateLimitRule([]string{"GET " + path, path})
+		if !ok || rule.MaxRequests != max {
+			t.Fatalf("%s: rule %v", path, rule)
+		}
 	}
 }
 

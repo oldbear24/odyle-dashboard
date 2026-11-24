@@ -2366,4 +2366,95 @@ export default {
     'Bojová síla od {fromPower} ({from}) do {toPower} ({to}); úroveň předmětu od {fromItem} do {toItem}. Šipkami si přečteš jednotlivé dny.',
   'Every day as a table': 'Všechny dny v tabulce',
   Day: 'Den',
+  // Armory: the one search box and its suggestions (src/armory.js, backend/odyle/armoryfind.go)
+  'Any server': 'Libovolný server',
+  'PLAYNC lists no character with that name in this region.':
+    'PLAYNC v tomto regionu nezná žádnou postavu s takovým jménem.',
+  'A name or part of it, e.g. Kai or Kai Lumiel': 'Jméno nebo jeho část, např. Kai nebo Kai Lumiel',
+  'Characters Odyle knows': 'Postavy, které Odyle zná',
+  'Part of a name is enough and the server is optional: Odyle then searches every server of the region. Characters Odyle already knows are suggested as you type, from every region.':
+    'Stačí část jména a server je nepovinný: Odyle pak hledá na všech serverech regionu. Postavy, které Odyle už zná, se nabízejí už při psaní, ze všech regionů.',
+  'Search one character name, optionally with its server, for example Kai Lumiel.':
+    'Hledej jedno jméno postavy, případně i se serverem, například Kai Lumiel.',
+  'Choose the region of the character.': 'Vyber region postavy.',
+  // Armory: the AI (src/armoryai.js, backend/odyle/armoryai.go)
+  'Ask the AI': 'Zeptat se AI',
+  'Armory AI · Odyle Armory': 'AI armory · Odyle Armory',
+  'Ask the armory AI': 'Zeptej se AI armory',
+  'Ask about any AION 2 Global character in your own words: find someone without the exact name or server, compare characters, or see what the strongest of a class wear.':
+    'Ptej se vlastními slovy na kteroukoli postavu z AION 2 Global: najdi někoho bez přesného jména a serveru, porovnej postavy nebo zjisti, co nosí nejsilnější hráči třídy.',
+  'What should {name} upgrade first?': 'Co by měl(a) {name} vylepšit jako první?',
+  'Compare {name} with the strongest characters of the class.':
+    'Porovnej {name} s nejsilnějšími postavami stejné třídy.',
+  'How did {name} progress lately?': 'Jak se {name} v poslední době zlepšil(a)?',
+  'Who are the strongest Templars in Europe?': 'Kdo jsou nejsilnější Templaři v Evropě?',
+  'Compare Kai on Lumiel with the strongest Chanter Odyle knows.':
+    'Porovnej Kaie z Lumielu s nejsilnějším Chanterem, kterého Odyle zná.',
+  'Find characters whose name starts with Lumi.': 'Najdi postavy, jejichž jméno začíná na Lumi.',
+  'Where does the best Gladiator weapon drop?': 'Kde padá nejlepší zbraň pro Gladiatora?',
+  'Sign in to ask the armory AI. Only the accounts the server’s operator lets use it can ask.':
+    'Přihlas se, abys mohl(a) využít AI armory. Ptát se mohou jen účty, kterým to správce serveru povolí.',
+  'Sign in': 'Přihlásit se',
+  'Your account may not use the armory AI. The server’s operator decides who can.':
+    'Tvůj účet nemůže používat AI armory. O tom, kdo může, rozhoduje správce serveru.',
+  'The armory AI is not set up on this server yet.': 'AI armory zatím není na tomto serveru nastavená.',
+  'The armory AI is paused for now. Try again later.': 'AI armory je teď pozastavená. Zkus to později.',
+  Sources: 'Zdroje',
+  'New conversation': 'Nová konverzace',
+  'Search the armory': 'Hledat v armory',
+  About: 'Ptáš se na',
+  'Ask about any character': 'Ptát se na libovolnou postavu',
+  'For example:': 'Například:',
+  'You can ask again from {time}.': 'Znovu se můžeš zeptat od {time}.',
+  'Your question': 'Tvoje otázka',
+  'Ask about a character…': 'Zeptej se na postavu…',
+  'No questions left for now.': 'Teď ti nezbývají žádné otázky.',
+  'Answering…': 'Odpovídá…',
+  Ask: 'Zeptat se',
+  '{n} of {limit} questions left in 24 hours.': 'Zbývá {n} z {limit} otázek za 24 hodin.',
+  '{model} by Anthropic answers with the armory’s data and the web. Answers can be wrong: check the profiles they link.':
+    'Odpovídá {model} od Anthropicu z dat armory a z webu. Odpovědi se mohou mýlit: ověř si je v odkazovaných profilech.',
+  '{model} by Anthropic answers with the armory’s data. Answers can be wrong: check the profiles they link.':
+    'Odpovídá {model} od Anthropicu z dat armory. Odpovědi se mohou mýlit: ověř si je v odkazovaných profilech.',
+  'Your questions go to Anthropic to be answered; Odyle keeps only that you asked, and this tab the conversation.':
+    'Tvoje otázky se kvůli odpovědi posílají Anthropicu; Odyle si pamatuje jen to, že ses ptal(a), a konverzaci drží jen tato karta prohlížeče.',
+  'Thinking…': 'Přemýšlí…',
+  'Searching the web…': 'Hledá na webu…',
+  'Reading a web page…': 'Čte webovou stránku…',
+  'Searching for {name}…': 'Hledá {name}…',
+  'Reading {name} from PLAYNC…': 'Načítá {name} z PLAYNC…',
+  'Waiting to read {name} from PLAYNC ({n} ahead)…': 'Čeká na načtení {name} z PLAYNC (ve frontě před ním: {n})…',
+  'Waiting to read a character from PLAYNC ({n} ahead)…': 'Čeká na načtení postavy z PLAYNC (ve frontě před ní: {n})…',
+  'Reading a character from PLAYNC…': 'Načítá postavu z PLAYNC…',
+  'Listing the strongest {class} characters…': 'Vypisuje nejsilnější postavy třídy {class}…',
+  'Comparing with the stronger {class} characters…': 'Porovnává se silnějšími postavami třídy {class}…',
+  'The AI declined to answer this question. Ask it differently.':
+    'AI odmítla na tuto otázku odpovědět. Zeptej se jinak.',
+  'The answer took too long. Ask a narrower question.': 'Odpověď trvala příliš dlouho. Polož užší otázku.',
+  "The AI service refused this server's API key. Tell the server's operator.":
+    'Služba AI odmítla API klíč tohoto serveru. Dej vědět správci serveru.',
+  'The AI service is busy. Try again in a minute.': 'Služba AI je vytížená. Zkus to za minutu.',
+  'The AI service is overloaded. Try again in a minute.': 'Služba AI je přetížená. Zkus to za minutu.',
+  'The AI could not answer this question. Try again later.': 'AI na tuto otázku nedokázala odpovědět. Zkus to později.',
+  'The AI service did not answer. Try again in a minute.': 'Služba AI neodpověděla. Zkus to za minutu.',
+  'The AI gave no answer. Try again.': 'AI neodpověděla. Zkus to znovu.',
+  'Say whether the account may use the AI.': 'Uveď, zda účet může používat AI.',
+  'This account no longer exists.': 'Tento účet už neexistuje.',
+  'The AI is still answering your last question. Wait for its answer.':
+    'AI ještě odpovídá na tvou předchozí otázku. Počkej na odpověď.',
+  'The AI is answering many questions at the moment. Try again in a minute.':
+    'AI teď odpovídá na mnoho otázek. Zkus to za minutu.',
+  "Send the conversation as messages, yours and the AI's in turn, ending with your question.":
+    'Pošli konverzaci jako zprávy, střídavě tvoje a AI, zakončené tvou otázkou.',
+  'Ask a question of up to 2,000 characters.': 'Polož otázku o nejvýše 2 000 znacích.',
+  'An earlier answer of the conversation is too long. Start a new conversation.':
+    'Některá dřívější odpověď v konverzaci je příliš dlouhá. Začni novou konverzaci.',
+  'The conversation is too long. Start a new conversation.': 'Konverzace je příliš dlouhá. Začni novou konverzaci.',
+  "Your account may not use the armory AI. Ask the server's operator.":
+    'Tvůj účet nemůže používat AI armory. Požádej správce serveru.',
+  'The armory AI is not set up on this server.': 'AI armory není na tomto serveru nastavená.',
+  'You asked the AI as many questions as you may in 24 hours. Try again later.':
+    'Za posledních 24 hodin už jsi AI položil(a) všechny povolené otázky. Zkus to později.',
+  'Choose one of the AI models offered.': 'Vyber jeden z nabízených modelů AI.',
+  'Paste an Anthropic API key: it starts with sk-ant-.': 'Vlož API klíč Anthropicu: začíná na sk-ant-.',
 };

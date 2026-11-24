@@ -214,7 +214,9 @@ onSubmit({
     picker.searching = true;
     drawPicker('results');
     try {
-      picker.results = (await pb.send('/api/odyle/armory/search', { query: { name, server, region } })).results;
+      picker.results = (
+        await pb.send('/api/odyle/armory/search', { query: server ? { q: name, server, region } : { q: name, region } })
+      ).results;
     } finally {
       if (picker) {
         picker.searching = false;

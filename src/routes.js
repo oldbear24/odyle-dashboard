@@ -6,7 +6,7 @@
 // their page under its path. Invite links keep their code in the fragment (#/join/<code>), so
 // it never reaches a server or its logs.
 import { t } from './i18n.js';
-import { armoryRoute, armoryTarget, armoryTitle, topTitle } from './armorylinks.js';
+import { armoryRoute, armoryTarget, armoryTitle, topTitle, aiTitle } from './armorylinks.js';
 
 let marked = null;
 // Whether pages have paths here.
@@ -98,6 +98,7 @@ export function pageOf(route) {
 export function pageTitle(path, shownTitle = '') {
   if (path.startsWith('/armory')) {
     const target = armoryTarget(path);
+    if (target.ai) return aiTitle();
     return target.top
       ? topTitle(target.top.class)
       : target.profile || target.card || target.compare

@@ -1060,6 +1060,12 @@ test('superusers watch connected apps and their packets live and edit the server
     historyDays: 30,
     locationDays: 30,
     pvpDays: 90,
+    // The armory AI (1.2.0): off until an API key is saved, of which only the end is ever shown.
+    aiModel: 'claude-opus-5-5',
+    aiQuestions: 20,
+    aiPaused: false,
+    aiWeb: true,
+    aiKeyHint: '',
   };
   assert.deepEqual((await settings()).data.settings, initial);
   assert.deepEqual(

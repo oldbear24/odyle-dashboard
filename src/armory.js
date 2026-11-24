@@ -13,7 +13,7 @@ import { t, tn } from './i18n.js';
 import { age, escape as esc, number } from './model.js';
 import { icon } from './icons.js';
 import { link } from './routes.js';
-import { armoryRoute, profilePath, topPath, imageUrl, classBadge } from './armorylinks.js';
+import { armoryRoute, profilePath, topPath, aiPath, imageUrl, classBadge } from './armorylinks.js';
 import { upgradePlan, upgradeLeast, planParts, shareOf } from './upgrade.js';
 import {
   tileMeters,
@@ -155,7 +155,44 @@ const gradeNames = () => ({
 });
 const gradeName = grade => gradeNames()[grade] || grade || '';
 
-// The search form, with the region and server last searched.
+// The servers of a region for the search's server list: any server first, then each race's, the
+// chosen one selected.
+export function serverOptions(region, chosen = '') {
+  if (!region) return '';
+  const group = (label, list = []) =>
+    `<optgroup label="${esc(label)}">${list.map(s => `<option ${s === chosen ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>`;
+  return `<option value="" ${chosen ? '' : 'selected'}>${esc(t('Any server'))}</option>${group(t('Elyos'), region.elyos)}${group(t('Asmodians'), region.asmodian)}`;
+}
+
+// The characters Odyle knows that the search box suggests while its text is typed
+// (backend/odyle/armoryfind.go), each a link to its profile; active is the one the arrow keys
+// moved to (-1 for none).
+export function suggestionList(results, images = '', active = -1) {
+  return results
+    .map(
+      (c, i) =>
+        `<li role="option" id="armory-suggestion-${i}" aria-selected="${i === active}"${i === active ? ' class="is-active"' : ''}><a href="${esc(link(profilePath(c)))}" tabindex="-1"><span class="armory-mini" aria-hidden="true">${esc(initials(c.name))}${picture(images, c.portrait)}</span><span class="armory-suggest-who"><strong>${esc(c.name)}</strong><small>${classBadge(images, c.classIcon, c.class)}${esc([c.level ? t('Level {level}', { level: c.level }) : '', c.class, c.server, regionLabel(c.region)].filter(Boolean).join(' · '))}</small></span>${c.combatPower ? `<span class="armory-suggest-power">${esc(number(c.combatPower))} CP</span>` : ''}</a></li>`,
+    )
+    .join('');
+}
+
+// One character a search found: its name, level, class, faction and server, and its combat power
+// and portrait when Odyle knows them.
+function hitRow(hit, bookmarks, images) {
+  const race = hit.race === 1 ? t('Elyos') : hit.race === 2 ? t('Asmodians') : '';
+  const facts = [
+    t('Level {level}', { level: hit.level }),
+    hit.class ? `${classBadge(images, hit.classIcon, hit.class)}${esc(hit.class)}` : '',
+    esc(race),
+    esc(hit.server),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return `<li><a href="${esc(link(profilePath(hit)))}"><span class="armory-mini" aria-hidden="true">${esc(initials(hit.name))}${picture(images, hit.portrait)}</span><strong>${esc(hit.name)}${isBookmarked(bookmarks, hit) ? ` <span class="armory-star" title="${esc(t('Bookmarked'))}">★</span>` : ''}</strong><span>${facts}</span>${hit.combatPower ? `<b class="armory-hit-power">${esc(number(hit.combatPower))} CP</b>` : ''}${icon('arrow')}</a></li>`;
+}
+
+// The search form, with the region and server last searched and the text of the search shown;
+// ai is whether the signed-in account may ask the AI (app/armoryai.js).
 export function armorySearch(
   regions,
   chosen,
@@ -164,22 +201,25 @@ export function armorySearch(
   bookmarks = [],
   now = Date.now(),
   images = '',
+  ai = false,
 ) {
   const region =
     regions.find(r => r.region === chosen.region) || regions.find(r => r.region === 'GLOBAL_EU') || regions[0];
-  const names = regionNames(),
-    group = (label, list) =>
-      `<optgroup label="${esc(label)}">${list.map(s => `<option ${s === chosen.server ? 'selected' : ''}>${esc(s)}</option>`).join('')}</optgroup>`;
+  const names = regionNames();
   const list =
     results === null
       ? ''
       : results.length
-        ? `<ul class="armory-results">${results.map(hit => `<li><a href="${esc(link(profilePath(hit)))}"><strong>${esc(hit.name)}${isBookmarked(bookmarks, hit) ? ` <span class="armory-star" title="${esc(t('Bookmarked'))}">★</span>` : ''}</strong><span>${esc(t('Level {level}', { level: hit.level }))} · ${hit.class ? `${classBadge(images, hit.classIcon, hit.class)}${esc(hit.class)} · ` : ''}${hit.race === 1 ? t('Elyos') : hit.race === 2 ? t('Asmodians') : ''} · ${esc(hit.server)}</span>${icon('arrow')}</a></li>`).join('')}</ul>`
-        : `<p class="armory-empty">${t('PLAYNC lists no character of that name on this server.')}</p>`;
-  return `<main class="dashboard armory"><div class="heading"><div><h1>${t('Look up a character')}</h1><p>${t("Everything PLAYNC's official character pages show of any AION 2 Global character: gear with each item's stats and stones, combat power, stats, skills, Daevanion boards, titles and skins. No sign-in needed.")}</p></div><div class="heading-actions"><a class="button secondary" href="${esc(link(topPath()))}">${icon('trophy')} ${t('Top players by class')}</a></div></div>
-${bookmarkList(bookmarks, now, images)}<form id="armory-form" class="armory-form"><label>${t('Region')}<select name="region">${regions.map(r => `<option value="${esc(r.region)}" ${r === region ? 'selected' : ''}>${esc(names[r.region] || r.region)}</option>`).join('')}</select></label>
-<label>${t('Server')}<select name="server">${group(t('Elyos'), region.elyos)}${group(t('Asmodians'), region.asmodian)}</select></label>
-<label>${t('Character name')}<input name="name" required minlength="2" maxlength="16" pattern="[\\p{L}\\p{N}]{2,16}" autocomplete="off" value="${esc(chosen.name || '')}"></label><button class="button primary" type="submit" ${searching ? 'disabled' : ''}>${searching ? t('Searching…') : t('Search')}</button></form>
+        ? `<ul class="armory-results">${results.map(hit => hitRow(hit, bookmarks, images)).join('')}</ul>`
+        : `<p class="armory-empty">${chosen.server ? t('PLAYNC lists no character of that name on this server.') : t('PLAYNC lists no character with that name in this region.')}</p>`;
+  const askAi = ai
+    ? `<a class="button secondary armory-ai-link" href="${esc(link(aiPath))}">${icon('spark')} ${t('Ask the AI')}</a>`
+    : '';
+  return `<main class="dashboard armory"><div class="heading"><div><h1>${t('Look up a character')}</h1><p>${t("Everything PLAYNC's official character pages show of any AION 2 Global character: gear with each item's stats and stones, combat power, stats, skills, Daevanion boards, titles and skins. No sign-in needed.")}</p></div><div class="heading-actions">${askAi}<a class="button secondary" href="${esc(link(topPath()))}">${icon('trophy')} ${t('Top players by class')}</a></div></div>
+${bookmarkList(bookmarks, now, images)}<form id="armory-form" class="armory-form armory-find" role="search"><label class="armory-query">${t('Character')}<span class="armory-combo"><input name="name" type="search" required minlength="2" maxlength="40" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="armory-suggestions" placeholder="${esc(t('A name or part of it, e.g. Kai or Kai Lumiel'))}" value="${esc(chosen.name || '')}"><ul id="armory-suggestions" class="armory-suggestions" role="listbox" aria-label="${esc(t('Characters Odyle knows'))}" hidden></ul></span></label>
+<label>${t('Region')}<select name="region" data-armory-region="1">${regions.map(r => `<option value="${esc(r.region)}" ${r === region ? 'selected' : ''}>${esc(names[r.region] || r.region)}</option>`).join('')}</select></label>
+<label>${t('Server')}<select name="server">${serverOptions(region, chosen.server)}</select></label><button class="button primary" type="submit" ${searching ? 'disabled' : ''}>${searching ? t('Searching…') : t('Search')}</button></form>
+<p class="armory-hint">${t('Part of a name is enough and the server is optional: Odyle then searches every server of the region. Characters Odyle already knows are suggested as you type, from every region.')}</p>
 ${list}<p class="armory-note">${icon('info')}<span>${t('Profiles come from PLAYNC. Odyle keeps a copy for everyone, refreshed at most every 6 hours, and asks PLAYNC for one character at a time, so a new profile can take a while.')}${bookmarks.length ? ' ' + t('Bookmarks are kept in this browser only, with the numbers from when each profile was last opened here.') : ' ' + t('Bookmark characters on their profile to list them here, without an account.')}</span></p></main>`;
 }
 
@@ -944,7 +984,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
     .join(
       '',
     )}${profile.legion ? `<span class="armory-legion" title="${esc(t('Legion'))}">${icon('people')}${esc(profile.legion)}</span>` : ''}</p></div>
-<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><button class="button secondary armory-compare" data-action="armory-compare" aria-haspopup="dialog">${icon('swords')} ${t('Compare')}</button><a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
+<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><button class="button secondary armory-compare" data-action="armory-compare" aria-haspopup="dialog">${icon('swords')} ${t('Compare')}</button>${view.ai ? `<button class="button secondary armory-ai-link" data-action="ai-ask-about">${icon('spark')} ${t('Ask the AI')}</button>` : ''}<a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main, change]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd>${change ? `<dd class="armory-power-change">${esc(change)}</dd>` : ''}</div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
   const content =

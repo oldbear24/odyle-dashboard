@@ -201,6 +201,13 @@ func routes(se *core.ServeEvent) {
 	// Public: the armory (armory.go), signed in or not, with its own rate limits per address.
 	se.Router.GET("/api/odyle/armory/servers", timed("armory-servers", armoryServersRoute))
 	se.Router.GET("/api/odyle/armory/search", timed("armory-search", armorySearchRoute))
+	// The characters the armory knows whose name holds the text typed, while it is typed (armoryfind.go).
+	se.Router.GET("/api/odyle/armory/suggest", timed("armory-suggest", suggestRoute))
+	// The armory's AI (armoryai.go), for the accounts superusers let use it: whether the account may,
+	// and a question, whose answer streams back as it comes. A conversation of 20 messages with
+	// answers of up to 12,000 characters needs more than the usual 4 KB.
+	se.Router.GET("/api/odyle/armory/ai", timed("armory-ai", aiStatusRoute)).Bind(signedIn)
+	se.Router.POST("/api/odyle/armory/ai", aiAskRoute).Bind(signedIn, apis.BodyLimit(262144))
 	se.Router.GET("/api/odyle/armory/{region}/{serverId}/{characterId}", timed("armory", armoryRoute))
 	// What the strongest characters of a class wear, for a profile's Upgrade tab (upgrades.go).
 	se.Router.GET("/api/odyle/armory/upgrades/{class}", timed("armory-upgrades", upgradesRoute))
@@ -246,6 +253,10 @@ func routes(se *core.ServeEvent) {
 	se.Router.POST("/api/odyle/admin/update-apps", updateAppsRoute).Bind(superuser)
 	// What superusers did, by whom and when (audit.go).
 	se.Router.GET("/api/odyle/admin/audit", auditRoute).Bind(superuser)
+	// Who may use the armory's AI and what it took (aiaccess.go).
+	se.Router.GET("/api/odyle/admin/ai", aiAdminRoute).Bind(superuser)
+	se.Router.GET("/api/odyle/admin/ai/accounts", aiAccountsRoute).Bind(superuser)
+	se.Router.POST("/api/odyle/admin/ai/access", aiAccessRoute).Bind(superuser)
 	// A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.
 	se.Router.POST("/api/odyle/admin/settings", saveSettingsRoute).Bind(superuser, apis.BodyLimit(65536))
 }

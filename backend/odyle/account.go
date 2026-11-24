@@ -243,6 +243,7 @@ func exportData(e *core.RequestEvent) error {
 			"readerSessions":    readerSessions,
 			"pairedWindowsApps": paired,
 			"inviteLinks":       inviteLinks,
+			"armoryAi":          aiExport(app, user.Record),
 		})
 	})
 }

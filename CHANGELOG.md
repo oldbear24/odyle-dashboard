@@ -2,6 +2,27 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.2.0 · 2026-11-24
+
+### New
+- **One search box in the armory.** Type a name or just part of it. The server is optional: without one, Odyle searches every server of the region. You can also type the server or region with the name, like `Kai Lumiel` or `Kai eu`.
+- **Suggestions as you type**: the characters Odyle already knows, from every region, with their class, server and combat power. The arrow keys and Enter open one.
+- Search results show each character's server and, when Odyle knows it, its combat power and portrait.
+- **Ask the armory AI**, for the players the server's operator lets use it. Ask about characters in your own words, in Czech or English:
+  - it finds characters without the exact name or server;
+  - it reads their profiles and compares them with each other and with the strongest players of their class;
+  - it says what to upgrade first and, when the operator allows it, looks things up on the web, with the pages it used.
+
+  Answers appear as they are written and link every character they name. Open it from the armory page, or with **Ask the AI** on a profile to ask about that character.
+
+### Changed
+- The search in the **Compare** picker works like the armory's: part of a name is enough and the server is optional.
+- For server operators:
+  - **Server controls → Armory AI** takes your Anthropic API key, the model (Claude Opus 5.5, Sonnet 5.5 or Haiku 5.5), the questions each account may ask in 24 hours, web search and a pause, and lists the accounts that may use the AI with what they asked. Letting an account use it is written to the audit log;
+  - the AI stays off until a key is saved, and the server needs to reach api.anthropic.com;
+  - Odyle keeps who asked the AI, when and the tokens it took for 30 days, never the questions or the answers (migration 1791763289, which also indexes the armory's known characters by name and adds rate limits for the suggestions and the AI);
+  - `GET /api/odyle/armory/search` takes the search box's text as `q`, and the server may be left out.
+
 ## 1.1.0 · 2026-11-23
 
 ### New
