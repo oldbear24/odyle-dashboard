@@ -49,8 +49,8 @@ func listAiAccounts(app core.App, where string, params dbx.Params) ([]aiAccount,
 }
 
 // aiAdminRoute answers GET /api/odyle/admin/ai: the accounts that may use the AI or asked it
-// something in the last 30 days, what the AI took in that time, and the models Server controls
-// offer. Superusers.
+// something in the last 30 days, what the AI took in that time, the models Server controls offer
+// and what the knowledge base holds (aiknowledge.go). Superusers.
 func aiAdminRoute(e *core.RequestEvent) error {
 	accounts, err := listAiAccounts(e.App, "WHERE u.armoryAi = TRUE OR EXISTS (SELECT 1 FROM armory_ai_questions q WHERE q.user = u.id) ORDER BY u.armoryAi DESC, lower(u.displayName) LIMIT 500", dbx.Params{})
 	if err != nil {
@@ -70,7 +70,11 @@ func aiAdminRoute(e *core.RequestEvent) error {
 		"COUNT(CASE WHEN ok = FALSE THEN 1 END) AS failed FROM armory_ai_questions").Bind(dbx.Params{"day": ago(aiWindow)}).One(&totals); err != nil {
 		return err
 	}
-	return e.JSON(200, map[string]any{"accounts": accounts, "totals": totals, "models": aiModels})
+	knowledge, err := aiKnowledgeCounts(e.App)
+	if err != nil {
+		return err
+	}
+	return e.JSON(200, map[string]any{"accounts": accounts, "totals": totals, "models": aiModels, "knowledge": knowledge})
 }
 
 // aiAccountsRoute answers GET /api/odyle/admin/ai/accounts?q=: up to 20 accounts whose display

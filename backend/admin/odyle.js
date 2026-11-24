@@ -1,7 +1,8 @@
 // Odyle pages of the PocketBase superuser dashboard, imported by main.js: the Windows
 // apps connected right now and the requests ("packets") the apps and the dashboard
 // send as they arrive, the server's status with the last hour's traffic, the background
-// jobs, the game settings, the server controls and the audit log of what superusers did.
+// jobs, the game settings, the server controls, the armory AI's knowledge base and the audit log
+// of what superusers did.
 // `app`, `t`, `store` and `watch` are globals of the PocketBase UI (extension API of
 // PocketBase 0.37+, still marked experimental). Everything players control is rendered
 // as text nodes, never as HTML.
@@ -15,6 +16,7 @@ const pages = [
   { href: '#/odyle/jobs', icon: 'ri-timer-line', label: 'Background jobs' },
   { href: '#/odyle/settings', icon: 'ri-equalizer-line', label: 'Game settings' },
   { href: '#/odyle/controls', icon: 'ri-toggle-line', label: 'Server controls' },
+  { href: '#/odyle/knowledge', icon: 'ri-book-open-line', label: 'AI knowledge' },
   { href: '#/odyle/audit', icon: 'ri-file-list-3-line', label: 'Audit log' },
 ];
 const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -245,7 +247,7 @@ const fields = p =>
 const plain = p => Object.fromEntries(fields(p));
 
 // The apps, status, jobs and audit pages use PocketBase's wide wrapper; the forms keep the narrow one.
-const wide = ['#/odyle', '#/odyle/status', '#/odyle/jobs', '#/odyle/audit'];
+const wide = ['#/odyle', '#/odyle/status', '#/odyle/jobs', '#/odyle/knowledge', '#/odyle/audit'];
 function layout(active, actions, ...content) {
   return t.div(
     { className: 'page odyle-page' },
@@ -4162,6 +4164,29 @@ export function controlsPage() {
           }),
           t.div(
             { className: 'col-lg-12' },
+            t.div({ className: 'txt-bold m-b-xs' }, 'Knowledge base'),
+            t.p({ className: 'txt-hint txt-sm m-b-base' }, () => {
+              const k = ai.data?.knowledge;
+              const many = (n, one, more) => number(n) + ' ' + (n === 1 ? one : more);
+              return [
+                k
+                  ? 'The AI follows ' +
+                    many(k.rules, 'best practice', 'best practices') +
+                    ' in every answer and reads ' +
+                    (k.guides ? 'the ' + many(k.guides, 'guide', 'guides') : 'guides') +
+                    ' on the mechanics a question touches' +
+                    (k.disabled ? '; ' + many(k.disabled, 'entry is', 'entries are') + ' switched off' : '') +
+                    (k.updated ? '; last changed ' + when(k.updated) : '') +
+                    '. '
+                  : 'Loading the knowledge base… ',
+                'Read and correct them as patches change the game, add your own or switch one off on the ',
+                t.a({ href: '#/odyle/knowledge' }, 'AI knowledge'),
+                ' page. The next question reads the change, and it is written to the audit log.',
+              ];
+            }),
+          ),
+          t.div(
+            { className: 'col-lg-12' },
             t.div({ className: 'txt-bold m-b-xs' }, 'Accounts'),
             t.div(
               { className: 'odyle-table m-b-sm' },
@@ -4427,6 +4452,632 @@ export function controlsPage() {
   );
 }
 
+// The armory AI's knowledge base (backend/odyle/aiknowledge.go): the best practices it follows in
+// every answer and the guides it reads when a question needs them. Superusers read each entry as
+// the AI does (its Markdown drawn here), edit it, switch it off or on, add new ones and delete
+// them; every change goes through the Odyle routes, which write it to the audit log, and the next
+// question reads it. #/odyle/knowledge?entry=<name> opens an entry.
+const kindNames = { rule: 'best practice', guide: 'guide' };
+// A Markdown line that starts a block of its own (heading, list item, table row).
+const markdownBlock = /^(#{1,4}\s|\s*[-*]\s+|\s*\d+[.)]\s+|\s*\|)/;
+// Inline Markdown (**bold**, *italic*, `code`, [links](https://…)) as text and elements; links go
+// only to web pages, in a new tab.
+function markdownInline(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(/\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/g)) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1] !== undefined) out.push(t.strong(null, m[1]));
+    else if (m[2] !== undefined) out.push(t.em(null, m[2]));
+    else if (m[3] !== undefined) out.push(t.code(null, m[3]));
+    else if (/^https?:\/\//.test(m[5]))
+      out.push(t.a({ href: m[5], target: '_blank', rel: 'noopener noreferrer' }, m[4]));
+    else out.push(m[4]);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+// A guide's Markdown drawn for reading: headings, paragraphs, lists, tables and the inline marks
+// above. Everything is a text node; nothing is parsed as HTML.
+function markdown(source) {
+  const lines = String(source || '').split('\n');
+  const blocks = [];
+  let i = 0;
+  const list = (test, strip, tag) => {
+    const items = [];
+    while (i < lines.length && test.test(lines[i])) {
+      const indent = /^\s{2,}/.test(lines[i]);
+      items.push(t.li({ className: indent ? 'odyle-md-sub' : '' }, ...markdownInline(lines[i].replace(strip, ''))));
+      i++;
+    }
+    blocks.push(t[tag](null, ...items));
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (!line.trim()) i++;
+    else if (heading) {
+      blocks.push(
+        t['h' + Math.min(6, heading[1].length + 2)]({ className: 'odyle-md-heading' }, ...markdownInline(heading[2])),
+      );
+      i++;
+    } else if (/^\s*[-*]\s+/.test(line)) list(/^\s*[-*]\s+/, /^\s*[-*]\s+/, 'ul');
+    else if (/^\s*\d+[.)]\s+/.test(line)) list(/^\s*\d+[.)]\s+/, /^\s*\d+[.)]\s+/, 'ol');
+    else if (/^\s*\|/.test(line)) {
+      const rows = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        if (!/^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i]) || !lines[i].includes('-'))
+          rows.push(
+            lines[i]
+              .trim()
+              .replace(/^\||\|$/g, '')
+              .split('|')
+              .map(cell => cell.trim()),
+          );
+        i++;
+      }
+      const [head, ...body] = rows;
+      blocks.push(
+        t.div(
+          { className: 'odyle-table odyle-md-table' },
+          t.table(
+            null,
+            t.thead(null, t.tr(null, ...(head || []).map(cell => t.th(null, ...markdownInline(cell))))),
+            t.tbody(null, ...body.map(row => t.tr(null, ...row.map(cell => t.td(null, ...markdownInline(cell)))))),
+          ),
+        ),
+      );
+    } else {
+      const paragraph = [];
+      while (i < lines.length && lines[i].trim() && !markdownBlock.test(lines[i])) paragraph.push(lines[i++].trim());
+      blocks.push(t.p(null, ...markdownInline(paragraph.join(' '))));
+    }
+  }
+  return blocks;
+}
+// The name the AI asks for a guide by, from its title: lower-case words and dashes.
+const nameOf = title =>
+  title
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+const hostOf = href => {
+  try {
+    return new URL(href).host;
+  } catch {
+    return '';
+  }
+};
+const editable = ['kind', 'title', 'name', 'summary', 'body', 'sources', 'position', 'disabled'];
+const sameEntry = (a, b) => editable.every(key => String(a?.[key] ?? '') === String(b?.[key] ?? ''));
+
+export function knowledgePage(route) {
+  app.store.title = 'AI knowledge';
+  // open is the entry shown (its saved copy; a new entry has id ''), draft what the form holds,
+  // writing whether the form shows rather than the entry as the AI reads it, named whether the
+  // name was typed (a new entry's name follows its title until it is).
+  const state = store({
+    loading: true,
+    entries: [],
+    counts: null,
+    limits: null,
+    search: '',
+    open: null,
+    draft: null,
+    writing: false,
+    named: false,
+    saving: false,
+    busy: '',
+  });
+  const wanted = route?.query?.entry?.[0] || '';
+  async function load() {
+    try {
+      const data = await app.pb.send('/api/odyle/admin/ai/knowledge', { requestKey: null });
+      Object.assign(state, { entries: data.entries, counts: data.counts, limits: data.limits, loading: false });
+      if (wanted && !state.open) {
+        const entry = data.entries.find(e => e.name === wanted);
+        if (entry) show(entry);
+      }
+    } catch (error) {
+      state.loading = false;
+      if (!error.isAbort) app.checkApiError(error);
+    }
+  }
+  const dirty = () => state.draft && !sameEntry(state.draft, state.open);
+  function show(entry, writing = false) {
+    // Copies: spreading an entry of the store keeps its marker, and the draft would not be reactive.
+    state.open = copy(entry);
+    state.draft = copy(entry);
+    state.writing = writing;
+    state.named = Boolean(entry.id);
+    window.scrollTo(0, 0);
+  }
+  function create(kind) {
+    leave(() =>
+      show(
+        { id: '', kind, title: '', name: '', summary: '', body: '', sources: '', position: null, disabled: false },
+        true,
+      ),
+    );
+  }
+  // Runs next once unsaved changes, if any, are confirmed lost.
+  function leave(next) {
+    if (dirty()) app.modals.confirm('Discard the changes you have not saved?', next, null, { yesButton: 'Discard' });
+    else next();
+  }
+  const close = () =>
+    leave(() => {
+      // The draft first: the entry view draws while a draft is open.
+      state.draft = null;
+      state.open = null;
+    });
+  async function save() {
+    if (state.saving) return;
+    state.saving = true;
+    const draft = state.draft;
+    try {
+      const data = await app.pb.send('/api/odyle/admin/ai/knowledge', {
+        method: 'POST',
+        body: { ...Object.fromEntries(editable.map(key => [key, draft[key]])), id: draft.id || undefined },
+        requestKey: null,
+      });
+      Object.assign(state, { entries: data.entries, counts: data.counts });
+      show(data.entry);
+      app.toasts.success(
+        'Saved the ' + kindNames[data.entry.kind] + ' ' + data.entry.title + '. The AI uses it from the next question.',
+      );
+    } catch (error) {
+      app.checkApiError(error);
+    }
+    state.saving = false;
+  }
+  // Switches an entry off or on from the list, as saved (a draft open elsewhere stays as it is).
+  async function setDisabled(entry, disabled) {
+    if (state.busy) return;
+    state.busy = entry.id;
+    try {
+      const data = await app.pb.send('/api/odyle/admin/ai/knowledge', {
+        method: 'POST',
+        body: { ...Object.fromEntries(editable.map(key => [key, entry[key]])), id: entry.id, disabled },
+        requestKey: null,
+      });
+      Object.assign(state, { entries: data.entries, counts: data.counts });
+      app.toasts.success(
+        (disabled ? 'Switched off the ' : 'Switched on the ') +
+          kindNames[entry.kind] +
+          ' ' +
+          entry.title +
+          (disabled ? '. The AI leaves it out from the next question.' : '. The AI uses it from the next question.'),
+      );
+    } catch (error) {
+      // Draw the switch as saved again.
+      state.entries = [...state.entries];
+      app.checkApiError(error);
+    }
+    state.busy = '';
+  }
+  function remove() {
+    const entry = state.open;
+    app.modals.confirm(
+      'Delete the ' +
+        kindNames[entry.kind] +
+        ' ' +
+        entry.title +
+        '? The AI no longer ' +
+        (entry.kind === 'rule' ? 'follows' : 'reads') +
+        ' it, and it cannot be brought back. Switching it off keeps it.',
+      async () => {
+        try {
+          const data = await app.pb.send('/api/odyle/admin/ai/knowledge/' + encodeURIComponent(entry.id), {
+            method: 'DELETE',
+            requestKey: null,
+          });
+          Object.assign(state, { entries: data.entries, counts: data.counts, draft: null, open: null });
+          app.toasts.success('Deleted the ' + kindNames[entry.kind] + ' ' + entry.title + '.');
+        } catch (error) {
+          app.checkApiError(error);
+        }
+      },
+      null,
+      { yesButton: 'Delete' },
+    );
+  }
+  const changedOn = entry => (entry.updated ? new Date(timestamp(entry.updated)).toLocaleDateString() : '');
+  const sourcesOf = entry =>
+    String(entry.sources || '')
+      .split('\n')
+      .map(s => s.trim())
+      .filter(Boolean);
+  const matches = entry => {
+    const words = state.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const haystack = [entry.title, entry.name, entry.summary, entry.body].join(' ').toLowerCase();
+    return words.every(w => haystack.includes(w));
+  };
+  // PocketBase draws a switch from its label, so the label is there with its text for screen
+  // readers only.
+  const switchFor = entry =>
+    t.div(
+      {
+        className: 'field odyle-toggle',
+        title: () => (entry.disabled ? 'Switched off: the AI leaves it out' : 'In use'),
+      },
+      t.input({
+        id: 'odyle-kb-on-' + entry.id,
+        type: 'checkbox',
+        className: 'switch',
+        checked: () => !entry.disabled,
+        disabled: () => Boolean(state.busy),
+        onchange: e => setDisabled(entry, !e.target.checked),
+      }),
+      t.label(
+        { htmlFor: 'odyle-kb-on-' + entry.id },
+        t.span({ className: 'odyle-kb-hidden' }, (entry.disabled ? 'Switch on ' : 'Switch off ') + entry.title),
+      ),
+    );
+  const row = entry =>
+    t.div(
+      {
+        rid: entry.id + entry.updated + entry.disabled,
+        className: 'odyle-kb-row' + (entry.disabled ? ' odyle-kb-off' : ''),
+      },
+      t.div({ className: 'odyle-kb-switch' }, switchFor(entry)),
+      t.button(
+        { type: 'button', className: 'odyle-kb-open', onclick: () => leave(() => show(entry)) },
+        t.span({ className: 'odyle-kb-title' }, entry.title),
+        entry.kind === 'guide' ? t.span({ className: 'odyle-id txt-hint' }, entry.name) : null,
+        entry.disabled ? t.span({ className: 'label sm' }, 'Off') : null,
+        t.span({ className: 'odyle-kb-text txt-hint' }, entry.kind === 'guide' ? entry.summary : entry.body),
+      ),
+      t.div(
+        { className: 'odyle-kb-meta txt-hint txt-sm' },
+        entry.kind === 'guide'
+          ? t.span(null, sourcesOf(entry).length === 1 ? '1 source' : sourcesOf(entry).length + ' sources')
+          : null,
+        t.span({ title: when(entry.updated) }, changedOn(entry)),
+      ),
+    );
+  const group = (kind, title, hint) => () => {
+    const all = state.entries.filter(e => e.kind === kind);
+    const shown = all.filter(matches);
+    const used = state.counts ? (kind === 'rule' ? state.counts.rules : state.counts.guides) : 0;
+    return [
+      t.div(
+        { className: 'odyle-kb-group-head' },
+        t.div({ className: 'txt-lg' }, title),
+        t.span(
+          { className: 'txt-hint' },
+          number(used) + ' in use' + (all.length > used ? ', ' + number(all.length - used) + ' off' : ''),
+        ),
+        t.button(
+          { type: 'button', className: 'btn sm secondary m-l-auto', onclick: () => create(kind) },
+          t.i({ className: 'ri-add-line', ariaHidden: true }),
+          t.span({ className: 'txt' }, kind === 'rule' ? 'New best practice' : 'New guide'),
+        ),
+      ),
+      t.p({ className: 'txt-hint txt-sm' }, hint),
+      t.div(
+        { className: 'odyle-kb-list' },
+        shown.length
+          ? shown.map(row)
+          : t.div(
+              { className: 'odyle-kb-row txt-hint' },
+              all.length ? 'Nothing here matches the search.' : 'None yet.',
+            ),
+      ),
+    ];
+  };
+  const limit = key => state.limits?.[key] || 0;
+  const count = (value, max) => number(String(value || '').length) + ' of ' + number(max) + ' characters';
+  // The entry as the AI reads it, unsaved changes included.
+  // d is the draft the entry view was drawn for: state.draft turns null before the view goes.
+  const reading = d => {
+    const sources = sourcesOf(d);
+    return t.div(
+      { className: 'odyle-kb-read' },
+      d.kind === 'guide' && d.summary
+        ? t.p({ className: 'odyle-kb-summary' }, t.strong(null, 'What it answers: '), d.summary)
+        : null,
+      t.div({ className: 'odyle-md' }, ...markdown(d.body || '')),
+      sources.length
+        ? t.div(
+            { className: 'odyle-kb-sources' },
+            t.div({ className: 'txt-bold m-b-xs' }, 'Sources'),
+            t.ul(
+              null,
+              ...sources.map(s => {
+                const [href, ...rest] = s.split(/\s+/);
+                return t.li(
+                  null,
+                  /^https?:\/\//.test(href)
+                    ? t.a({ href, target: '_blank', rel: 'noopener noreferrer' }, rest.join(' ') || href)
+                    : s,
+                  /^https?:\/\//.test(href) && rest.length && hostOf(href)
+                    ? t.span({ className: 'txt-hint' }, ' · ' + hostOf(href))
+                    : null,
+                );
+              }),
+            ),
+          )
+        : null,
+    );
+  };
+  const writing = d => {
+    const rule = () => d.kind === 'rule';
+    return t.form(
+      {
+        className: 'grid',
+        inert: () => state.saving,
+        onsubmit: e => {
+          e.preventDefault();
+          save();
+        },
+      },
+      field(
+        'odyle-kb-kind',
+        'Kind',
+        t.select(
+          { id: 'odyle-kb-kind', onchange: e => (d.kind = e.target.value) },
+          t.option({ value: 'rule', selected: () => d.kind === 'rule' }, 'Best practice'),
+          t.option({ value: 'guide', selected: () => d.kind === 'guide' }, 'Guide'),
+        ),
+        () =>
+          rule()
+            ? 'The AI follows every best practice in every answer.'
+            : 'The AI reads a guide when a question needs it.',
+        3,
+      ),
+      field(
+        'odyle-kb-title',
+        'Title',
+        t.input({
+          id: 'odyle-kb-title',
+          type: 'text',
+          required: true,
+          maxLength: () => limit('title'),
+          value: () => d.title,
+          oninput: e => {
+            d.title = e.target.value;
+            if (!state.named) d.name = nameOf(d.title);
+          },
+        }),
+        () => count(d.title, limit('title')),
+        6,
+      ),
+      field(
+        'odyle-kb-name',
+        'Name',
+        t.input({
+          id: 'odyle-kb-name',
+          type: 'text',
+          required: true,
+          maxLength: 60,
+          pattern: '[a-z0-9]+(-[a-z0-9]+)*',
+          className: 'odyle-id',
+          value: () => d.name,
+          oninput: e => {
+            d.name = e.target.value;
+            state.named = true;
+          },
+        }),
+        'How the AI asks for it: lower-case words and dashes.',
+        3,
+      ),
+      () =>
+        rule()
+          ? null
+          : field(
+              'odyle-kb-summary',
+              'Summary',
+              t.input({
+                id: 'odyle-kb-summary',
+                type: 'text',
+                required: true,
+                maxLength: () => limit('summary'),
+                value: () => d.summary,
+                oninput: e => (d.summary = e.target.value),
+              }),
+              () =>
+                'One sentence: what the guide answers. The AI picks the guides to read by it. ' +
+                count(d.summary, limit('summary')) +
+                '.',
+              12,
+            ),
+      field(
+        'odyle-kb-body',
+        () => (rule() ? 'Best practice' : 'Text (Markdown)'),
+        t.textarea({
+          id: 'odyle-kb-body',
+          className: () => (rule() ? '' : 'odyle-kb-editor'),
+          rows: () => (rule() ? 4 : 22),
+          required: true,
+          maxLength: () => (rule() ? limit('ruleLength') : limit('body')),
+          value: () => d.body,
+          oninput: e => (d.body = e.target.value),
+        }),
+        () =>
+          (rule()
+            ? 'A sentence or two the AI applies to every plan. Write a guide for more. '
+            : 'Headings (##), lists (-), **bold**, tables and links; Read shows it drawn. Mark what is uncertain or only known for Korea and Taiwan. ') +
+          count(d.body, rule() ? limit('ruleLength') : limit('body')) +
+          '.',
+        12,
+      ),
+      field(
+        'odyle-kb-sources',
+        'Sources',
+        t.textarea({
+          id: 'odyle-kb-sources',
+          rows: 4,
+          className: 'odyle-kb-sources-input',
+          maxLength: () => limit('sources'),
+          placeholder: 'https://… What the page is',
+          value: () => d.sources,
+          oninput: e => (d.sources = e.target.value),
+        }),
+        () =>
+          'The pages it rests on, one a line: the address, then what it is. The AI reads the first ' +
+          number(limit('sourcesRead')) +
+          ' with a guide.',
+        9,
+      ),
+      field(
+        'odyle-kb-position',
+        'Position',
+        t.input({
+          id: 'odyle-kb-position',
+          type: 'number',
+          min: 0,
+          max: 9999,
+          step: 1,
+          placeholder: 'Last',
+          value: () => d.position ?? '',
+          oninput: e => {
+            const n = parseInt(e.target.value, 10);
+            d.position = Number.isNaN(n) ? null : n;
+          },
+        }),
+        'Lower comes first, for the AI too.',
+        3,
+      ),
+      t.div(
+        { className: 'col-lg-12' },
+        toggle(
+          'odyle-kb-disabled',
+          'Switched off: the AI leaves it out',
+          () => d.disabled,
+          on => (d.disabled = on),
+        ),
+      ),
+      t.div(
+        { className: 'col-lg-12 flex odyle-kb-actions' },
+        t.button(
+          {
+            type: 'submit',
+            className: () => 'btn expanded' + (state.saving ? ' loading' : ''),
+            disabled: () => state.saving || (Boolean(d.id) && !dirty()),
+          },
+          t.span({ className: 'txt' }, 'Save'),
+        ),
+        t.button(
+          { type: 'button', className: 'btn transparent secondary', onclick: close },
+          t.span({ className: 'txt' }, 'Cancel'),
+        ),
+        () =>
+          d.id
+            ? t.button(
+                { type: 'button', className: 'btn transparent danger m-l-auto', onclick: remove },
+                t.i({ className: 'ri-delete-bin-7-line', ariaHidden: true }),
+                t.span({ className: 'txt' }, 'Delete'),
+              )
+            : null,
+      ),
+    );
+  };
+  const entryView = () => {
+    const d = state.draft;
+    return t.div(
+      { className: 'odyle-kb-entry' },
+      t.button(
+        { type: 'button', className: 'btn sm transparent secondary odyle-kb-back', onclick: close },
+        t.i({ className: 'ri-arrow-left-line', ariaHidden: true }),
+        t.span({ className: 'txt' }, 'All entries'),
+      ),
+      t.div(
+        { className: 'odyle-kb-entry-head' },
+        t.div(
+          null,
+          t.div(
+            { className: 'txt-hint txt-sm' },
+            () =>
+              (d.kind === 'rule' ? 'Best practice' : 'Guide') +
+              (d.name ? ' · ' + d.name : '') +
+              (state.open?.id ? ' · changed ' + when(state.open.updated) : ' · new') +
+              (d.disabled ? ' · switched off' : '') +
+              (dirty() ? ' · not saved' : ''),
+          ),
+          t.h2({ className: 'odyle-kb-heading' }, () => d.title || 'Untitled'),
+        ),
+        t.div(
+          { className: 'odyle-filters m-l-auto' },
+          t.button(
+            {
+              type: 'button',
+              className: () => 'btn sm ' + (state.writing ? 'transparent secondary' : 'secondary'),
+              ariaPressed: () => !state.writing,
+              onclick: () => (state.writing = false),
+            },
+            t.span({ className: 'txt' }, 'Read'),
+          ),
+          t.button(
+            {
+              type: 'button',
+              className: () => 'btn sm ' + (state.writing ? 'secondary' : 'transparent secondary'),
+              ariaPressed: () => state.writing,
+              onclick: () => (state.writing = true),
+            },
+            t.span({ className: 'txt' }, 'Edit'),
+          ),
+        ),
+      ),
+      () => (state.writing ? writing(d) : reading(d)),
+    );
+  };
+  load();
+  return layout('#/odyle/knowledge', app.components.refreshButton({ onclick: () => leave(load) }), () =>
+    state.loading
+      ? t.div({ className: 'block txt-center' }, t.span({ className: 'loader lg' }))
+      : state.draft
+        ? entryView()
+        : t.div(
+            { className: 'odyle-kb' },
+            t.p(
+              { className: 'txt-hint' },
+              "What the armory AI knows of AION 2's gear beyond the armory's data: the best practices it follows in every answer and the guides it reads on the mechanics a question touches. Correct them as patches change the game; the next question reads the change, and the ",
+              t.a({ href: '#/odyle/audit?kind=ai-knowledge' }, 'audit log'),
+              ' keeps who changed what. Who may use the AI is under ',
+              t.a({ href: '#/odyle/controls' }, 'Server controls'),
+              '.',
+            ),
+            t.div(
+              { className: 'odyle-search odyle-kb-search' },
+              t.i({ className: 'ri-search-line txt-hint', ariaHidden: true }),
+              t.input({
+                type: 'search',
+                placeholder: 'Search titles, names and texts',
+                ariaLabel: 'Search the knowledge base',
+                value: () => state.search,
+                oninput: e => (state.search = e.target.value),
+              }),
+            ),
+            t.div(
+              { className: 'odyle-section' },
+              group(
+                'rule',
+                'Best practices',
+                'The AI follows every one of these in every answer, in this order: a sentence or two each, up to ' +
+                  number(limit('ruleLength')) +
+                  ' characters and ' +
+                  number(limit('rules')) +
+                  ' in use.',
+              ),
+            ),
+            t.div(
+              { className: 'odyle-section' },
+              group(
+                'guide',
+                'Guides',
+                "The AI sees each guide's name, title and summary, and reads the guide itself when a question needs it, up to 4 at once.",
+              ),
+            ),
+          ),
+  );
+}
+
 // The audit log (backend/odyle/audit.go): what superusers did, newest first, 50 at a time,
 // and what they do next as it happens. Links open it filtered: #/odyle/audit?kind=settings,
 // ?actor=<superuser id>.
@@ -4437,6 +5088,7 @@ const auditKinds = [
   { id: 'update-apps', label: 'App updates' },
   { id: 'vacuum', label: 'Vacuums' },
   { id: 'ai-access', label: 'AI access' },
+  { id: 'ai-knowledge', label: 'AI knowledge' },
 ];
 const auditLabels = {
   settings: 'settings',
@@ -4444,6 +5096,7 @@ const auditLabels = {
   'update-apps': 'update all apps',
   vacuum: 'vacuum',
   'ai-access': 'AI access',
+  'ai-knowledge': 'AI knowledge',
 };
 const auditClass = { settings: 'info', 'update-apps': 'warning' };
 const isoMoment = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
@@ -4679,7 +5332,9 @@ export function auditPage(route) {
         when(e.created) +
           ' · ' +
           (e.actorEmail || 'no superuser signed in') +
-          (e.via === 'collections' ? ' · under Collections → odyle_settings' : ' · on the Odyle pages'),
+          (e.via === 'collections'
+            ? ' · under Collections → ' + (e.kind === 'ai-knowledge' ? 'armory_ai_knowledge' : 'odyle_settings')
+            : ' · on the Odyle pages'),
       ),
       t.div(
         { className: 'flex odyle-detail-actions m-t-xs' },
@@ -4881,7 +5536,7 @@ export function auditPage(route) {
       t.p(
         { className: 'txt-hint txt-sm m-t-sm' },
         () =>
-          'What superusers did to Odyle: the game settings and server controls they saved, on these pages or under Collections → odyle_settings, with every value that changed and what it was before; the jobs they ran by hand; Update all apps now; and database vacuums. Entries are kept for ' +
+          'What superusers did to Odyle: the game settings and server controls they saved, on these pages or under Collections → odyle_settings, with every value that changed and what it was before; the jobs they ran by hand; Update all apps now; database vacuums; who may use the armory AI; and the entries of its knowledge base they added, changed or deleted. Entries are kept for ' +
           number(state.keptDays) +
           " days, and nobody can change or delete one, superusers included. Edits of other collections and PocketBase's own settings are not recorded here.",
       ),

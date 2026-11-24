@@ -40,8 +40,9 @@ func aiRegionField(description string) map[string]any {
 	return map[string]any{"type": "string", "enum": aiRegionCodes, "description": description}
 }
 
-// aiTools are the tools Claude may call: the armory's, and the web's when web is on.
-func aiTools(web bool) []anthropic.BetaToolUnionParam {
+// aiTools are the tools Claude may call: the armory's, read_guides when the knowledge base lists
+// guides (aiknowledge.go), and the web's when web is on.
+func aiTools(web, guides bool) []anthropic.BetaToolUnionParam {
 	character := func() map[string]any {
 		return map[string]any{
 			"region":      aiRegionField("The character's region code, as search_characters lists it."),
@@ -72,6 +73,11 @@ func aiTools(web bool) []anthropic.BetaToolUnionParam {
 		aiTool("compare_with_class", "The basis of every upgrade plan: what the stronger characters of a character's class wear, as its profile's Upgrade tab shows. For each slot: how many wear something there, the usual grade and the medians of item level, enchantment, exceed level and stones, the items worn and stones engraved most and the stats rolled most on them; their arcana and other sets with their bonuses, Daevanion boards, skill bars and the skills their gear raises; the spread of their combat power and item level. group \"next\" compares with the characters a step above in combat power (the realistic next upgrades), \"top\" with the strongest of the class (the long-term goal). Read the character with get_character too, and compare its items slot by slot.",
 			compare, "region", "serverId", "characterId", "group"),
 	}
+	if guides {
+		tools = append(tools, aiTool("read_guides", "Read guides of the server's knowledge base of AION 2's gear, by the names the instructions list: how a mechanic works (enchanting, exceed, stones, soul binding, arcana, wings, Daevanion boards and the like) and what pays off. Read those a question needs before you explain a mechanic or advise on it. Each comes with its sources and the day it last changed.",
+			map[string]any{"guides": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "maxItems": aiGuidesRead,
+				"description": fmt.Sprintf("The guides' names, as the instructions list them (for example enchanting), 1 to %d.", aiGuidesRead)}}, "guides"))
+	}
 	if web {
 		tools = append(tools,
 			anthropic.BetaToolUnionParam{OfWebSearchTool20260209: &anthropic.BetaWebSearchTool20260209Param{MaxUses: anthropic.Int(5)}},
@@ -82,9 +88,10 @@ func aiTools(web bool) []anthropic.BetaToolUnionParam {
 }
 
 // aiInstructions are what Claude is told before every conversation: what the armory is, where
-// its data comes from, the regions, servers and classes, and how to answer. They change only with
-// the day, the servers and classes the armory knows and the web switch, so they stay cached.
-func aiInstructions(app core.App, s settings) string {
+// its data comes from, the knowledge base's rules and guides (aiknowledge.go), the regions, servers
+// and classes, and how to answer. They change only with the day, the knowledge base, the servers and
+// classes the armory knows and the web switch, so they stay cached.
+func aiInstructions(app core.App, s settings, rules, guides []aiEntry) string {
 	book := serversOf(app)
 	names := func(race int) string {
 		return strings.Join(slices.DeleteFunc(slices.Clone(book.races[race]), func(n string) bool { return n == "" }), ", ")
@@ -116,10 +123,13 @@ How to work:
 
 How to plan upgrades:
 - Read the character, then compare_with_class with group "next" (the characters a step above it: the realistic next upgrades); add group "top" when the user asks about the long term or the character is already among the strongest.
+- Follow the best practices below, and read the guides on the mechanics a plan touches (enchanting, exceed, stones, soul binding, arcana and so on) before you advise on them: they say what each step costs and risks, which the armory's data does not.
 - Go slot by slot (weapons and armour, accessories, arcana, wings and pet): grade, item level, enchantment against the item's maximum, exceed level, empty stone slots and weaker stones, soul binding stats, set pieces and bonuses. Name the item the stronger players moved on to and where it comes from when the comparison or the item says so.
 - Order the plan by what it gains for what it costs: first quick wins (empty stone slots, missing soul binding, stones below the usual grade, a set bonus one piece away, cheap enchantment levels), then the slots furthest behind, then long-term goals. For each step say what to do, from what to what ("enchant the weapon from +12 to +15") and why (how many of the stronger players do so, what it adds).
 - Weigh the stats the stronger players of the class roll and engrave most: those are what the class values. Mention Daevanion boards and skills when the character is clearly behind there too.
 - Keep it to the steps that matter most (five to eight at most), unless the user asks for everything. Say when the comparison has few characters, so it is a rough guide.
+
+` + aiKnowledgeNote(rules, guides, s.AiWeb) + `
 
 Regions (region codes): eu Europe, nae North America East, naw North America West, la South America, as Asia.
 Servers (every region uses these names, though not every region has all of them):
@@ -140,14 +150,15 @@ Today is ` + time.Now().UTC().Format("2 January 2006") + ` (UTC).`
 // runTool runs one tool Claude called with its input (JSON, which it checks).
 func (q *aiQuestion) runTool(ctx context.Context, name string, input json.RawMessage) (string, error) {
 	var in struct {
-		Query       string `json:"query"`
-		Region      string `json:"region"`
-		Server      string `json:"server"`
-		ServerId    int    `json:"serverId"`
-		CharacterId string `json:"characterId"`
-		Class       string `json:"class"`
-		Group       string `json:"group"`
-		Limit       int    `json:"limit"`
+		Query       string   `json:"query"`
+		Region      string   `json:"region"`
+		Server      string   `json:"server"`
+		ServerId    int      `json:"serverId"`
+		CharacterId string   `json:"characterId"`
+		Class       string   `json:"class"`
+		Group       string   `json:"group"`
+		Limit       int      `json:"limit"`
+		Guides      []string `json:"guides"`
 	}
 	if err := json.Unmarshal(input, &in); err != nil {
 		return "", fmt.Errorf("the input of %s is not valid JSON: %v", name, err)
@@ -168,6 +179,8 @@ func (q *aiQuestion) runTool(ctx context.Context, name string, input json.RawMes
 		out, err = q.topPlayers(in.Class, in.Region, in.Server, in.Limit)
 	case "compare_with_class":
 		out, err = q.compareWithClass(in.Region, in.ServerId, in.CharacterId, in.Group)
+	case "read_guides":
+		out, err = q.readGuides(in.Guides)
 	default:
 		return "", fmt.Errorf("there is no tool named %s", name)
 	}

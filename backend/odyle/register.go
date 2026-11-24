@@ -155,6 +155,7 @@ func Register(app core.App) {
 
 	watchSettings(app)
 	watchAudit(app)
+	watchAiKnowledge(app)
 	watchServerIds(app)
 	watchShares(app)
 	watchCharacters(app)
@@ -255,6 +256,9 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/admin/audit", auditRoute).Bind(superuser)
 	// Who may use the armory's AI and what it took (aiaccess.go).
 	se.Router.GET("/api/odyle/admin/ai", aiAdminRoute).Bind(superuser)
+	se.Router.GET("/api/odyle/admin/ai/knowledge", aiKnowledgeRoute).Bind(superuser)
+	se.Router.POST("/api/odyle/admin/ai/knowledge", aiKnowledgeSaveRoute).Bind(superuser, apis.BodyLimit(131072))
+	se.Router.DELETE("/api/odyle/admin/ai/knowledge/{id}", aiKnowledgeDeleteRoute).Bind(superuser)
 	se.Router.GET("/api/odyle/admin/ai/accounts", aiAccountsRoute).Bind(superuser)
 	se.Router.POST("/api/odyle/admin/ai/access", aiAccessRoute).Bind(superuser)
 	// A full dungeon catalog (200 names of up to 60 characters) needs more than the 4 KB of the other routes.

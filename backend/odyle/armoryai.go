@@ -25,7 +25,8 @@ import (
 // characters, finds characters (armoryfind.go), reads the profiles the armory keeps or looks them
 // up at PLAYNC (armory.go), lists the strongest of a class (ranks.go) and compares a character with
 // the stronger characters of its class as the Upgrade tab does (upgrades.go), and, when Server
-// controls allow it, searches the web (armoryaitools.go). A superuser saves the Anthropic API key, the model and how many
+// controls allow it, searches the web (armoryaitools.go). It follows the best practices of the
+// server's knowledge base of AION 2's gear and reads its guides (aiknowledge.go). A superuser saves the Anthropic API key, the model and how many
 // questions an account may ask in 24 hours under Server controls (settings.go), and lets accounts
 // use it (users.armoryAi, aiaccess.go).
 //
@@ -443,12 +444,18 @@ func (q *aiQuestion) messages(conversation []aiTurn) []anthropic.BetaMessagePara
 // streaming the answer's text as it comes.
 func (q *aiQuestion) ask(ctx context.Context, conversation []aiTurn) error {
 	client := q.client()
+	rules, guides, err := aiKnowledge(q.app)
+	if err != nil {
+		// The armory's data still answers, without the knowledge base.
+		warn(q.app, "The armory AI could not read its knowledge base", "error", message(err))
+		rules, guides = nil, nil
+	}
 	params := anthropic.BetaMessageNewParams{
 		Model:     q.model.Id,
 		MaxTokens: aiMaxTokens,
-		System:    []anthropic.BetaTextBlockParam{{Text: aiInstructions(q.app, q.settings)}},
+		System:    []anthropic.BetaTextBlockParam{{Text: aiInstructions(q.app, q.settings, rules, guides)}},
 		Messages:  q.messages(conversation),
-		Tools:     aiTools(q.settings.AiWeb),
+		Tools:     aiTools(q.settings.AiWeb, len(guides) > 0),
 		// An upgrade plan weighs many slots against the stronger players of the class: high effort.
 		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffortHigh},
 		// The instructions, tools and conversation so far are cached for the next request.
