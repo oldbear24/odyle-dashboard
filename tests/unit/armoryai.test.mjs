@@ -8,6 +8,7 @@ import {
   readLines,
   aiPage,
   aiTurn,
+  aiWaiting,
   examples,
 } from '../../src/armoryai.js';
 
@@ -136,6 +137,8 @@ test('the answer is read line by line as it streams', () => {
 });
 
 test('the page says why an account cannot ask, or shows the conversation and the question box', () => {
+  // While Odyle asks whether the account may use it, nothing of the AI shows.
+  assert.doesNotMatch(aiWaiting(), /AI|ai-/);
   assert.match(aiPage({ status: null, signedIn: false }), /Sign in to ask the armory AI/);
   assert.match(aiPage({ status: null, signedIn: true }), /Loading…/);
   assert.match(aiPage({ status: { allowed: false }, signedIn: true }), /Your account may not use the armory AI/);

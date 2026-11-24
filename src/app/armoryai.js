@@ -99,9 +99,12 @@ function view() {
   };
 }
 
+// The page, for an account that may ask the AI; nothing of the AI shows to anyone else (aiShow
+// sends them to the armory).
 export function aiRender() {
   const armory = armoryPart.loaded();
   if (!armory || !onPage()) return;
+  if (!aiAllowed()) return shell(armory.aiWaiting(), 'armory');
   shell(armory.aiPage(view()), 'armory');
   retitle(aiTitle());
 }
@@ -120,6 +123,8 @@ function drawAnswer() {
   });
 }
 
+// The AI's page: only for an account that may ask it. Signed out, without access or when that
+// cannot be told, the address opens the armory's search instead, so nothing of the AI shows.
 export async function aiShow(ticket) {
   aiRender();
   const ready = () => {
@@ -129,18 +134,18 @@ export async function aiShow(ticket) {
       box.setSelectionRange(box.value.length, box.value.length);
     }
   };
-  if (!signedIn()) return;
-  try {
-    await aiAccess(true);
-  } catch (error) {
-    if (error?.status === 401) return failure(error);
-    aiStatus = { error: error?.message || 'Request could not be completed.' };
-    statusFor = account();
+  let status = null;
+  if (signedIn()) {
+    try {
+      status = await aiAccess(true);
+    } catch (error) {
+      if (error?.status === 401) return failure(error);
+    }
   }
-  if (ticket === state.navigation) {
-    aiRender();
-    ready();
-  }
+  if (ticket !== state.navigation) return;
+  if (!status?.allowed) return go('/armory', true);
+  aiRender();
+  ready();
 }
 
 // The AI about a profile (its page's Ask the AI, or the Upgrade tab's, with a question to ask

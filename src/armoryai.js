@@ -234,6 +234,10 @@ export function aiTurn(turn, last, view) {
   return `<article class="ai-turn is-ai${streaming ? ' is-streaming' : ''}"><div class="ai-answer">${markdown(turn.text)}</div>${wait}${error}${sources}</article>`;
 }
 
+// The AI's address while Odyle asks whether the account may use it: nothing of the AI shows yet.
+export const aiWaiting = () =>
+  `<main class="dashboard armory"><p class="armory-empty upgrade-wait"><span class="armory-spinner" aria-hidden="true"></span>${t('Loading…')}</p></main>`;
+
 // The AI's page. view: { status, signedIn, turns, focus, streaming, statusLine, now }.
 export function aiPage(view) {
   const { status, signedIn, turns = [], focus = null, streaming = false } = view;

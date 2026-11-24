@@ -3836,6 +3836,21 @@ test('superusers set up the armory AI and let accounts use it on the Server cont
     await request('/api/odyle/admin/settings', { aiKey: '', aiQuestions: 20 }, operator);
   }
 });
+test('nobody without access to the armory AI sees it: its address opens the armory', async () => {
+  for (const who of [null, await account('No Access')]) {
+    const { page, errors, close } = await open(who, 'armory/ai');
+    try {
+      await page.locator('#armory-form').waitFor();
+      assert.equal(new URL(page.url()).pathname, '/armory');
+      assert.equal(await page.locator('.armory-ai-link, [data-action="ai-ask-about"], #armory-ai-form').count(), 0);
+      assert.doesNotMatch(await page.locator('main').innerText(), /\bAI\b/);
+      assert.doesNotMatch(await page.title(), /\bAI\b/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await close();
+    }
+  }
+});
 test('the armory search box suggests the characters Odyle knows while a name is typed', async () => {
   const operator = (await request('/__test__/superuser', {})).data,
     rows = [];
