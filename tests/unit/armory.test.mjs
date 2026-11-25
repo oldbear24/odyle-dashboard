@@ -490,17 +490,81 @@ test("a profile's tabs show its skills, Daevanion boards, titles and appearance"
   // Daevanion: the first board with open nodes, its nodes from its first row and column on.
   const boards = view('daevanion');
   assert.match(boards, /data-armory-board="71" aria-pressed="true"/);
-  assert.match(boards, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\);grid-template-rows:repeat\(2,auto\)/);
   assert.match(
     boards,
-    /<span class="armory-node grade-unique is-stat is-open" style="grid-row:1;grid-column:1" title="Combat Speed \+1.5%"><\/span>/,
+    /style="--cols:3;grid-template-columns:repeat\(3,minmax\(0,1fr\)\);grid-template-rows:repeat\(2,auto\)" role="list" aria-label="Nezekan: 12 of 40 nodes open"/,
+  );
+  // Each node shows what it gives: a stat node its letters and value, a skill node the skill's
+  // icon; its card says it in full. The board is one stop of the Tab key.
+  assert.match(
+    boards,
+    /<div class="armory-node grade-unique is-stat is-open is-west" role="listitem" tabindex="0" style="grid-row:1;grid-column:1" aria-label="Combat Speed \+1.5%, open"><span class="armory-node-face" aria-hidden="true"><span class="armory-node-code"><b>SPD<\/b><\/span><em>\+1.5%<\/em><\/span><div class="armory-tip armory-node-tip" role="tooltip"><header class="grade-unique"><span class="armory-node-code is-chip"><b>SPD<\/b><\/span><div><strong>Combat Speed \+1.5%<\/strong><small>Unique · Open<\/small><\/div><\/header><\/div><\/div>/,
   );
   assert.match(
     boards,
-    /<span class="armory-node grade-rare is-skilllevel" style="grid-row:2;grid-column:3" title="Bolt \+1 · closed"><\/span>/,
+    /<div class="armory-node grade-rare is-skilllevel is-east is-south" role="listitem" tabindex="-1" style="grid-row:2;grid-column:3" aria-label="Bolt \+1, closed"><span class="armory-node-face" aria-hidden="true"><img class="armory-img " src="\/api\/odyle\/armory-images\/ICON_CL_SKILL_001.png"[^>]*><em>\+1<\/em><\/span>/,
   );
-  assert.match(boards, /<h4>Skill effect<\/h4><ul><li>Bolt \+1<\/li><\/ul>/);
+  assert.match(
+    boards,
+    /<strong>Bolt \+1<\/strong><small>Rare · Closed<\/small><\/div><\/header><dl class="armory-facts"><div><dt>Skill level<\/dt><dd>13<\/dd><\/div><div><dt>From Daevanion<\/dt><dd>\+1<\/dd><\/div><\/dl><p class="armory-node-skill">On the skill bar<\/p>/,
+  );
+  // Beside the board, what its nodes give: open of all, and what the open ones add.
+  assert.match(
+    boards,
+    /<h4>Stat effect<\/h4><ul class="armory-board-list"><li class=""><span class="armory-node-code is-chip"><b>SPD<\/b><\/span><span>Combat Speed <b>\+1.5%<\/b><small>1 of 1 node<\/small><\/span><\/li><\/ul>/,
+  );
+  assert.match(
+    boards,
+    /<h4>Skill effect<\/h4><ul class="armory-board-list"><li class="is-none"><span class="armory-icon is-skill is-small" aria-hidden="true"><img [^>]*><\/span><span>Bolt<small>0 of 1 node<\/small><\/span><\/li><\/ul>/,
+  );
   assert.match(view('daevanion', { board: '74' }), /No node of this board is open yet\./);
+  // A node of two stats shows both on lines of their own; a skill the character lacks, its initials.
+  const nezekan = profile.boards[0],
+    paired = armoryProfile(
+      answer({
+        profile: {
+          ...profile,
+          boards: [
+            {
+              ...nezekan,
+              nodes: [
+                { r: 1, c: 1, g: 'Rare', t: 'Stat', o: true, e: 'PvE Attack +3, PvE Defense +30' },
+                { r: 1, c: 2, g: 'Legend', t: 'SkillLevel', e: 'Ruinous Blow +1' },
+                { r: 1, c: 3, g: 'None', t: 'Start', n: 'Nezekan - Start' },
+              ],
+            },
+          ],
+        },
+      }),
+      now,
+      false,
+      false,
+      { images, tab: 'daevanion' },
+    );
+  assert.match(
+    paired,
+    /<span class="armory-node-face is-pair" aria-hidden="true"><small>PvE<\/small><span><b>ATK<\/b> <em>\+3<\/em><\/span><span><b>DEF<\/b> <em>\+30<\/em><\/span><\/span>/,
+  );
+  assert.match(
+    paired,
+    /<strong>PvE Attack, PvE Defense<\/strong><small>Rare · Open<\/small><\/div><\/header><ul class="armory-lines"><li>PvE Attack \+3<\/li><li>PvE Defense \+30<\/li><\/ul>/,
+  );
+  assert.match(
+    paired,
+    /aria-label="Ruinous Blow \+1, closed"><span class="armory-node-face" aria-hidden="true"><b>RU<\/b>/,
+  );
+  assert.match(paired, /aria-label="Start, closed"><span class="armory-node-face" aria-hidden="true"><\/span>/);
+  assert.match(paired, /<span>PvE Attack <b>\+3<\/b><small>1 of 1 node<\/small>/);
+  // Without nodes, the effects PLAYNC adds up for the open ones.
+  const listed = armoryProfile(
+    answer({ profile: { ...profile, boards: [{ ...nezekan, nodes: [] }] } }),
+    now,
+    false,
+    false,
+    { images, tab: 'daevanion' },
+  );
+  assert.match(listed, /PLAYNC did not list this board's nodes\./);
+  assert.match(listed, /<h4>Skill effect<\/h4><ul><li>Bolt \+1<\/li><\/ul>/);
   // Titles: the one worn in each category, with what it gives.
   const titles = view('titles');
   assert.match(titles, /<strong>94 <small>\/ 304<\/small><\/strong>/);

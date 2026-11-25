@@ -25,6 +25,7 @@ import {
   skillBoostPanel,
 } from './armorydetail.js';
 import { progressPanel, powerChange } from './armoryhistory.js';
+import { boardNodes, boardSummary } from './armoryboard.js';
 
 export const regionNames = () => ({
   GLOBAL_NA: t('North America East'),
@@ -485,26 +486,85 @@ function skillsTab(p, images) {
   return `${skillBoostPanel(p)}<p class="armory-legend"><span class="is-equipped"></span>${t('On the skill bar')}<span class="is-locked"></span>${t('Not learned yet')}</p>${groups.map(([title, list]) => `<section class="armory-panel"><div class="section-heading"><h2>${esc(title)} <span>${number(list.filter(s => s.acquired).length)} / ${number(list.length)}</span></h2></div><ul class="armory-skills">${list.map(tile).join('')}</ul></section>`).join('')}`;
 }
 
+// A Daevanion value as the nodes show it: "+3", "+1.5%".
+const nodeValue = s => `+${number(Math.round(s.value * 10) / 10)}${s.percent ? '%' : ''}`;
+// The letters a stat shows on its node and in the board's list ("PvE" above "ATK").
+const nodeCode = (stats, kind = 'armory-node-code') =>
+  `<span class="${kind}">${stats[0]?.prefix ? `<small>${esc(stats[0].prefix)}</small>` : ''}<b>${esc(stats.map(s => s.code).join('/'))}</b></span>`;
+
 function daevanionTab(p, images, chosen, loading) {
   const board = p.boards.find(b => String(b.id) === String(chosen)) || p.boards.find(b => b.open > 0) || p.boards[0];
   const pick = b =>
     `<button type="button" class="armory-board-pick${b === board ? ' is-active' : ''}" data-armory-board="${esc(b.id)}" aria-pressed="${b === board}">${picture(images, b.icon, 'armory-board-art')}<span><strong>${esc(b.name)}</strong><small>${number(b.open)} / ${number(b.total)}</small></span><span class="armory-track"><i style="width:${percent(b.open, b.total)}%"></i></span></button>`;
   // The board's nodes from its first row and column on: PLAYNC's grid has empty edges.
-  const nodes = board.nodes || [],
-    top = Math.min(...nodes.map(n => n.r)),
-    left = Math.min(...nodes.map(n => n.c));
-  const rows = nodes.length ? Math.max(...nodes.map(n => n.r)) - top + 1 : 1,
-    cols = nodes.length ? Math.max(...nodes.map(n => n.c)) - left + 1 : 1;
-  const label = n => n.e || n.n || '';
+  const nodes = boardNodes(board, p.skills),
+    top = Math.min(...nodes.map(n => n.row)),
+    left = Math.min(...nodes.map(n => n.col));
+  const rows = nodes.length ? Math.max(...nodes.map(n => n.row)) - top + 1 : 1,
+    cols = nodes.length ? Math.max(...nodes.map(n => n.col)) - left + 1 : 1;
+  const boosts = skillBoosts(p).boards;
+  const skillArt = (skill, kind = '') => {
+    const art = picture(images, skill.of?.icon);
+    return `<span class="armory-icon is-skill${kind}${art ? '' : ' is-empty'}" aria-hidden="true">${art}</span>`;
+  };
+  // Each node shows what it gives: a skill node the skill's icon, a stat node its letters and value.
+  // Its card, on hover or focus, says it in full.
+  const face = n =>
+    n.skill
+      ? `<span class="armory-node-face" aria-hidden="true">${picture(images, n.skill.of?.icon) || `<b>${esc(initials(n.skill.name))}</b>`}<em>+${number(n.skill.levels)}</em></span>`
+      : n.stats.length
+        ? n.stats.length > 1
+          ? `<span class="armory-node-face is-pair" aria-hidden="true">${n.stats[0].prefix ? `<small>${esc(n.stats[0].prefix)}</small>` : ''}${n.stats.map(s => `<span><b>${esc(s.code)}</b> <em>${nodeValue(s)}</em></span>`).join('')}</span>`
+          : `<span class="armory-node-face" aria-hidden="true">${nodeCode(n.stats)}<em>${nodeValue(n.stats[0])}</em></span>`
+        : '<span class="armory-node-face" aria-hidden="true"></span>';
+  const what = n => (n.kind === 'start' ? t('Start') : n.effects.join(', ') || n.name);
+  const tip = n => {
+    const state = n.open ? t('Open') : t('Closed'),
+      kind = n.kind === 'start' ? board.name : [gradeName(n.grade), state].filter(Boolean).join(' · ');
+    const effectLines =
+      n.effects.length > 1 ? `<ul class="armory-lines">${n.effects.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : '';
+    const skill = n.skill?.of;
+    const facts = skill
+      ? `<dl class="armory-facts"><div><dt>${t('Skill level')}</dt><dd>${number(skill.level)}</dd></div>${boosts.get(skill.name) ? `<div><dt>${t('From Daevanion')}</dt><dd>+${number(boosts.get(skill.name))}</dd></div>` : ''}</dl><p class="armory-node-skill">${esc(!skill.acquired ? t('Not learned yet') : skill.equipped ? t('On the skill bar') : t('Learned'))}</p>`
+      : '';
+    return `<div class="armory-tip armory-node-tip" role="tooltip"><header class="${gradeClass(n.grade)}">${n.skill ? skillArt(n.skill, ' is-small') : n.stats.length ? nodeCode(n.stats, 'armory-node-code is-chip') : ''}<div><strong>${esc(n.effects.length > 1 ? n.stats.map(s => s.name).join(', ') || what(n) : what(n))}</strong><small>${esc(kind)}</small></div></header>${effectLines}${facts}</div>`;
+  };
+  // The card opens beside the node, away from the board's nearest edge.
+  const side = n => {
+    const col = n.col - left + 1,
+      row = n.row - top + 1;
+    return `${col <= cols / 3 ? ' is-west' : col > cols - cols / 3 ? ' is-east' : ''}${row > rows - rows / 3 ? ' is-south' : ''}`;
+  };
+  // The arrow keys move between nodes (app/armory.js), so the board is one stop of the Tab key.
+  const node = (n, i) =>
+    `<div class="armory-node ${gradeClass(n.grade)} is-${esc(n.kind)}${n.open ? ' is-open' : ''}${side(n)}" role="listitem" tabindex="${i ? -1 : 0}" style="grid-row:${n.row - top + 1};grid-column:${n.col - left + 1}" aria-label="${esc(`${what(n)}, ${n.open ? t('open') : t('closed')}`)}">${face(n)}${tip(n)}</div>`;
   const grid = nodes.length
-    ? `<div class="armory-board-grid" style="grid-template-columns:repeat(${cols},minmax(0,1fr));grid-template-rows:repeat(${rows},auto)" role="img" aria-label="${esc(t('{name}: {open} of {total} nodes open', { name: board.name, open: number(board.open), total: number(board.total) }))}">${nodes.map(n => `<span class="armory-node ${gradeClass(n.g)} is-${esc(String(n.t).toLowerCase())}${n.o ? ' is-open' : ''}" style="grid-row:${Number(n.r) - top + 1};grid-column:${Number(n.c) - left + 1}" title="${esc(label(n))}${n.o ? '' : ` · ${esc(t('closed'))}`}"></span>`).join('')}</div>`
+    ? `<div class="armory-board-scroll"><div class="armory-board-grid" style="--cols:${cols};grid-template-columns:repeat(${cols},minmax(0,1fr));grid-template-rows:repeat(${rows},auto)" role="list" aria-label="${esc(t('{name}: {open} of {total} nodes open', { name: board.name, open: number(board.open), total: number(board.total) }))}">${nodes.map(node).join('')}</div></div>`
     : `<p class="armory-empty">${!board.open ? t('No node of this board is open yet.') : loading ? t('Odyle is reading this board from PLAYNC…') : t("PLAYNC did not list this board's nodes.")}</p>`;
-  const effects = (title, list) =>
-    list?.length ? `<h4>${title}</h4><ul>${list.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : '';
+  // What the board gives: each stat and skill, how many of its nodes are open and what they add.
+  const summary = boardSummary(nodes);
+  const count = r =>
+    `<small>${esc(tn(r.total, '{open} of {n} node', '{open} of {n} nodes', { open: number(r.open) }))}</small>`;
+  const statRows = summary.stats.map(
+    r =>
+      `<li class="${r.open ? '' : 'is-none'}">${nodeCode([r], 'armory-node-code is-chip')}<span>${esc(r.name)}${r.open ? ` <b>${nodeValue(r)}</b>` : ''}${count(r)}</span></li>`,
+  );
+  const skillRows = summary.skills.map(
+    r =>
+      `<li class="${r.open ? '' : 'is-none'}">${skillArt(r, ' is-small')}<span>${esc(r.name)}${r.open ? ` <b>+${number(r.levels)}</b>` : ''}${count(r)}</span></li>`,
+  );
+  const list = (title, items) =>
+    items.length ? `<h4>${title}</h4><ul class="armory-board-list">${items.join('')}</ul>` : '';
+  // Without nodes (kept before they were read), the effects PLAYNC adds up for the open ones.
+  const effects = (title, items) =>
+    items?.length ? `<h4>${title}</h4><ul>${items.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : '';
+  const aside = nodes.length
+    ? list(t('Stat effect'), statRows) + list(t('Skill effect'), skillRows)
+    : effects(t('Stat effect'), board.statEffects) + effects(t('Skill effect'), board.skillEffects);
   const open = p.boards.reduce((n, b) => n + b.open, 0),
     total = p.boards.reduce((n, b) => n + b.total, 0);
   return `<section class="armory-panel"><div class="section-heading"><h2>${t('Daevanion')} <span>${number(open)} / ${number(total)}</span></h2></div><div class="armory-board-picks">${p.boards.map(pick).join('')}</div></section>
-<section class="armory-panel armory-board"><div class="armory-board-view"><div><h3>${esc(board.name)} <span>${number(board.open)} / ${number(board.total)} · ${percent(board.open, board.total)} %</span></h3>${grid}<p class="armory-legend"><span class="is-open"></span>${t('Open')}<span></span>${t('Closed')}</p></div><aside class="armory-board-effects"><h3>${t('Board effect')}</h3>${effects(t('Stat effect'), board.statEffects)}${effects(t('Skill effect'), board.skillEffects)}${board.statEffects?.length || board.skillEffects?.length ? '' : `<p class="armory-empty">${t('No effect yet.')}</p>`}</aside></div></section>${boardTotalsPanel(p)}`;
+<section class="armory-panel armory-board"><div class="armory-board-view"><div><h3>${esc(board.name)} <span>${number(board.open)} / ${number(board.total)} · ${percent(board.open, board.total)} %</span></h3>${grid}<p class="armory-legend"><span class="is-open"></span>${t('Open')}<span></span>${t('Closed')}</p></div><aside class="armory-board-effects"><h3>${t('Board effect')}</h3>${aside || `<p class="armory-empty">${t('No effect yet.')}</p>`}</aside></div></section>${boardTotalsPanel(p)}`;
 }
 
 function titlesTab(p) {

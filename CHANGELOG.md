@@ -2,6 +2,14 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.4.0 · 2026-11-25
+
+### New
+- **Daevanion boards show what every node gives.** In the armory's Daevanion tab each stat node shows its stat in a few letters and its value (`ATK +3`, `PvE DEF +30`, `SPD +1.5%`), and each skill node shows the icon of the skill it raises.
+- Point at a node, tap it or move to it with the keyboard to see its card: the stat or skill in full, its grade, whether it is open and, for a skill, the skill's level and how many levels the boards add.
+- Beside the board, a list of everything the board gives: each stat and skill with how many of its nodes are open and what the open ones add, so you see what is still left to open.
+- The arrow keys move between the board's nodes; on phones the board scrolls sideways so the nodes stay readable.
+
 ## 1.3.0 · 2026-11-24
 
 ### Changed

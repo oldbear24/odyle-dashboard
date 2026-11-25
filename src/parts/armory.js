@@ -10,3 +10,4 @@ export * from '../armory.js';
 export * from '../armoryai.js';
 export * from '../compare.js';
 export { bindProgress } from '../armoryhistory.js';
+export { nodeStep } from '../armoryboard.js';
