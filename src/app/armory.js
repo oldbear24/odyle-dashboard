@@ -411,8 +411,25 @@ export async function armoryPage(path, ticket, refresh = false) {
 
 // An armory item's or skill's card, open while its tile has focus, closes on Escape too.
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && document.activeElement?.matches('.armory-gear-slot, .armory-skill'))
+  if (event.key === 'Escape' && document.activeElement?.matches('.armory-gear-slot, .armory-skill, .armory-node'))
     document.activeElement.blur();
+});
+// A Daevanion board is one stop of the Tab key: the arrow keys, Home and End move between its
+// nodes (armoryboard.js nodeStep), and the board's stop stays on the node last moved to.
+document.addEventListener('keydown', event => {
+  const node = event.target.closest?.('.armory-node');
+  if (!node || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const nodes = [...node.parentElement.querySelectorAll(':scope > .armory-node')];
+  const to = armoryPart.loaded()?.nodeStep(
+    nodes.map(n => ({ row: Number(n.style.gridRowStart), col: Number(n.style.gridColumnStart) })),
+    nodes.indexOf(node),
+    event.key,
+  );
+  if (to === undefined || to < 0) return;
+  event.preventDefault();
+  node.tabIndex = -1;
+  nodes[to].tabIndex = 0;
+  nodes[to].focus();
 });
 // The card picker's tabs follow the arrow keys, Home and End.
 document.addEventListener('keydown', event => {

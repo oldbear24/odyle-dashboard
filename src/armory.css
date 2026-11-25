@@ -922,10 +922,12 @@ i.armory-stone-art {
   text-transform: none;
   color: var(--muted);
 }
+/* The board: each node shows what it gives (a stat's letters and value, a skill's icon), larger
+   as the board has fewer columns; its card says it in full (armory.js daevanionTab). */
 .armory-board-grid {
   display: grid;
   gap: 3px;
-  max-width: 540px;
+  max-width: calc(var(--cols, 11) * 60px + 28px);
   margin: 6px auto 12px;
   padding: 14px;
   border-radius: 14px;
@@ -933,26 +935,201 @@ i.armory-stone-art {
   background: radial-gradient(circle at 50% 50%, #1d2b24, #0f1513 72%);
 }
 .armory-node {
+  position: relative;
   aspect-ratio: 1;
-  border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--grade) 30%, #2a3530);
+  container-type: inline-size;
+  border-radius: 6px;
+  outline: none;
+  cursor: help;
+}
+.armory-node:hover,
+.armory-node:focus {
+  z-index: 2;
+}
+.armory-node:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 1px;
+}
+.armory-node-face {
+  position: absolute;
+  inset: 8%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  overflow: hidden;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--grade) 35%, #2a3530);
   background: #141c18;
-  transform: scale(0.8);
+  color: #8d9c94;
+  line-height: 1.05;
+  text-align: center;
+  font-family: 'Manrope Variable', 'Manrope', sans-serif;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
-.armory-node.is-open {
+.armory-node.is-open .armory-node-face {
+  inset: 3%;
   border-color: var(--grade);
-  background: color-mix(in srgb, var(--grade) 70%, #101514);
+  background: color-mix(in srgb, var(--grade) 80%, #fff);
   box-shadow: 0 0 8px color-mix(in srgb, var(--grade) 55%, transparent);
-  transform: scale(0.92);
+  color: #0b100e;
 }
-.armory-node.is-skilllevel {
+.armory-node.grade-common.is-open .armory-node-face {
+  background: #c2cbc6;
+}
+.armory-node:hover .armory-node-face,
+.armory-node:focus .armory-node-face {
+  border-color: var(--mint);
+  box-shadow: 0 0 0 2px #b5f2cd66;
+}
+.armory-node-code {
+  display: grid;
+  justify-items: center;
+}
+.armory-node-code small {
+  font-size: clamp(6px, 16cqi, 9px);
+  font-weight: 700;
+}
+.armory-node-code b {
+  font-size: clamp(7px, 21cqi, 12px);
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+.armory-node-face > em {
+  font-style: normal;
+  font-size: clamp(7px, 22cqi, 13px);
+  font-weight: 700;
+  white-space: nowrap;
+}
+/* A node of two stats: each with its value on a line of its own. */
+.armory-node-face.is-pair > small {
+  font-size: clamp(6px, 15cqi, 9px);
+  font-weight: 700;
+}
+.armory-node-face.is-pair > span {
+  font-size: clamp(6px, 18cqi, 11px);
+  white-space: nowrap;
+}
+.armory-node-face.is-pair b {
+  font-weight: 800;
+}
+.armory-node-face.is-pair em {
+  font-style: normal;
+  font-weight: 600;
+}
+/* A skill node: the skill's icon in a ring of its grade, its "+1" in the corner. */
+.armory-node.is-skilllevel .armory-node-face,
+.armory-node.is-start .armory-node-face {
   border-radius: 50%;
 }
-.armory-node.is-start {
-  border-radius: 50%;
+.armory-node.is-skilllevel .armory-node-face {
+  border-width: 2px;
+  background: #0d1210;
+}
+.armory-node.is-skilllevel img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+.armory-node.is-skilllevel.is-open img {
+  opacity: 1;
+  filter: none;
+}
+.armory-node.is-skilllevel .armory-node-face > em {
+  position: absolute;
+  right: 12%;
+  bottom: 4%;
+  font-size: clamp(7px, 20cqi, 11px);
+  font-weight: 800;
+  color: #fff;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 3px #000;
+}
+.armory-node.is-skilllevel .armory-node-face > b {
+  font-size: clamp(7px, 24cqi, 13px);
+  color: #cfdcd3;
+}
+.armory-node.is-start .armory-node-face {
   border-color: var(--mint);
   background: var(--mint);
   box-shadow: 0 0 12px #b5f2cd88;
+}
+/* Too small for letters and value: the letters alone. */
+@container (max-width: 34px) {
+  .armory-node-code small,
+  .armory-node-face > em,
+  .armory-node-face.is-pair > small,
+  .armory-node-face.is-pair em {
+    display: none;
+  }
+}
+.armory-node > .armory-tip {
+  top: calc(100% + 4px);
+  left: 50%;
+  width: 260px;
+  transform: translateX(-50%);
+}
+.armory-node.is-west > .armory-tip {
+  left: 0;
+  transform: none;
+}
+.armory-node.is-east > .armory-tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.armory-node.is-south > .armory-tip {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+.armory-node:hover > .armory-tip,
+.armory-node:focus > .armory-tip {
+  display: block;
+}
+.armory-node-tip header {
+  gap: 10px;
+}
+.armory-node-tip header:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.armory-node-skill {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.armory-node-tip .armory-lines {
+  margin-top: 8px;
+}
+.armory-node-code.is-chip {
+  flex: none;
+  place-content: center;
+  min-width: 46px;
+  min-height: 28px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--grade, #55625a) 60%, #2a3530);
+  background: #141c18;
+  color: #e3ece6;
+  font-family: 'Manrope Variable', 'Manrope', sans-serif;
+  line-height: 1.1;
+}
+.armory-node-code.is-chip small {
+  font-size: 8.5px;
+}
+.armory-node-code.is-chip b {
+  font-size: 10px;
+}
+.armory-icon.is-small {
+  --size: 30px;
+  border-radius: 50%;
 }
 .armory-board-effects h4 {
   margin: 12px 0 6px;
@@ -967,6 +1144,39 @@ i.armory-stone-art {
   gap: 3px;
   font-size: 12px;
   color: #cfe2d5;
+}
+.armory-board-effects .armory-board-list {
+  gap: 6px;
+}
+.armory-board-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.armory-board-list li > span:last-child {
+  min-width: 0;
+}
+.armory-board-list b {
+  font-weight: 700;
+  color: #eef5f0;
+}
+.armory-board-list li > span:last-child small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.armory-board-list li.is-none {
+  color: var(--muted);
+}
+.armory-board-list li.is-none b {
+  color: inherit;
+}
+.armory-board-list li.is-none .armory-node-code,
+.armory-board-list li.is-none .armory-icon {
+  opacity: 0.55;
+}
+.armory-board-list li.is-none .armory-icon img {
+  filter: grayscale(1);
 }
 .armory-title-summary {
   display: grid;
@@ -1090,10 +1300,20 @@ i.armory-stone-art {
   .armory-tabs a {
     padding: 10px;
   }
+  /* The board scrolls sideways rather than shrink its nodes below what their letters need. */
+  .armory-board-scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .armory-board-grid {
+    min-width: calc(var(--cols, 11) * 41px + 16px);
+    padding: 8px;
+  }
   .armory .armory-tip,
   .armory .armory-doll-column:last-child .armory-tip,
   .armory .armory-doll-row .armory-tip,
-  .armory .armory-skill .armory-tip {
+  .armory .armory-skill .armory-tip,
+  .armory .armory-node .armory-tip {
     position: fixed;
     top: auto;
     left: 12px;

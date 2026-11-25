@@ -1421,6 +1421,31 @@ test('the armory looks a character up for anyone, waits for PLAYNC and opens fro
       await page.locator(ready).first().waitFor();
       assert.match(await page.locator('.armory-tab').innerText(), text);
       await shot(page, 'armory-' + tab.toLowerCase());
+      // Each Daevanion node shows what it gives and opens its card on a press or focus; the
+      // arrow keys move between nodes, the board being one stop of the Tab key.
+      if (tab === 'Daevanion') {
+        const nodes = page.locator('.armory-node');
+        assert.deepEqual(
+          await nodes.evaluateAll(list => list.map(n => [n.tabIndex, n.querySelector('.armory-node-face').innerText])),
+          [
+            [0, 'SPD\n+1.5%'],
+            [-1, '+1'],
+          ],
+        );
+        await nodes.first().click();
+        assert.match(await nodes.first().locator('.armory-tip').innerText(), /Combat Speed \+1.5%\s+Unique · Open/);
+        await page.keyboard.press('ArrowRight');
+        assert.equal(await nodes.nth(1).evaluate(n => n === document.activeElement && n.tabIndex), 0);
+        assert.match(
+          await nodes.nth(1).locator('.armory-tip').innerText(),
+          /Bolt \+1\s+Rare · Closed[\s\S]*Skill level\s+13/,
+        );
+        // Escape closes it (on phones the card covers the lower part of the screen, under the pointer).
+        await page.keyboard.press('Escape');
+        await page.mouse.move(1, 1);
+        await nodes.nth(1).locator('.armory-tip').waitFor({ state: 'hidden' });
+        assert.equal(await nodes.nth(1).evaluate(n => n === document.activeElement), false);
+      }
     }
     // The Upgrade tab compares with the next step until the strongest are chosen, which this
     // browser remembers.
