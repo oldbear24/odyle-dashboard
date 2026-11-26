@@ -1188,6 +1188,54 @@ test('new characters reach the rooms that ask for them, and a prompt offers the 
     await close();
   }
 });
+// News on the account's topic can come while the page still fetches the saved characters (a
+// reader's reading as the page opens). The fetch then lists every saved character, which the page
+// did not know yet: none of them is new, so no dialog offers one to the rooms.
+test('news that comes before the page lists the characters offers none of them as new', async () => {
+  const player = await account('Early news player');
+  await request('/api/odyle/create', { name: 'Early room' }, player);
+  const session = (await request('/api/odyle/session', {}, player)).data;
+  const reading = {
+    sessionId: session.sessionId,
+    characterName: 'Early',
+    server: 'Lumiel',
+    region: 'GLOBAL_EU',
+    source: 'packet',
+    parserVersion: 'test-fixture-v1',
+    confirmed: true,
+  };
+  const report = (sequence, value) =>
+    request('/api/odyle/report', { ...reading, sequence, value, base: value, bonus: 0, kind: 'snapshot' }, player);
+  assert.equal((await report(1, 900)).status, 200);
+  const { page, errors, close } = await open(player, '#/timers');
+  try {
+    await page.locator('.timer-card').first().waitFor();
+    // The saved characters are held back until the news has come.
+    let release;
+    const held = new Promise(resolve => (release = resolve));
+    await page.route(/\/api\/collections\/characters\/records/, async route => {
+      await held;
+      await route.continue();
+    });
+    const subscribed = page
+      .waitForResponse(r => r.url().includes('/api/realtime') && r.request().method() === 'POST', { timeout: 5000 })
+      .catch(() => null);
+    await page.evaluate(() => {
+      location.hash = '#/';
+    });
+    await subscribed;
+    assert.equal((await report(2, 800)).status, 200);
+    // The news goes out 150 ms after the reading.
+    await delay(1000);
+    release();
+    await page.locator('.personal-characters .member-card', { hasText: 'Early' }).waitFor();
+    await delay(1000);
+    assert.equal(await page.locator('#modal[open]').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
 test('a character without Odyle yet says so, a wish says how long it is wanted, and the history pages through its changes', async () => {
   const lead = await account('Seed keeper'),
     roomId = (await request('/api/odyle/create', { name: 'Seed room' }, lead)).data.room.id;
@@ -2477,8 +2525,10 @@ test('timers, achievements and your week: open game rules, milestones with their
     await page.locator('.timer-card').first().waitFor();
     assert.ok((await page.locator('.timer-card').count()) >= 3);
     const before = await page.locator('.timer-value').first().innerText();
-    await delay(1300);
-    assert.notEqual(await page.locator('.timer-value').first().innerText(), before);
+    // The countdown ticks by itself; a busy CI machine may take longer than a second to show it.
+    await page.waitForFunction(was => document.querySelector('.timer-value')?.innerText !== was, before, {
+      timeout: 5000,
+    });
     assert.equal(await page.locator('.tick-strip li').count(), 8);
     assert.ok(await page.locator('.timers-cta [data-action="discord"]').isVisible());
     await shot(page, 'timers');
@@ -2526,8 +2576,13 @@ test('timers, achievements and your week: open game rules, milestones with their
   try {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url });
     await page.locator('.personal-characters').waitFor();
+    // Climber was saved before the page opened, so no news makes it a new character to offer to
+    // the rooms (it did, when news came before the page listed the characters, and its dialog then
+    // covered the page).
+    await page.locator('.personal-characters .member-card', { hasText: 'Climber' }).waitFor();
     // The week before is offered once; Not now puts it away.
     await page.locator('.week-ready').waitFor();
+    assert.equal(await page.locator('#modal[open]').count(), 0);
     await page.locator('.week-ready [data-action="week-later"]').click();
     assert.equal(await page.locator('.week-ready').count(), 0);
     assert.equal(

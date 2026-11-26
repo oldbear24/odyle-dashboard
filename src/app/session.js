@@ -247,7 +247,15 @@ export async function logout() {
   forgetAllInvites(storage);
   forgetPairing(storage);
   clearRoom();
-  Object.assign(state, { rooms: [], roomsKnown: false, characters: [], readers: [], account: null, online: false });
+  Object.assign(state, {
+    rooms: [],
+    roomsKnown: false,
+    characters: [],
+    charactersKnown: false,
+    readers: [],
+    account: null,
+    online: false,
+  });
   tasksPart.loaded()?.forgetTasks();
   // The account's achievements and week stay with it, not with the next one signing in here.
   forgetPages();
@@ -340,9 +348,12 @@ async function ownNews(data) {
     // The open room hears of its own changes on its topic.
     // On My rooms & characters, a character saved meanwhile (by the reader) is offered to the rooms
     // that do not show it yet, after fetching again: rooms that share new characters have it now.
+    // News that comes before the page listed the characters at all offers none: the fetch lists
+    // every saved one, and the page did not know them yet, which does not make them new.
     const known = new Set(state.characters.map(c => c.id)),
+      listed = state.charactersKnown,
       offer = async () => {
-        if (library && known.size + state.rooms.length) await offerNew(known);
+        if (library && listed) await offerNew(known);
       };
     if (data.refresh) {
       if (state.shown !== '/tasks') primeTasks();

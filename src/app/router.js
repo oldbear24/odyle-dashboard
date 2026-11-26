@@ -217,6 +217,7 @@ async function refreshLists() {
     rooms: list.rooms,
     roomsKnown: true,
     characters,
+    charactersKnown: true,
     readers: list.readers || [],
     perCube: list.odylePerCube || state.perCube,
     clockRules: list.clock || state.clockRules,

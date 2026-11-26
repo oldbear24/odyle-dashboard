@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.6.1 · 2026-11-26
+
+### Fixed
+- Opening **Rooms & characters** while your Windows app sends a reading no longer pops up "New character saved" for a character you already had. The dialog now only offers characters saved while the page is open.
+
 ## 1.6.0 · 2026-11-26
 
 ### New
