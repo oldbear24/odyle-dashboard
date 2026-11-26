@@ -150,6 +150,7 @@ export async function library(ticket) {
     keptDays: list.kept || state.keptDays,
     notificationsSeen: list.notifications || state.notificationsSeen,
     characters,
+    charactersKnown: true,
     readers: list.readers || [],
     online: true,
   });

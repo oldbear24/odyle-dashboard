@@ -40,10 +40,12 @@ export const state = {
   remindersPaused: false,
   // The game's weekly maintenance window from the snapshot (#47); runs inside it say so.
   maintenance: null,
-  // The account's rooms (roomsKnown once they were listed) and its saved characters.
+  // The account's rooms (roomsKnown once they were listed) and its saved characters
+  // (charactersKnown once they were listed: until then none of them is new).
   rooms: [],
   roomsKnown: false,
   characters: [],
+  charactersKnown: false,
   // The account's own Windows readers (readers in GET /rooms and the snapshot), kept current
   // by the heartbeats on its own topic: buttons name the PC that reads instead of asking to
   // connect one.
