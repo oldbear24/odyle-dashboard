@@ -26,6 +26,7 @@ import {
 } from './armorydetail.js';
 import { progressPanel, powerChange } from './armoryhistory.js';
 import { boardNodes, boardSummary } from './armoryboard.js';
+import { stoneValue } from './armorystats.js';
 
 export const regionNames = () => ({
   GLOBAL_NA: t('North America East'),
@@ -369,7 +370,7 @@ export function itemTip(images, g, loading) {
     const stoneTitle = d.kind === 'Accessory' ? t('Soulstone engraving') : t('Manastone engraving');
     const stones = (list, slots) =>
       list.length || slots
-        ? `<ul class="armory-stones">${list.map(s => `<li class="${gradeClass(s.grade)}">${picture(images, s.icon, 'armory-stone-art') || '<i class="armory-stone-art"></i>'}<span>${esc(s.name)} ${esc(s.value || '')}${s.desc ? `<small>${esc(s.desc)}</small>` : ''}</span></li>`).join('')}${Array.from({ length: Math.max(0, slots - list.length) }, () => `<li class="is-open"><i class="armory-stone-art"></i><span>${t('Empty slot')}</span></li>`).join('')}</ul>`
+        ? `<ul class="armory-stones">${list.map(s => `<li class="${gradeClass(s.grade)}">${picture(images, s.icon, 'armory-stone-art') || '<i class="armory-stone-art"></i>'}<span>${esc(s.name)} ${esc(stoneValue(s.name, s.value) || '')}${s.desc ? `<small>${esc(s.desc)}</small>` : ''}</span></li>`).join('')}${Array.from({ length: Math.max(0, slots - list.length) }, () => `<li class="is-open"><i class="armory-stone-art"></i><span>${t('Empty slot')}</span></li>`).join('')}</ul>`
         : '';
     const soul =
       d.sub.length || d.subSkills.length

@@ -2,6 +2,16 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.6.0 · 2026-11-26
+
+### New
+- **Where stats come from counts every stat.** The armory's table now adds what your primary and deity stats give (Might's Attack increase, Precision's Critical Hit increase, Time's Combat Speed and the rest) and the worn titles' own effects. Every primary and deity stat has a row whose total is the value the stats panel shows, with **Other sources** for the part that comes from your level, class and what PLAYNC does not list.
+- **Exceed counts.** Each item's exceed bonuses (more Attack or Defense, Damage Boost, HP increase, Damage Tolerance) show in its card and have their own column in the table. A character shows them once the armory reads it again.
+
+### Fixed
+- Manastones and soulstones of Damage Boost, Critical Damage Boost and the other percentage stats show what they really give: `+100` is +1%, now added to the stat's percentage instead of a separate row.
+- Cooldown from the deity stat Illusion and Cooldown Reduction from boards and titles add up in one row.
+
 ## 1.5.0 · 2026-11-26
 
 ### New

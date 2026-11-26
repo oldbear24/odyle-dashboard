@@ -78,6 +78,24 @@ func texts(v any, key string, n, size int) []string {
 
 var deityName = regexp.MustCompile(`^(.*?)\s*\[(.*?)\]$`)
 
+var stoneShare = regexp.MustCompile(`^([+-]?)(\d+)$`)
+
+// stoneValue is a manastone's or soulstone's value as the game shows it. PLAYNC writes a stone of a
+// percentage stat (Damage Boost, Critical Damage Boost, a Tolerance) in hundredths of a percent
+// without the sign: "+100" is +1%, "+30" +0.3%. Every other value stays as PLAYNC writes it.
+func stoneValue(name, value string) string {
+	m := stoneShare.FindStringSubmatch(strings.TrimSpace(value))
+	if m == nil || !(strings.HasSuffix(name, " Boost") || strings.HasSuffix(name, " Tolerance")) {
+		return value
+	}
+	n, _ := strconv.ParseFloat(m[2], 64)
+	sign := m[1]
+	if sign == "" {
+		sign = "+"
+	}
+	return sign + strconv.FormatFloat(n/100, 'f', -1, 64) + "%"
+}
+
 var errArmoryAnswer = errors.New("PLAYNC answered something else than a character profile.")
 
 // readArmory turns PLAYNC's info and equipment answers into the kept profile, without the
@@ -290,7 +308,10 @@ func detailArmory(p *armoryProfile, j armoryJob, track *armoryTrack, withBoards 
 			continue
 		}
 		time.Sleep(armoryStep)
-		found, err := askPLAYNC("equipment/item", j, "id", strconv.FormatInt(g.id, 10), "enchantLevel", strconv.FormatInt(g.Enchant, 10), "slotPos", strconv.FormatInt(g.order, 10))
+		// PLAYNC's enchantLevel counts the exceed levels on top of the enchantment (+15 exceeded 4
+		// times is 19), as its own pages ask; asked with the enchantment alone, the page leaves the
+		// exceed lines out.
+		found, err := askPLAYNC("equipment/item", j, "id", strconv.FormatInt(g.id, 10), "enchantLevel", strconv.FormatInt(g.Enchant+g.Exceed, 10), "slotPos", strconv.FormatInt(g.order, 10))
 		if errors.As(err, &refused) {
 			return err
 		}

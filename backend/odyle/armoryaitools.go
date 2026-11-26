@@ -418,7 +418,7 @@ func aiProfileOf(p armoryProfile) map[string]any {
 	stones := func(list []armoryStone) []string {
 		out := []string{}
 		for _, s := range list {
-			out = append(out, strings.TrimSpace(s.Name+" "+s.Value)+map[bool]string{true: " (" + s.Grade + ")", false: ""}[s.Grade != ""])
+			out = append(out, strings.TrimSpace(s.Name+" "+stoneValue(s.Name, s.Value))+map[bool]string{true: " (" + s.Grade + ")", false: ""}[s.Grade != ""])
 		}
 		return out
 	}

@@ -16,11 +16,14 @@ import {
 
 const sourceNames = () => ({
   gear: t('Properties'),
+  exceed: t('Exceed'),
   soul: t('Soul binding'),
   stones: t('Stones'),
   sets: t('Sets'),
   boards: t('Daevanion'),
   titles: t('Titles'),
+  stats: t('From stats'),
+  other: t('Other sources'),
 });
 const groupNames = () => ({
   primary: t('Primary stats'),
@@ -167,7 +170,7 @@ export function statSourcesPanel(p, slotLabel) {
   const used = statSources.filter(s => b.rows.some(r => r.by[s]));
   const head = `<thead><tr><th scope="col">${t('Stat')}</th>${used.map(s => `<th scope="col">${esc(names[s])}</th>`).join('')}<th scope="col">${t('Total')}</th></tr></thead>`;
   const row = r =>
-    `<tr><th scope="row">${esc(r.name)}${r.character !== null ? `<small>${esc(t('PLAYNC shows {n}', { n: number(r.character) }))}</small>` : ''}</th>${used
+    `<tr><th scope="row">${esc(r.name)}${r.over ? `<small>${esc(t('PLAYNC shows {n}', { n: number(r.character) }))}</small>` : ''}</th>${used
       .map(
         s =>
           `<td data-label="${esc(names[s])}"${r.by[s] ? '' : ' class="is-none"'}>${r.by[s] ? esc(span(r.by[s], r.percent)) : '·'}</td>`,
@@ -191,7 +194,7 @@ export function statSourcesPanel(p, slotLabel) {
   const skipped = b.skipped.length
     ? `<details class="stat-skipped"><summary>${esc(tn(b.skipped.length, '{n} effect not counted', '{n} effects not counted'))}</summary><p>${t('These effects are no plain stat value (they work only under a condition, or say what they do in words), so they are not in the table.')}</p><ul>${b.skipped.map(s => `<li><small>${esc(names[s.source])}</small>${esc(s.text)}</li>`).join('')}</ul></details>`
     : '';
-  return `<section class="armory-panel stat-sources-panel"><div class="section-heading"><h2>${t('Where stats come from')}</h2></div><p class="stat-sources-intro">${t("What the equipped items' properties, soul binding and stones, the sets, the open Daevanion nodes and the titles worn add to each stat. A flat value and a percentage of the same stat are separate rows. The character's level and class add more, so PLAYNC's stats are higher.")}${ranged ? ' ' + t("A weapon's attack is a range: the lowest hit (its minimum plus the enchantment bonus) to the highest (its maximum plus the bonus), and totals with it show both ends.") : ''}</p>${table}${godstones}${skipped}</section>`;
+  return `<section class="armory-panel stat-sources-panel"><div class="section-heading"><h2>${t('Where stats come from')}</h2></div><p class="stat-sources-intro">${t("What the equipped items' properties, exceed, soul binding and stones, the sets, the open Daevanion nodes, the titles worn and the primary and deity stats add to each stat. A flat value and a percentage of the same stat are separate rows. A primary or deity stat totals what PLAYNC shows: Other sources are what its level, class and sources PLAYNC does not list give. Other stats get more from those too (level, class, wings, the other titles owned), so the game shows them higher.")}${ranged ? ' ' + t("A weapon's attack is a range: the lowest hit (its minimum plus the enchantment bonus) to the highest (its maximum plus the bonus), and totals with it show both ends.") : ''}</p>${table}${godstones}${skipped}</section>`;
 }
 
 // ---------------------------------------------------------------- Daevanion and skills
