@@ -2323,8 +2323,10 @@ export default {
   ],
   'Soul binding lines': 'Řádky spoutání duše',
   'Where stats come from': 'Odkud se berou statistiky',
-  "What the equipped items' properties, soul binding and stones, the sets, the open Daevanion nodes and the titles worn add to each stat. A flat value and a percentage of the same stat are separate rows. The character's level and class add more, so PLAYNC's stats are higher.":
-    'Co ke každé statistice přidávají vlastnosti nasazených předmětů, jejich spoutání duše a kameny, sady, otevřené uzly Daevanionu a nošené tituly. Pevná hodnota a procenta téže statistiky jsou samostatné řádky. Další přidává úroveň a povolání postavy, proto má PLAYNC statistiky vyšší.',
+  "What the equipped items' properties, exceed, soul binding and stones, the sets, the open Daevanion nodes, the titles worn and the primary and deity stats add to each stat. A flat value and a percentage of the same stat are separate rows. A primary or deity stat totals what PLAYNC shows: Other sources are what its level, class and sources PLAYNC does not list give. Other stats get more from those too (level, class, wings, the other titles owned), so the game shows them higher.":
+    'Co ke každé statistice přidávají vlastnosti nasazených předmětů, překročení, spoutání duše a kameny, sady, otevřené uzly Daevanionu, nošené tituly a hlavní statistiky a statistiky božstev. Pevná hodnota a procenta téže statistiky jsou samostatné řádky. Hlavní statistiky a statistiky božstev dávají dohromady to, co ukazuje PLAYNC: Jiné zdroje jsou to, co přidává úroveň, povolání a zdroje, které PLAYNC neuvádí. Z nich dostávají něco navíc i ostatní statistiky (úroveň, povolání, křídla, další vlastněné tituly), proto je hra ukazuje vyšší.',
+  'From stats': 'Ze statistik',
+  'Other sources': 'Jiné zdroje',
   "A weapon's attack is a range: the lowest hit (its minimum plus the enchantment bonus) to the highest (its maximum plus the bonus), and totals with it show both ends.":
     'Útok zbraně je rozpětí: od nejnižšího zásahu (její minimum plus bonus z vylepšení) po nejvyšší (její maximum plus bonus), a součty s ním ukazují oba konce.',
   Stat: 'Statistika',

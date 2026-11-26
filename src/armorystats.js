@@ -2,18 +2,22 @@
 // functions over a kept profile (backend/odyle/armory.go armoryProfile), with no texts of their own.
 //
 // The sources are what the profile lists as numbers: the items' properties (detail.main: value plus
-// the enchantment's extra; an exceed line has only its extra), their soul binding (detail.sub), the
-// manastones and soulstones engraved in them (detail.stones), the bonuses of the sets with enough
-// pieces on (detail.set.bonuses), the open Daevanion nodes (boards[].statEffects) and the titles worn
-// (titles.equipped[].effects). A line counts only when it reads "Name +12", "Name +1.5%", "Name -2.8%"
-// or "Name 630"; anything else ("+60 PvE Attack when HP is 70% or more") is left out, never guessed,
-// and listed as not counted. A flat value and a percent of the same name are two stats.
+// the enchantment's extra), their exceed lines (only their extra), their soul binding (detail.sub),
+// the manastones and soulstones engraved in them (detail.stones), the bonuses of the sets with enough
+// pieces on (detail.set.bonuses), the open Daevanion nodes (boards[].statEffects), the titles worn
+// (titles.equipped[]: effects when worn, stats their own) and what the primary and deity stats give
+// (stats[].effects, "Attack increase +9.8%" for Might 98). A primary or deity stat's value in the
+// stats panel holds more than these (level, class and what PLAYNC does not list): that rest is the
+// source "other", so its total is the panel's value. A line counts only when it reads "Name +12",
+// "Name +1.5%", "Name -2.8%" or "Name 630"; anything else ("+60 PvE Attack when HP is 70% or more")
+// is left out, never guessed, and listed as not counted. A flat value and a percent of the same name
+// are two stats.
 //
 // A weapon's attack is a range ("Attack 446 ~ 604 (+174)"): it counts as low = minimum + extra and
 // high = value + extra, and every total it is part of keeps both ends. All other lines add the same to
 // both. Godstones (theostones) say what they do in words, so they are listed apart.
 
-export const statSources = ['gear', 'soul', 'stones', 'sets', 'boards', 'titles'];
+export const statSources = ['gear', 'exceed', 'soul', 'stones', 'sets', 'boards', 'titles', 'stats', 'other'];
 export const statGroups = ['primary', 'offence', 'defence', 'utility', 'deity'];
 
 // The doll's slots an item can fill (the companions apart).
@@ -71,8 +75,29 @@ export function parseEffect(text) {
   return v ? { name: m[1].trim(), ...v } : null;
 }
 
+// A stone's value as the game shows it: PLAYNC writes a stone of a percentage stat (Damage Boost,
+// Critical Damage Boost, a Tolerance) in hundredths of a percent without the sign, "+100" for +1%
+// (backend/odyle/armoryparse.go stoneValue says the same to the AI). Other values stay as they are.
+export function stoneValue(name, value) {
+  const m = String(value ?? '')
+    .trim()
+    .match(/^([+-]?)(\d+)$/);
+  if (!m || !/ (Boost|Tolerance)$/.test(String(name || ''))) return value;
+  return `${m[1] || '+'}${Number(m[2]) / 100}%`;
+}
+
+// One stat under two names: the deity stat Illusion's "Cooldown -7.4%" is the Cooldown Reduction
+// boards and titles give ("Cooldown Reduction +3%").
+const aliases = { cooldown: { name: 'Cooldown Reduction', sign: -1 } };
+export function canonicalEffect(e) {
+  const a = e && aliases[e.name.toLowerCase()];
+  return a && e.percent ? { ...e, name: a.name, value: a.sign * e.value } : e;
+}
+
 const round = n => Math.round(n * 1000) / 1000;
 const keyOf = (name, percent) => `${name.toLowerCase()}${percent ? ' %' : ''}`;
+// A deity stat as items name it: "Time [Siel]".
+const statName = s => (s.deity ? `${s.name} [${s.deity}]` : String(s.name));
 
 // Which group a stat goes with: the character's primary and deity stats by their names in its
 // stats panel (an arcana's "Time [Siel]" is the deity stat Time), the rest by words in their names.
@@ -82,6 +107,7 @@ export function statGroup(name, profileStats = []) {
   if (own) return own.primary ? 'primary' : 'deity';
   if (/\[.+\]$/.test(name)) return 'deity';
   const n = name.toLowerCase();
+  if (/penetration/.test(n)) return 'offence';
   if (/(^|\s)mp(\s|$)|regen|natural|move speed|flight|potion|stamina|mp cost/.test(n)) return 'utility';
   if (/defen|resist|toleran|evasion|block|endurance|^hp$|^hp |regeneration|^recovery/.test(n)) return 'defence';
   if (
@@ -91,11 +117,14 @@ export function statGroup(name, profileStats = []) {
   return 'utility';
 }
 
-// Every stat the profile's gear, sets, boards and titles give, with each source's share: rows of
-// { key, name, percent, group, by: { gear: { low, high }, … }, total: { low, high }, character }, in
-// statGroups order, each group's flat stats before its percentages, the largest first. character is
-// the value of the stats panel's stat of that name, for the primary and deity stats. skipped lists
-// the lines that are no stat line ({ source, text }, each text once), godstones the theostones.
+// Every stat the profile's gear, sets, boards, titles and stats give, with each source's share: rows
+// of { key, name, percent, group, by: { gear: { low, high }, … }, total: { low, high }, character,
+// over }, in statGroups order, each group's flat stats before its percentages, the largest first.
+// character is the value of the stats panel's stat of that name, for the primary and deity stats
+// (every one above 0 has a row): what it holds beyond the sources is by.other, so the total is it;
+// over is true when the sources add up to more than it (a profile read while the character changed).
+// skipped lists the lines that are no stat line ({ source, text }, each text once), godstones the
+// theostones.
 export function statBreakdown(profile) {
   const p = profile || {},
     gear = (p.gear || []).filter(g => g.detail && !companions.has(g.slot)),
@@ -120,7 +149,7 @@ export function statBreakdown(profile) {
     if (String(text || '').trim() && !skipped.has(k)) skipped.set(k, { source, text: String(text) });
   };
   const effect = (source, text) => {
-    const e = parseEffect(text);
+    const e = canonicalEffect(parseEffect(text));
     if (e) add(source, e.name, e.value, e.value, e.percent);
     else skip(source, text);
   };
@@ -129,8 +158,8 @@ export function statBreakdown(profile) {
     for (const l of d.main || []) {
       if (l.exceed) {
         const v = parseValue(l.extra || l.value);
-        if (v) add('gear', l.name, v.value, v.value, v.percent);
-        else skip('gear', `${l.name} ${l.extra || l.value}`);
+        if (v) add('exceed', l.name, v.value, v.value, v.percent);
+        else skip('exceed', `${l.name} ${l.extra || l.value}`);
         continue;
       }
       const v = parseValue(l.value),
@@ -153,7 +182,7 @@ export function statBreakdown(profile) {
       else skip('soul', `${l.name} ${l.value}`);
     }
     for (const s of d.stones || []) {
-      const v = parseValue(s.value);
+      const v = parseValue(stoneValue(s.name, s.value));
       if (v) add('stones', s.name, v.value, v.value, v.percent);
       else skip('stones', `${s.name} ${s.value || ''}`.trim());
     }
@@ -161,7 +190,17 @@ export function statBreakdown(profile) {
   // Each set once (every piece lists it), with the bonuses it has enough pieces on for.
   for (const set of activeSets(gear)) for (const b of set.active) for (const e of b.effects || []) effect('sets', e);
   for (const b of p.boards || []) for (const e of b.statEffects || []) effect('boards', e);
-  for (const title of p.titles?.equipped || []) for (const e of title.effects || []) effect('titles', e);
+  for (const title of p.titles?.equipped || [])
+    for (const e of [...(title.effects || []), ...(title.stats || [])]) effect('titles', e);
+  for (const s of stats) for (const e of s.effects || []) effect('stats', e);
+  // The stats panel's value of each primary and deity stat: what the sources leave of it is "other".
+  for (const s of stats) {
+    const value = Number(s.value) || 0,
+      name = statName(s),
+      counted = rows.get(keyOf(name, false))?.total.high || 0;
+    if (value > counted) add('other', name, value - counted, value - counted, false);
+    else if (value > 0 && value < counted) rows.get(keyOf(name, false)).over = true;
+  }
   const list = [...rows.values()]
     .filter(r => r.total.low || r.total.high)
     .map(r => {
@@ -171,7 +210,7 @@ export function statBreakdown(profile) {
           !r.percent && (group === 'primary' || group === 'deity')
             ? stats.find(s => String(s.name).toLowerCase() === plain)
             : null;
-      return { ...r, group, character: own ? Number(own.value) || 0 : null };
+      return { ...r, group, character: own ? Number(own.value) || 0 : null, over: Boolean(r.over) };
     });
   list.sort(
     (a, b) =>
@@ -271,7 +310,7 @@ export function gearSummary(profile) {
 export function sumEffects(texts) {
   const rows = new Map();
   for (const text of texts || []) {
-    const e = parseEffect(text);
+    const e = canonicalEffect(parseEffect(text));
     if (!e) continue;
     const key = keyOf(e.name, e.percent),
       row = rows.get(key) || { name: e.name, percent: e.percent, value: 0 };

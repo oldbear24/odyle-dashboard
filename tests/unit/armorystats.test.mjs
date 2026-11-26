@@ -11,6 +11,8 @@ import {
   sumEffects,
   skillBoostTotals,
   dollSlots,
+  stoneValue,
+  canonicalEffect,
 } from '../../src/armorystats.js';
 import { armoryProfile } from '../../src/armory.js';
 import { tileMeters, tileLabel, tipFacts } from '../../src/armorydetail.js';
@@ -116,6 +118,7 @@ const profile = {
       stones: [
         { name: 'Defense', value: '+30', grade: 'Rare' },
         { name: 'Attack', value: '+10', grade: 'Unique' },
+        { name: 'Damage Boost', value: '+100', grade: 'Unique' },
       ],
     }),
     item('Helmet', 'Nuakum Helm', 12, 0, {
@@ -275,19 +278,54 @@ test('stats are grouped by the stats panel first, then by words in their names',
   assert.equal(statGroup('Something new'), 'utility');
 });
 
+test('a stone of a percentage stat is in hundredths of a percent, and Cooldown is Cooldown Reduction', () => {
+  assert.equal(stoneValue('Damage Boost', '+100'), '+1%');
+  assert.equal(stoneValue('Critical Damage Boost', '+30'), '+0.3%');
+  assert.equal(stoneValue('Front Attack Damage Boost', '10'), '+0.1%');
+  assert.equal(stoneValue('PvE Damage Tolerance', '-25'), '-0.25%');
+  assert.equal(stoneValue('Damage Boost', '+1.5%'), '+1.5%');
+  assert.equal(stoneValue('Attack', '+5'), '+5');
+  assert.equal(stoneValue('Power Shard Damage Bonus', '+40'), '+40');
+  assert.equal(stoneValue('Damage Boost', undefined), undefined);
+  assert.deepEqual(canonicalEffect(parseEffect('Cooldown -7.4%')), {
+    name: 'Cooldown Reduction',
+    value: 7.4,
+    percent: true,
+  });
+  assert.deepEqual(canonicalEffect(parseEffect('Cooldown Reduction +3%')), {
+    name: 'Cooldown Reduction',
+    value: 3,
+    percent: true,
+  });
+  assert.equal(canonicalEffect(null), null);
+});
+
 test('every stat is summed per source, a weapon attack as a range, flat and percent apart', () => {
   const b = statBreakdown(profile);
   const attack = row(b, 'Attack');
-  // Weapon 446 ~ 604 plus 174, its exceed line 40, the guard 210 + 174; soul binding 51; stones 10, 5, 8.
-  assert.deepEqual(attack.by.gear, { low: 446 + 174 + 40 + 210 + 174, high: 604 + 174 + 40 + 210 + 174 });
+  // Weapon 446 ~ 604 plus 174, the guard 210 + 174; the weapon's exceed line 40; soul binding 51;
+  // stones 10, 5, 8.
+  assert.deepEqual(attack.by.gear, { low: 446 + 174 + 210 + 174, high: 604 + 174 + 210 + 174 });
+  assert.deepEqual(attack.by.exceed, { low: 40, high: 40 });
   assert.deepEqual(attack.by.soul, { low: 51, high: 51 });
   assert.deepEqual(attack.by.stones, { low: 23, high: 23 });
   assert.deepEqual(attack.total, { low: 1044 + 51 + 23, high: 1202 + 51 + 23 });
   assert.equal(attack.group, 'offence');
   // The set's 2-piece bonus counts once though three pieces list it; its conditional line is left out.
   assert.deepEqual(row(b, 'Attack', true).by, { sets: { low: 5, high: 5 } });
-  assert.deepEqual(row(b, 'Combat Speed', true).total, { low: 26.1, high: 26.1 });
-  assert.deepEqual(Object.keys(row(b, 'Combat Speed', true).by).sort(), ['soul', 'titles']);
+  // Soul binding 13 + 10.1, the title 3, and Time 76 gives 7.6.
+  assert.deepEqual(row(b, 'Combat Speed', true).total, { low: 33.7, high: 33.7 });
+  assert.deepEqual(Object.keys(row(b, 'Combat Speed', true).by).sort(), ['soul', 'stats', 'titles']);
+  // Might 131 gives Attack increase 13.1 % beside the helmet's 2.1 %.
+  assert.deepEqual(row(b, 'Attack increase', true).by, {
+    soul: { low: 2.1, high: 2.1 },
+    stats: { low: 13.1, high: 13.1 },
+  });
+  // A soulstone's +100 is 1 %, beside the weapon's soul binding 7.3 %; no flat Damage Boost.
+  assert.deepEqual(row(b, 'Damage Boost', true).by, { soul: { low: 7.3, high: 7.3 }, stones: { low: 1, high: 1 } });
+  assert.equal(row(b, 'Damage Boost'), undefined);
+  // The title worn gives PvE Damage Boost +4.5 % when worn and +1 % of its own.
+  assert.equal(row(b, 'PvE Damage Boost', true).by.titles.high, 5.5);
   const crit = row(b, 'Critical Hit');
   assert.deepEqual(Object.fromEntries(Object.entries(crit.by).map(([k, v]) => [k, v.high])), {
     gear: 150,
@@ -300,13 +338,25 @@ test('every stat is summed per source, a weapon attack as a range, flat and perc
   assert.equal(row(b, 'HP').total.high, 215 + 241 + 1100 + 500 + 100 + 50 + 50 + 900 + 700 + 900);
   assert.equal(row(b, 'Attack Bonus').total.high, 30 + 33 + 34);
   assert.equal(row(b, 'PvE Damage Tolerance', true).total.high, 3);
-  assert.equal(row(b, 'Cooldown', true).total.high, -2.8);
-  // Primary and deity stats name what the stats panel shows; percentages never do.
+  // A board's "Cooldown -2.8%" is Cooldown Reduction, beside the other board's +3 %.
+  assert.equal(row(b, 'Cooldown', true), undefined);
+  assert.deepEqual(row(b, 'Cooldown Reduction', true).total, { low: 5.8, high: 5.8 });
+  // Primary and deity stats total what the stats panel shows: the rest of it is "other", and a stat
+  // no source gives has a row all the same; percentages never name one.
   assert.equal(row(b, 'Might').character, 131);
+  assert.deepEqual(row(b, 'Might').by, { soul: { low: 32, high: 32 }, other: { low: 99, high: 99 } });
+  assert.equal(row(b, 'Might').total.high, 131);
+  assert.equal(row(b, 'Might').over, false);
+  assert.deepEqual(row(b, 'Precision').by, { other: { low: 74, high: 74 } });
   assert.equal(row(b, 'Time [Siel]').character, 76);
-  assert.equal(row(b, 'Time [Siel]').total.high, 25);
+  assert.deepEqual(row(b, 'Time [Siel]').by, { gear: { low: 25, high: 25 }, other: { low: 51, high: 51 } });
   assert.equal(row(b, 'Life [Yustiel]').character, null);
+  assert.equal(row(b, 'Life [Yustiel]').by.other, undefined);
   assert.equal(row(b, 'Attack').character, null);
+  // Sources above the panel's value (a profile read while the character changed) are kept, and said.
+  const over = statBreakdown({ ...profile, stats: [{ ...profile.stats[0], value: 20 }] });
+  assert.deepEqual(row(over, 'Might').by, { soul: { low: 32, high: 32 } });
+  assert.equal(row(over, 'Might').over, true);
   // Groups in order, flat before percent, the largest first.
   const groups = b.rows.map(r => r.group);
   assert.deepEqual([...new Set(groups)], ['primary', 'offence', 'defence', 'utility', 'deity']);
@@ -404,7 +454,7 @@ test('the gear summary counts enchantment, stones, soul binding, empty slots and
   assert.equal(s.exceedable, 3);
   assert.equal(s.exceed, 7);
   assert.equal(s.maxExceed, 15);
-  assert.equal(s.stones, 3 + 2 + 4 + 1);
+  assert.equal(s.stones, 3 + 3 + 4 + 1);
   assert.equal(s.stoneSlots, 16);
   assert.equal(s.godStones, 1);
   assert.equal(s.godSlots, 1);
@@ -441,7 +491,13 @@ test('the profile shows the summary, the tiles, where stats come from, board tot
   assert.match(gear, /<th scope="col">Soul binding<\/th>/);
   // Weapon attack as its range in the total.
   assert.match(gear, /1,118–1,276/);
-  assert.match(gear, /PLAYNC shows 131/);
+  assert.doesNotMatch(gear, /<small>PLAYNC shows/);
+  // The exceed lines, what stats give and the rest of a primary stat have columns of their own, and
+  // Might totals the 131 PLAYNC shows.
+  assert.match(gear, /<th scope="col">Exceed<\/th>/);
+  assert.match(gear, /<th scope="col">From stats<\/th>/);
+  assert.match(gear, /<th scope="col">Other sources<\/th>/);
+  assert.match(gear, /<th scope="row">Might<\/th>(?:(?!<\/tr>).)*<td class="stat-total" data-label="Total">131<\/td>/);
   assert.match(gear, /Theostone: Khrudgelmir&#39;s Silence/);
   assert.match(gear, /1 effect not counted|2 effects not counted/);
   assert.match(gear, /aria-label="Helmet: \+12 Nuakum Helm, enchantment \+12 of 15/);

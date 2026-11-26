@@ -339,7 +339,8 @@ func (s *armoryStand) serve(t *testing.T) {
 			json.NewEncoder(w).Encode(officialInfo("Hero"))
 		case r.URL.Path == "/api/character/equipment":
 			json.NewEncoder(w).Encode(officialEquipment())
-		case r.URL.Path == "/api/character/equipment/item" && q.Get("id") == "110830051" && q.Get("slotPos") == "1" && q.Get("enchantLevel") == "15":
+		// The rod is +15 with 3 exceed levels: PLAYNC's page lists the exceed lines when asked for 18.
+		case r.URL.Path == "/api/character/equipment/item" && q.Get("id") == "110830051" && q.Get("slotPos") == "1" && q.Get("enchantLevel") == "18":
 			json.NewEncoder(w).Encode(officialItem())
 		case r.URL.Path == "/api/character/daevanion/detail" && q.Get("boardId") == "71":
 			json.NewEncoder(w).Encode(officialBoard())
@@ -937,5 +938,24 @@ func TestArmoryShrinksIcons(t *testing.T) {
 	}
 	if _, err := shrinkIcon(pngOf(t, 3000)); err == nil {
 		t.Fatal("a huge icon was decoded")
+	}
+}
+
+// A stone of a percentage stat is written in hundredths of a percent; others stay as they are.
+func TestStoneValueOfPercentStats(t *testing.T) {
+	for _, c := range [][3]string{
+		{"Damage Boost", "+100", "+1%"},
+		{"Critical Damage Boost", "+30", "+0.3%"},
+		{"Front Attack Damage Boost", "10", "+0.1%"},
+		{"PvE Damage Tolerance", "-25", "-0.25%"},
+		{"Damage Boost", "+1.5%", "+1.5%"},
+		{"Attack", "+5", "+5"},
+		{"Power Shard Damage Bonus", "+40", "+40"},
+		{"Critical Hit Resist", "+15", "+15"},
+		{"Damage Boost", "", ""},
+	} {
+		if got := stoneValue(c[0], c[1]); got != c[2] {
+			t.Errorf("stoneValue(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
+		}
 	}
 }
