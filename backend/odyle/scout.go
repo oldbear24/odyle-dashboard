@@ -33,6 +33,9 @@ import (
 //     (ranks.go), with the icons but no portrait and no profile;
 //   - a character the last search page listed (by id and name): its info page, for its combat
 //     power;
+//   - else a top player (or one just below the top) whose combat power is old, and while a
+//     refresh runs any character read before it, the strongest first (rankrefresh.go): its info
+//     page again;
 //   - else a character an Odyle account plays, whose PLAYNC id the portrait lookup learned
 //     (portraits.go): its info page, without a search;
 //   - else a player Odyle met by name: a party or force member a Windows app sent
@@ -104,6 +107,11 @@ type armoryScout struct {
 	// (counted again after a minute: it reads every row of each class).
 	peers   int
 	peersAt time.Time
+	// How the combat power of the last top players re-read for their age changed, as a share of
+	// what it was (rankrefresh.go drifted), and the highest level the armory knows (noticeLevel; 0
+	// until it read it).
+	drift    []float64
+	topLevel int64
 }
 
 func newArmoryScout() *armoryScout {
@@ -257,12 +265,25 @@ func (s *armoryScout) step(app core.App) (bool, error) {
 		return false, err
 	}
 	if hit, ok := s.next(); ok {
-		return true, checkRank(app, hit)
+		_, err := checkRank(app, hit)
+		return true, err
+	}
+	// The top players whose combat power is old, and while a refresh runs every character read
+	// before it (rankrefresh.go).
+	if due, ok, err := s.nextRecheck(app); err != nil {
+		return false, err
+	} else if ok {
+		p, err := checkRank(app, due.hit)
+		if err == nil && due.drift {
+			s.drifted(app, due.power, p.CombatPower)
+		}
+		return true, err
 	}
 	if hit, ok, err := s.nextOwn(app); err != nil {
 		return false, err
 	} else if ok {
-		return true, checkRank(app, hit)
+		_, err := checkRank(app, hit)
+		return true, err
 	}
 	// Readers' searches first: the scout searches only in a slot of their spacing.
 	if err := stateOf(app).armorySearch.slot(); err != nil {
@@ -443,7 +464,7 @@ func (s *armoryScout) next() (scoutHit, bool) {
 // pendingBuilds are the characters whose gear the scout reads next: those in their class's top
 // rankLimit (topRows) whose gear is unknown or older than old, the strongest first.
 func pendingBuilds(app core.App, old string) ([]topRow, error) {
-	rows, err := topRows(app)
+	rows, err := topRows(app, rankLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +506,7 @@ func pendingPeers(app core.App) ([]topRow, error) {
 		row        topRow
 		band, have int
 	}
-	recent := ago(peerRebuild)
+	recent := staleBefore(app, peerRebuild)
 	peers := []peer{}
 	for _, class := range classes {
 		rows := []struct {
@@ -535,7 +556,7 @@ func pendingPeers(app core.App) ([]topRow, error) {
 // takes the first it may (armoryWork.scout), passing over those whose gear it reads already or
 // whose lookup failed lately.
 func nextBuilds(app core.App) ([]scoutHit, error) {
-	pending, err := pendingBuilds(app, ago(scoutRebuild))
+	pending, err := pendingBuilds(app, staleBefore(app, scoutRebuild))
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +627,7 @@ func scoutStatus(app core.App) map[string]any {
 	s.mu.Unlock()
 	book := serversOf(app)
 	builds := []scoutPending{}
-	pending, _ := pendingBuilds(app, ago(scoutRebuild))
+	pending, _ := pendingBuilds(app, staleBefore(app, scoutRebuild))
 	total, never := len(pending), 0
 	for _, p := range pending {
 		if p.BuiltAt == "" {
@@ -665,22 +686,22 @@ func (h scoutHit) job() armoryJob {
 	return armoryJob{key: armoryKey(h.serverId, h.characterId), region: h.region, serverId: h.serverId, characterId: h.characterId}
 }
 
-// checkRank reads a character's info page and keeps its combat power; a character PLAYNC no
-// longer lists is forgotten.
-func checkRank(app core.App, hit scoutHit) error {
+// checkRank reads a character's info page and keeps its combat power, and says what it read; a
+// character PLAYNC no longer lists is forgotten (and nothing read).
+func checkRank(app core.App, hit scoutHit) (armoryProfile, error) {
 	info, err := askPLAYNC("info", hit.job())
 	if errors.Is(err, errArmoryMissing) {
-		return forgetRank(app, hit.serverId, hit.characterId)
+		return armoryProfile{}, forgetRank(app, hit.serverId, hit.characterId)
 	}
 	if err != nil {
-		return err
+		return armoryProfile{}, err
 	}
 	p, err := readArmory(info, nil)
 	if err != nil {
-		return err
+		return armoryProfile{}, err
 	}
 	learnRankClass(app, p)
-	return keepRank(app, hit.region, hit.serverId, hit.characterId, p, false)
+	return p, keepRank(app, hit.region, hit.serverId, hit.characterId, p, false)
 }
 
 // buildRank is the scout's lookup in the armory's queue: it reads a character's gear as a reader's

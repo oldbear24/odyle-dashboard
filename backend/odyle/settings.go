@@ -158,8 +158,13 @@ type settings struct {
 	ArmoryPaused        bool           `json:"armoryPaused"`
 	// How many of the armory's lookups run at once (armoryqueue.go): readers' and, beside them, the
 	// scout's (scout.go; 0 lets it read no gear).
-	ArmoryLanes   int64          `json:"armoryLanes"`
-	ScoutLanes    int64          `json:"scoutLanes"`
+	ArmoryLanes int64 `json:"armoryLanes"`
+	ScoutLanes  int64 `json:"scoutLanes"`
+	// A refresh of every character the armory knows (rankrefresh.go): rows read before refreshAt
+	// count as old, and refreshWhy says what started it. Only the server writes them, outside the
+	// settings' form.
+	refreshAt     time.Time
+	refreshWhy    string
 	Adapters      adapterLists   `json:"adapters"`
 	Clock         clockRules     `json:"clock"`
 	TaskTemplates []taskTemplate `json:"taskTemplates"`
@@ -350,6 +355,7 @@ func loadSettings(app core.App) settings {
 		AnnouncementFrom: isoOf(s.GetDateTime("announcementFrom")), AnnouncementUntil: isoOf(s.GetDateTime("announcementUntil")),
 		PortraitsPaused: s.GetBool("portraitsPaused"), RemindersPaused: s.GetBool("remindersPaused"), PairingPaused: s.GetBool("pairingPaused"), ReaderPaused: s.GetBool("readerPaused"), ArmoryPaused: s.GetBool("armoryPaused"),
 		ArmoryLanes: s.GetInt64("armoryLanes"), ScoutLanes: s.GetInt64("scoutLanes"),
+		refreshAt: s.GetDateTime("ranksRefreshAt").Time(), refreshWhy: s.GetString("ranksRefreshWhy"),
 		HistoryDays: s.GetInt64("historyDays"), LocationDays: s.GetInt64("locationDays"), PvpDays: s.GetInt64("pvpDays"),
 		AiModel: s.GetString("aiModel"), AiQuestions: s.GetInt64("aiQuestions"), AiPaused: s.GetBool("aiPaused"), AiWeb: s.GetBool("aiWeb"), aiKey: s.GetString("aiKey")}
 	// An AI model or limit never saved (or no longer offered) is the default; a key that no longer

@@ -104,6 +104,10 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 	if err != nil {
 		return err
 	}
+	// A character above the level cap the armory knew starts a refresh (rankrefresh.go).
+	if p.Level > 0 {
+		noticeLevel(app, p.Level)
+	}
 	record.Set("region", region)
 	record.Set("name", cut(p.Name, 40))
 	record.Set("class", cut(p.Class, 40))
@@ -118,10 +122,14 @@ func keepRank(app core.App, region string, serverId int, characterId string, p a
 		}
 		record.Set("build", slimmed(p))
 		// A build read with some details missing is due again a day later, not after
-		// scoutRebuild: it counts as read that much earlier.
+		// scoutRebuild: it counts as read that much earlier, though not before a refresh that
+		// runs (rankrefresh.go), which would read it again at once.
 		builtAt := time.Now()
 		if p.Missing > 0 {
 			builtAt = builtAt.Add(24*time.Hour - scoutRebuild)
+			if at := readSettings(app).refreshAt; builtAt.Before(at) {
+				builtAt = at.Add(time.Second)
+			}
 		}
 		record.Set("builtAt", iso(builtAt))
 	}
@@ -169,21 +177,24 @@ func watchArmoryProfiles(app core.App) {
 // inTop is the SQL of the ids of the rows within their class's top rankLimit.
 const inTop = "SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY class ORDER BY combatPower DESC, id) AS place FROM armory_ranks WHERE hidden = FALSE AND class != '') WHERE place <= {:limit}"
 
-// topRow is a row within its class's top: its id, combat power and when its gear was read.
+// topRow is a row within its class's top: its id, combat power, when its gear and its combat power
+// were read, and its place in its class (topRows numbers it).
 type topRow struct {
 	Id          string `db:"id"`
 	CombatPower int64  `db:"combatPower"`
 	BuiltAt     string `db:"builtAt"`
+	CheckedAt   string `db:"checkedAt"`
+	Place       int    `db:"-"`
 }
 
 // rankedClasses is the SQL of the classes of the rows shown (not empty), one index seek each.
 const rankedClasses = "WITH RECURSIVE c(class) AS (SELECT (SELECT MIN(class) FROM armory_ranks WHERE hidden = FALSE AND class > '') " +
 	"UNION ALL SELECT (SELECT MIN(class) FROM armory_ranks WHERE hidden = FALSE AND class > c.class) FROM c WHERE c.class IS NOT NULL) SELECT class FROM c WHERE class IS NOT NULL"
 
-// topRows are the rows within their class's top rankLimit (the rows of inTop), the strongest
-// first as "ORDER BY combatPower DESC, id" orders them: read class by class from the top players
-// index (idx_armory_ranks_top) alone, instead of numbering every row of the table.
-func topRows(app core.App) ([]topRow, error) {
+// topRows are the rows within their class's top limit (with rankLimit, the rows of inTop), the
+// strongest first as "ORDER BY combatPower DESC, id" orders them: read class by class from the top
+// players index (idx_armory_ranks_top) alone, instead of numbering every row of the table.
+func topRows(app core.App, limit int) ([]topRow, error) {
 	classes := []string{}
 	if err := app.DB().NewQuery(rankedClasses).Column(&classes); err != nil {
 		return nil, err
@@ -191,9 +202,12 @@ func topRows(app core.App) ([]topRow, error) {
 	rows := []topRow{}
 	for _, class := range classes {
 		top := []topRow{}
-		if err := app.DB().NewQuery("SELECT id, combatPower, builtAt FROM armory_ranks WHERE class = {:class} AND hidden = FALSE ORDER BY combatPower DESC, id LIMIT {:limit}").
-			Bind(dbx.Params{"class": class, "limit": rankLimit}).All(&top); err != nil {
+		if err := app.DB().NewQuery("SELECT id, combatPower, builtAt, checkedAt FROM armory_ranks WHERE class = {:class} AND hidden = FALSE ORDER BY combatPower DESC, id LIMIT {:limit}").
+			Bind(dbx.Params{"class": class, "limit": limit}).All(&top); err != nil {
 			return nil, err
+		}
+		for i := range top {
+			top[i].Place = i + 1
 		}
 		rows = append(rows, top...)
 	}

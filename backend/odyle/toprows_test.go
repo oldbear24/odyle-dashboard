@@ -41,7 +41,7 @@ func TestTopRowsAreTheTopOfEachClass(t *testing.T) {
 	if err := app.DB().NewQuery("SELECT id FROM armory_ranks WHERE id IN (" + inTop + ") ORDER BY combatPower DESC, id").Bind(dbx.Params{"limit": rankLimit}).Column(&want); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := topRows(app)
+	rows, err := topRows(app, rankLimit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestTopRowsAreTheTopOfEachClass(t *testing.T) {
 	plan := []struct {
 		Detail string `db:"detail"`
 	}{}
-	if err := app.DB().NewQuery("EXPLAIN QUERY PLAN SELECT id, combatPower, builtAt FROM armory_ranks WHERE class = {:class} AND hidden = FALSE ORDER BY combatPower DESC, id LIMIT {:limit}").Bind(dbx.Params{"class": "Chanter", "limit": rankLimit}).All(&plan); err != nil {
+	if err := app.DB().NewQuery("EXPLAIN QUERY PLAN SELECT id, combatPower, builtAt, checkedAt FROM armory_ranks WHERE class = {:class} AND hidden = FALSE ORDER BY combatPower DESC, id LIMIT {:limit}").Bind(dbx.Params{"class": "Chanter", "limit": rankLimit}).All(&plan); err != nil {
 		t.Fatal(err)
 	}
 	if len(plan) != 1 || !strings.Contains(plan[0].Detail, "COVERING INDEX idx_armory_ranks_top") {

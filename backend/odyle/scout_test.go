@@ -277,7 +277,7 @@ func TestScoutChecksOdyleCharactersAndThePlayersTheyMet(t *testing.T) {
 		t.Fatalf("status after %+v", st)
 	}
 	// The hidden character's row stays hidden when the scout checks it some other way.
-	if err := checkRank(app, scoutHit{region: "eu", serverId: 2304, characterId: "shyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}); err != nil {
+	if _, err := checkRank(app, scoutHit{region: "eu", serverId: 2304, characterId: "shyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}); err != nil {
 		t.Fatal(err)
 	}
 	var hidden bool

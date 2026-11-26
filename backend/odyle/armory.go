@@ -347,5 +347,7 @@ func armoryStatus(app core.App) map[string]any {
 	_ = app.DB().NewQuery("SELECT COUNT(*), COALESCE(SUM(builtAt != ''), 0) FROM armory_ranks WHERE hidden = FALSE").Row(&ranked, &built)
 	out["ranked"], out["built"] = ranked, built
 	out["scout"] = scoutStatus(app)
+	// The top players re-read for their age, and the refresh of every character (rankrefresh.go).
+	out["recheck"] = refreshStatus(app)
 	return out
 }
