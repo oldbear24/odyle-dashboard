@@ -945,6 +945,7 @@ export function statusPage() {
     hover: '',
     profiling: '',
     vacuuming: '',
+    refreshing: false,
   });
   const now = () => state.now + state.offset;
   let poll = 0,
@@ -1093,6 +1094,55 @@ export function statusPage() {
             : 'one every 3 minutes') +
           ' while no reader waits' +
           (scout().builds ? ', all in about ' + span(scout().builds * scout().buildEvery) : '');
+  // The top players re-read for their age, and the refresh of every character the armory knows
+  // (backend/odyle/rankrefresh.go): started by hand here, or by the server when the level cap rose
+  // or most top players' combat power changed a lot.
+  const recheck = () => armory().recheck || { rechecks: 0, recheckDays: 3, refresh: null };
+  const refresh = () => recheck().refresh;
+  const refreshing = () => Boolean(refresh() && !refresh().done);
+  const refreshCause = r =>
+    r.by === 'level'
+      ? 'started by the server: the level cap rose to ' + number(r.level)
+      : r.by === 'power'
+        ? 'started by the server: ' +
+          number(r.share) +
+          '% of the top players re-read changed combat power by 5% or more'
+        : 'started by hand';
+  const refreshText = () => {
+    const r = refresh();
+    if (!r)
+      return 'No refresh yet. After a game patch, Refresh every character has the scout read every character it knows again, the top players first. The server starts one itself when the level cap rises or most top players’ combat power changes by 5% or more, at most once a week.';
+    const started = 'Refresh of every character ' + refreshCause(r) + ' ' + when(r.at);
+    return r.done
+      ? started + ' · done: every character read again'
+      : started +
+          ' · still to read: ' +
+          number(r.top) +
+          ' top players, ' +
+          number(r.rows) +
+          ' characters in all, the gear of ' +
+          number(r.gear) +
+          ' top players';
+  };
+  function refreshAll(stop) {
+    app.modals.confirm(
+      stop
+        ? 'Stop the refresh? The characters not read again yet wait for their usual turn.'
+        : 'Refresh every character the armory knows? The scout reads the combat power of every one again, the top players of every class first (within a day, some 7,000 characters a day) and nothing else until it is done, and the top players’ gear as its lanes allow.',
+      async () => {
+        state.refreshing = true;
+        try {
+          await app.pb.send('/api/odyle/admin/armory-refresh', { method: stop ? 'DELETE' : 'POST', requestKey: null });
+          await load();
+        } catch (error) {
+          app.checkApiError(error);
+        }
+        state.refreshing = false;
+      },
+      null,
+      { yesButton: stop ? 'Stop the refresh' : 'Refresh every character' },
+    );
+  }
   // Most of an hour's requests (20 or more) from private or loopback addresses come through
   // a reverse proxy, and rate limits count all of them as one client unless it is trusted.
   const proxied = () => traffic().total.count >= 20 && (traffic().private || 0) * 2 > traffic().total.count;
@@ -2074,7 +2124,23 @@ export function statusPage() {
           { className: 'txt-hint txt-sm' },
           'what the scout still reads of PLAYNC for the top players, in the order it reads it',
         ),
+        t.div({ className: 'm-r-auto' }),
+        t.button(
+          {
+            type: 'button',
+            className: () => 'btn sm secondary' + (state.refreshing ? ' loading' : ''),
+            disabled: () => state.refreshing,
+            title: () =>
+              refreshing()
+                ? 'Stop the refresh: the characters not read again yet wait for their usual turn'
+                : 'Have the scout read every character the armory knows again, the top players first (after a game patch)',
+            onclick: () => refreshAll(refreshing()),
+          },
+          t.i({ className: () => (refreshing() ? 'ri-stop-circle-line' : 'ri-refresh-line'), ariaHidden: true }),
+          t.span({ className: 'txt' }, () => (refreshing() ? 'Stop the refresh' : 'Refresh every character')),
+        ),
       ),
+      t.p({ className: () => 'txt-sm m-b-sm' + (refreshing() ? ' txt-bold' : ' txt-hint') }, () => refreshText()),
       t.div(
         { className: 'odyle-stats m-b-sm' },
         stat(
@@ -2085,8 +2151,16 @@ export function statusPage() {
               ? number(scout().neverBuilt) +
                 ' never read, ' +
                 number(scout().builds - scout().neverBuilt) +
-                ' read 14 or more days ago · '
+                (refreshing() ? ' read 14 or more days ago or before the refresh · ' : ' read 14 or more days ago · ')
               : '') + buildPace(),
+        ),
+        stat(
+          'Top players to re-read',
+          () => number(recheck().rechecks),
+          () =>
+            "combat power of each class's top 500 and the 250 below them, read again every " +
+            number(recheck().recheckDays) +
+            ' days or since the refresh, before names and searches',
         ),
         stat(
           'Combat power to read',
@@ -2392,7 +2466,7 @@ const jobInfo = {
     schedule: () => 'Every minute',
     unit: 'PLAYNC pages read',
     about:
-      "PLAYNC lists no rankings for Global, so this builds the armory's top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then the characters Odyle's accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC's character search (random servers, classes and letters); while no reader waits, the gear of the strongest top-500 characters not read for 14 days, each of the scout's lanes one every 3 minutes at most, so they read at once. Paused with the armory, and while PLAYNC refuses the server.",
+      "PLAYNC lists no rankings for Global, so this builds the armory's top players by class: up to 5 pages a run, 10 seconds apart: the info pages of the characters it found, for their combat power; then those of each class's top 500 and the 250 below them whose combat power is 3 days old, and during a refresh (Server status) of every character read before it, the strongest first; then the characters Odyle's accounts play; then searches for the party and force members apps sent and the players met in PvP, by name; else PLAYNC's character search (random servers, classes and letters); while no reader waits, the gear of the strongest top-500 characters not read for 14 days or since the refresh, each of the scout's lanes one every 3 minutes at most, so they read at once. Paused with the armory, and while PLAYNC refuses the server.",
   },
   'odyle-release': {
     label: 'Release check',
@@ -5087,6 +5161,7 @@ const auditKinds = [
   { id: 'job', label: 'Jobs' },
   { id: 'update-apps', label: 'App updates' },
   { id: 'vacuum', label: 'Vacuums' },
+  { id: 'armory-refresh', label: 'Armory refreshes' },
   { id: 'ai-access', label: 'AI access' },
   { id: 'ai-knowledge', label: 'AI knowledge' },
 ];
@@ -5095,10 +5170,11 @@ const auditLabels = {
   job: 'job run',
   'update-apps': 'update all apps',
   vacuum: 'vacuum',
+  'armory-refresh': 'armory refresh',
   'ai-access': 'AI access',
   'ai-knowledge': 'AI knowledge',
 };
-const auditClass = { settings: 'info', 'update-apps': 'warning' };
+const auditClass = { settings: 'info', 'update-apps': 'warning', 'armory-refresh': 'warning' };
 const isoMoment = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
 // A value an entry keeps, in words: switches on and off, nothing as none, moments in local time
 // with their UTC, and list entries by their name first, then what they hold.

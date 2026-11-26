@@ -252,6 +252,9 @@ func routes(se *core.ServeEvent) {
 	se.Router.POST("/api/odyle/admin/vacuum/{name}", vacuumRoute).Bind(superuser)
 	// Every running Windows app updates to the newest release now (releases.go).
 	se.Router.POST("/api/odyle/admin/update-apps", updateAppsRoute).Bind(superuser)
+	// Every character the armory knows is read again, the top players first (rankrefresh.go).
+	se.Router.POST("/api/odyle/admin/armory-refresh", refreshRoute).Bind(superuser)
+	se.Router.DELETE("/api/odyle/admin/armory-refresh", refreshRoute).Bind(superuser)
 	// What superusers did, by whom and when (audit.go).
 	se.Router.GET("/api/odyle/admin/audit", auditRoute).Bind(superuser)
 	// Who may use the armory's AI and what it took (aiaccess.go).

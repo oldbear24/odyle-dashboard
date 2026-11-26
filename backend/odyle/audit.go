@@ -28,6 +28,7 @@ const (
 	auditJob       = "job"
 	auditUpdate    = "update-apps"
 	auditVacuum    = "vacuum"
+	auditRefresh   = "armory-refresh"
 	viaOdyle       = "odyle"
 	viaCollections = "collections"
 )

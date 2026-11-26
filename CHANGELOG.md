@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.5.0 · 2026-11-26
+
+### New
+- **The armory's top players stay current.** Every top player's combat power, and that of the players just below the top, is read again every 3 days, so the order of the top lists and the players about to enter them are never more than a few days old.
+- **After a big game change the whole list is read again.** When the level cap rises or the combat power of most top players changes at once, Odyle reads every character it knows again, the top players first: the top of every class within a day.
+
+### Changed
+- For server operators:
+  - **Server status → Armory scout** has **Refresh every character**: start a refresh after a game patch, see what started a refresh and what it still reads, or stop it. Starting and stopping are written to the audit log;
+  - migration 1791763291 adds `ranksRefreshAt` and `ranksRefreshWhy` to `odyle_settings`, which only the server writes; `POST` and `DELETE /api/odyle/admin/armory-refresh` start and stop a refresh.
+
 ## 1.4.0 · 2026-11-25
 
 ### New
