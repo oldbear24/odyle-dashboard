@@ -2416,7 +2416,9 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
       'Achievements',
       'Timers',
       'Armory',
+      'Builds',
     ]);
+    assert.equal(await page.locator('.sidebar a.nav-item[data-action="builds"]').getAttribute('href'), './builds');
     assert.equal(await page.locator('.sidebar a.nav-item[data-action="timers"]').getAttribute('href'), './timers');
     assert.equal(await page.locator('.sidebar .brand').getAttribute('href'), './');
     await navigate(page, 'help');
@@ -2459,7 +2461,7 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
     );
     assert.deepEqual(
       await page.locator('.topbar .account-menu .phone-only span:not(.nav-badge):not(.sr-only)').allInnerTexts(),
-      ['My week', 'Achievements', 'Timers'],
+      ['My week', 'Achievements', 'Timers', 'Builds'],
     );
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.topbar .account-menu[open]').count(), 0);
@@ -2469,10 +2471,164 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
   }
 });
 
+test('a build is made from an armory profile, edited by clicking, shared with a link and copied', async () => {
+  const builder = await account('Builder'),
+    copier = await account('Copier');
+  const profileAt = '/armory/eu/2304/' + armorer[0];
+  const planOf = async id => (await request('/api/odyle/builds/' + id, undefined, builder, 'GET')).data.build;
+  // What the page saved a moment after a change, within five seconds.
+  const until = async check => {
+    for (let i = 0; i < 50; i++) {
+      if (await check()) return;
+      await delay(100);
+    }
+    assert.fail('the build was not saved');
+  };
+  const { page, errors, close } = await open(builder, '#' + profileAt);
+  let id, code;
+  try {
+    // Make a build: the profile's gear, skills and nodes become a build of the account.
+    await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
+    await page.locator('[data-action="build-from-profile"]').click();
+    await page.waitForURL(/\/builds\/[a-z0-9]{15}$/);
+    id = page.url().split('/').pop();
+    await page.getByRole('heading', { name: "Armorer's build" }).waitFor();
+    assert.equal(await page.title(), "Armorer's build · Chanter build · Odyle");
+    await page.locator('.armory-note', { hasText: 'the armory keeps' }).waitFor();
+    const rod = page.locator('[data-build-slot="MainHand"]');
+    assert.match(await rod.innerText(), /Enraged Kromede Rod/);
+    let saved = await planOf(id);
+    assert.equal(saved.plan.from.name, 'Armorer');
+    assert.equal(saved.plan.gear.find(g => g.slot === 'MainHand').name, 'Enraged Kromede Rod');
+    await shot(page, 'build-gear');
+
+    // A slot's editor: the item's enchantment, then Done; the build saves itself.
+    await rod.click();
+    const form = page.locator('#build-slot-form');
+    await form.waitFor();
+    assert.match(await form.locator('.build-item-list').innerText(), /Enraged Kromede Rod/);
+    await form.locator('select[name="enchant"]').selectOption('15');
+    await form.locator('select[name="exceed"]').selectOption('5');
+    await shot(page, 'build-slot');
+    await form.locator('[type="submit"]').click();
+    await page.locator('.build-save-slot', { hasText: 'Saved' }).waitFor();
+    saved = await planOf(id);
+    const main = saved.plan.gear.find(g => g.slot === 'MainHand');
+    assert.deepEqual([main.enchant, main.exceed], [15, 5]);
+    // An empty slot: the helmet gets nothing to choose but Empty and stays empty.
+    await page.locator('[data-build-slot="Helmet"]').click();
+    await form.waitFor();
+    await form.locator('[data-action="close-dialog"]').click();
+
+    // Notes save as they are typed.
+    await page.locator('#build-notes').fill('Bolt, then Bolt again.');
+    await page.locator('.build-save-slot', { hasText: 'Saved' }).waitFor();
+    await until(async () => (await planOf(id)).plan.notes === 'Bolt, then Bolt again.');
+
+    // The board: a closed node opens when pressed, and Enter closes it again.
+    await page.locator('.armory-tabs a', { hasText: 'Daevanion' }).click();
+    await page.waitForURL(/\/daevanion$/);
+    const node = page.locator('[data-build-node="1,2"]');
+    assert.equal(await node.getAttribute('aria-pressed'), 'false');
+    await node.click();
+    await page.locator('[data-build-node="1,2"][aria-pressed="true"]').waitFor();
+    await page.locator('.build-save-slot', { hasText: 'Saved' }).waitFor();
+    await until(async () => JSON.stringify((await planOf(id)).plan.boards) === '[{"id":71,"nodes":["1,1","1,2"]}]');
+    await shot(page, 'build-daevanion');
+    await page.keyboard.press('Enter');
+    await page.locator('[data-build-node="1,2"][aria-pressed="false"]').waitFor();
+
+    // Skills: a stigma chosen is learned at level 1, and a level more.
+    await page.locator('.armory-tabs a', { hasText: 'Skills' }).click();
+    await page.waitForURL(/\/skills$/);
+    await page.locator('[data-build-bar="Absolution"]').click();
+    await page.locator('[data-build-bar="Absolution"][aria-pressed="true"]').waitFor();
+    await page.locator('[data-build-level="Absolution"][data-step="1"]').click();
+    await page.locator('.build-save-slot', { hasText: 'Saved' }).waitFor();
+    await until(async () => {
+      const skill = (await planOf(id)).plan.skills.find(s => s.name === 'Absolution');
+      return skill?.level === 2 && skill.bar === true;
+    });
+    await shot(page, 'build-skills');
+
+    // Compare: the character it was made from lacks two exceed levels of the rod and the stigma.
+    await page.locator('.armory-tabs a', { hasText: 'Compare' }).click();
+    await page.locator('.build-gap.is-gear').waitFor();
+    assert.match(
+      await page.locator('.build-gap.is-gear').innerText(),
+      /Enraged Kromede Rod[\s\S]*2 more exceed levels/,
+    );
+    assert.match(
+      await page.locator('.build-gap.is-skills').innerText(),
+      /Absolution\s+level 0 → 2 · put on the skill bar/,
+    );
+    await shot(page, 'build-compare');
+
+    // Shared: a link anyone opens.
+    await page.locator('[data-action="build-share"]').click();
+    await page.locator('[data-action="build-unshare"]').waitFor();
+    code = (await planOf(id)).share;
+    assert.match(code, /^[A-Z2-9]{16}$/);
+  } finally {
+    assert.deepEqual(errors, []);
+    await close();
+  }
+
+  // Signed out, the shared link shows the build read-only and offers to sign in to copy it.
+  const visitor = await open(null, '#/builds/shared/' + code);
+  try {
+    await visitor.page.getByRole('heading', { name: "Armorer's build" }).waitFor();
+    await visitor.page.waitForURL(url + '/builds/shared/' + code);
+    assert.equal(await visitor.page.locator('[data-build-slot]').count(), 0);
+    await visitor.page.locator('[data-action="build-sign-in"]').waitFor();
+    await visitor.page.locator('.armory-tabs a', { hasText: 'Daevanion' }).click();
+    await visitor.page.waitForURL(/\/daevanion$/);
+    assert.equal(await visitor.page.locator('[data-build-node]').count(), 0);
+    await shot(visitor.page, 'build-shared');
+    assert.deepEqual(visitor.errors, []);
+  } finally {
+    await visitor.close();
+  }
+
+  // Another player copies it into their own builds.
+  const reader = await open(copier, '#/builds/shared/' + code);
+  try {
+    await reader.page.locator('[data-action="build-save-copy"]').click();
+    await reader.page.waitForURL(/\/builds\/[a-z0-9]{15}$/);
+    assert.notEqual(reader.page.url().split('/').pop(), id);
+    await reader.page.locator('[data-build-slot="MainHand"]').waitFor();
+    assert.deepEqual(reader.errors, []);
+  } finally {
+    await reader.close();
+  }
+
+  // Back on the list: the build, shared; stopped, its link ends; deleted, it goes.
+  const again = await open(builder, '#/builds');
+  try {
+    const { page } = again;
+    await page.locator('.build-card', { hasText: "Armorer's build" }).waitFor();
+    assert.match(await page.locator('.build-card').innerText(), /Shared[\s\S]*from Armorer/);
+    await shot(page, 'builds');
+    await page.locator('.build-card').click();
+    await page.locator('[data-action="build-unshare"]').click();
+    await page.locator('[data-action="build-share"]').waitFor();
+    assert.equal((await request('/api/odyle/builds/shared/' + code, undefined, null, 'GET')).status, 404);
+    await page.locator('[data-action="build-delete"]').click();
+    await page.locator('#modal [data-build-remove]').click();
+    await page.waitForURL(url + '/builds');
+    await page.locator('.armory-empty', { hasText: 'No build yet' }).waitFor();
+    assert.deepEqual(again.errors, []);
+  } finally {
+    await again.close();
+  }
+});
+
 test('the main pages pass the axe accessibility check, signed out and in', async () => {
   const lead = await account('Axe lead');
   const created = (await request('/api/odyle/create', { name: 'Axe room' }, lead)).data;
   const profileAt = '#/armory/eu/2304/' + armorer[0];
+  const build = (await request('/api/odyle/build', { name: 'Axe build', class: 'Chanter' }, lead)).data.build;
+  const shared = (await request('/api/odyle/build', { id: build.id, share: true }, lead)).data.build;
   const pages = [
     [null, '#/'],
     [null, '#/armory'],
@@ -2495,6 +2651,11 @@ test('the main pages pass the axe accessibility check, signed out and in', async
     [lead, '#/timers'],
     [lead, '#/achievements'],
     [lead, '#/week'],
+    [lead, '#/builds'],
+    [lead, '#/builds/' + build.id],
+    [lead, '#/builds/' + build.id + '/skills'],
+    [lead, '#/builds/' + build.id + '/daevanion'],
+    [null, '#/builds/shared/' + shared.share],
   ];
   const found = [];
   for (const [auth, path] of pages) {

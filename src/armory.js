@@ -155,7 +155,7 @@ const gradeNames = () => ({
   Mythic: t('Mythic'),
   Special: t('Special'),
 });
-const gradeName = grade => gradeNames()[grade] || grade || '';
+export const gradeName = grade => gradeNames()[grade] || grade || '';
 
 // The servers of a region for the search's server list: any server first, then each race's, the
 // chosen one selected.
@@ -1049,7 +1049,7 @@ export function armoryProfile(answer, now, refreshable, bookmarked = false, view
     .join(
       '',
     )}${profile.legion ? `<span class="armory-legion" title="${esc(t('Legion'))}">${icon('people')}${esc(profile.legion)}</span>` : ''}</p></div>
-<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><button class="button secondary armory-compare" data-action="armory-compare" aria-haspopup="dialog">${icon('swords')} ${t('Compare')}</button>${view.ai ? `<button class="button secondary armory-ai-link" data-action="ai-ask-about">${icon('spark')} ${t('Ask the AI')}</button>` : ''}<a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
+<div class="armory-hero-actions"><button class="button secondary armory-bookmark" data-action="armory-bookmark" aria-pressed="${bookmarked}" title="${esc(bookmarked ? t('Remove {name} from bookmarks', { name: profile.name }) : t('Bookmark {name} in this browser', { name: profile.name }))}">${bookmarked ? '★ ' + t('Bookmarked') : '☆ ' + t('Bookmark')}</button><button class="button secondary armory-compare" data-action="armory-compare" aria-haspopup="dialog">${icon('swords')} ${t('Compare')}</button>${view.ai ? `<button class="button secondary armory-ai-link" data-action="ai-ask-about">${icon('spark')} ${t('Ask the AI')}</button>` : ''}${view.build && profile.class ? `<button class="button secondary armory-build-link" data-action="build-from-profile">${icon('build')} ${t('Make a build')}</button>` : ''}<a class="button secondary armory-card-link" href="${esc(link(profilePath(answer) + '/card'))}">${icon('star')} ${t('Player card')}</a><a class="button secondary" href="${esc(playncPage(answer))}" target="_blank" rel="noopener noreferrer">${t('Official page')} ↗</a></div>
 <dl class="armory-power">${metrics.map(([label, value, small, main, change]) => `<div class="${main ? 'is-main' : ''}"><dt>${esc(label)}</dt><dd><strong>${esc(value)}</strong><small>${esc(small)}</small></dd>${change ? `<dd class="armory-power-change">${esc(change)}</dd>` : ''}</div>`).join('')}</dl></section>`;
   const nav = `<nav class="armory-tabs" aria-label="${esc(t('Profile sections'))}">${tabs.map(([key, label]) => `<a href="${esc(link(profilePath(answer, key)))}"${key === tab ? ' aria-current="page"' : ''}>${esc(label)}</a>`).join('')}</nav>`;
   const content =

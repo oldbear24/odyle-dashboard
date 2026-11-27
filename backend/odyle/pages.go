@@ -65,8 +65,33 @@ func DescribePage(e *core.RequestEvent, route, base string) web.Page {
 		return web.Page{Title: "Your week in Odyle", Private: true}
 	case route == "/tasks", route == "/account", route == "/slots", len(parts) == 2 && parts[0] == "room":
 		return web.Page{Private: true}
+	case route == "/builds":
+		return web.Page{Title: "Your builds · Odyle", Private: true}
+	case parts[0] == "builds" && len(parts) >= 3 && len(parts) <= 4 && parts[1] == "shared" && (len(parts) == 3 || buildTabs[parts[3]]):
+		return sharedBuildPage(e.App, parts[2])
+	case parts[0] == "builds" && (len(parts) == 2 || len(parts) == 3 && buildTabs[parts[2]]):
+		return web.Page{Title: "A build · Odyle", Private: true}
 	}
 	return web.Page{Missing: true}
+}
+
+// The tabs of a build's page after its first (src/buildlinks.js).
+var buildTabs = map[string]bool{"skills": true, "daevanion": true, "compare": true}
+
+// sharedBuildPage names a shared build (/builds/shared/<code>[/<tab>], builds.go) for link
+// previews, kept out of search engines; a link that no longer shares one is named for builds.
+func sharedBuildPage(app core.App, code string) web.Page {
+	page := web.Page{Title: "A shared build · Odyle", Private: true}
+	if !buildShareCode.MatchString(code) {
+		return page
+	}
+	r, err := app.FindFirstRecordByFilter("builds", "share = {:code}", dbx.Params{"code": code})
+	if err != nil {
+		return page
+	}
+	page.Title = fmt.Sprintf("%s · %s build · Odyle", r.GetString("name"), r.GetString("class"))
+	page.Description = fmt.Sprintf("A %s build for AION 2 put together on Odyle: its gear, skills and Daevanion boards.", r.GetString("class"))
+	return page
 }
 
 // profilePage names an armory profile (/armory/<region>/<server id>/<character id>[/<tab>])
