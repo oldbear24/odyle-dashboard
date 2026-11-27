@@ -1042,7 +1042,7 @@ test('superusers watch connected apps and their packets live and edit the server
     scoutLanes: 1,
     adapters: { extra: [], disabled: [] },
     taskTemplates: [],
-    clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false },
+    clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], bonusCap: 2000, paused: false },
     windowsBlocked: [],
     maintenance: { day: '', hour: 0, hours: 0 },
     classRoles: [

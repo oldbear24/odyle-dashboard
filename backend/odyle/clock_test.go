@@ -9,7 +9,7 @@ import (
 
 func TestTheOdyleClocksRulesAreCheckedAndSaved(t *testing.T) {
 	app := newTestApp(t)
-	if got := asJSON(t, readSettings(app).Clock); got != `{"tickHours":[1,4,7,10,13,16,19,22],"tick":15,"caps":[560,840],"paused":false}` {
+	if got := asJSON(t, readSettings(app).Clock); got != `{"tickHours":[1,4,7,10,13,16,19,22],"tick":15,"caps":[560,840],"bonusCap":2000,"paused":false}` {
 		t.Fatalf("defaults %s", got)
 	}
 	for _, bad := range []any{
@@ -20,14 +20,20 @@ func TestTheOdyleClocksRulesAreCheckedAndSaved(t *testing.T) {
 		map[string]any{"tickHours": []any{1.0}, "tick": 0.0, "caps": []any{560.0}},
 		map[string]any{"tickHours": []any{1.0}, "tick": 15.0, "caps": []any{840.0, 560.0}},
 		map[string]any{"tickHours": []any{1.0}, "tick": 15.0, "caps": []any{}},
+		map[string]any{"tickHours": []any{1.0}, "tick": 15.0, "caps": []any{560.0}, "bonusCap": -1.0},
+		map[string]any{"tickHours": []any{1.0}, "tick": 15.0, "caps": []any{560.0}, "bonusCap": 1000001.0},
 	} {
 		if _, err := writeSettings(app, body{"clock": bad}); err == nil {
 			t.Errorf("accepted %v", bad)
 		}
 	}
 	saved, err := writeSettings(app, body{"clock": map[string]any{"tickHours": []any{22.0, 4.0, 1.0}, "tick": 10.0, "caps": []any{500.0}, "paused": true}})
-	if err != nil || asJSON(t, saved.Clock) != `{"tickHours":[1,4,22],"tick":10,"caps":[500],"paused":true}` {
-		t.Fatalf("%v %s", err, asJSON(t, saved.Clock))
+	if err != nil || asJSON(t, saved.Clock) != `{"tickHours":[1,4,22],"tick":10,"caps":[500],"bonusCap":2000,"paused":true}` {
+		t.Fatalf("rules without the items' cap take the default: %v %s", err, asJSON(t, saved.Clock))
+	}
+	saved, err = writeSettings(app, body{"clock": map[string]any{"tickHours": []any{1.0}, "tick": 15.0, "caps": []any{560.0, 840.0}, "bonusCap": 2500.0}})
+	if err != nil || saved.Clock.BonusCap != 2500 || readSettings(app).Clock.BonusCap != 2500 {
+		t.Fatalf("the items' cap is saved: %v %s", err, asJSON(t, saved.Clock))
 	}
 }
 

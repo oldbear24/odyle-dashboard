@@ -2,6 +2,14 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.7.0 · 2026-11-27
+
+### New
+- Server operators set how much Odyle items can add at most (2,000 by default) under **Game settings → Odyle clock**. The Windows app fills its blue ring around the Odyle ring towards it.
+
+### Fixed
+- **Timers** no longer says Odyle from items has no cap: it says it holds at most 2,000 (or what the operators set).
+
 ## 1.6.1 · 2026-11-26
 
 ### Fixed

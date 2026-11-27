@@ -91,22 +91,29 @@ func checkClassRoles(value any) ([]classRole, error) {
 
 // The Odyle clock's game rules: the natural pool regenerates at fixed UTC hours by tick Odyle
 // (unless a character's own regeneration readings showed another size) up to the smallest
-// cap its readings fit under (560, or 840 with the membership). Clients project from them
-// and never store the result; paused hides every estimate. Superusers keep them; a game
-// patch that moves the schedule is fixed here without a release.
+// cap its readings fit under (560, or 840 with the membership). Items' Odyle (parts.bonus)
+// does not regenerate; bonusCap is the most it holds, for the Windows app's ring around the
+// natural pool's. Clients project from them and never store the result; paused hides every
+// estimate. Superusers keep them; a game patch that moves the schedule is fixed here without
+// a release.
 type clockRules struct {
 	TickHours []int64 `json:"tickHours"`
 	Tick      int64   `json:"tick"`
 	Caps      []int64 `json:"caps"`
+	BonusCap  int64   `json:"bonusCap"`
 	Paused    bool    `json:"paused"`
 }
 
+// defaultBonusCap is the most Odyle items add in the game.
+const defaultBonusCap = 2000
+
 func defaultClock() clockRules {
-	return clockRules{TickHours: []int64{1, 4, 7, 10, 13, 16, 19, 22}, Tick: 15, Caps: []int64{560, 840}}
+	return clockRules{TickHours: []int64{1, 4, 7, 10, 13, 16, 19, 22}, Tick: 15, Caps: []int64{560, 840}, BonusCap: defaultBonusCap}
 }
 
 // clockSettings checks the clock's rules: 1 to 24 different UTC hours, a tick of 1 to 1000
-// Odyle and 1 to 4 caps of 1 to 1,000,000, each larger than the one before.
+// Odyle, 1 to 4 caps of 1 to 1,000,000, each larger than the one before, and an items' cap of
+// 1 to 1,000,000 (rules saved before it, or sent without it, take the default).
 func clockSettings(value any) (clockRules, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -114,7 +121,7 @@ func clockSettings(value any) (clockRules, error) {
 	}
 	var c clockRules
 	if json.Unmarshal(raw, &c) != nil {
-		return clockRules{}, badRequest("The Odyle clock must be an object with tickHours, tick, caps and paused.")
+		return clockRules{}, badRequest("The Odyle clock must be an object with tickHours, tick, caps, bonusCap and paused.")
 	}
 	if len(c.TickHours) == 0 || len(c.TickHours) > 24 {
 		return clockRules{}, badRequest("The regeneration happens at 1 to 24 UTC hours.")
@@ -137,6 +144,12 @@ func clockSettings(value any) (clockRules, error) {
 		if cap < 1 || cap > 1000000 || i > 0 && cap <= c.Caps[i-1] {
 			return clockRules{}, badRequest("Caps are 1 to 1,000,000 Odyle, each larger than the one before.")
 		}
+	}
+	if c.BonusCap == 0 {
+		c.BonusCap = defaultBonusCap
+	}
+	if c.BonusCap < 1 || c.BonusCap > 1000000 {
+		return clockRules{}, badRequest("Items' Odyle holds 1 to 1,000,000.")
 	}
 	return c, nil
 }

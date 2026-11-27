@@ -3707,6 +3707,21 @@ export function settingsPage() {
             }),
             'Smallest first, for example 560 without the membership and 840 with it. A character counts under the smallest cap its fullest natural pool fits under.',
           ),
+          field(
+            'odyle-clock-bonus-cap',
+            "Items' Odyle limit",
+            t.input({
+              id: 'odyle-clock-bonus-cap',
+              type: 'number',
+              min: 1,
+              max: 1000000,
+              step: 1,
+              required: true,
+              value: () => clock().bonusCap ?? '',
+              oninput: e => (state.form.clock = { ...clock(), bonusCap: integer(e.target.value) }),
+            }),
+            "The most Odyle a character's items add; it does not regenerate. The Windows app's blue ring around the natural pool's ring fills towards it. 2000 by default.",
+          ),
           t.div(
             { className: 'col-lg-12' },
             t.div(
