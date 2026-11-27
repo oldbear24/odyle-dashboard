@@ -2342,10 +2342,12 @@ test(
   async () => {
     const user = (await request('/__test__/account', { name: 'Windows UI fixture' })).data;
     const pair = (await action('desktop-code', {}, user)).data;
+    // The Reader checks run 40-odd scenarios in one window and take about a minute on a hosted Windows runner,
+    // so a minute's limit cut them off at random; three leave them room without hiding a hang for long.
     const output = execFileSync(
       'dotnet',
       ['run', '--project', process.env.ODYLE_WINDOWS_UI_CHECKS, '-c', 'Release', '--', url, pair.code],
-      { encoding: 'utf8', timeout: 60000 },
+      { encoding: 'utf8', timeout: 180000 },
     );
     assert.match(
       output,
