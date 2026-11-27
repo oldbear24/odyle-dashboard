@@ -37,49 +37,92 @@
   margin: 10px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
+}
+/* A card per build: the class's emblem in a frame, the name, what it holds as chips; the copy
+   button sits in the card's corner, beside its link. */
+.build-card-item {
+  position: relative;
 }
 .build-card {
   display: grid;
-  gap: 5px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
   height: 100%;
-  padding: 12px 14px;
+  padding: 12px 48px 12px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: linear-gradient(180deg, #1a231f, var(--panel));
   color: inherit;
   text-decoration: none;
   transition:
     border-color 0.15s ease,
-    background 0.15s ease;
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .build-card:hover,
 .build-card:focus-visible {
-  border-color: #4f6b59;
-  background: #1c2620;
+  border-color: #4f7a5f;
+  background: linear-gradient(180deg, #1f2b25, #18211c);
+  box-shadow: inset 0 2px 0 var(--mint);
+}
+.build-card-mark,
+.build-mark {
+  display: grid;
+  place-items: center;
+  border: 1px solid #577d65;
+  background: radial-gradient(circle at 50% 42%, #37574a 0%, #19281f 58%, #0f1713 100%);
+  box-shadow:
+    inset 0 0 0 3px #0f1713,
+    inset 0 0 0 4px #ffffff17;
+}
+.build-card-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+}
+.build-card-mark .class-icon {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  filter: drop-shadow(0 0 6px #f3d48f38) drop-shadow(0 1px 2px #000a);
+}
+.build-card-mark b {
+  font-family: 'Manrope Variable', 'Manrope', sans-serif;
+  font-size: 16px;
+  color: #cfe6d6;
+}
+.build-card-body {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 .build-card strong {
   font-size: 15px;
+  line-height: 1.3;
   color: #e6f0e9;
   overflow-wrap: anywhere;
 }
 .build-card-class {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   font-size: 10.5px;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: #8fa697;
 }
-.build-card-class .class-icon {
-  width: 18px;
-  height: 18px;
-}
 .build-card-facts {
-  font-size: 12px;
-  color: #b6c9bc;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.build-card-facts span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #ffffff14;
+  background: #ffffff0a;
+  font-size: 11px;
+  color: #c6d6cb;
 }
 .build-card-meta {
   display: flex;
@@ -98,21 +141,78 @@
   width: 13px;
   height: 13px;
 }
-
-/* A build's page: the class's emblem where a profile has its portrait. */
-.build-mark {
+.build-card-copy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
   display: grid;
   place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid #35463b;
+  background: #111a14;
+  color: #b6c9bc;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.build-card-copy:hover:not(:disabled) {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+.build-card-copy:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+.build-card-copy:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.build-card-copy svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* A build's page: the class's emblem where a profile has its portrait, framed like the list's
+   cards, in its middle (a portrait's picture covers the whole frame from its corner). */
+.build-mark {
+  border-width: 1px;
+  border-radius: 18px;
+  box-shadow:
+    inset 0 0 0 4px #0f1713,
+    inset 0 0 0 5px #ffffff17,
+    0 10px 30px #0009;
 }
 .build-mark .class-icon {
-  width: 64%;
-  height: 64%;
+  position: static;
+  width: 66%;
+  height: 66%;
+  margin: 0;
   object-fit: contain;
+  filter: drop-shadow(0 0 12px #f3d48f40) drop-shadow(0 2px 4px #000a);
+}
+.build-hero .armory-tags span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.build-hero .armory-tags svg {
+  width: 13px;
+  height: 13px;
+  color: #8fa697;
 }
 .build-hero .armory-tags a {
   color: inherit;
 }
+.build-hero .armory-tags a:hover {
+  color: var(--mint);
+}
 .build-save-slot {
+  display: flex;
+  justify-content: inherit;
   flex-basis: 100%;
   min-height: 18px;
 }
@@ -556,6 +656,15 @@ dialog .build-dialog-actions .button + .button {
   --size: 26px;
 }
 
+@media (max-width: 640px) {
+  .build-hero .armory-power {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .build-hero .armory-power > div {
+    padding: 8px 10px;
+  }
+}
 @media (max-width: 720px) {
   .build-new-form {
     grid-template-columns: 1fr;

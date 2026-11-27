@@ -165,7 +165,6 @@ export function armoryRender(searching = false) {
           upgrade: armoryUpgrade(),
           upgradeGroup: armoryUpgradeGroup,
           ai: aiAllowed(),
-          build: pb.authStore.isValid,
         })
       : armory.armorySearch(
           armoryServers || [],

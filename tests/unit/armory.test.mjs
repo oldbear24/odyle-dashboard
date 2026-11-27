@@ -278,6 +278,11 @@ test('a profile shows its gear, power and stats, escaped, with where its lookup 
   assert.match(html, /<dt>Daevanion<\/dt><dd><strong>8 %<\/strong><small>12 of 156 nodes<\/small>/);
   assert.match(html, /<dt>Titles<\/dt><dd><strong>94<\/strong><small>of 304<\/small>/);
   assert.match(html, /<dt>Skills<\/dt><dd><strong>1<\/strong><small>of 2 learned<\/small>/);
+  // Copy to builds, for everyone: a visitor is asked to sign in when they press it (app/builds.js).
+  assert.match(
+    html,
+    /data-action="build-from-profile" title="Copy Ka&lt;b&gt; into your builds: gear, skills and open nodes">/,
+  );
   // Images come from the Odyle server only, by the names it keeps them under.
   assert.match(
     html,

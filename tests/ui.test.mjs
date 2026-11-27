@@ -2471,7 +2471,7 @@ test('phones get around with the bar at the bottom, and the pages are links, lab
   }
 });
 
-test('a build is made from an armory profile, edited by clicking, shared with a link and copied', async () => {
+test('a build is copied from an armory profile, edited by clicking, shared with a link and copied', async () => {
   const builder = await account('Builder'),
     copier = await account('Copier');
   const profileAt = '/armory/eu/2304/' + armorer[0];
@@ -2485,9 +2485,9 @@ test('a build is made from an armory profile, edited by clicking, shared with a 
     assert.fail('the build was not saved');
   };
   const { page, errors, close } = await open(builder, '#' + profileAt);
-  let id, code;
+  let id, code, copyId;
   try {
-    // Make a build: the profile's gear, skills and nodes become a build of the account.
+    // Copy to builds: the profile's gear, skills and nodes become a build of the account.
     await page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
     await page.locator('[data-action="build-from-profile"]').click();
     await page.waitForURL(/\/builds\/[a-z0-9]{15}$/);
@@ -2569,9 +2569,32 @@ test('a build is made from an armory profile, edited by clicking, shared with a 
     await page.locator('[data-action="build-unshare"]').waitFor();
     code = (await planOf(id)).share;
     assert.match(code, /^[A-Z2-9]{16}$/);
+
+    // Make a copy: a private build of its own with the same plan, opened on the same tab.
+    await page.locator('[data-action="build-duplicate"]').click();
+    await page.waitForURL(u => /\/builds\/[a-z0-9]{15}\/compare$/.test(u.pathname) && !u.pathname.includes(id));
+    copyId = page.url().split('/').at(-2);
+    await page.getByRole('heading', { name: "Armorer's build (copy)" }).waitFor();
+    const copied = await planOf(copyId);
+    assert.equal(copied.share, '');
+    assert.equal(copied.plan.from.name, 'Armorer');
+    assert.deepEqual(copied.plan.gear, (await planOf(id)).plan.gear);
+    await shot(page, 'build-copy');
   } finally {
     assert.deepEqual(errors, []);
     await close();
+  }
+
+  // Signed out, an armory profile offers Copy to builds and asks to sign in first.
+  const stranger = await open(null, '#' + profileAt);
+  try {
+    await stranger.page.getByRole('heading', { name: 'Armorer', exact: true }).waitFor();
+    await stranger.page.locator('[data-action="build-from-profile"]').click();
+    await stranger.page.locator('#modal', { hasText: 'Sign in to copy Armorer into your builds' }).waitFor();
+    await stranger.page.locator('#modal [data-action="discord"]').waitFor();
+    assert.deepEqual(stranger.errors, []);
+  } finally {
+    await stranger.close();
   }
 
   // Signed out, the shared link shows the build read-only and offers to sign in to copy it.
@@ -2602,21 +2625,29 @@ test('a build is made from an armory profile, edited by clicking, shared with a 
     await reader.close();
   }
 
-  // Back on the list: the build, shared; stopped, its link ends; deleted, it goes.
+  // Back on the list: the build, shared, and its copy; a card's button copies it once more; the
+  // sharing stopped, its link ends; deleted, it goes and its copies stay.
   const again = await open(builder, '#/builds');
   try {
     const { page } = again;
-    await page.locator('.build-card', { hasText: "Armorer's build" }).waitFor();
-    assert.match(await page.locator('.build-card').innerText(), /Shared[\s\S]*from Armorer/);
+    const card = page.locator(`.build-card[href$="/${id}"]`);
+    await card.waitFor();
+    assert.match(await card.innerText(), /Shared[\s\S]*from Armorer/);
+    assert.equal(await page.locator('.build-card').count(), 2);
+    await page.locator(`[data-build-copy="${copyId}"]`).click();
+    await page.locator('.build-card', { hasText: "Armorer's build (copy) (copy)" }).waitFor();
+    assert.equal(await page.locator('.build-card').count(), 3);
     await shot(page, 'builds');
-    await page.locator('.build-card').click();
+    await card.click();
     await page.locator('[data-action="build-unshare"]').click();
     await page.locator('[data-action="build-share"]').waitFor();
     assert.equal((await request('/api/odyle/builds/shared/' + code, undefined, null, 'GET')).status, 404);
     await page.locator('[data-action="build-delete"]').click();
     await page.locator('#modal [data-build-remove]').click();
     await page.waitForURL(url + '/builds');
-    await page.locator('.armory-empty', { hasText: 'No build yet' }).waitFor();
+    await page.locator('.build-card').first().waitFor();
+    assert.equal(await page.locator(`.build-card[href$="/${id}"]`).count(), 0);
+    assert.equal(await page.locator('.build-card').count(), 2);
     assert.deepEqual(again.errors, []);
   } finally {
     await again.close();

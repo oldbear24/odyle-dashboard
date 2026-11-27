@@ -65,6 +65,17 @@ export function normalPlan(plan) {
 const clamp = (n, low, high) => Math.min(high, Math.max(low, Math.round(Number(n) || 0)));
 const short = (s, n) => String(s ?? '').slice(0, n);
 
+// The name of a copy of a build ("Raid healer (copy)"), within the 60 characters (UTF-16 units, as
+// the backend counts) a name has: a long name gives up its end.
+export function copyName(name) {
+  const base = [...String(name ?? '').trim()];
+  const named = n =>
+    t('{name} (copy)', { name: n < base.length ? base.slice(0, n).join('').trimEnd() + '…' : base.join('') });
+  let n = base.length;
+  while (n > 0 && named(n).length > 60) n--;
+  return named(n);
+}
+
 // ---------------------------------------------------------------- A build as a profile
 
 // A number as PLAYNC writes an item's values: "630", "13.5%".
@@ -411,6 +422,8 @@ export function buildsPage(answer, now = Date.now(), images = '') {
     classes = answer?.classes || [],
     limit = answer?.limit || 50;
   const full = builds.length >= limit;
+  // A card per build, its class's emblem framed beside it; a button beside the card's link
+  // makes a copy of it.
   const card = b => {
     const facts = [
       tn(b.gear || 0, '{n} item', '{n} items'),
@@ -418,7 +431,9 @@ export function buildsPage(answer, now = Date.now(), images = '') {
       tn(b.bar || 0, '{n} skill on the bar', '{n} skills on the bar'),
     ];
     const art = classes.find(c => c.name === b.class)?.icon;
-    return `<li><a class="build-card" href="${esc(link(buildPath(b.id)))}"><span class="build-card-class">${classBadge(images, art, b.class)}<span>${esc(b.class)}</span></span><strong>${esc(b.name)}</strong><span class="build-card-facts">${esc(facts.join(' · '))}</span><span class="build-card-meta">${b.share ? `<span class="build-shared">${icon('share')} ${t('Shared')}</span>` : ''}${b.from?.name ? `<span>${esc(t('from {name}', { name: b.from.name }))}</span>` : ''}<span>${esc(t('changed {age}', { age: age(b.updated, now) }))}</span></span></a></li>`;
+    const mark = classBadge(images, art, '') || `<b>${esc(initials(b.class))}</b>`;
+    const copy = t('Make a copy of {name}', { name: b.name });
+    return `<li class="build-card-item"><a class="build-card" href="${esc(link(buildPath(b.id)))}"><span class="build-card-mark" aria-hidden="true">${mark}</span><span class="build-card-body"><span class="build-card-class">${esc(b.class)}</span><strong>${esc(b.name)}</strong><span class="build-card-facts">${facts.map(f => `<span>${esc(f)}</span>`).join('')}</span><span class="build-card-meta">${b.share ? `<span class="build-shared">${icon('share')} ${t('Shared')}</span>` : ''}${b.from?.name ? `<span>${esc(t('from {name}', { name: b.from.name }))}</span>` : ''}<span>${esc(t('changed {age}', { age: age(b.updated, now) }))}</span></span></span></a><button type="button" class="build-card-copy" data-build-copy="${esc(b.id)}" title="${esc(copy)}" aria-label="${esc(copy)}" ${full ? 'disabled' : ''}>${icon('copy')}</button></li>`;
   };
   const options = classes.length
     ? classes.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('')
@@ -428,9 +443,9 @@ export function buildsPage(answer, now = Date.now(), images = '') {
     : `<p class="build-hint">${t('The armory knows no class yet. Builds start once it has kept a character.')}</p>`;
   const list = builds.length
     ? `<ul class="build-list">${builds.map(card).join('')}</ul>`
-    : `<p class="armory-empty">${t('No build yet. Start one above, or open a character in the armory and choose Make a build.')}</p>`;
+    : `<p class="armory-empty">${t('No build yet. Start one above, or open a character in the armory and choose Copy to builds.')}</p>`;
   return `<main class="dashboard builds-page"><div class="heading"><div><h1>${t('Builds')}<span class="mint">.</span></h1><p>${t('Put a character together by clicking: gear with its enchantment, stones and soul binding, skills and the Daevanion boards, from what the armory knows of each class. Share a build with a link.')}</p></div><div class="heading-actions"><a class="button secondary" href="${esc(link('/armory'))}">${icon('search')} ${t('Armory')}</a></div></div>
-<section class="armory-panel build-start"><div class="section-heading"><h2>${t('New build')} <span>${number(builds.length)} / ${number(limit)}</span></h2></div>${form}<p class="build-hint">${icon('info')}<span>${t('To start from a character, open its armory profile and choose Make a build: its gear, skills and nodes come along.')}</span></p></section>
+<section class="armory-panel build-start"><div class="section-heading"><h2>${t('New build')} <span>${number(builds.length)} / ${number(limit)}</span></h2></div>${form}<p class="build-hint">${icon('info')}<span>${t('To start from a character, open its armory profile and choose Copy to builds: its gear, skills and nodes come along.')}</span></p></section>
 <section class="build-section"><div class="section-heading"><h2>${t('Your builds')}</h2></div>${list}</section></main>`;
 }
 
@@ -703,13 +718,15 @@ export function buildPage(build, view = {}) {
   const from = plan.from?.name
     ? `<span>${icon('user')}<a href="${esc(link(profilePath(plan.from)))}">${esc(t('from {name}', { name: plan.from.name }))}</a></span>`
     : '';
+  const copyLink = `<button class="button secondary" data-action="build-copy-link">${icon('link')} ${t('Copy link')}</button>`,
+    copy = `<button class="button secondary" data-action="build-duplicate">${icon('copy')} ${t('Make a copy')}</button>`;
   const actions = editable
-    ? `<button class="button secondary" data-action="build-rename" aria-haspopup="dialog">${icon('gear')} ${t('Rename')}</button>${build.share ? `<button class="button secondary" data-action="build-copy-link">${icon('copy')} ${t('Copy link')}</button><button class="button secondary" data-action="build-unshare">${t('Stop sharing')}</button>` : `<button class="button primary" data-action="build-share">${icon('share')} ${t('Share')}</button>`}<button class="button secondary" data-action="build-delete" aria-haspopup="dialog">${icon('trash')} ${t('Delete')}</button>`
+    ? `${build.share ? `${copyLink}<button class="button secondary" data-action="build-unshare">${t('Stop sharing')}</button>` : `<button class="button primary" data-action="build-share">${icon('share')} ${t('Share')}</button>`}${copy}<button class="button secondary" data-action="build-rename" aria-haspopup="dialog">${icon('gear')} ${t('Rename')}</button><button class="button secondary" data-action="build-delete" aria-haspopup="dialog">${icon('trash')} ${t('Delete')}</button>`
     : build.mine
-      ? `<a class="button primary" href="${esc(link(buildPath(build.id, tab)))}">${icon('gear')} ${t('Edit this build')}</a><button class="button secondary" data-action="build-copy-link">${icon('copy')} ${t('Copy link')}</button>`
+      ? `<a class="button primary" href="${esc(link(buildPath(build.id, tab)))}">${icon('gear')} ${t('Edit this build')}</a>${copy}${copyLink}`
       : view.signedIn
-        ? `<button class="button primary" data-action="build-save-copy">${icon('plus')} ${t('Save a copy')}</button><button class="button secondary" data-action="build-copy-link">${icon('copy')} ${t('Copy link')}</button>`
-        : `<button class="button primary" data-action="build-sign-in">${t('Sign in to save a copy')}</button><button class="button secondary" data-action="build-copy-link">${icon('copy')} ${t('Copy link')}</button>`;
+        ? `<button class="button primary" data-action="build-save-copy">${icon('copy')} ${t('Save a copy')}</button>${copyLink}`
+        : `<button class="button primary" data-action="build-sign-in">${icon('copy')} ${t('Sign in to save a copy')}</button>${copyLink}`;
   const eyebrow = shared ? t('Shared build') : build.share ? t('Your build · shared') : t('Your build · private');
   const hero = `<section class="armory-hero build-hero"><div class="armory-portrait build-mark" aria-hidden="true">${classBadge(images, view.classIcon, '') || `<span>${esc(initials(build.class))}</span>`}</div>
 <div class="armory-identity"><p class="armory-eyebrow">${esc(eyebrow)}</p><h1>${esc(build.name)}</h1><p class="armory-tags"><span>${classBadge(images, view.classIcon, build.class)}${esc(build.class)}</span>${from}${build.updated ? `<span>${esc(t('changed {age}', { age: age(build.updated, view.now || Date.now()) }))}</span>` : ''}</p></div>

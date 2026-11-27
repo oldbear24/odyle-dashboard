@@ -1,8 +1,9 @@
 // Builds (builds.js, loaded with their first page): the account's builds (/builds), one of them,
 // which its player edits by clicking and which saves itself a moment after each change, and a
 // shared build (/builds/shared/<code>) for anyone with its link, read-only, which a signed-in
-// reader can copy. The class's catalog (what a build can hold, backend/odyle/buildcatalog.go) is
-// kept here per class for ten minutes. A build starts from an armory profile with Make a build.
+// reader can copy. Its player copies their own builds too, from the list or the build's page. The
+// class's catalog (what a build can hold, backend/odyle/buildcatalog.go) is kept here per class for
+// ten minutes. A build starts from an armory profile with Copy to builds.
 import { t } from '../i18n.js';
 import { escape as esc } from '../model.js';
 import { retitle, address } from '../routes.js';
@@ -79,6 +80,11 @@ async function save() {
     again = false;
     await save();
   }
+}
+// Every change saved: what waits, and the save under way with any that follows it.
+async function settled() {
+  await save();
+  while (inFlight) await inFlight.catch(() => {});
 }
 // Leaving a build saves what waits at once.
 export function leaveBuilds() {
@@ -398,6 +404,18 @@ onData({
       bar = Boolean(plan().skills.find(s => s.name === name)?.bar);
     change(buildsPart.loaded().setSkill(plan(), name, { bar: !bar }), `[data-build-bar="${CSS.escape(name)}"]`);
   },
+  // A card's copy button on the list: the copy joins the list, the original stays as it was.
+  buildCopy: async el => {
+    const b = list?.builds?.find(x => x.id === el.dataset.buildCopy),
+      part = buildsPart.loaded();
+    if (!b || !part) return;
+    const answer = await send('build', { copy: b.id, name: part.copyName(b.name) });
+    list = await pb.send('/api/odyle/builds');
+    if (state.shown !== buildsPath) return;
+    buildsRender();
+    toast(t('Copy made. The original stays as it was.'));
+    document.querySelector(`.build-card[href$="/${CSS.escape(answer.build.id)}"]`)?.focus();
+  },
   buildRemove: async el => {
     const id = el.dataset.buildRemove;
     await send('build', { id, remove: true });
@@ -496,6 +514,15 @@ onAction({
       t('Delete'),
       { 'build-remove': current.id },
     ),
+  // A copy of the player's own build on screen, opened at once on the same tab.
+  'build-duplicate': async () => {
+    if (!current?.id) return;
+    await settled();
+    const answer = await send('build', { copy: current.id, name: buildsPart.loaded().copyName(current.name) });
+    list = null;
+    await go(buildPath(answer.build.id, tab));
+    toast(t('Copy made. The original stays as it was.'));
+  },
   'build-save-copy': async () => {
     const answer = await send('build', { copy: current.code });
     list = null;
@@ -507,15 +534,21 @@ onAction({
       t('Sign in to continue'),
       `<p>${t('Sign in to keep a copy of this build and change it.')}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')}</button>`,
     ),
-  // An armory profile's Make a build: its gear, skills and nodes as a new build.
+  // An armory profile's Copy to builds: its gear, skills and nodes as a new build; a visitor
+  // signs in first.
   'build-from-profile': async () => {
     const answer = armoryShown();
     if (!answer?.profile) return;
+    if (!pb.authStore.isValid)
+      return modal(
+        t('Sign in to continue'),
+        `<p>${esc(t('Sign in to copy {name} into your builds and change it.', { name: answer.profile.name }))}</p><button class="button discord-button" data-action="discord">${t('Continue with Discord')}</button>`,
+      );
     const part = await buildsPart(),
       made = part.planFromProfile(answer);
     const result = await send('build', made);
     list = null;
     await go(buildPath(result.build.id));
-    toast(t('Build made from {name}. Change what you plan to.', { name: answer.profile.name }));
+    toast(t('Copied {name} into your builds. Change what you plan to.', { name: answer.profile.name }));
   },
 });
