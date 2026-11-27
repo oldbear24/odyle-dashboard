@@ -2474,7 +2474,15 @@ export default {
   'Ask about your gear or a character…': 'Zeptej se na výbavu nebo na postavu…',
   'Looking up your characters…': 'Hledá tvoje postavy…',
   // Builds
-  'Make a build': 'Vytvořit build',
+  'Copy to builds': 'Zkopírovat do buildů',
+  'Copy {name} into your builds: gear, skills and open nodes':
+    'Zkopírovat postavu {name} do buildů: výbavu, dovednosti i otevřené uzly',
+  'Sign in to copy {name} into your builds and change it.':
+    'Přihlas se, zkopíruj si postavu {name} do buildů a uprav ji.',
+  'Make a copy': 'Vytvořit kopii',
+  'Make a copy of {name}': 'Vytvořit kopii buildu {name}',
+  '{name} (copy)': '{name} (kopie)',
+  'Copy made. The original stays as it was.': 'Kopie vytvořena. Originál zůstává, jak byl.',
   '{name} · {class} build · Odyle': '{name} · build pro {class} · Odyle',
   'Your builds · Odyle': 'Tvoje buildy · Odyle',
   'A shared build · Odyle': 'Sdílený build · Odyle',
@@ -2489,13 +2497,13 @@ export default {
   'You can keep up to {n} builds. Delete one first.': 'Můžeš mít nejvýš {n} buildů. Nejdřív nějaký smaž.',
   'The armory knows no class yet. Builds start once it has kept a character.':
     'Zbrojnice zatím nezná žádné povolání. Buildy půjdou vytvářet, jakmile uloží první postavu.',
-  'No build yet. Start one above, or open a character in the armory and choose Make a build.':
-    'Zatím žádný build. Založ ho výše, nebo otevři postavu ve zbrojnici a zvol Vytvořit build.',
+  'No build yet. Start one above, or open a character in the armory and choose Copy to builds.':
+    'Zatím žádný build. Založ ho výše, nebo otevři postavu ve zbrojnici a zvol Zkopírovat do buildů.',
   Builds: 'Buildy',
   'Put a character together by clicking: gear with its enchantment, stones and soul binding, skills and the Daevanion boards, from what the armory knows of each class. Share a build with a link.':
     'Naklikej si postavu: výbavu s vylepšením, kameny a spoutáním duše, dovednosti a desky Daevanion, z toho, co zbrojnice zná o každém povolání. Build můžeš sdílet odkazem.',
-  'To start from a character, open its armory profile and choose Make a build: its gear, skills and nodes come along.':
-    'Chceš začít od postavy? Otevři její profil ve zbrojnici a zvol Vytvořit build: převezme její výbavu, dovednosti i uzly.',
+  'To start from a character, open its armory profile and choose Copy to builds: its gear, skills and nodes come along.':
+    'Chceš začít od postavy? Otevři její profil ve zbrojnici a zvol Zkopírovat do buildů: převezme její výbavu, dovednosti i uzly.',
   'Your builds': 'Tvoje buildy',
   'Choose an item': 'Vybrat předmět',
   'Change the item': 'Změnit předmět',
@@ -2607,7 +2615,8 @@ export default {
   '{name} goes for good, and its link stops working.': '{name} zmizí natrvalo a jeho odkaz přestane fungovat.',
   'Saved to your builds. Change it as you like.': 'Uloženo mezi tvoje buildy. Uprav si ho podle sebe.',
   'Sign in to keep a copy of this build and change it.': 'Přihlas se, ulož si kopii tohoto buildu a uprav ji.',
-  'Build made from {name}. Change what you plan to.': 'Build vytvořen z postavy {name}. Změň, co plánuješ.',
+  'Copied {name} into your builds. Change what you plan to.':
+    'Postava {name} je zkopírovaná do buildů. Změň, co plánuješ.',
   'This build holds something Odyle cannot keep. Reload the page and try again.':
     'Build obsahuje něco, co Odyle nemůže uložit. Načti stránku znovu a zkus to ještě jednou.',
   'The notes can be up to 2,000 characters.': 'Poznámky mohou mít nejvýš 2 000 znaků.',

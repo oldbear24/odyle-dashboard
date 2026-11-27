@@ -19,8 +19,9 @@ import (
 //
 // A build belongs to its account and is private until its player shares it: its link then names
 // a random code (share), which anyone with the link opens without signing in, and a signed-in
-// reader can copy into their own builds. Stopping the share ends the link; sharing again makes a
-// new one. Builds go with the account, and the data download lists them.
+// reader can copy into their own builds. Its player can copy it too, to try a variant. Stopping
+// the share ends the link; sharing again makes a new one. Builds go with the account, and the data
+// download lists them.
 
 const (
 	buildLimit     = 50 // builds an account keeps
@@ -41,6 +42,7 @@ var buildSlots = map[string]bool{
 
 var (
 	buildShareCode = regexp.MustCompile(`^[A-Z2-9]{16}$`)
+	buildId        = regexp.MustCompile(`^[a-z0-9]{15}$`) // PocketBase's record ids
 	buildNode      = regexp.MustCompile(`^(?:1[0-9]|2[0-9]|30|[0-9]),(?:1[0-9]|2[0-9]|30|[0-9])$`)
 	buildGrade     = regexp.MustCompile(`^[A-Za-z]{0,20}$`)
 )
@@ -322,8 +324,9 @@ func sharedBuildRoute(e *core.RequestEvent) error {
 	})
 }
 
-// buildChange is POST /api/odyle/build: { name, class, plan } makes a build; { copy: code, name? }
-// copies a shared build into the account; { id, name?, plan? } changes one; { id, share: true }
+// buildChange is POST /api/odyle/build: { name, class, plan } makes a build; { copy, name? }
+// copies a shared build (copy: its link's code) or one of the account's (copy: its id) into the
+// account; { id, name?, plan? } changes one; { id, share: true }
 // shares it (its link's code in share), { id, share: false } ends its link; { id, remove: true }
 // deletes it. Answers { build } with its plan, or { removed: id }.
 func buildChange(e *core.RequestEvent) error {
@@ -424,24 +427,33 @@ func newBuild(app core.App, userId string, b body) (any, error) {
 	return saveBuild(app, userId, name, class, plan)
 }
 
-// copyBuild keeps a copy of a shared build as the account's own, private, under its name or the one sent.
+// copyBuild keeps a copy of a build as the account's own, private, under its name or the one sent:
+// of a shared build by its link's code, or of one of the account's by its id. The copy keeps the
+// profile the build started from, so it compares with the same character.
 func copyBuild(app core.App, userId string, b body) (any, error) {
-	code := b.str("copy")
-	var shared *core.Record
-	if buildShareCode.MatchString(code) {
-		shared, _ = app.FindFirstRecordByFilter("builds", "share = {:code}", dbx.Params{"code": code})
+	from := b.str("copy")
+	var source *core.Record
+	switch {
+	case buildShareCode.MatchString(from):
+		source, _ = app.FindFirstRecordByFilter("builds", "share = {:code}", dbx.Params{"code": from})
+	case buildId.MatchString(from):
+		own, err := ownBuild(app, userId, from)
+		if err != nil {
+			return nil, err
+		}
+		source = own
 	}
-	if shared == nil {
+	if source == nil {
 		return nil, notFound("This build is not shared any more.")
 	}
-	name := shared.GetString("name")
+	name := source.GetString("name")
 	if b.has("name") {
 		var err error
 		if name, err = buildName(b["name"]); err != nil {
 			return nil, err
 		}
 	}
-	return saveBuild(app, userId, name, shared.GetString("class"), planOf(shared))
+	return saveBuild(app, userId, name, source.GetString("class"), planOf(source))
 }
 
 // buildsExport is the account's builds for the data download: each with its plan and whether it

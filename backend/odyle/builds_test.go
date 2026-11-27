@@ -133,6 +133,39 @@ func TestBuildsAreKeptSharedCopiedAndDeleted(t *testing.T) {
 	}
 }
 
+// A player copies their own build by its id, to try a variant: the copy is private, keeps the plan
+// and the profile it started from, and takes the name sent. Another account's build is copied only
+// through its link, never by its id.
+func TestBuildsAreCopiedByTheirPlayer(t *testing.T) {
+	app := newTestApp(t)
+	lumina, other := newUser(t, app, "Lumina"), newUser(t, app, "Other")
+	mine, theirs := tokenOf(t, lumina), tokenOf(t, other)
+	made := ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"name":"Boss build","class":"Chanter","plan":`+samplePlan+`}`, 200)["build"].(map[string]any)
+	id := made["id"].(string)
+	ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"id":"`+id+`","share":true}`, 200)
+
+	copied := ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"copy":"`+id+`","name":"Boss build (copy)"}`, 200)["build"].(map[string]any)
+	plan := copied["plan"].(map[string]any)
+	if copied["id"] == id || copied["name"] != "Boss build (copy)" || copied["class"] != "Chanter" || copied["share"] != "" ||
+		len(plan["gear"].([]any)) != 2 || plan["notes"] != "Line one\n\nLine two" || plan["from"].(map[string]any)["name"] != "Kai" {
+		t.Fatalf("copied %v", copied)
+	}
+	if kept := ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"copy":"`+id+`"}`, 200)["build"].(map[string]any); kept["name"] != "Boss build" {
+		t.Fatalf("kept %v", kept)
+	}
+	ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"copy":"`+id+`","name":"`+strings.Repeat("b", 61)+`"}`, 400)
+	ask(t, app, http.MethodPost, "/api/odyle/build", theirs, `{"copy":"`+id+`"}`, 403)
+	ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"copy":"nonexistent0000"}`, 404)
+	ask(t, app, http.MethodPost, "/api/odyle/build", mine, `{"copy":"not a build"}`, 404)
+	ask(t, app, http.MethodPost, "/api/odyle/build", nil, `{"copy":"`+id+`"}`, 401)
+	if n := len(ask(t, app, http.MethodGet, "/api/odyle/builds", mine, "", 200)["builds"].([]any)); n != 3 {
+		t.Fatalf("%d builds", n)
+	}
+	if n := len(ask(t, app, http.MethodGet, "/api/odyle/builds", theirs, "", 200)["builds"].([]any)); n != 0 {
+		t.Fatalf("another account has %d builds", n)
+	}
+}
+
 // A plan holds only what a build can: known slots once each, names within limits, levels within
 // range, nodes as row and column, notes up to 2,000 characters and nothing else; a name and a
 // class are required, and an account keeps up to 50 builds.

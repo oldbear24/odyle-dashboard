@@ -17,6 +17,7 @@ import {
   buildGap,
   buildsPage,
   buildPage,
+  copyName,
   slotEditor,
   slotDetails,
 } from '../../src/builds.js';
@@ -478,7 +479,18 @@ test('the pages: the list with a form for a new build, a build its player edits,
   assert.match(list, /id="build-new-form"/);
   assert.match(list, /<option value="Chanter">Chanter<\/option>/);
   assert.match(list, /Boss &lt;b&gt;build&lt;\/b&gt;/);
-  assert.match(list, /3 items · 1 node · 2 skills on the bar/);
+  assert.match(list, /<span>3 items<\/span><span>1 node<\/span><span>2 skills on the bar<\/span>/);
+  assert.match(
+    list,
+    /class="build-card-mark" aria-hidden="true"><img class="class-icon" src="\/img\/class_icon_chanter.png"/,
+  );
+  // Each card has a button that copies it, beside (not inside) its link.
+  assert.match(
+    list,
+    /<\/a><button type="button" class="build-card-copy" data-build-copy="abc123def456ghi" title="Make a copy of Boss &lt;b&gt;build&lt;\/b&gt;"/,
+  );
+  const full = buildsPage({ builds: [{ id: 'abc123def456ghi', name: 'A', class: 'Chanter' }], classes: [], limit: 1 });
+  assert.match(full, /data-build-copy="abc123def456ghi" [^>]*disabled/);
   assert.match(list, /Shared/);
   assert.match(list, /from Kai/);
   assert.match(buildsPage({ builds: [], classes: [], limit: 50 }), /knows no class yet/);
@@ -487,6 +499,7 @@ test('the pages: the list with a form for a new build, a build its player edits,
   const edit = buildPage(build, { editable: true, catalog, signedIn: true, saving: 'saved' });
   assert.match(edit, /data-build-slot="MainHand"/);
   assert.match(edit, /data-action="build-share"/);
+  assert.match(edit, /data-action="build-duplicate"/);
   assert.match(edit, /data-build-notes/);
   assert.match(edit, /build-save-slot/);
   assert.match(edit, /12 Chanters the armory keeps/);
@@ -501,13 +514,15 @@ test('the pages: the list with a form for a new build, a build its player edits,
   const shared = { name: 'Boss build', class: 'Chanter', plan, code: 'ABCDEFGHJKLMNPQR' };
   const reader = buildPage(shared, { catalog, signedIn: true });
   assert.match(reader, /data-action="build-save-copy"/);
-  assert.doesNotMatch(reader, /data-build-slot|data-build-notes|data-action="build-share"/);
+  assert.doesNotMatch(
+    reader,
+    /data-build-slot|data-build-notes|data-action="build-share"|data-action="build-duplicate"/,
+  );
   assert.match(reader, /\/builds\/shared\/ABCDEFGHJKLMNPQR\/skills/);
   assert.match(buildPage(shared, { catalog, signedIn: false }), /data-action="build-sign-in"/);
-  assert.match(
-    buildPage({ ...shared, mine: true, id: 'abc123def456ghi' }, { catalog, signedIn: true }),
-    /Edit this build/,
-  );
+  const own = buildPage({ ...shared, mine: true, id: 'abc123def456ghi' }, { catalog, signedIn: true });
+  assert.match(own, /Edit this build/);
+  assert.match(own, /data-action="build-duplicate"/);
   assert.match(buildPage(shared, { catalog: null }), /Loading what the armory knows/);
   assert.match(buildPage(shared, { catalog: { error: true } }), /did not load/);
   // Compare: nothing to compare with, then a character's profile.
@@ -532,4 +547,15 @@ test('an item at no enchantment shows its values as the catalog has them', () =>
   const g = gearOf({ slot: 'SubHand', name: 'Orb B', grade: 'Unique', enchant: 0, exceed: 0 }, catalog);
   assert.deepEqual(g.detail.main, [{ name: 'Defense', value: '200' }]);
   assert.equal(g.detail.set.name, 'Primal Vigor');
+});
+
+test("a copy is named after its build, within a name's 60 characters", () => {
+  assert.equal(copyName('Raid healer'), 'Raid healer (copy)');
+  assert.equal(copyName('  Raid healer '), 'Raid healer (copy)');
+  const long = copyName('Tank for Kromede with a very long name indeed, and more!!');
+  assert.equal(long, 'Tank for Kromede with a very long name indeed, and m… (copy)');
+  assert.equal(long.length, 60);
+  // Characters outside the basic plane count twice, as the backend counts them, and stay whole.
+  const wide = copyName('🐉'.repeat(40));
+  assert.ok(wide.length <= 60 && !/\uD83D(?!\uDC09)/.test(wide), wide);
 });

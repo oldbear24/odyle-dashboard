@@ -2,6 +2,19 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.9.0 · 2026-11-27
+
+### New
+- **Copy a build.** **Make a copy** on your build's page, or the copy button on its card in **Builds**, keeps a private copy named `… (copy)` to try a variant; the original stays as it was.
+- **Copy to builds from the armory.** Every armory profile has **Copy to builds** (it was **Make a build**): the character's gear, skills and open nodes become a build of yours. Signed out, the button asks you to sign in first instead of being missing.
+
+### Changed
+- Builds look more like a build planner: the list's cards show the class emblem framed beside each build and what it holds as chips, the header's tags line up with their icons, and on phones a build's numbers sit two by two.
+- For server operators: `POST /api/odyle/build` with `copy` also takes the id of one of the account's own builds.
+
+### Fixed
+- A build's class emblem sits in the middle of its frame instead of its top left corner.
+
 ## 1.8.1 · 2026-11-27
 
 ### Fixed
