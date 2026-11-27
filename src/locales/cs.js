@@ -991,8 +991,8 @@ export default {
   live: 'živě',
   'Choose the weekly reset day (sunday to saturday).': 'Vyber den týdenního resetu (neděle až sobota).',
   'The Odyle clock must be an object.': 'Odyle hodiny musí být objekt.',
-  'The Odyle clock must be an object with tickHours, tick, caps and paused.':
-    'Odyle hodiny musí být objekt s tickHours, tick, caps a paused.',
+  'The Odyle clock must be an object with tickHours, tick, caps, bonusCap and paused.':
+    'Odyle hodiny musí být objekt s tickHours, tick, caps, bonusCap a paused.',
   'The regeneration happens at 1 to 24 UTC hours.': 'Regenerace probíhá v 1 až 24 hodinách UTC.',
   'Regeneration hours are different whole UTC hours from 0 to 23.':
     'Hodiny regenerace jsou různé celé hodiny UTC od 0 do 23.',
@@ -1000,6 +1000,7 @@ export default {
   'The natural pool has 1 to 4 caps.': 'Přirozená zásoba má 1 až 4 stropy.',
   'Caps are 1 to 1,000,000 Odyle, each larger than the one before.':
     'Stropy jsou 1 až 1 000 000 Odyle, každý větší než předchozí.',
+  "Items' Odyle holds 1 to 1,000,000.": 'Odyle z předmětů pojme 1 až 1 000 000.',
   'Delete inactive accounts after 30 days or more, or 0 to keep them.':
     'Neaktivní účty mazat nejdřív po 30 dnech, nebo 0 pro ponechání.',
   'The announcement must be text.': 'Oznámení musí být text.',
@@ -1993,8 +1994,8 @@ export default {
   'Odyle regeneration': 'Regenerace Odyle',
   'The natural pool gains {tick} at {hours} UTC. The next 24 hours in your time:':
     'Přirozená zásoba získá {tick} v {hours} UTC. Příštích 24 hodin v tvém čase:',
-  'A natural pool at its cap loses every tick, so spend it before it is full. Odyle from items never regenerates and is not capped.':
-    'Přirozená zásoba na stropu přichází o každý tik, takže ji utrať, než se naplní. Odyle z předmětů se neregeneruje a nemá strop.',
+  'A natural pool at its cap loses every tick, so spend it before it is full. Odyle from items never regenerates and holds at most {cap}.':
+    'Přirozená zásoba na stropu přichází o každý tik, takže ji utrať, než se naplní. Odyle z předmětů se neregeneruje a pojme nejvýš {cap}.',
   unconfirmed: 'nepotvrzeno',
   'Odyle per cube': 'Odyle za kostku',
   'Cubes a day': 'Kostek za den',

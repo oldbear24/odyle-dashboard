@@ -3859,6 +3859,8 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     await page.locator('#odyle-clock-tick').fill('20');
     await page.locator('#odyle-clock-caps').fill('600, 900');
     await page.locator('#odyle-clock-caps').blur();
+    assert.equal(await page.locator('#odyle-clock-bonus-cap').inputValue(), '2000');
+    await page.locator('#odyle-clock-bonus-cap').fill('2500');
     // Class roles (#45): the default table of AION 2's classes, each role changed in its row.
     assert.deepEqual(
       await page.locator('.odyle-roles [id$="-class"]').evaluateAll(inputs => inputs.map(i => i.value)),
@@ -3894,7 +3896,7 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
     await page.getByText('Saved the Odyle game settings.').waitFor();
     await shot(page, 'admin-settings');
     const saved = (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.settings;
-    assert.deepEqual(saved.clock, { tickHours: [2, 5, 22], tick: 20, caps: [600, 900], paused: false });
+    assert.deepEqual(saved.clock, { tickHours: [2, 5, 22], tick: 20, caps: [600, 900], bonusCap: 2500, paused: false });
     assert.deepEqual(saved.classRoles.at(-1), { class: 'Chanter', role: 'healer' });
     assert.deepEqual(saved.maps.slice(-2), [
       { id: 600101, name: 'Valka’s Nest', thgl: "Herb Cave / Valka's Nest (+3)" },
@@ -3948,7 +3950,7 @@ test('superusers keep the dungeon catalog, the inactive account period and how l
         historyDays: 30,
         locationDays: 30,
         pvpDays: 90,
-        clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false },
+        clock: { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], bonusCap: 2000, paused: false },
         classRoles: (await request('/api/odyle/admin/settings', undefined, operator, 'GET')).data.defaults.classRoles,
       },
       operator,

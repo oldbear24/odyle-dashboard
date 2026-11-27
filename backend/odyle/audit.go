@@ -89,6 +89,7 @@ var auditFields = []struct{ path, label string }{
 	{"clock.tickHours", "Regeneration hours (UTC)"},
 	{"clock.tick", "Odyle per tick"},
 	{"clock.caps", "Natural pool caps"},
+	{"clock.bonusCap", "Items' Odyle limit"},
 	{"clock.paused", "Hide the Odyle clock"},
 	{"slots.dailySpins", "Free spins a day"},
 	{"slots.perCharacter", "Spins per character read"},

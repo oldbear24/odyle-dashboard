@@ -9,7 +9,13 @@ import { remaining } from './tasks.js';
 // backend makes the same projection (backend/odyle/clock.go).
 const hour = 3600000,
   day = 24 * hour;
-export const defaultClock = { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840], paused: false };
+export const defaultClock = {
+  tickHours: [1, 4, 7, 10, 13, 16, 19, 22],
+  tick: 15,
+  caps: [560, 840],
+  bonusCap: 2000,
+  paused: false,
+};
 
 // The tick times after `from` up to `until` (both ms), at most `limit` of them.
 export function ticksAfter(from, until, hours, limit = Infinity) {

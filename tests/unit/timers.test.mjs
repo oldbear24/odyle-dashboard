@@ -72,7 +72,13 @@ test('the natural pool fills tick by tick and a paused clock shows no regenerati
     ['with the membership', 'without the membership', ''],
   );
   assert.equal(clockRules({ ...game.clock, paused: true }), null);
-  assert.deepEqual(clockRules({}), { tickHours: [1, 4, 7, 10, 13, 16, 19, 22], tick: 15, caps: [560, 840] });
+  assert.deepEqual(clockRules({}), {
+    tickHours: [1, 4, 7, 10, 13, 16, 19, 22],
+    tick: 15,
+    caps: [560, 840],
+    bonusCap: 2000,
+  });
+  assert.equal(clockRules({ ...game.clock, bonusCap: 2500 }).bonusCap, 2500);
   const targets = timerTargets(game, at('2026-10-14T03:00:00Z'));
   assert.deepEqual(Object.fromEntries(Object.entries(targets).map(([k, v]) => [k, new Date(v).toISOString()])), {
     daily: '2026-10-14T07:00:00.000Z',
@@ -93,6 +99,7 @@ test('the page shows the countdowns, escapes dungeon names and leads players in'
   assert.match(html, /data-timer="\d+"/);
   assert.equal((html.match(/class="timer-card/g) || []).length, 4);
   assert.match(html, /Maintenance under way/);
+  assert.match(html, /Odyle from items never regenerates and holds at most 2,000\./);
   assert.match(html, /&lt;b&gt;Fire Temple&lt;\/b&gt;/);
   assert.doesNotMatch(html, /<b>Fire Temple/);
   // 120 a day buys 1.5 cubes of 80 and 3 of 40; a pool of 840 holds 10 and 21.

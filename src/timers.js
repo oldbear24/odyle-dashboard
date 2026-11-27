@@ -52,6 +52,7 @@ export function clockRules(clock) {
     tickHours: hours,
     tick: clock?.tick > 0 ? clock.tick : defaultClock.tick,
     caps: Array.isArray(clock?.caps) && clock.caps.length ? clock.caps : defaultClock.caps,
+    bonusCap: clock?.bonusCap > 0 ? clock.bonusCap : defaultClock.bonusCap,
   };
 }
 // What the natural pool gains in a day of regeneration.
@@ -187,7 +188,7 @@ function regeneration(rules, now, perCube = 40) {
   return `<section class="party-section"><div class="section-heading"><h2>${t('Odyle regeneration')} <span>${esc(tn(rules.tickHours.length, '{n} tick a day', '{n} ticks a day'))}</span></h2></div>
 <div class="wish-panel timers-panel"><p class="timers-lead">${esc(t('The natural pool gains {tick} at {hours} UTC. The next 24 hours in your time:', { tick: rules.tick, hours }))}</p><ol class="tick-strip">${strip}</ol>
 <div class="fill-list">${fills}<div class="fill-row"><strong>+${esc(daily.toLocaleString(locale()))}</strong><div><span>${t('A day of regeneration')}</span><small>${esc(t('Worth {cubes} cubes at {cost} Odyle per cube', { cubes: cubes(daily / cost), cost }))}</small></div></div></div>
-<p class="wish-note">${t('A natural pool at its cap loses every tick, so spend it before it is full. Odyle from items never regenerates and is not capped.')}</p></div></section>`;
+<p class="wish-note">${esc(t('A natural pool at its cap loses every tick, so spend it before it is full. Odyle from items never regenerates and holds at most {cap}.', { cap: rules.bonusCap.toLocaleString(locale()) }))}</p></div></section>`;
 }
 
 // The dungeon catalog the server keeps: what a cube of each dungeon costs, its party and how
