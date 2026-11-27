@@ -101,6 +101,17 @@ func boardText(value any) (string, error) {
 	if !ok {
 		return "", badRequest("The board must be text.")
 	}
+	board := keptLines(s)
+	if length(board) > 2000 {
+		return "", badRequest("The board can be up to 2,000 characters.")
+	}
+	return board, nil
+}
+
+// keptLines is text whose lines stay, as the board and a build's notes keep it: without invisible
+// characters, the spaces that end a line, empty lines at the start and end, and more than one
+// empty line in a row.
+func keptLines(s string) string {
 	lines, empty := []string{}, 0
 	for _, line := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(visible(s), "\r\n", "\n"), "\r", "\n"), "\n") {
 		line = strings.TrimRightFunc(line, isSpace)
@@ -114,11 +125,7 @@ func boardText(value any) (string, error) {
 		empty = 0
 		lines = append(lines, line)
 	}
-	board := strings.Join(lines, "\n")
-	if length(board) > 2000 {
-		return "", badRequest("The board can be up to 2,000 characters.")
-	}
-	return board, nil
+	return strings.Join(lines, "\n")
 }
 
 // A planned run starts at most an hour ago (late entries) and at most 60 days ahead.

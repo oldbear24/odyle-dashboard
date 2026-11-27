@@ -37,6 +37,7 @@ var shown = map[string][]string{
 	"game-group":      {"sessionId", "characterId", "adapter"},
 	"pvp":             {"sessionId", "characterId", "adapter"},
 	"teammates":       {"sessionId", "characterId", "adapter"},
+	"build":           {"id", "name", "class", "share", "remove"},
 	"invalidate":      {"sessionId", "characterId"},
 	"character":       {"characterName", "server", "region"},
 	"pair":            {"name"},

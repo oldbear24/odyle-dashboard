@@ -7,6 +7,7 @@
 // it never reaches a server or its logs.
 import { t } from './i18n.js';
 import { armoryRoute, armoryTarget, armoryTitle, topTitle } from './armorylinks.js';
+import { buildsRoute, buildTitle } from './buildlinks.js';
 
 let marked = null;
 // Whether pages have paths here.
@@ -84,18 +85,20 @@ export function retitle(title) {
 }
 
 // The page a route names, or '' for none: / (welcome or your rooms), /room/<id>, /join/<code>
-// (an invite link), the pages by name and the armory's pages.
+// (an invite link), the pages by name, the armory's pages and the builds' (buildlinks.js).
 const pageRoute =
   /^(\/(?:room\/[A-Za-z0-9]{1,40}|join\/[A-Za-z0-9-]{4,24}|demo|tasks|account|changelog|privacy|slots|timers|achievements|week)?)$/;
 export function pageOf(route) {
-  if (armoryRoute.test(route)) return route;
+  if (armoryRoute.test(route) || buildsRoute.test(route)) return route;
   const match = route.match(pageRoute);
   return match ? match[1] : '';
 }
 // The title of a page in the tab, as the backend names it (backend/odyle/pages.go); the
-// armory names its profiles and comparisons once they are fetched, so they keep the title shown
-// (shownTitle).
+// armory names its profiles and comparisons, and builds their builds, once they are fetched, so
+// they keep the title shown (shownTitle).
 export function pageTitle(path, shownTitle = '') {
+  if (path.startsWith('/builds'))
+    return path === '/builds' ? buildTitle(null, path) : shownTitle || buildTitle(null, path);
   if (path.startsWith('/armory')) {
     const target = armoryTarget(path);
     return target.top
@@ -121,11 +124,13 @@ export const pageNav = path =>
     ? 'overview'
     : path.startsWith('/armory')
       ? 'armory'
-      : {
-          '/': 'library',
-          '/tasks': 'tasks',
-          '/week': 'week',
-          '/achievements': 'achievements',
-          '/timers': 'timers',
-          '/account': 'account',
-        }[path] || '';
+      : path.startsWith('/builds')
+        ? 'builds'
+        : {
+            '/': 'library',
+            '/tasks': 'tasks',
+            '/week': 'week',
+            '/achievements': 'achievements',
+            '/timers': 'timers',
+            '/account': 'account',
+          }[path] || '';
