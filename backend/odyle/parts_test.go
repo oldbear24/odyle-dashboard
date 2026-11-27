@@ -76,7 +76,25 @@ func TestHistoryAndTheCharacterCarryTheGamesTwoNumbers(t *testing.T) {
 	if got := asJSON(t, readings[1]); got != `{"adapter":"test-fixture-v1","at":"`+readings[1].(map[string]any)["at"].(string)+`","delta":-80,"kind":"spend","parts":{"base":0,"bonus":830},"value":830}` {
 		t.Fatalf("history point %s", got)
 	}
-	// A reading of an older app clears the numbers it did not send.
+	// The same value sent again without them (a Windows app's restart hands its last total over)
+	// keeps the stored ones, which add up to it; it is no change.
+	if c.Read(reading{value: 830, parserVersion: "test-fixture-v1"}, "") {
+		t.Fatal("the same value again counts as a change")
+	}
+	if err := app.Save(c); err != nil {
+		t.Fatal(err)
+	}
+	if stored, _ := findAs[Character](app, "characters", id); asJSON(t, stored.PublicExport()["parts"]) != `{"base":0,"bonus":830}` {
+		t.Fatalf("parts after the same value again %v", stored.PublicExport()["parts"])
+	}
+	// Stored ones that do not add up to it are cleared.
+	c.Set("parts", map[string]any{"base": 1, "bonus": 2})
+	c.Read(reading{value: 830, parserVersion: "test-fixture-v1"}, "")
+	if asJSON(t, c.PublicExport()["parts"]) != `null` {
+		t.Fatalf("parts that do not add up %v", c.PublicExport()["parts"])
+	}
+	c.Set("parts", map[string]any{"base": 0, "bonus": 830})
+	// A reading of an older app with another value clears the numbers it did not send.
 	c.Read(reading{value: 840, parserVersion: "test-fixture-v1"}, "")
 	if err := app.Save(c); err != nil {
 		t.Fatal(err)

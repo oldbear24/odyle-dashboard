@@ -2,6 +2,11 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.8.1 · 2026-11-27
+
+### Fixed
+- A character's natural pool and Odyle from items are no longer lost when the Windows app sends the same Odyle again without them, as it does after restarting for an update. The app's Odyle ring and **Next +15**, and the rings in rooms, stayed empty until the character's Odyle next changed in the game.
+
 ## 1.8.0 · 2026-11-27
 
 ### New
