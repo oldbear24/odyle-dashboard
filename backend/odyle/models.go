@@ -153,9 +153,14 @@ func (c *Character) Read(r reading, session string) (changed bool) {
 	if changed {
 		c.Set("lastReadingAt", now())
 	}
+	// The game's two numbers, or none when this reading did not send them. A reading sent again
+	// without them and with its value unchanged keeps the ones stored when they add up to it: a
+	// Windows app restarting for an update sends its last total again, and before 1.2.1 without
+	// them, which cleared them and left the Odyle clock and the rooms' rings empty until the next change.
+	if base, bonus, stored := c.naturalParts(); r.parts != nil || changed || !stored || base+bonus != r.value {
+		c.Set("parts", r.partsValue())
+	}
 	c.Set("value", r.value)
-	// The game's two numbers, or none when this reading did not send them.
-	c.Set("parts", r.partsValue())
 	c.learn(r)
 	c.Set("confirmed", true)
 	// A reading shows the character has Odyle after all (odyle-windows#6).
