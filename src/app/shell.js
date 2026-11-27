@@ -29,13 +29,15 @@ const pages = () => [
   ['achievements', 'trophy', t('Achievements')],
   ['timers', 'clock', t('Timers')],
   ['armory', 'search', t('Armory')],
+  ['builds', 'build', t('Builds')],
 ];
 // The bar at the bottom of phones has room for these four and the account; the other pages are
 // in the account menu there (phoneItems).
 const phonePages = ['overview', 'library', 'tasks', 'armory'];
 const navItem = (action, active, name, label) =>
   `<a href="${navHref(action)}" data-action="${action}" class="nav-item ${active === action ? 'active' : ''}"${active === action ? ' aria-current="page"' : ''}>${icon(name)}<span class="nav-label">${label}</span>${badgeOf(action)}</a>`;
-// Where a navigation item leads: the open (or last) room, the library, the checklist, the armory, the account.
+// Where a navigation item leads: the open (or last) room, the library, the checklist, the armory,
+// the builds, the account.
 function navHref(action) {
   const signedIn = pb.authStore.isValid && !state.demo;
   if (action === 'overview')
@@ -55,6 +57,7 @@ function navHref(action) {
     achievements: '/achievements',
     timers: '/timers',
     armory: '/armory',
+    builds: signedIn ? '/builds' : '/',
     account: signedIn ? '/account' : '/',
   }[action];
   return path ? link(path) : '';

@@ -2,6 +2,17 @@
 
 What changed in each release of the Odyle dashboard and server, newest first, written for players. Every pull request that changes the version adds its section here (AGENTS.md, Versioning). The release notes and the dashboard's **What's new** page (`#/changelog`) show it.
 
+## 1.7.0 · 2026-11-27
+
+### New
+- **Builds: put a character together by clicking.** The new **Builds** page keeps your plans for a character. Choose the item for every slot with its enchantment and exceed level, manastones or soulstones, theostones, soul binding stats and the skills it raises; set each skill's level and whether it is on your skill bar (or chosen, for stigmas); open Daevanion nodes by clicking them, or a whole board at once; and keep notes. The items, stones, skills and boards to choose from are what the armory has seen characters of that class wear and use, and the build shows what its stats add up to, like a character's profile. Points and skill bar slots are not counted, so plan freely. Builds save themselves as you change them.
+- **Make a build from any character.** On an armory profile, **Make a build** copies the character's gear, skills and open nodes into a new build to change from there.
+- **See what a character still needs.** A build's **Compare** tab lists what the character it was made from, or a character you bookmarked, still lacks: items to get, enchantment and exceed levels, stones, nodes to open and skills to raise.
+- **Share builds with a link.** **Share** makes a link anyone can open without signing in, and signed-in players can **Save a copy** to their own builds. **Stop sharing** ends the link. Builds are private until you share them, go with your account and are part of **Download my data**.
+
+### Changed
+- For server operators: migration 1791763292 adds the collection `builds` (no API rules); new routes `GET /api/odyle/builds`, `GET /api/odyle/builds/{id}`, `GET /api/odyle/builds/shared/{code}`, `POST /api/odyle/build` and the public `GET /api/odyle/armory/catalog/{class}`, under the armory's rate limit.
+
 ## 1.6.1 · 2026-11-26
 
 ### Fixed

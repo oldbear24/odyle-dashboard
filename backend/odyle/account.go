@@ -228,6 +228,10 @@ func exportData(e *core.RequestEvent) error {
 			}
 			inviteLinks[i] = j
 		}
+		builds, err := buildsExport(app, user.Id)
+		if err != nil {
+			return err
+		}
 		return e.JSON(200, map[string]any{
 			"exportedAt":        now(),
 			"notifications":     notificationsOf(user.Record),
@@ -244,6 +248,7 @@ func exportData(e *core.RequestEvent) error {
 			"pairedWindowsApps": paired,
 			"inviteLinks":       inviteLinks,
 			"armoryAi":          aiExport(app, user.Record),
+			"builds":            builds,
 		})
 	})
 }

@@ -181,6 +181,8 @@ func routes(se *core.ServeEvent) {
 	se.Router.POST("/api/odyle/pvp", observed("pvp", pvp)).Bind(signedIn, apis.BodyLimit(16384))
 	// So do a force's members' names.
 	se.Router.POST("/api/odyle/teammates", observed("teammates", teammates)).Bind(signedIn, apis.BodyLimit(16384))
+	// A build's plan (builds.go) is up to 64 KB.
+	se.Router.POST("/api/odyle/build", observed("build", buildChange)).Bind(signedIn, apis.BodyLimit(98304))
 	// Reads are timed for the superuser dashboard's Server status page (traffic.go).
 	se.Router.GET("/api/odyle/rooms", timed("rooms", rooms)).Bind(signedIn)
 	se.Router.GET("/api/odyle/tasks", timed("tasks", tasks)).Bind(signedIn)
@@ -192,6 +194,10 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/invites/{id}", timed("invites", inviteList)).Bind(signedIn)
 	se.Router.GET("/api/odyle/upcoming", timed("upcoming", upcoming)).Bind(signedIn)
 	se.Router.GET("/api/odyle/week", timed("week", weekRoute)).Bind(signedIn)
+	// Builds (builds.go): the account's, one with its plan, and a shared one for anyone with its link.
+	se.Router.GET("/api/odyle/builds", timed("builds", buildsRoute)).Bind(signedIn)
+	se.Router.GET("/api/odyle/builds/shared/{code}", timed("build-shared", sharedBuildRoute))
+	se.Router.GET("/api/odyle/builds/{id}", timed("build", buildRoute)).Bind(signedIn)
 	// The private calendar feed (#35): its token is in the address, so a request that succeeds is
 	// not written to the activity log.
 	se.Router.GET("/api/odyle/calendar/{file}", timed("calendar", calendarFile)).Bind(apis.SkipSuccessActivityLog())
@@ -212,6 +218,8 @@ func routes(se *core.ServeEvent) {
 	se.Router.GET("/api/odyle/armory/{region}/{serverId}/{characterId}", timed("armory", armoryRoute))
 	// What the strongest characters of a class wear, for a profile's Upgrade tab (upgrades.go).
 	se.Router.GET("/api/odyle/armory/upgrades/{class}", timed("armory-upgrades", upgradesRoute))
+	// What a build of a class can hold, from what the armory keeps of the class (buildcatalog.go).
+	se.Router.GET("/api/odyle/armory/catalog/{class}", timed("armory-catalog", catalogRoute))
 	// The strongest characters of each class the armory knows (ranks.go).
 	se.Router.GET("/api/odyle/armory/top", timed("armory-top", topRoute))
 	// Its images (armoryimages.go) are outside /api/odyle/armory/, under the general rate limit:

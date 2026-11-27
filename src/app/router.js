@@ -1,5 +1,5 @@
 // Every page has its own URL: / (welcome or your rooms), /room/<id>, /tasks, /account,
-// /demo, the armory's pages and #/join/<code> (an invite link), as paths where the backend
+// /demo, the armory's pages, the builds' and #/join/<code> (an invite link), as paths where the backend
 // serves the dashboard and as fragments elsewhere (routes.js). A reload or shared link opens
 // the same page. The last signed-in page is remembered so a fresh visit resumes there.
 // Each navigation has its number (state.navigation, the ticket): answers for an older one are
@@ -17,6 +17,7 @@ import { libraryPart, roomPart, tasksPart, accountPart } from './parts.js';
 import { shell, renderReaderStatus } from './shell.js';
 import { announced } from './notes.js';
 import { armoryPage, armoryRender, stopArmory } from './armory.js';
+import { buildsShow, buildsRender, leaveBuilds } from './builds.js';
 import {
   changelogPage,
   changelogRender,
@@ -84,6 +85,8 @@ async function showPage(path, ticket) {
   // A path that names no page shows as the page it opens.
   if (usesPaths() && current() !== path) visit(path, true);
   retitle(pageTitle(path, document.title));
+  // Leaving a build saves what waits (app/builds.js).
+  if (!path.startsWith('/builds')) leaveBuilds();
   if (path === '/demo') {
     await leaveRoomTopic();
     return (await roomPart()).demoSession(ticket);
@@ -92,6 +95,13 @@ async function showPage(path, ticket) {
     await leaveRoomTopic();
     clearRoom();
     return armoryPage(path, ticket);
+  }
+  // A shared build is public, like the armory.
+  if (path.startsWith('/builds/shared/')) {
+    stopArmory();
+    await leaveRoomTopic();
+    clearRoom();
+    return buildsShow(path, ticket);
   }
   if (publicPages[path]) {
     stopArmory();
@@ -142,6 +152,7 @@ async function signedInPage(path, id, ticket) {
   if (path === '/tasks') await (await tasksPart()).tasksPage(ticket);
   else if (path === '/account') await (await accountPart()).accountPage(ticket);
   else if (path === '/week') await weekPage(ticket);
+  else if (path.startsWith('/builds')) await buildsShow(path, ticket);
   else if (id) await (await roomPart()).openRoom(id, ticket);
   else await (await libraryPart()).library(ticket);
 }
@@ -201,7 +212,13 @@ export async function refreshPage() {
   else if (shown === '/timers') await loadTimers();
   else if (shown === '/achievements') await loadAchievements();
   else if (shown === '/week') await loadWeek();
-  else if (shown === null || shown.startsWith('/armory') || shown === '/changelog' || shown === '/privacy')
+  else if (
+    shown === null ||
+    shown.startsWith('/armory') ||
+    shown.startsWith('/builds') ||
+    shown === '/changelog' ||
+    shown === '/privacy'
+  )
     await pb.health.check(); // nothing of the account to fetch (null: a page that failed to load, pageFailed)
   else await refreshLists();
   state.online = true;
@@ -247,6 +264,8 @@ export function rerender() {
   if (state.demo) return roomPart.loaded()?.demoSession();
   if (shown === null) return show().catch(failure);
   if (shown?.startsWith('/armory')) return armoryRender();
+  if (shown?.startsWith('/builds/shared/') || (shown?.startsWith('/builds') && pb.authStore.isValid))
+    return buildsRender();
   const view = {
     '/changelog': changelogRender,
     '/timers': timersRender,

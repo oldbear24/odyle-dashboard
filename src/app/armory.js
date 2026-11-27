@@ -11,7 +11,7 @@ import { state, storage } from './state.js';
 import { pb, send } from './server.js';
 import { app, toast } from './ui.js';
 import { onData, onAction, onSubmit, onChange } from './actions.js';
-import { armoryPart, cardPart, cardImagePart } from './parts.js';
+import { armoryPart, cardPart, cardImagePart, buildsPart } from './parts.js';
 import { shell } from './shell.js';
 import { go } from './router.js';
 import { failure } from './session.js';
@@ -165,6 +165,7 @@ export function armoryRender(searching = false) {
           upgrade: armoryUpgrade(),
           upgradeGroup: armoryUpgradeGroup,
           ai: aiAllowed(),
+          build: pb.authStore.isValid,
         })
       : armory.armorySearch(
           armoryServers || [],
@@ -420,7 +421,8 @@ document.addEventListener('keydown', event => {
   const node = event.target.closest?.('.armory-node');
   if (!node || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   const nodes = [...node.parentElement.querySelectorAll(':scope > .armory-node')];
-  const to = armoryPart.loaded()?.nodeStep(
+  // A build's board (app/builds.js) moves the same way, with or without the armory's pages loaded.
+  const to = (armoryPart.loaded() || buildsPart.loaded())?.nodeStep(
     nodes.map(n => ({ row: Number(n.style.gridRowStart), col: Number(n.style.gridColumnStart) })),
     nodes.indexOf(node),
     event.key,

@@ -26,6 +26,7 @@ export const whatsnewPart = lazyPart(() => import('../parts/whatsnew.js')),
   privacyPart = lazyPart(() => import('../parts/privacy.js')),
   helpPart = lazyPart(() => import('../help.js'));
 export const armoryPart = lazyPart(() => import('../parts/armory.js')),
+  buildsPart = lazyPart(() => import('../parts/builds.js')),
   cardPart = lazyPart(() => import('../parts/card.js')),
   cardImagePart = lazyPart(() => import('../cardimage.js'));
 export const demoPart = lazyPart(() => import('../demo.js')),
@@ -60,6 +61,7 @@ export function prefetchParts() {
     achievementsPart,
     weekPart,
     armoryPart,
+    buildsPart,
     cardPart,
     libraryPart,
     roomPart,
